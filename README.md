@@ -2,8 +2,34 @@
 SuperITOM Version 2
 v0.1
 
+创建一个R的Shiny应用，本地已经安装了R和Shiny包。
+1、使用标准的Shiny目录结构，包括ui.R、server.R、global.R等文件。
+2、在global.R中加载必要的R包，如shiny、shinythemes、DT等。
+3、在ui.R中设计Shiny的用户界面，包括标题、侧边栏、主面板等。
+4、在server.R中编写Shiny的服务器端代码，包括数据处理、模型训练、可视化等。
+5、在Shiny应用的根目录下运行shiny::runApp()，启动Shiny应用。
+6、身份验证：使用shiny的auth模块，用户信息存储在数据库中
+    1.	创建数据库和用户表，字段包括用户名、密码、角色等。
+    2.	在global.R中加载数据库包，如RSQLite、DBI等。
+    3.	在server.R中编写身份验证代码，包括登录、注册、注销等功能。
+    4.	在ui.R中添加登录界面，包括用户名、密码输入框和登录按钮。
+7、数据库：使用SQLite3数据库，存储用户信息和其他必要数据。
+    1.	创建数据库文件GH_ITOM.db，放在DB\目录下。
+        本地已有SQLite3数据库，直接建库建表。   
+    2.	在global.R中加载数据库包，如RSQLite、DBI等。
+    3.	在server.R中编写数据库连接代码，包括读取和写入数据等。
+    4.	在ui.R中添加必要的输入和输出组件，用于与数据库交互。
+8、UI设计：
+    1.	使用shinythemes包，选择一个合适的主题，如shinytheme("cosmo")。
+    2.	在ui.R中添加必要的输入和输出组件，用于与用户交互。
+    3.	使用DT包，创建交互式数据表格，用于显示和操作数据库中的数据。
+    4.	默认导航栏：使用shiny的navbarPage函数，创建一个默认的导航栏，包括首页、数据管理、模型训练、可视化、用户管理、系统设置、GitHub等选项。
+    5.	自定义导航栏：根据需要，添加自定义的导航栏选项，如用户管理、系统设置等。
+9、严格按已有ITOM1的目录结构组织代码，不要随便创建新目录和文件，保持与ITOM1的一致性。所有创建比如数据库文件、SQL脚本、r文件、logs、Script、Test等，都要放在ITOM1的对应目录下。
+10、每个功能模块为单独的r文件，如data_management.r、model_training.r、visualization.r等。不建议在server.R中直接编写功能模块的代码，而是将其放在单独的r文件中，在server.R中调用。
 
-
+10、在导航栏最右边增加退出登录按钮，点击后跳转到登录界面。
+11、创建github_autosubmit.r文件，用于自动提交GitHub的代码。
 
 旧版本ITOM1的：
 一、	准备工作1：WinClient自动部署pwsh7
