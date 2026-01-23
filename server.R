@@ -4,6 +4,9 @@ source("Script/model_training.r")
 source("Script/visualization.r")
 source("Script/user_management.r")
 source("Script/system_settings.r")
+source("Script/login_ui.r")
+source("Script/main_ui.r")
+source("Script/github_autosubmit.r")
 
 server <- function(input, output, session) {
   
@@ -11,6 +14,35 @@ server <- function(input, output, session) {
     logged_in = FALSE,
     current_user = NULL
   )
+  
+  output$app_ui <- renderUI({
+    if (!rv$logged_in) {
+      login_ui()
+    } else {
+      main_ui()
+    }
+  })
+  
+  observeEvent(input$login_btn, {
+    req(input$login_username, input$login_password)
+    
+    result <- auth_login(input$login_username, input$login_password)
+    
+    if (result$success) {
+      rv$logged_in <- TRUE
+      rv$current_user <- result$user
+      showNotification(sprintf("欢迎回来，%s！", result$user$username[1]), type = "message")
+    } else {
+      showNotification(result$message, type = "error")
+    }
+  })
+  
+  observeEvent(input$logout, {
+    result <- auth_logout()
+    rv$logged_in <- FALSE
+    rv$current_user <- NULL
+    showNotification(result$message, type = "message")
+  })
   
   observeEvent(input$refresh_data, {
     output$data_table <- renderDT({
@@ -161,5 +193,26 @@ server <- function(input, output, session) {
       options = list(pageLength = 10, scrollX = TRUE),
       rownames = FALSE
     )
+  })
+  
+  observeEvent(input$github_autosubmit, {
+    req(input$commit_message)
+    output$github_output <- renderPrint({
+      github_autosubmit(input$commit_message)
+    })
+    showNotification("代码已提交到 GitHub", type = "message")
+  })
+  
+  observeEvent(input$github_check_status, {
+    output$github_output <- renderPrint({
+      github_check_status()
+    })
+  })
+  
+  observeEvent(input$github_pull, {
+    output$github_output <- renderPrint({
+      github_pull()
+    })
+    showNotification("代码已从 GitHub 拉取", type = "message")
   })
 }
