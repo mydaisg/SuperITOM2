@@ -1,22 +1,28 @@
+# 定义主应用界面函数
+# 当用户登录成功后，server.R会调用此函数生成主界面
+# 这是应用的核心界面结构定义
 main_ui <- function() {
+  # 创建导航栏页面
+  # navbarPage是Shiny中创建带有标签页的导航栏界面的函数
   navbarPage(
-    title = "SuperITOM2",
-    theme = shinytheme("cosmo"),
+    title = "SuperITOM2",  # 应用标题
+    theme = shinytheme("cosmo"),  # 使用cosmo主题，使界面更美观
     
+    # 首页标签页
     tabPanel(
-      "首页",
-      icon = icon("home"),
-      fluidPage(
-        titlePanel("欢迎使用 SuperITOM2"),
-        br(),
-        fluidRow(
-          column(12,
-            h3("系统简介"),
-            p("SuperITOM2 是一个综合性的IT运维管理系统，提供数据管理、模型训练、可视化分析等功能。"),
+      "首页",  # 标签页标题
+      icon = icon("home"),  # 标签页图标
+      fluidPage(  # 创建流体布局页面
+        titlePanel("欢迎使用 SuperITOM2"),  # 页面标题
+        br(),  # 换行
+        fluidRow(  # 创建流体行
+          column(12,  # 创建12列宽度的列
+            h3("系统简介"),  # 三级标题
+            p("SuperITOM2 是一个综合性的IT运维管理系统，提供数据管理、模型训练、可视化分析等功能。"),  # 段落文本
             br(),
-            h4("主要功能："),
-            tags$ul(
-              tags$li("数据管理：管理IT运维数据"),
+            h4("主要功能："),  # 四级标题
+            tags$ul(  # 创建无序列表
+              tags$li("数据管理：管理IT运维数据"),  # 列表项
               tags$li("模型训练：训练预测模型"),
               tags$li("可视化：数据可视化分析"),
               tags$li("用户管理：管理系统用户"),
@@ -27,30 +33,32 @@ main_ui <- function() {
       )
     ),
     
+    # 数据管理标签页
     tabPanel(
       "数据管理",
-      icon = icon("database"),
+      icon = icon("database"),  # 数据库图标
       fluidPage(
         titlePanel("数据管理"),
-        sidebarLayout(
-          sidebarPanel(
-            textInput("data_name", "数据名称"),
-            selectInput("data_type", "数据类型", choices = c("服务器", "网络", "应用", "数据库", "其他")),
-            textAreaInput("data_value", "数据值"),
-            actionButton("add_data", "添加数据", class = "btn-primary"),
+        sidebarLayout(  # 创建侧边栏布局
+          sidebarPanel(  # 侧边栏面板
+            textInput("data_name", "数据名称"),  # 文本输入框
+            selectInput("data_type", "数据类型", choices = c("服务器", "网络", "应用", "数据库", "其他")),  # 下拉选择框
+            textAreaInput("data_value", "数据值"),  # 文本区域输入框
+            actionButton("add_data", "添加数据", class = "btn-primary"),  # 主要操作按钮
             br(), br(),
-            actionButton("refresh_data", "刷新数据", class = "btn-info")
+            actionButton("refresh_data", "刷新数据", class = "btn-info")  # 信息类按钮
           ),
-          mainPanel(
-            DTOutput("data_table")
+          mainPanel(  # 主面板
+            DTOutput("data_table")  # 数据表格输出
           )
         )
       )
     ),
     
+    # 模型训练标签页
     tabPanel(
       "模型训练",
-      icon = icon("cogs"),
+      icon = icon("cogs"),  # 齿轮图标
       fluidPage(
         titlePanel("模型训练"),
         sidebarLayout(
@@ -64,18 +72,19 @@ main_ui <- function() {
           ),
           mainPanel(
             h4("模型列表"),
-            DTOutput("model_table"),
+            DTOutput("model_table"),  # 模型表格
             br(),
             h4("训练结果"),
-            verbatimTextOutput("training_result")
+            verbatimTextOutput("training_result")  # 训练结果文本输出
           )
         )
       )
     ),
     
+    # 数据可视化标签页
     tabPanel(
       "可视化",
-      icon = icon("chart-line"),
+      icon = icon("chart-line"),  # 图表图标
       fluidPage(
         titlePanel("数据可视化"),
         sidebarLayout(
@@ -85,36 +94,38 @@ main_ui <- function() {
             actionButton("generate_viz", "生成图表", class = "btn-primary")
           ),
           mainPanel(
-            plotlyOutput("viz_plot")
+            plotlyOutput("viz_plot")  # Plotly交互式图表输出
           )
         )
       )
     ),
     
+    # 用户管理标签页
     tabPanel(
       "用户管理",
-      icon = icon("users"),
+      icon = icon("users"),  # 用户图标
       fluidPage(
         titlePanel("用户管理"),
         sidebarLayout(
           sidebarPanel(
             textInput("username", "用户名"),
-            passwordInput("password", "密码"),
+            passwordInput("password", "密码"),  # 密码输入框（隐藏输入）
             selectInput("role", "角色", choices = c("user", "admin")),
             actionButton("add_user", "添加用户", class = "btn-primary"),
             br(), br(),
             actionButton("refresh_users", "刷新用户", class = "btn-info")
           ),
           mainPanel(
-            DTOutput("user_table")
+            DTOutput("user_table")  # 用户表格
           )
         )
       )
     ),
     
+    # 系统设置标签页
     tabPanel(
       "系统设置",
-      icon = icon("settings"),
+      icon = icon("settings"),  # 设置图标
       fluidPage(
         titlePanel("系统设置"),
         sidebarLayout(
@@ -127,15 +138,16 @@ main_ui <- function() {
             actionButton("refresh_config", "刷新配置", class = "btn-info")
           ),
           mainPanel(
-            DTOutput("config_table")
+            DTOutput("config_table")  # 配置表格
           )
         )
       )
     ),
     
+    # GitHub自动提交标签页
     tabPanel(
       "GitHub",
-      icon = icon("github"),
+      icon = icon("github"),  # GitHub图标
       fluidPage(
         titlePanel("GitHub 自动提交"),
         br(),
@@ -143,26 +155,50 @@ main_ui <- function() {
           sidebarPanel(
             h4("Git 操作"),
             br(),
-            textInput("commit_message", "提交信息", value = "Auto commit from Shiny app"),
+            textInput("commit_message", "提交信息", value = "Auto commit from Shiny app"),  # 提交信息输入框
             br(), br(),
-            actionButton("github_autosubmit", "提交所有更改", icon = icon("upload"), class = "btn-primary"),
+            actionButton("github_autosubmit", "提交所有更改", icon = icon("upload"), class = "btn-primary"),  # 提交按钮
             br(), br(),
-            actionButton("github_check_status", "查看 Git 状态", icon = icon("info-circle"), class = "btn-info"),
+            actionButton("github_check_status", "查看 Git 状态", icon = icon("info-circle"), class = "btn-info"),  # 查看状态按钮
             br(), br(),
-            actionButton("github_pull", "拉取最新代码", icon = icon("download"), class = "btn-warning")
+            actionButton("github_pull", "拉取最新代码", icon = icon("download"), class = "btn-warning")  # 拉取代码按钮
           ),
           mainPanel(
             h4("操作结果"),
-            verbatimTextOutput("github_output")
+            verbatimTextOutput("github_output")  # Git操作结果输出
           )
         )
       )
     ),
     
+    # 退出登录标签页
+    # 这是一个特殊的标签页，只显示退出按钮
     tabPanel(
-      "",
-      icon = icon("sign-out"),
+      "",  # 空标题，只显示图标
+      icon = icon("sign-out"),  # 退出图标
+      # 创建退出按钮，使用btn-link样式使其看起来像链接
+      # 并通过CSS样式去除背景、边框和内边距，使其融入导航栏
       actionButton("logout", "", class = "btn-link", style = "background: none; border: none; padding: 0;")
     )
   )
 }
+
+# 界面设计原理总结：
+# 1. 模块化设计：使用函数封装界面逻辑，使代码更清晰
+# 2. 响应式布局：使用fluidPage、fluidRow、column等创建自适应布局
+# 3. 组件化结构：
+#    - navbarPage：创建顶层导航栏
+#    - tabPanel：创建各个功能标签页
+#    - sidebarLayout：创建侧边栏+主面板的布局
+#    - 各种输入组件：textInput、selectInput等
+#    - 各种输出组件：DTOutput、plotlyOutput等
+# 4. 主题应用：使用shinytheme添加美观的界面主题
+# 5. 图标使用：通过icon函数添加直观的图标，提升用户体验
+# 6. 样式定制：通过class和style参数自定义组件样式
+
+# 与server.R的交互原理：
+# - 界面中的输入组件（如actionButton、textInput）会生成对应的input$对象
+# - server.R中的observeEvent函数会监听这些input$对象的变化
+# - 当用户操作界面组件时，会触发server.R中的相应逻辑
+# - server.R通过output$对象将处理结果发送回界面显示
+# - 这种双向通信机制是Shiny应用的核心特性
