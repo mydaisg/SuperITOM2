@@ -50,24 +50,44 @@ execute_git_command <- function(args, capture_output = TRUE) {
       
       # 使用system()执行命令
       output <- system(command, intern = TRUE, ignore.stderr = TRUE)
-      status <- attr(output, "status")
-      if (is.null(status)) status <- 0  # 0表示成功
       
-      return(list(
-        status = status,
-        output = output
-      ))
+      # 处理返回值
+      if (is.logical(output) && !output) {
+        # 命令执行失败
+        status <- attr(output, "status")
+        if (is.null(status)) status <- 1
+        return(list(
+          status = status,
+          output = c("命令执行失败")
+        ))
+      } else {
+        # 命令执行成功
+        return(list(
+          status = 0,
+          output = output
+        ))
+      }
     } else {
       # 对于其他命令，使用system()
       command <- paste("git", paste(args, collapse = " "))
       output <- system(command, intern = TRUE, ignore.stderr = TRUE)
-      status <- attr(output, "status")
-      if (is.null(status)) status <- 0  # 0表示成功
       
-      return(list(
-        status = status,
-        output = output
-      ))
+      # 处理返回值
+      if (is.logical(output) && !output) {
+        # 命令执行失败
+        status <- attr(output, "status")
+        if (is.null(status)) status <- 1
+        return(list(
+          status = status,
+          output = c("命令执行失败")
+        ))
+      } else {
+        # 命令执行成功
+        return(list(
+          status = 0,
+          output = output
+        ))
+      }
     }
   }, error = function(e) {
     return(list(
