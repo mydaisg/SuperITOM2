@@ -179,19 +179,29 @@ github_autosubmit <- function(commit_message = "Auto commit from R script", bran
     cat("准备执行push命令:\n", push_command, "\n")
     
     # 执行push命令
-    push_output <- system(push_command, intern = TRUE, ignore.stderr = TRUE)
-    cat("push命令执行结果类型:", class(push_output), "\n")
-    cat("push命令执行结果:", push_output, "\n")
-    
-    output_text <- c(output_text, "推送到远程仓库:\n")
-    output_text <- c(output_text, paste(push_output, collapse = "\n"), "\n\n")
-    
-    # 检查push是否成功
-    if (is.logical(push_output) && !push_output) {
-      output_text <- c(output_text, "错误: 推送失败\n")
-      cat("push失败，返回结果:\n", output_text, "\n")
+    tryCatch({
+      cat("开始执行push命令...\n")
+      # 设置超时时间为30秒
+      push_output <- system(push_command, intern = TRUE, ignore.stderr = TRUE, timeout = 30)
+      cat("push命令执行结果类型:", class(push_output), "\n")
+      cat("push命令执行结果:", push_output, "\n")
+      
+      output_text <- c(output_text, "推送到远程仓库:\n")
+      output_text <- c(output_text, paste(push_output, collapse = "\n"), "\n\n")
+      
+      # 检查push是否成功
+      if (is.logical(push_output) && !push_output) {
+        output_text <- c(output_text, "错误: 推送失败\n")
+        cat("push失败，返回结果:\n", output_text, "\n")
+        return(paste(output_text, collapse = ""))
+      }
+    }, error = function(e) {
+      output_text <- c(output_text, "错误: 推送失败:", e$message, "\n")
+      cat("push命令执行出错:", e$message, "\n")
       return(paste(output_text, collapse = ""))
-    }
+    }, finally = {
+      cat("push命令执行完成\n")
+    })
     
     # 所有操作成功完成
     output_text <- c(output_text, "代码已成功提交到 GitHub!\n")
