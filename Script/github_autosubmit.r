@@ -134,6 +134,7 @@ github_autosubmit <- function(commit_message = "Auto commit from R script", bran
     # 检查是否有更改需要提交
     if (any(grepl("nothing to commit", status_result$output, ignore.case = TRUE))) {
       output_text <- c(output_text, "提示: 没有更改需要提交\n")
+      cat("没有更改需要提交，返回结果:\n", output_text, "\n")
       return(paste(output_text, collapse = ""))
     }
     
@@ -143,9 +144,11 @@ github_autosubmit <- function(commit_message = "Auto commit from R script", bran
     if (add_result$status != 0) {
       output_text <- c(output_text, "错误: 添加更改失败:\n")
       output_text <- c(output_text, paste(add_result$output, collapse = "\n"), "\n")
+      cat("添加更改失败，返回结果:\n", output_text, "\n")
       return(paste(output_text, collapse = ""))
     }
     output_text <- c(output_text, "已成功添加所有更改到暂存区\n\n")
+    cat("添加更改成功，继续执行...\n")
     
     # 提交更改
     output_text <- c(output_text, "提交更改...\n")
