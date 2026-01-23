@@ -149,25 +149,33 @@ github_autosubmit <- function(commit_message = "Auto commit from R script", bran
     
     # 提交更改
     output_text <- c(output_text, "提交更改...\n")
-    # 确保commit_message作为单个参数传递
-    commit_args <- c("commit", "-m", commit_message)
-    output_text <- c(output_text, sprintf("执行命令: git %s\n", paste(commit_args, collapse = " ")))
-    commit_result <- execute_git_command(commit_args)
-    output_text <- c(output_text, "提交信息:\n")
-    output_text <- c(output_text, paste(commit_result$output, collapse = "\n"), "\n\n")
+    # 构建commit命令
+    commit_command <- sprintf("git commit -m \"%s\"", commit_message)
+    output_text <- c(output_text, sprintf("执行命令: %s\n", commit_command))
     
-    if (commit_result$status != 0) {
+    # 执行commit命令
+    commit_output <- system(commit_command, intern = TRUE, ignore.stderr = TRUE)
+    output_text <- c(output_text, "提交信息:\n")
+    output_text <- c(output_text, paste(commit_output, collapse = "\n"), "\n\n")
+    
+    # 检查commit是否成功
+    if (is.logical(commit_output) && !commit_output) {
       output_text <- c(output_text, "错误: 提交失败\n")
       return(paste(output_text, collapse = ""))
     }
     
     # 推送到远程仓库
     output_text <- c(output_text, "推送到远程仓库...\n")
-    push_result <- execute_git_command(c("push", "origin", branch))
-    output_text <- c(output_text, "推送到远程仓库:\n")
-    output_text <- c(output_text, paste(push_result$output, collapse = "\n"), "\n\n")
+    push_command <- sprintf("git push origin %s", branch)
+    output_text <- c(output_text, sprintf("执行命令: %s\n", push_command))
     
-    if (push_result$status != 0) {
+    # 执行push命令
+    push_output <- system(push_command, intern = TRUE, ignore.stderr = TRUE)
+    output_text <- c(output_text, "推送到远程仓库:\n")
+    output_text <- c(output_text, paste(push_output, collapse = "\n"), "\n\n")
+    
+    # 检查push是否成功
+    if (is.logical(push_output) && !push_output) {
       output_text <- c(output_text, "错误: 推送失败\n")
       return(paste(output_text, collapse = ""))
     }
