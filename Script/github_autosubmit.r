@@ -181,8 +181,8 @@ github_autosubmit <- function(commit_message = "Auto commit from R script", bran
     # 执行push命令
     tryCatch({
       cat("开始执行push命令...\n")
-      # 设置超时时间为30秒
-      push_output <- system(push_command, intern = TRUE, ignore.stderr = TRUE, timeout = 30)
+      # 移除timeout参数，Windows上可能不支持
+      push_output <- system(push_command, intern = TRUE, ignore.stderr = TRUE)
       cat("push命令执行结果类型:", class(push_output), "\n")
       cat("push命令执行结果:", push_output, "\n")
       
