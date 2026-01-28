@@ -28,8 +28,12 @@ v0.1
 9、严格按已有ITOM1的目录结构组织代码，不要随便创建新目录和文件，保持与ITOM1的一致性。所有创建比如数据库文件、SQL脚本、r文件、logs、Script、Test等，都要放在ITOM1的对应目录下。
 10、每个功能模块为单独的r文件，如data_management.r、model_training.r、visualization.r等。不建议在server.R中直接编写功能模块的代码，而是将其放在单独的r文件中，在server.R中调用。
 
+保持之前的约定，用同样方式增加一个功能和一个脚本：
 10、在导航栏最右边增加退出登录按钮，点击后跳转到登录界面。
 11、创建github_autosubmit.r文件，用于自动提交GitHub的代码。
+
+探讨一个问题，基于R+Shiny+SQLite3做个ITOM用于企业内部100人使用，有难度和瓶颈吗？
+
 
 旧版本ITOM1的：
 一、	准备工作1：WinClient自动部署pwsh7

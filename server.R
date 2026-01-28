@@ -9,6 +9,7 @@ source("Script/system_settings.r")  # 系统设置模块
 source("Script/login_ui.r")         # 登录界面定义
 source("Script/main_ui.r")          # 主界面定义
 source("Script/github_autosubmit.r") # GitHub自动提交功能
+source("Script/std_computer.r")        # 标准化模块
 
 # 定义server函数
 # 这是Shiny应用的服务器逻辑核心
@@ -295,6 +296,9 @@ server <- function(input, output, session) {
     # 显示操作结果通知
     showNotification("代码已从 GitHub 拉取", type = "message")
   })
+  
+  # 标准化模块逻辑
+  std_server(input, output, session)
 }
 
 # 总结：

@@ -1,6 +1,10 @@
 # 定义主应用界面函数
 # 当用户登录成功后，server.R会调用此函数生成主界面
 # 这是应用的核心界面结构定义
+
+# 加载标准化模块
+source("Script/std_computer.r")
+
 main_ui <- function() {
   # 创建导航栏页面
   # navbarPage是Shiny中创建带有标签页的导航栏界面的函数
@@ -18,19 +22,28 @@ main_ui <- function() {
         fluidRow(  # 创建流体行
           column(12,  # 创建12列宽度的列
             h3("系统简介"),  # 三级标题
-            p("SuperITOM2 是一个综合性的IT运维管理系统，提供数据管理、模型训练、可视化分析等功能。"),  # 段落文本
+            p("SuperITOM2 是一个综合性的IT运维管理系统，提供标准化作业、远程批量自动作业、作业记录泛应用、数据管理、模型训练、可视化分析等功能。"),  # 段落文本
             br(),
             h4("主要功能："),  # 四级标题
             tags$ul(  # 创建无序列表
+              tags$li("标准化：远程对新计算机进行标准化配置"), 
               tags$li("数据管理：管理IT运维数据"),  # 列表项
               tags$li("模型训练：训练预测模型"),
               tags$li("可视化：数据可视化分析"),
               tags$li("用户管理：管理系统用户"),
-              tags$li("系统设置：配置系统参数")
+              tags$li("系统设置：配置系统参数"),
+               tags$li("作业自动化：通过ITOM实现客户端标准化作业远程化和自动化、日常IT服务远程化和脚本化、作业记录自动按模板生成日报消息/交付消息/写入日志")
             )
           )
         )
       )
+    ),
+    
+    # 标准化标签页
+    tabPanel(
+      "标准化",
+      icon = icon("cogs"),  # 齿轮图标
+      std_ui()
     ),
     
     # 数据管理标签页
@@ -155,7 +168,7 @@ main_ui <- function() {
           sidebarPanel(
             h4("Git 操作"),
             br(),
-            textInput("commit_message", "提交信息", value = "Auto commit from Shiny app"),  # 提交信息输入框
+            textInput("commit_message", "提交信息", value = "Commit from ITOM2"),  # 提交信息输入框
             br(), br(),
             actionButton("github_autosubmit", "提交所有更改", icon = icon("upload"), class = "btn-primary"),  # 提交按钮
             br(), br(),
