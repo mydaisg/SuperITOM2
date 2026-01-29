@@ -4,6 +4,10 @@ auth_login <- function(username, password) {
     query <- sprintf("SELECT * FROM users WHERE username = '%s' AND password = '%s'", username, password)
     result <- dbGetQuery(con, query)
     if (nrow(result) > 0) {
+      # 检查用户是否被禁用
+      if (exists('active', result) && result$active[1] == 0) {
+        return(list(success = FALSE, message = "您的账号已被禁用，请联系管理员"))
+      }
       return(list(success = TRUE, user = result))
     } else {
       return(list(success = FALSE, message = "用户名或密码错误"))

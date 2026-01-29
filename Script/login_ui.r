@@ -1,3 +1,9 @@
+
+# 全局声明Shiny UI函数以消除lint警告
+if (getRversion() >= "2.15.1") {
+  utils::globalVariables(c("tagList", "div", "h2", "textInput", "passwordInput", "actionButton", "p"))
+}
+
 login_ui <- function() {
   tagList(
     div(

@@ -2,6 +2,18 @@
 # 当用户登录成功后，server.R会调用此函数生成主界面
 # 这是应用的核心界面结构定义
 
+# 全局声明Shiny UI函数以消除lint警告
+if (getRversion() >= "2.15.1") {
+  utils::globalVariables(c("navbarPage", "tabPanel", "fluidPage", "sidebarLayout", "sidebarPanel",
+                          "mainPanel", "textInput", "passwordInput", "selectInput", "actionButton",
+                          "DTOutput", "plotlyOutput", "verbatimTextOutput", "icon", "tagList",
+                          "tags", "div", "h2", "h3", "h4", "p", "ul", "li", "titlePanel",
+                          "fluidRow", "column", "hidden"))
+}
+
+# 显式声明passwordInput函数
+passwordInput <- shiny::passwordInput
+
 # 加载标准化模块
 source("Script/std_computer.r")
 
@@ -121,10 +133,15 @@ main_ui <- function() {
         titlePanel("用户管理"),
         sidebarLayout(
           sidebarPanel(
+            tags$div(textInput("selected_user_id", "", value = ""), style = "display: none;"),
             textInput("username", "用户名"),
             passwordInput("password", "密码"),  # 密码输入框（隐藏输入）
             selectInput("role", "角色", choices = c("user", "admin")),
             actionButton("add_user", "添加用户", class = "btn-primary"),
+            br(), br(),
+            actionButton("update_user", "修改账号", class = "btn-warning"),
+            br(), br(),
+            actionButton("toggle_active_user", "禁用/启用用户", class = "btn-danger"),
             br(), br(),
             actionButton("refresh_users", "刷新用户", class = "btn-info")
           ),
@@ -138,7 +155,7 @@ main_ui <- function() {
     # 系统设置标签页
     tabPanel(
       "系统设置",
-      icon = icon("settings"),  # 设置图标
+      icon = icon("cogs"),  # 设置图标
       fluidPage(
         titlePanel("系统设置"),
         sidebarLayout(

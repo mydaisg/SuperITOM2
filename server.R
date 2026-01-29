@@ -196,17 +196,34 @@ server <- function(input, output, session) {
       DT::datatable(
         user_get_all(),  # 获取所有用户
         options = list(pageLength = 10, scrollX = TRUE),
-        rownames = FALSE
+        rownames = FALSE,
+        selection = list(mode = 'single', target = 'row', selected = integer(0))
       )
     })
+  })
+  
+  # 处理用户表格点击事件
+  observeEvent(input$user_table_rows_selected, {
+    # 获取选中的用户信息
+    selected_rows <- input$user_table_rows_selected
+    if (length(selected_rows) > 0) {
+      # 获取用户数据
+      users <- user_get_all()
+      selected_user <- users[selected_rows, ]
+      # 将用户信息填充到输入框中
+      updateTextInput(session, "selected_user_id", value = selected_user$id)
+      updateTextInput(session, "username", value = selected_user$username)
+      updateTextInput(session, "password", value = "")
+      updateSelectInput(session, "role", selected = selected_user$role)
+    }
   })
   
   # 处理添加用户按钮点击事件
   observeEvent(input$add_user, {
     # 确保必要输入存在
     req(input$username, input$password, input$role)
-    # 调用user_add函数添加用户
-    result <- user_add(input$username, input$password, input$role)
+    # 调用user_add函数添加用户，传递当前用户信息
+    result <- user_add(input$username, input$password, input$role, rv$current_user)
     # 显示操作结果通知
     showNotification(result$message, type = ifelse(result$success, "message", "error"))
     # 刷新用户表格
@@ -214,9 +231,63 @@ server <- function(input, output, session) {
       DT::datatable(
         user_get_all(),
         options = list(pageLength = 10, scrollX = TRUE),
-        rownames = FALSE
+        rownames = FALSE,
+        selection = list(mode = 'single', target = 'row', selected = integer(0))
       )
     })
+    # 清空输入框
+    updateTextInput(session, "selected_user_id", value = "")
+    updateTextInput(session, "username", value = "")
+    updateTextInput(session, "password", value = "")
+    updateSelectInput(session, "role", selected = "user")
+  })
+  
+  # 处理修改账号按钮点击事件
+  observeEvent(input$update_user, {
+    # 确保必要输入存在
+    req(input$selected_user_id, input$username, input$role)
+    # 调用user_update函数更新用户信息，传递当前用户信息和密码
+    result <- user_update(input$selected_user_id, input$username, input$role, input$password, rv$current_user)
+    # 显示操作结果通知
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    # 刷新用户表格
+    output$user_table <- renderDT({
+      DT::datatable(
+        user_get_all(),
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE,
+        selection = list(mode = 'single', target = 'row', selected = integer(0))
+      )
+    })
+    # 清空输入框
+    updateTextInput(session, "selected_user_id", value = "")
+    updateTextInput(session, "username", value = "")
+    updateTextInput(session, "password", value = "")
+    updateSelectInput(session, "role", selected = "user")
+  })
+  
+  # 处理禁用/启用用户按钮点击事件
+  observeEvent(input$toggle_active_user, {
+    # 确保必要输入存在
+    req(input$selected_user_id)
+    # 调用user_toggle_active函数切换用户状态，传递当前用户信息
+    result <- user_toggle_active(input$selected_user_id, rv$current_user)
+    # 显示操作结果通知
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    # 刷新用户表格
+    output$user_table <- renderDT({
+      DT::datatable(
+        user_get_all(),
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE,
+        selection = list(mode = 'single', target = 'row', selected = integer(0))
+      )
+    })
+    # 清空输入框
+    updateTextInput(session, "selected_user_id", value = "")
+    updateTextInput(session, "username", value = "")
+    updateTextInput(session, "password", value = "")
+    updateSelectInput(session, "role", selected = "user")
   })
   
   # 初始渲染用户表格
@@ -224,7 +295,8 @@ server <- function(input, output, session) {
     DT::datatable(
       user_get_all(),
       options = list(pageLength = 10, scrollX = TRUE),
-      rownames = FALSE
+      rownames = FALSE,
+      selection = list(mode = 'single', target = 'row', selected = integer(0))
     )
   })
   
