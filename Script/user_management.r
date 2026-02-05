@@ -1,3 +1,5 @@
+source("Script/log_user.r")
+
 user_get_all <- function() {
   con <- db_connect()
   tryCatch({
@@ -33,8 +35,16 @@ user_add <- function(username, password, role = "user", current_user = NULL) {
     query <- sprintf("INSERT INTO users (username, password, role, active) VALUES ('%s', '%s', '%s', 1)", 
                      username, password, role)
     dbExecute(con, query)
+    
+    # 记录日志
+    operator_name <- ifelse(is.null(current_user), "系统", current_user$username[1])
+    log_user_add(username, role, operator_name)
+    
     return(list(success = TRUE, message = "用户添加成功"))
   }, error = function(e) {
+    # 记录错误日志
+    operator_name <- ifelse(is.null(current_user), "系统", current_user$username[1])
+    log_user_error("添加用户", e$message, operator_name)
     return(list(success = FALSE, message = paste("添加失败:", e$message)))
   }, finally = {
     db_disconnect(con)
@@ -52,10 +62,23 @@ user_delete <- function(id, current_user = NULL) {
   
   con <- db_connect()
   tryCatch({
+    # 获取被删除用户的用户名
+    get_user_query <- sprintf("SELECT username FROM users WHERE id = %d", id)
+    user_result <- dbGetQuery(con, get_user_query)
+    username_to_delete <- ifelse(nrow(user_result) > 0, user_result$username[1], "unknown")
+    
     query <- sprintf("DELETE FROM users WHERE id = %d", id)
     dbExecute(con, query)
+    
+    # 记录日志
+    operator_name <- ifelse(is.null(current_user), "系统", current_user$username[1])
+    log_user_delete(username_to_delete, operator_name)
+    
     return(list(success = TRUE, message = "用户删除成功"))
   }, error = function(e) {
+    # 记录错误日志
+    operator_name <- ifelse(is.null(current_user), "系统", current_user$username[1])
+    log_user_error("删除用户", e$message, operator_name)
     return(list(success = FALSE, message = paste("删除失败:", e$message)))
   }, finally = {
     db_disconnect(con)
@@ -81,8 +104,16 @@ user_update <- function(id, username, role, password = NULL, current_user = NULL
                        username, role, id)
     }
     dbExecute(con, query)
+    
+    # 记录日志
+    operator_name <- ifelse(is.null(current_user), "系统", current_user$username[1])
+    log_user_update(username, role, operator_name, !is.null(password) && password != "")
+    
     return(list(success = TRUE, message = "用户更新成功"))
   }, error = function(e) {
+    # 记录错误日志
+    operator_name <- ifelse(is.null(current_user), "系统", current_user$username[1])
+    log_user_error("更新用户", e$message, operator_name)
     return(list(success = FALSE, message = paste("更新失败:", e$message)))
   }, finally = {
     db_disconnect(con)
@@ -107,8 +138,21 @@ user_update_password <- function(id, password, current_user = NULL) {
     query <- sprintf("UPDATE users SET password = '%s', updated_at = CURRENT_TIMESTAMP WHERE id = %d", 
                      password, user_id)
     dbExecute(con, query)
+    
+    # 获取被更新用户的用户名
+    get_user_query <- sprintf("SELECT username FROM users WHERE id = %d", user_id)
+    user_result <- dbGetQuery(con, get_user_query)
+    username_updated <- ifelse(nrow(user_result) > 0, user_result$username[1], "unknown")
+    
+    # 记录日志
+    operator_name <- current_user$username[1]
+    log_user_update(username_updated, "", operator_name, TRUE)
+    
     return(list(success = TRUE, message = "密码更新成功"))
   }, error = function(e) {
+    # 记录错误日志
+    operator_name <- ifelse(is.null(current_user), "系统", current_user$username[1])
+    log_user_error("更新密码", e$message, operator_name)
     return(list(success = FALSE, message = paste("更新失败:", e$message)))
   }, finally = {
     db_disconnect(con)
@@ -127,19 +171,30 @@ user_toggle_active <- function(id, current_user = NULL) {
   con <- db_connect()
   tryCatch({
     # 检查用户是否存在
-    check_query <- sprintf("SELECT id FROM users WHERE id = %d", id)
+    check_query <- sprintf("SELECT id, username, active FROM users WHERE id = %d", id)
     result <- dbGetQuery(con, check_query)
     
     if (nrow(result) == 0) {
       return(list(success = FALSE, message = "用户不存在"))
     }
     
+    # 获取当前状态
+    current_status <- result$active[1]
+    new_status <- ifelse(current_status == 1, 0, 1)
+    
     # 切换用户状态
     toggle_query <- sprintf("UPDATE users SET active = NOT active, updated_at = CURRENT_TIMESTAMP WHERE id = %d", id)
     dbExecute(con, toggle_query)
     
+    # 记录日志
+    operator_name <- ifelse(is.null(current_user), "系统", current_user$username[1])
+    log_user_toggle_active(result$username[1], new_status, operator_name)
+    
     return(list(success = TRUE, message = "用户状态切换成功"))
   }, error = function(e) {
+    # 记录错误日志
+    operator_name <- ifelse(is.null(current_user), "系统", current_user$username[1])
+    log_user_error("切换用户状态", e$message, operator_name)
     return(list(success = FALSE, message = paste("操作失败:", e$message)))
   }, finally = {
     db_disconnect(con)
