@@ -71,6 +71,13 @@ server <- function(input, output, session) {
     # 重置登录状态和用户信息
     rv$logged_in <- FALSE
     rv$current_user <- NULL
+    # 清空所有输入框
+    updateTextInput(session, "login_username", value = "")
+    updateTextInput(session, "login_password", value = "")
+    # 强制重新渲染UI
+    output$app_ui <- renderUI({
+      login_ui()
+    })
     # 显示注销成功通知
     showNotification(result$message, type = "message")
   })
