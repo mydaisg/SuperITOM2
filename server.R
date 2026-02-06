@@ -71,19 +71,17 @@ server <- function(input, output, session) {
     # 重置登录状态和用户信息
     rv$logged_in <- FALSE
     rv$current_user <- NULL
-    # 清空所有输入框
-    updateTextInput(session, "login_username", value = "")
-    updateTextInput(session, "login_password", value = "")
-    # 强制重新渲染UI
-    output$app_ui <- renderUI({
-      login_ui()
-    })
     # 显示注销成功通知
     showNotification(result$message, type = "message")
+    # 延迟后重新加载页面，确保回到登录界面
+    Sys.sleep(0.5)
+    session$reload()
   })
   
   # 处理数据刷新按钮点击事件
   observeEvent(input$refresh_data, {
+    # 检查登录状态
+    req(rv$logged_in)
     # 更新数据表格输出
     output$data_table <- renderDT({
       DT::datatable(
@@ -97,6 +95,8 @@ server <- function(input, output, session) {
   
   # 处理添加数据按钮点击事件
   observeEvent(input$add_data, {
+    # 检查登录状态
+    req(rv$logged_in)
     # 确保必要输入存在
     req(input$data_name, input$data_type, input$data_value)
     # 调用data_add函数添加数据
@@ -127,6 +127,8 @@ server <- function(input, output, session) {
   
   # 处理模型刷新按钮点击事件
   observeEvent(input$refresh_models, {
+    # 检查登录状态
+    req(rv$logged_in)
     # 更新模型表格输出
     output$model_table <- renderDT({
       DT::datatable(
@@ -139,6 +141,8 @@ server <- function(input, output, session) {
   
   # 处理模型训练按钮点击事件
   observeEvent(input$train_model, {
+    # 检查登录状态
+    req(rv$logged_in)
     # 确保必要输入存在
     req(input$model_name, input$model_type)
     
@@ -184,6 +188,8 @@ server <- function(input, output, session) {
   
   # 处理生成可视化按钮点击事件
   observeEvent(input$generate_viz, {
+    # 检查登录状态
+    req(rv$logged_in)
     # 更新可视化图表输出
     output$viz_plot <- renderPlotly({
       # 调用viz_generate函数生成可视化图表
@@ -198,6 +204,8 @@ server <- function(input, output, session) {
   
   # 处理用户刷新按钮点击事件
   observeEvent(input$refresh_users, {
+    # 检查登录状态
+    req(rv$logged_in)
     # 更新用户表格输出
     output$user_table <- renderDT({
       DT::datatable(
@@ -211,6 +219,8 @@ server <- function(input, output, session) {
   
   # 处理用户表格点击事件
   observeEvent(input$user_table_rows_selected, {
+    # 检查登录状态
+    req(rv$logged_in)
     # 获取选中的用户信息
     selected_rows <- input$user_table_rows_selected
     if (length(selected_rows) > 0) {
@@ -227,6 +237,8 @@ server <- function(input, output, session) {
   
   # 处理添加用户按钮点击事件
   observeEvent(input$add_user, {
+    # 检查登录状态
+    req(rv$logged_in)
     # 确保必要输入存在
     req(input$username, input$password, input$role)
     # 调用user_add函数添加用户，传递当前用户信息
@@ -251,6 +263,8 @@ server <- function(input, output, session) {
   
   # 处理修改账号按钮点击事件
   observeEvent(input$update_user, {
+    # 检查登录状态
+    req(rv$logged_in)
     # 确保必要输入存在
     req(input$selected_user_id, input$username, input$role)
     # 调用user_update函数更新用户信息，传递当前用户信息和密码
@@ -275,6 +289,8 @@ server <- function(input, output, session) {
   
   # 处理禁用/启用用户按钮点击事件
   observeEvent(input$toggle_active_user, {
+    # 检查登录状态
+    req(rv$logged_in)
     # 确保必要输入存在
     req(input$selected_user_id)
     # 调用user_toggle_active函数切换用户状态，传递当前用户信息
@@ -309,6 +325,8 @@ server <- function(input, output, session) {
   
   # 处理配置刷新按钮点击事件
   observeEvent(input$refresh_config, {
+    # 检查登录状态
+    req(rv$logged_in)
     # 更新配置表格输出
     output$config_table <- renderDT({
       DT::datatable(
@@ -321,6 +339,8 @@ server <- function(input, output, session) {
   
   # 处理添加配置按钮点击事件
   observeEvent(input$add_config, {
+    # 检查登录状态
+    req(rv$logged_in)
     # 确保必要输入存在
     req(input$config_key, input$config_value)
     # 调用config_add函数添加配置

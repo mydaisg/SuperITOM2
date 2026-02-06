@@ -29,7 +29,7 @@ main_ui <- function() {
       "首页",  # 标签页标题
       icon = icon("home"),  # 标签页图标
       fluidPage(  # 创建流体布局页面
-        titlePanel("欢迎使用 SuperITOM2"),  # 页面标题
+        titlePanel("欢迎使用 Super ITOM 2"),  # 页面标题
         br(),  # 换行
         fluidRow(  # 创建流体行
           column(12,  # 创建12列宽度的列
@@ -60,10 +60,10 @@ main_ui <- function() {
     
     # 数据管理标签页
     tabPanel(
-      "数据管理",
+      "数据",
       icon = icon("database"),  # 数据库图标
       fluidPage(
-        titlePanel("数据管理"),
+        titlePanel("数据"),
         sidebarLayout(  # 创建侧边栏布局
           sidebarPanel(  # 侧边栏面板
             textInput("data_name", "数据名称"),  # 文本输入框
@@ -82,10 +82,10 @@ main_ui <- function() {
     
     # 模型训练标签页
     tabPanel(
-      "模型训练",
+      "模型",
       icon = icon("cogs"),  # 齿轮图标
       fluidPage(
-        titlePanel("模型训练"),
+        titlePanel("模型"),
         sidebarLayout(
           sidebarPanel(
             textInput("model_name", "模型名称"),
@@ -194,41 +194,26 @@ main_ui <- function() {
             actionButton("github_pull", "拉取最新代码", icon = icon("download"), class = "btn-warning")  # 拉取代码按钮
           ),
           mainPanel(
-            h4("操作结果"),
-            verbatimTextOutput("github_output")  # Git操作结果输出
+            h4("Git 状态"),
+            verbatimTextOutput("git_status"),  # Git状态文本输出
+            br(),
+            h4("提交结果"),
+            verbatimTextOutput("git_result")  # 提交结果文本输出
           )
         )
       )
     ),
     
-    # 退出登录标签页
-    # 这是一个特殊的标签页，只显示退出按钮
+    # 添加退出登录标签页
     tabPanel(
-      "",  # 空标题，只显示图标
-      icon = icon("sign-out"),  # 退出图标
-      # 创建退出按钮，使用btn-link样式使其看起来像链接
-      # 并通过CSS样式去除背景、边框和内边距，使其融入导航栏
-      actionButton("logout", "", class = "btn-link", style = "background: none; border: none; padding: 0;")
+      "退出",
+      icon = icon("sign-out-alt"),
+      fluidPage(
+        titlePanel("退出登录"),
+        h3("您确定要退出登录吗？"),
+        br(),
+        actionButton("logout", "确认退出", class = "btn-danger")
+      )
     )
   )
 }
-
-# 界面设计原理总结：
-# 1. 模块化设计：使用函数封装界面逻辑，使代码更清晰
-# 2. 响应式布局：使用fluidPage、fluidRow、column等创建自适应布局
-# 3. 组件化结构：
-#    - navbarPage：创建顶层导航栏
-#    - tabPanel：创建各个功能标签页
-#    - sidebarLayout：创建侧边栏+主面板的布局
-#    - 各种输入组件：textInput、selectInput等
-#    - 各种输出组件：DTOutput、plotlyOutput等
-# 4. 主题应用：使用shinytheme添加美观的界面主题
-# 5. 图标使用：通过icon函数添加直观的图标，提升用户体验
-# 6. 样式定制：通过class和style参数自定义组件样式
-
-# 与server.R的交互原理：
-# - 界面中的输入组件（如actionButton、textInput）会生成对应的input$对象
-# - server.R中的observeEvent函数会监听这些input$对象的变化
-# - 当用户操作界面组件时，会触发server.R中的相应逻辑
-# - server.R通过output$对象将处理结果发送回界面显示
-# - 这种双向通信机制是Shiny应用的核心特性
