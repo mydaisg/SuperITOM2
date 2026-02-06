@@ -8,7 +8,7 @@ if (getRversion() >= "2.15.1") {
                           "mainPanel", "textInput", "passwordInput", "selectInput", "actionButton",
                           "DTOutput", "plotlyOutput", "verbatimTextOutput", "icon", "tagList",
                           "tags", "div", "h2", "h3", "h4", "p", "ul", "li", "titlePanel",
-                          "fluidRow", "column", "hidden"))
+                          "fluidRow", "column", "hidden", "textAreaInput"))
 }
 
 # 显式声明passwordInput函数
@@ -46,6 +46,72 @@ main_ui <- function() {
               tags$li("系统设置：配置系统参数"),
                tags$li("作业自动化：通过ITOM实现客户端标准化作业远程化和自动化、日常IT服务远程化和脚本化、作业记录自动按模板生成日报消息/交付消息/写入日志")
             )
+          )
+        )
+      )
+    ),
+    
+    # 工单标签页
+    tabPanel(
+      "工单",
+      icon = icon("clipboard-list"),  # 工单图标
+      fluidPage(
+        titlePanel("工单管理"),
+        sidebarLayout(
+          sidebarPanel(
+            textInput("work_order_title", "工单标题"),
+            textAreaInput("work_order_description", "工单描述"),
+            selectInput("work_order_priority", "优先级", choices = c("低", "中", "高", "紧急")),
+            actionButton("add_work_order", "创建工单", class = "btn-primary"),
+            br(), br(),
+            actionButton("refresh_work_orders", "刷新工单", class = "btn-info")
+          ),
+          mainPanel(
+            DTOutput("work_order_table")
+          )
+        )
+      )
+    ),
+    
+    # 收集器标签页
+    tabPanel(
+      "收集器",
+      icon = icon("download"),  # 收集器图标
+      fluidPage(
+        titlePanel("信息收集器"),
+        sidebarLayout(
+          sidebarPanel(
+            textInput("collector_name", "收集器名称"),
+            selectInput("collector_type", "收集器类型", choices = c("系统信息", "网络信息", "应用信息", "数据库信息")),
+            textAreaInput("collector_config", "收集器配置"),
+            actionButton("add_collector", "添加收集器", class = "btn-primary"),
+            br(), br(),
+            actionButton("refresh_collectors", "刷新收集器", class = "btn-info")
+          ),
+          mainPanel(
+            DTOutput("collector_table")
+          )
+        )
+      )
+    ),
+    
+    # 巡检标签页
+    tabPanel(
+      "巡检",
+      icon = icon("search"),  # 巡检图标
+      fluidPage(
+        titlePanel("巡检管理"),
+        sidebarLayout(
+          sidebarPanel(
+            textInput("inspection_name", "巡检名称"),
+            selectInput("inspection_type", "巡检类型", choices = c("系统巡检", "网络巡检", "安全巡检", "应用巡检")),
+            textAreaInput("inspection_schedule", "巡检计划"),
+            actionButton("add_inspection", "创建巡检", class = "btn-primary"),
+            br(), br(),
+            actionButton("refresh_inspections", "刷新巡检", class = "btn-info")
+          ),
+          mainPanel(
+            DTOutput("inspection_table")
           )
         )
       )

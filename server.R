@@ -6,6 +6,9 @@ source("Script/model_training.r")   # 模型训练模块
 source("Script/visualization.r")    # 数据可视化模块
 source("Script/user_management.r")   # 用户管理模块
 source("Script/system_settings.r")  # 系统设置模块
+source("Script/work_order.r")       # 工单管理模块
+source("Script/information_collector.r")  # 信息收集器模块
+source("Script/inspection_patrol.r")    # 巡检管理模块
 source("Script/login_ui.r")         # 登录界面定义
 source("Script/main_ui.r")          # 主界面定义
 source("Script/github_autosubmit.r") # GitHub自动提交功能
@@ -123,6 +126,135 @@ server <- function(input, output, session) {
       editable = TRUE,
       rownames = FALSE
     )
+  })
+  
+  # 初始渲染工单表格
+  output$work_order_table <- renderDT({
+    DT::datatable(
+      work_order_get_all(),
+      options = list(pageLength = 10, scrollX = TRUE),
+      rownames = FALSE
+    )
+  })
+  
+  # 处理创建工单按钮点击事件
+  observeEvent(input$add_work_order, {
+    # 检查登录状态
+    req(rv$logged_in)
+    # 确保必要输入存在
+    req(input$work_order_title, input$work_order_description, input$work_order_priority)
+    # 调用work_order_add函数创建工单
+    result <- work_order_add(input$work_order_title, input$work_order_description, input$work_order_priority, rv$current_user)
+    # 显示操作结果通知
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    # 刷新工单表格
+    output$work_order_table <- renderDT({
+      DT::datatable(
+        work_order_get_all(),
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE
+      )
+    })
+  })
+  
+  # 处理刷新工单按钮点击事件
+  observeEvent(input$refresh_work_orders, {
+    # 检查登录状态
+    req(rv$logged_in)
+    # 刷新工单表格
+    output$work_order_table <- renderDT({
+      DT::datatable(
+        work_order_get_all(),
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE
+      )
+    })
+  })
+  
+  # 初始渲染收集器表格
+  output$collector_table <- renderDT({
+    DT::datatable(
+      info_collector_get_all(),
+      options = list(pageLength = 10, scrollX = TRUE),
+      rownames = FALSE
+    )
+  })
+  
+  # 处理添加收集器按钮点击事件
+  observeEvent(input$add_collector, {
+    # 检查登录状态
+    req(rv$logged_in)
+    # 确保必要输入存在
+    req(input$collector_name, input$collector_type, input$collector_config)
+    # 调用info_collector_add函数添加收集器
+    result <- info_collector_add(input$collector_name, input$collector_type, input$collector_config, rv$current_user)
+    # 显示操作结果通知
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    # 刷新收集器表格
+    output$collector_table <- renderDT({
+      DT::datatable(
+        info_collector_get_all(),
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE
+      )
+    })
+  })
+  
+  # 处理刷新收集器按钮点击事件
+  observeEvent(input$refresh_collectors, {
+    # 检查登录状态
+    req(rv$logged_in)
+    # 刷新收集器表格
+    output$collector_table <- renderDT({
+      DT::datatable(
+        info_collector_get_all(),
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE
+      )
+    })
+  })
+  
+  # 初始渲染巡检表格
+  output$inspection_table <- renderDT({
+    DT::datatable(
+      inspection_patrol_get_all(),
+      options = list(pageLength = 10, scrollX = TRUE),
+      rownames = FALSE
+    )
+  })
+  
+  # 处理创建巡检按钮点击事件
+  observeEvent(input$add_inspection, {
+    # 检查登录状态
+    req(rv$logged_in)
+    # 确保必要输入存在
+    req(input$inspection_name, input$inspection_type, input$inspection_schedule)
+    # 调用inspection_patrol_add函数创建巡检
+    result <- inspection_patrol_add(input$inspection_name, input$inspection_type, input$inspection_schedule, rv$current_user)
+    # 显示操作结果通知
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    # 刷新巡检表格
+    output$inspection_table <- renderDT({
+      DT::datatable(
+        inspection_patrol_get_all(),
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE
+      )
+    })
+  })
+  
+  # 处理刷新巡检按钮点击事件
+  observeEvent(input$refresh_inspections, {
+    # 检查登录状态
+    req(rv$logged_in)
+    # 刷新巡检表格
+    output$inspection_table <- renderDT({
+      DT::datatable(
+        inspection_patrol_get_all(),
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE
+      )
+    })
   })
   
   # 处理模型刷新按钮点击事件
