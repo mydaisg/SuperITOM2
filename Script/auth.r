@@ -45,6 +45,26 @@ auth_check_user <- function(username) {
   })
 }
 
+auth_login_by_id <- function(user_id) {
+  con <- db_connect()
+  tryCatch({
+    query <- sprintf("SELECT * FROM users WHERE id = %d", as.integer(user_id))
+    result <- dbGetQuery(con, query)
+    if (nrow(result) > 0) {
+      if (exists('active', result) && result$active[1] == 0) {
+        return(list(success = FALSE, message = "您的账号已被禁用，请联系管理员"))
+      }
+      return(list(success = TRUE, user = result))
+    } else {
+      return(list(success = FALSE, message = "用户不存在"))
+    }
+  }, error = function(e) {
+    return(list(success = FALSE, message = paste("自动登录失败:", e$message)))
+  }, finally = {
+    db_disconnect(con)
+  })
+}
+
 auth_logout <- function() {
   return(list(success = TRUE, message = "注销成功"))
 }

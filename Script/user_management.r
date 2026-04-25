@@ -3,8 +3,18 @@ source("Script/log_user.r")
 user_get_all <- function() {
   con <- db_connect()
   tryCatch({
-    query <- "SELECT id, username, role, active, created_at, updated_at FROM users ORDER BY created_at DESC"
+    columns <- dbGetQuery(con, "PRAGMA table_info(users)")
+    has_display_name <- "display_name" %in% columns$name
+    if (has_display_name) {
+      query <- "SELECT id, username, display_name, role, active, created_at, updated_at FROM users ORDER BY created_at DESC"
+    } else {
+      query <- "SELECT id, username, role, active, created_at, updated_at FROM users ORDER BY created_at DESC"
+    }
     result <- dbGetQuery(con, query)
+    if (!has_display_name) {
+      result$display_name <- NA
+      result <- result[, c("id", "username", "display_name", "role", "active", "created_at", "updated_at")]
+    }
     return(result)
   }, error = function(e) {
     return(data.frame())
@@ -25,15 +35,22 @@ user_check_permission <- function(current_user, required_role = "admin") {
   return(list(success = TRUE))
 }
 
-user_add <- function(username, password, role = "user", current_user = NULL) {
+user_add <- function(username, password, role = "user", display_name = NULL, current_user = NULL) {
   permission <- user_check_permission(current_user)
   if (!permission$success) {
     return(permission)
   }
   con <- db_connect()
   tryCatch({
-    query <- sprintf("INSERT INTO users (username, password, role, active) VALUES ('%s', '%s', '%s', 1)", 
-                     username, password, role)
+    columns <- dbGetQuery(con, "PRAGMA table_info(users)")
+    has_display_name <- "display_name" %in% columns$name
+    if (has_display_name && !is.null(display_name) && display_name != "") {
+      query <- sprintf("INSERT INTO users (username, display_name, password, role, active) VALUES ('%s', '%s', '%s', '%s', 1)", 
+                       username, display_name, password, role)
+    } else {
+      query <- sprintf("INSERT INTO users (username, password, role, active) VALUES ('%s', '%s', '%s', 1)", 
+                       username, password, role)
+    }
     dbExecute(con, query)
     
     # 记录日志
@@ -85,7 +102,7 @@ user_delete <- function(id, current_user = NULL) {
   })
 }
 
-user_update <- function(id, username, role, password = NULL, current_user = NULL) {
+user_update <- function(id, username, role, password = NULL, display_name = NULL, current_user = NULL) {
   permission <- user_check_permission(current_user)
   if (!permission$success) {
     return(permission)
@@ -96,12 +113,31 @@ user_update <- function(id, username, role, password = NULL, current_user = NULL
   
   con <- db_connect()
   tryCatch({
+    columns <- dbGetQuery(con, "PRAGMA table_info(users)")
+    has_display_name <- "display_name" %in% columns$name
+    
     if (!is.null(password) && password != "") {
-      query <- sprintf("UPDATE users SET username = '%s', role = '%s', password = '%s', updated_at = CURRENT_TIMESTAMP WHERE id = %d", 
-                       username, role, password, id)
+      if (has_display_name && !is.null(display_name) && display_name != "") {
+        query <- sprintf("UPDATE users SET username = '%s', display_name = '%s', role = '%s', password = '%s', updated_at = CURRENT_TIMESTAMP WHERE id = %d", 
+                         username, display_name, role, password, id)
+      } else if (has_display_name) {
+        query <- sprintf("UPDATE users SET username = '%s', display_name = NULL, role = '%s', password = '%s', updated_at = CURRENT_TIMESTAMP WHERE id = %d", 
+                         username, role, password, id)
+      } else {
+        query <- sprintf("UPDATE users SET username = '%s', role = '%s', password = '%s', updated_at = CURRENT_TIMESTAMP WHERE id = %d", 
+                         username, role, password, id)
+      }
     } else {
-      query <- sprintf("UPDATE users SET username = '%s', role = '%s', updated_at = CURRENT_TIMESTAMP WHERE id = %d", 
-                       username, role, id)
+      if (has_display_name && !is.null(display_name) && display_name != "") {
+        query <- sprintf("UPDATE users SET username = '%s', display_name = '%s', role = '%s', updated_at = CURRENT_TIMESTAMP WHERE id = %d", 
+                         username, display_name, role, id)
+      } else if (has_display_name) {
+        query <- sprintf("UPDATE users SET username = '%s', display_name = NULL, role = '%s', updated_at = CURRENT_TIMESTAMP WHERE id = %d", 
+                         username, role, id)
+      } else {
+        query <- sprintf("UPDATE users SET username = '%s', role = '%s', updated_at = CURRENT_TIMESTAMP WHERE id = %d", 
+                         username, role, id)
+      }
     }
     dbExecute(con, query)
     

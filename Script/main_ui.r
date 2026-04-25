@@ -54,25 +54,219 @@ main_ui <- function() {
     # 工单标签页
     tabPanel(
       "工单",
-      icon = icon("clipboard-list"),  # 工单图标
+      icon = icon("clipboard-list"),
       fluidPage(
-        titlePanel("工单管理"),
-        sidebarLayout(
-          sidebarPanel(
-            textInput("work_order_title", "工单标题"),
-            textAreaInput("work_order_description", "工单描述"),
-            selectInput("work_order_priority", "优先级", choices = c("低", "中", "高", "紧急")),
-            actionButton("add_work_order", "创建工单", class = "btn-primary"),
-            br(), br(),
-            actionButton("refresh_work_orders", "刷新工单", class = "btn-info")
-          ),
-          mainPanel(
-            DTOutput("work_order_table")
+        # 自定义导航栏选中态样式 + admin菜单控制
+        tags$head(
+          tags$style(HTML("
+            .navbar-default .navbar-nav > .active > a,
+            .navbar-default .navbar-nav > .active > a:hover,
+            .navbar-default .navbar-nav > .active > a:focus {
+              background-color: #337ab7 !important;
+              color: #fff !important;
+              font-weight: bold;
+              border: none;
+              box-shadow: 0 -3px 0 #1a5276 inset;
+            }
+            .navbar-default .navbar-nav > li > a:hover,
+            .navbar-default .navbar-nav > li > a:focus {
+              background-color: #d6e9f8 !important;
+            }
+            /* 默认隐藏管理菜单，JS根据角色控制显示 */
+            .admin-menu-item { display: none !important; }
+            body.admin-user .admin-menu-item { display: block !important; }
+          ")),
+          tags$script(HTML("
+            $(document).on('shiny:connected', function(event) {
+              // 给管理菜单添加标识class
+              $('.navbar-nav > li.dropdown').each(function() {
+                var link = $(this).find('a.dropdown-toggle');
+                if (link.length && link.text().indexOf('管理') >= 0) {
+                  $(this).addClass('admin-menu-item');
+                }
+              });
+              Shiny.addCustomMessageHandler('toggleAdminMenu', function(message) {
+                if (message.show) {
+                  $('body').addClass('admin-user');
+                } else {
+                  $('body').removeClass('admin-user');
+                }
+              });
+            });
+          "))
+        ),
+        # 工单统计数据（小色块，一行显示）
+        fluidRow(
+          column(12,
+            div(style = "margin-bottom: 15px;",
+              fluidRow(
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 12px 8px; margin-bottom: 5px;",
+                  div(style = "font-size: 14px; color: #666; font-weight: 500;", "总工单"),
+                  div(style = "font-size: 26px; font-weight: bold; color: #333;", textOutput("wo_stat_total"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 12px 8px; margin-bottom: 5px; background: #f0ad4e; color: white;",
+                  div(style = "font-size: 14px; font-weight: 500;", "待处理"),
+                  div(style = "font-size: 26px; font-weight: bold;", textOutput("wo_stat_pending"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 12px 8px; margin-bottom: 5px; background: #5bc0de; color: white;",
+                  div(style = "font-size: 14px; font-weight: 500;", "已派发"),
+                  div(style = "font-size: 26px; font-weight: bold;", textOutput("wo_stat_assigned"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 12px 8px; margin-bottom: 5px; background: #337ab7; color: white;",
+                  div(style = "font-size: 14px; font-weight: 500;", "处理中"),
+                  div(style = "font-size: 26px; font-weight: bold;", textOutput("wo_stat_processing"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 12px 8px; margin-bottom: 5px; background: #5cb85c; color: white;",
+                  div(style = "font-size: 14px; font-weight: 500;", "已完成"),
+                  div(style = "font-size: 26px; font-weight: bold;", textOutput("wo_stat_completed"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 12px 8px; margin-bottom: 5px; background: #777; color: white;",
+                  div(style = "font-size: 14px; font-weight: 500;", "已关闭"),
+                  div(style = "font-size: 26px; font-weight: bold;", textOutput("wo_stat_closed"))
+                ))
+              )
+            )
+          )
+        ),
+        # 工单列表（占满宽度）
+        fluidRow(
+          column(12,
+            tabsetPanel(
+              tabPanel("工单列表",
+                br(),
+                fluidRow(
+                  column(4, selectInput("work_order_status_filter", "状态筛选",
+                           choices = c("全部工单" = "all", "待处理" = "pending", "已派发" = "assigned",
+                                      "处理中" = "processing", "已完成" = "completed", "已关闭" = "closed"),
+                           selected = "all")),
+                  column(1, div(style = "margin-top: 20px;", actionButton("refresh_work_orders", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+                ),
+                br(),
+                DTOutput("work_order_table")
+              ),
+              tabPanel("工单派发",
+                br(),
+                conditionalPanel(
+                  condition = "output.work_order_selected",
+                  wellPanel(
+                    h4("选中工单信息"),
+                    verbatimTextOutput("selected_work_order_info"),
+                    hr(),
+                    h4("派发操作"),
+                    selectInput("work_order_assignee", "选择处理人", choices = NULL),
+                    actionButton("assign_work_order", "派发工单", class = "btn-primary")
+                  )
+                ),
+                conditionalPanel(
+                  condition = "!output.work_order_selected",
+                  div(class = "alert alert-info", HTML("请先在<b>工单列表</b>中点击选择一行"))
+                )
+              ),
+              tabPanel("工单处理",
+                br(),
+                conditionalPanel(
+                  condition = "output.work_order_selected",
+                  wellPanel(
+                    h4("选中工单信息"),
+                    verbatimTextOutput("selected_work_order_info2"),
+                    hr(),
+                    h4("处理操作"),
+                    conditionalPanel(
+                      condition = "output.work_order_can_edit",
+                      actionButton("edit_work_order_btn", "编辑工单", class = "btn-info btn-block"),
+                      br()
+                    ),
+                    conditionalPanel(
+                      condition = "output.work_order_can_start",
+                      actionButton("start_handle_work_order", "开始处理", class = "btn-primary btn-block"),
+                      br()
+                    ),
+                    conditionalPanel(
+                      condition = "output.work_order_can_complete",
+                      textAreaInput("work_order_resolution", "解决方案/处理结果", rows = 4),
+                      actionButton("complete_work_order", "完成工单", class = "btn-success btn-block"),
+                      br()
+                    ),
+                    conditionalPanel(
+                      condition = "output.work_order_can_close",
+                      selectInput("work_order_close_reason", "关闭原因（必选）",
+                                 choices = c("请选择关闭原因" = "", "已处理和交付" = "已处理和交付", "无法处理关闭" = "无法处理关闭")),
+                      actionButton("close_work_order", "关闭工单", class = "btn-warning btn-block"),
+                      br()
+                    ),
+                    actionButton("delete_work_order_btn", "删除工单", class = "btn-danger btn-block")
+                  )
+                ),
+                conditionalPanel(
+                  condition = "!output.work_order_selected",
+                  div(class = "alert alert-info", HTML("请先在<b>工单列表</b>中点击选择一行"))
+                ),
+                br(),
+                # 评论区域
+                conditionalPanel(
+                  condition = "output.work_order_selected",
+                  wellPanel(
+                    h4("工单评论/备注"),
+                    textAreaInput("work_order_comment", "添加评论", rows = 2),
+                    actionButton("add_work_order_comment", "发表评论", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;"),
+                    hr(),
+                    h5("历史评论"),
+                    uiOutput("work_order_comments_ui")
+                  )
+                )
+              )
+            )
+          )
+        ),
+
+        hr(),
+
+        # 编辑工单区域（默认隐藏，点击编辑后显示）
+        conditionalPanel(
+          condition = "output.work_order_edit_mode",
+          fluidRow(
+            column(12,
+              wellPanel(
+                h4("编辑工单"),
+                fluidRow(
+                  column(4, textInput("edit_work_order_title", "工单标题")),
+                  column(2, selectInput("edit_work_order_priority", "优先级", choices = c("低", "中", "高", "紧急"))),
+                  column(3, selectInput("edit_work_order_category", "分类",
+                             choices = c("一般", "硬件故障", "软件故障", "网络问题", "系统维护", "账号权限", "其他"))),
+                  column(3, div(style = "margin-top: 20px;",
+                    actionButton("save_edit_work_order", "保存修改", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px; margin-right: 5px;"),
+                    actionButton("cancel_edit_work_order", "取消", class = "btn-default", style = "padding: 4px 10px; font-size: 12px;")
+                  ))
+                ),
+                fluidRow(
+                  column(12, textAreaInput("edit_work_order_description", "工单描述", rows = 2))
+                )
+              )
+            )
+          )
+        ),
+
+        # 第四行：创建工单（放在最下面）
+        fluidRow(
+          column(12,
+            wellPanel(
+              h4("创建新工单"),
+              fluidRow(
+                column(4, textInput("work_order_title", "工单标题")),
+                column(2, selectInput("work_order_priority", "优先级", choices = c("低", "中", "高", "紧急"))),
+                column(3, selectInput("work_order_category", "分类",
+                           choices = c("一般", "硬件故障", "软件故障", "网络问题", "系统维护", "账号权限", "其他"))),
+                column(1, div(style = "margin-top: 20px;", actionButton("add_work_order", "创建工单", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;")))
+              ),
+              fluidRow(
+                column(12, textAreaInput("work_order_description", "工单描述", rows = 2))
+              )
+            )
           )
         )
       )
     ),
-    
+
     # 收集器标签页
     tabPanel(
       "收集器",
@@ -191,17 +385,121 @@ main_ui <- function() {
       )
     ),
     
+    # 管理菜单（admin专用，JS控制显示/隐藏）
+    navbarMenu(
+      "管理",
+      icon = icon("tools"),
+      tabPanel(
+        "用户管理",
+        icon = icon("users"),
+        fluidPage(
+          titlePanel("用户管理"),
+          sidebarLayout(
+            sidebarPanel(
+              tags$div(textInput("selected_user_id", "", value = ""), style = "display: none;"),
+              textInput("username", "用户名"),
+              textInput("display_name", "显示名称"),
+              passwordInput("password", "密码"),
+              selectInput("role", "角色", choices = c("user", "admin")),
+              actionButton("add_user", "添加用户", class = "btn-primary"),
+              br(), br(),
+              actionButton("update_user", "修改账号", class = "btn-warning"),
+              br(), br(),
+              actionButton("toggle_active_user", "禁用/启用用户", class = "btn-danger"),
+              br(), br(),
+              actionButton("refresh_users", "刷新用户", class = "btn-info")
+            ),
+            mainPanel(
+              DTOutput("user_table")
+            )
+          )
+        )
+      ),
+      tabPanel(
+        "系统设置",
+        icon = icon("cogs"),
+        fluidPage(
+          titlePanel("系统设置"),
+          sidebarLayout(
+            sidebarPanel(
+              textInput("config_key", "配置键"),
+              textInput("config_value", "配置值"),
+              textInput("config_desc", "描述"),
+              actionButton("add_config", "添加配置", class = "btn-primary"),
+              br(), br(),
+              actionButton("refresh_config", "刷新配置", class = "btn-info")
+            ),
+            mainPanel(
+              DTOutput("config_table")
+            )
+          )
+        )
+      ),
+      tabPanel(
+        "GitHub",
+        icon = icon("github"),
+        fluidPage(
+          titlePanel("GitHub 自动提交"),
+          br(),
+          sidebarLayout(
+            sidebarPanel(
+              h4("Git 操作"),
+              br(),
+              textInput("commit_message", "提交信息", value = "Commit from ITOM2"),
+              br(), br(),
+              actionButton("github_autosubmit", "提交所有更改", icon = icon("upload"), class = "btn-primary"),
+              br(), br(),
+              actionButton("github_check_status", "查看 Git 状态", icon = icon("info-circle"), class = "btn-info"),
+              br(), br(),
+              actionButton("github_pull", "拉取最新代码", icon = icon("download"), class = "btn-warning")
+            ),
+            mainPanel(
+              h4("Git 状态"),
+              verbatimTextOutput("git_status"),
+              br(),
+              h4("提交结果"),
+              verbatimTextOutput("git_result")
+            )
+          )
+        )
+      )
+    ),
+
+    # 添加退出登录标签页
+    tabPanel(
+      "退出",
+      icon = icon("sign-out-alt"),
+      fluidPage(
+        # titlePanel("退出登录"),
+        fluidRow(
+          column(12,
+            div(
+              style = "text-align: center; margin-top: 50px;",
+              h3("您确定要退出登录吗？"),
+              br(),
+              actionButton("logout", "确认退出", class = "btn-danger")
+            )
+          )
+        )
+      )
+    )
+  )
+}
+
+# 定义admin专用标签页
+admin_tabs_ui <- function() {
+  tagList(
     # 用户管理标签页
     tabPanel(
       "用户管理",
-      icon = icon("users"),  # 用户图标
+      icon = icon("users"),
       fluidPage(
         titlePanel("用户管理"),
         sidebarLayout(
           sidebarPanel(
             tags$div(textInput("selected_user_id", "", value = ""), style = "display: none;"),
             textInput("username", "用户名"),
-            passwordInput("password", "密码"),  # 密码输入框（隐藏输入）
+            passwordInput("password", "密码"),
             selectInput("role", "角色", choices = c("user", "admin")),
             actionButton("add_user", "添加用户", class = "btn-primary"),
             br(), br(),
@@ -212,7 +510,7 @@ main_ui <- function() {
             actionButton("refresh_users", "刷新用户", class = "btn-info")
           ),
           mainPanel(
-            DTOutput("user_table")  # 用户表格
+            DTOutput("user_table")
           )
         )
       )
@@ -221,7 +519,7 @@ main_ui <- function() {
     # 系统设置标签页
     tabPanel(
       "系统设置",
-      icon = icon("cogs"),  # 设置图标
+      icon = icon("cogs"),
       fluidPage(
         titlePanel("系统设置"),
         sidebarLayout(
@@ -234,7 +532,7 @@ main_ui <- function() {
             actionButton("refresh_config", "刷新配置", class = "btn-info")
           ),
           mainPanel(
-            DTOutput("config_table")  # 配置表格
+            DTOutput("config_table")
           )
         )
       )
@@ -243,7 +541,7 @@ main_ui <- function() {
     # GitHub自动提交标签页
     tabPanel(
       "GitHub",
-      icon = icon("github"),  # GitHub图标
+      icon = icon("github"),
       fluidPage(
         titlePanel("GitHub 自动提交"),
         br(),
@@ -251,34 +549,22 @@ main_ui <- function() {
           sidebarPanel(
             h4("Git 操作"),
             br(),
-            textInput("commit_message", "提交信息", value = "Commit from ITOM2"),  # 提交信息输入框
+            textInput("commit_message", "提交信息", value = "Commit from ITOM2"),
             br(), br(),
-            actionButton("github_autosubmit", "提交所有更改", icon = icon("upload"), class = "btn-primary"),  # 提交按钮
+            actionButton("github_autosubmit", "提交所有更改", icon = icon("upload"), class = "btn-primary"),
             br(), br(),
-            actionButton("github_check_status", "查看 Git 状态", icon = icon("info-circle"), class = "btn-info"),  # 查看状态按钮
+            actionButton("github_check_status", "查看 Git 状态", icon = icon("info-circle"), class = "btn-info"),
             br(), br(),
-            actionButton("github_pull", "拉取最新代码", icon = icon("download"), class = "btn-warning")  # 拉取代码按钮
+            actionButton("github_pull", "拉取最新代码", icon = icon("download"), class = "btn-warning")
           ),
           mainPanel(
             h4("Git 状态"),
-            verbatimTextOutput("git_status"),  # Git状态文本输出
+            verbatimTextOutput("git_status"),
             br(),
             h4("提交结果"),
-            verbatimTextOutput("git_result")  # 提交结果文本输出
+            verbatimTextOutput("git_result")
           )
         )
-      )
-    ),
-    
-    # 添加退出登录标签页
-    tabPanel(
-      "退出",
-      icon = icon("sign-out-alt"),
-      fluidPage(
-        titlePanel("退出登录"),
-        h3("您确定要退出登录吗？"),
-        br(),
-        actionButton("logout", "确认退出", class = "btn-danger")
       )
     )
   )
