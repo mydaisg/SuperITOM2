@@ -1,7 +1,7 @@
 
 log_user_operation <- function(operation, username, operator, details = "") {
-  # 确保Logs目录存在
-  logs_dir <- file.path(getwd(), "Logs")
+  # 确保Logs目录存在（从配置读取，若未加载则使用默认）
+  logs_dir <- if (exists("get_logs_dir")) get_logs_dir() else file.path(getwd(), "Logs")
   if (!dir.exists(logs_dir)) {
     dir.create(logs_dir, recursive = TRUE)
   }

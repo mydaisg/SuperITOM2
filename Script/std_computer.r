@@ -3,6 +3,32 @@
 # 加载语法高亮模块
 source("Script/high_light.r")
 
+# 从配置获取 STD 目录路径（若配置未加载则回退到默认）
+.std_dir <- function() {
+  if (exists("get_std_dir")) get_std_dir() else file.path(getwd(), "STD")
+}
+
+# 从配置获取平台命令
+.ping_cmd <- function() {
+  if (exists("get_ping_cmd")) get_ping_cmd() else "ping"
+}
+
+.powershell_cmd <- function() {
+  if (exists("get_powershell_cmd")) get_powershell_cmd() else "powershell"
+}
+
+.bash_cmd <- function() {
+  if (exists("get_bash_cmd")) get_bash_cmd() else "bash"
+}
+
+.rscript_cmd <- function() {
+  if (exists("get_rscript_cmd")) get_rscript_cmd() else "Rscript"
+}
+
+.os <- function() {
+  if (exists("get_os")) get_os() else "windows"
+}
+
 # UI部分
 std_ui <- function() {
   fluidPage(
@@ -53,7 +79,7 @@ std_server <- function(input, output, session) {
   # 加载脚本列表
   output$std_script_ui <- renderUI({
     # 获取STD目录下的脚本文件
-    std_dir <- file.path(getwd(), "STD")
+    std_dir <- .std_dir()
     
     if (dir.exists(std_dir)) {
       # 列出脚本文件
@@ -68,7 +94,7 @@ std_server <- function(input, output, session) {
   # 加载主机列表
   observe({
     # 读取hosts_new.csv文件
-    hosts_file <- file.path(getwd(), "STD", "hosts_new.csv")
+    hosts_file <- file.path(.std_dir(), "hosts_new.csv")
     if (file.exists(hosts_file)) {
       hosts_data <- read.csv(hosts_file, stringsAsFactors = FALSE)
       # 添加ID列
@@ -175,7 +201,7 @@ std_server <- function(input, output, session) {
       std_hosts_data(hosts_data)
       
       # 保存到文件
-      write.csv(hosts_data[, -1], file.path(getwd(), "STD", "hosts_new.csv"), row.names = FALSE, fileEncoding = "UTF-8")
+      write.csv(hosts_data[, -1], file.path(.std_dir(), "hosts_new.csv"), row.names = FALSE, fileEncoding = "UTF-8")
       
       # 显示成功通知
       showNotification("计算机添加成功", type = "message")
@@ -198,7 +224,7 @@ std_server <- function(input, output, session) {
         # 存储到响应式值
         std_hosts_data(hosts_data)
         # 保存到文件
-        write.csv(hosts_data[, -1], file.path(getwd(), "STD", "hosts_new.csv"), row.names = FALSE, fileEncoding = "UTF-8")
+        write.csv(hosts_data[, -1], file.path(.std_dir(), "hosts_new.csv"), row.names = FALSE, fileEncoding = "UTF-8")
         # 显示成功通知
         showNotification("计算机删除成功", type = "message")
       }, error = function(e) {
@@ -219,7 +245,8 @@ std_server <- function(input, output, session) {
     }
     
     # 执行ping命令
-    ping_command <- sprintf("ping %s", ip)
+    ping_cmd <- .ping_cmd()
+    ping_command <- sprintf("%s %s 4 %s", ping_cmd, ifelse(.os() == "windows", "-n", "-c"), ip)
     ping_result <- system(ping_command, intern = TRUE, ignore.stderr = TRUE)
     
     # 显示ping结果
@@ -245,7 +272,7 @@ std_server <- function(input, output, session) {
       
       if (!is.null(script_name) && script_name != "") {
         # 构建脚本路径
-        script_path <- file.path(getwd(), "STD", script_name)
+        script_path <- file.path(.std_dir(), script_name)
         
         # 读取脚本内容
         if (file.exists(script_path)) {
@@ -301,20 +328,20 @@ std_server <- function(input, output, session) {
     }
     
     # 构建脚本路径
-    script_path <- file.path(getwd(), "STD", script_name)
+    script_path <- file.path(.std_dir(), script_name)
     
     # 执行脚本
     if (file.exists(script_path)) {
       # 根据脚本类型执行不同的命令
       if (endsWith(script_path, ".ps1")) {
         # 执行PowerShell脚本
-        script_command <- sprintf("powershell -File %s %s", script_path, target_ip)
+        script_command <- sprintf("%s -File %s %s", .powershell_cmd(), script_path, target_ip)
       } else if (endsWith(script_path, ".sh")) {
         # 执行bash脚本
-        script_command <- sprintf("bash %s %s", script_path, target_ip)
+        script_command <- sprintf("%s %s %s", .bash_cmd(), script_path, target_ip)
       } else if (endsWith(script_path, ".r")) {
         # 执行R脚本
-        script_command <- sprintf("Rscript %s %s", script_path, target_ip)
+        script_command <- sprintf("%s %s %s", .rscript_cmd(), script_path, target_ip)
       } else if (endsWith(script_path, ".bat")) {
         # 执行批处理脚本
         script_command <- sprintf("%s %s", script_path, target_ip)

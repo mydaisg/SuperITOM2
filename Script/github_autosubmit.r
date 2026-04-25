@@ -1,8 +1,13 @@
+# Git 命令路径（从配置读取，若配置未加载则使用默认 git）
+.git_cmd <- function() {
+  if (exists("get_git_cmd")) get_git_cmd() else "git"
+}
+
 # 检查Git是否可用
 # 返回布尔值表示Git是否已安装
 is_git_available <- function() {
   tryCatch({
-    result <- system2("git", args = c("--version"), stdout = TRUE, stderr = TRUE)
+    result <- system2(.git_cmd(), args = c("--version"), stdout = TRUE, stderr = TRUE)
     return(length(result) > 0)
   }, error = function(e) {
     return(FALSE)
@@ -13,7 +18,7 @@ is_git_available <- function() {
 # 返回布尔值表示是否在Git仓库中
 is_git_repository <- function() {
   tryCatch({
-    result <- system2("git", args = c("rev-parse", "--is-inside-work-tree"), stdout = TRUE, stderr = TRUE)
+    result <- system2(.git_cmd(), args = c("rev-parse", "--is-inside-work-tree"), stdout = TRUE, stderr = TRUE)
     return(any(grepl("true", result, ignore.case = TRUE)))
   }, error = function(e) {
     return(FALSE)
@@ -25,7 +30,7 @@ is_git_repository <- function() {
 # 返回布尔值表示远程仓库是否存在
 has_remote_repository <- function(remote_name = "origin") {
   tryCatch({
-    result <- system2("git", args = c("remote", "-v"), stdout = TRUE, stderr = TRUE)
+    result <- system2(.git_cmd(), args = c("remote", "-v"), stdout = TRUE, stderr = TRUE)
     return(any(grepl(remote_name, result)))
   }, error = function(e) {
     return(FALSE)
@@ -38,15 +43,16 @@ has_remote_repository <- function(remote_name = "origin") {
 # - capture_output: 是否捕获输出，默认为TRUE
 # 返回：包含status（状态码）和output（输出）的列表
 execute_git_command <- function(args, capture_output = TRUE) {
+  git_cmd <- .git_cmd()
   tryCatch({
     # 打印执行的命令，用于调试
-    cat("执行Git命令:", paste("git", paste(args, collapse = " "), "\n"))
+    cat("执行Git命令:", paste(git_cmd, paste(args, collapse = " "), "\n"))
     
     # 特殊处理commit命令，因为它包含带空格的消息
     if (length(args) >= 3 && args[1] == "commit" && args[2] == "-m") {
       # 构建完整的命令字符串
       commit_message <- paste(args[3:length(args)], collapse = " ")
-      command <- sprintf("git commit -m \"%s\"", commit_message)
+      command <- sprintf("%s commit -m \"%s\"", git_cmd, commit_message)
       
       # 使用system()执行命令
       output <- system(command, intern = TRUE, ignore.stderr = TRUE)
@@ -69,7 +75,7 @@ execute_git_command <- function(args, capture_output = TRUE) {
       }
     } else {
       # 对于其他命令，使用system()
-      command <- paste("git", paste(args, collapse = " "))
+      command <- paste(git_cmd, paste(args, collapse = " "))
       output <- system(command, intern = TRUE, ignore.stderr = TRUE)
       
       # 处理返回值

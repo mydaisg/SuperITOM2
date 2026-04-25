@@ -6,7 +6,12 @@ library(DBI)
 library(ggplot2)
 library(plotly)
 
-db_path <- file.path(getwd(), "DB", "GH_ITOM.db")
+# 加载配置管理器（必须在其他 source 之前，因为后续模块可能依赖配置）
+source("config/config_loader.r")
+load_config()
+
+# 从配置中获取数据库路径
+db_path <- get_db_path()
 
 db_connect <- function() {
   con <- dbConnect(RSQLite::SQLite(), db_path)
@@ -25,6 +30,9 @@ check_database <- function() {
 
 # 数据库迁移：确保 users 表包含 display_name 列
 migrate_database <- function() {
+  if (!isTRUE(get_config("features", "auto_migrate_db"))) {
+    return()
+  }
   con <- db_connect()
   tryCatch({
     columns <- dbGetQuery(con, "PRAGMA table_info(users)")

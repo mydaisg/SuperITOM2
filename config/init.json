@@ -1,0 +1,42 @@
+{
+  "_comment": "SuperITOM2 环境配置文件。在不同平台部署时，修改 platform 和 paths 下的对应项即可。",
+  "app": {
+    "name": "SuperITOM2",
+    "version": "1.0.0",
+    "env": "development"
+  },
+  "server": {
+    "port": 8080,
+    "host": "0.0.0.0",
+    "launch_browser": true
+  },
+  "database": {
+    "type": "sqlite",
+    "name": "GH_ITOM.db",
+    "relative_path": "DB"
+  },
+  "paths": {
+    "db_init_script": "DB/init_database.sql",
+    "std_scripts_dir": "STD",
+    "logs_dir": "Logs",
+    "db_dir": "DB"
+  },
+  "platform": {
+    "_comment": "各平台命令配置，Windows/Mac/Linux 可覆盖对应命令",
+    "git_command": "git",
+    "rscript_command": "Rscript",
+    "ping_command": "ping",
+    "ping_count_flag": "-n",
+    "powershell_command": "powershell",
+    "bash_command": "bash"
+  },
+  "features": {
+    "github_autosubmit": true,
+    "std_computer": true,
+    "auto_migrate_db": true
+  },
+  "security": {
+    "session_timeout_minutes": 30,
+    "enable_local_storage_auto_login": true
+  }
+}
