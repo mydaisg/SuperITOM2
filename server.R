@@ -7,6 +7,8 @@ source("Script/visualization.r")    # 数据可视化模块
 source("Script/user_management.r")   # 用户管理模块
 source("Script/system_settings.r")  # 系统设置模块
 source("Script/work_order.r")       # 工单管理模块
+source("Script/project_management.r") # 项目管理模块（数据层）
+source("Script/project_server.r")     # 项目管理模块（服务端逻辑）
 source("Script/information_collector.r")  # 信息收集器模块
 source("Script/inspection_patrol.r")    # 巡检管理模块
 source("Script/login_ui.r")         # 登录界面定义
@@ -1131,6 +1133,9 @@ server <- function(input, output, session) {
     showNotification("代码已从 GitHub 拉取", type = "message")
   })
   
+  # 项目管理模块逻辑
+  project_server(input, output, session, rv)
+
   # 标准化模块逻辑
   std_server(input, output, session)
 }

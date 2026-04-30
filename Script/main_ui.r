@@ -17,6 +17,9 @@ passwordInput <- shiny::passwordInput
 # 加载标准化模块
 source("Script/std_computer.r")
 
+# 加载项目管理模块UI
+source("Script/project_ui.r")
+
 main_ui <- function() {
   # 创建导航栏页面
   # navbarPage是Shiny中创建带有标签页的导航栏界面的函数
@@ -51,6 +54,13 @@ main_ui <- function() {
       )
     ),
     
+    # 项目管理标签页（放在工单前面）
+    tabPanel(
+      "项目",
+      icon = icon("project-diagram"),
+      project_ui()
+    ),
+
     # 工单标签页
     tabPanel(
       "工单",
@@ -431,6 +441,37 @@ main_ui <- function() {
             ),
             mainPanel(
               DTOutput("config_table")
+            )
+          )
+        )
+      ),
+      tabPanel(
+        "选项配置",
+        icon = icon("sliders-h"),
+        fluidPage(
+          titlePanel("选项配置管理"),
+          p("管理项目状态、优先级等下拉选项。修改后立即生效，所有界面自动使用最新配置。"),
+          fluidRow(
+            column(3, selectInput("co_category", "配置类别",
+              choices = c("项目状态"="project_status", "项目优先级"="project_priority",
+                          "阶段状态"="phase_status", "工作包状态"="wp_status",
+                          "任务状态"="task_status", "任务优先级"="task_priority"))),
+            column(2, actionButton("co_refresh", "刷新列表", class = "btn-info btn-sm", style = "margin-top:24px;"))
+          ),
+          DTOutput("co_option_table"),
+          hr(),
+          wellPanel(
+            h4("添加/编辑选项"),
+            fluidRow(
+              column(2, textInput("co_value", "选项值")),
+              column(2, textInput("co_label", "显示名称")),
+              column(2, textInput("co_color", "颜色(HEX)", placeholder = "#337ab7")),
+              column(1, numericInput("co_sort", "排序", value = 0, min = 0)),
+              column(2, selectInput("co_default", "默认", choices = c("否"="0", "是"="1"))),
+              column(1, div(style = "margin-top:20px;",
+                actionButton("co_add", "添加", class = "btn-primary btn-sm"))),
+              column(2, div(style = "margin-top:20px;",
+                actionButton("co_save_edit", "保存修改", class = "btn-warning btn-sm")))
             )
           )
         )
