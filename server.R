@@ -1138,6 +1138,9 @@ server <- function(input, output, session) {
 
   # 标准化模块逻辑
   std_server(input, output, session)
+
+  # 测试模块逻辑（网络巡检）
+  network_test_server(input, output, session)
 }
 
 # 总结：

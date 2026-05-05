@@ -95,6 +95,31 @@ migrate_database <- function() {
       cat("数据库迁移完成：已创建 project_task_logs 表\n")
     }
 
+    if (!"std_hosts" %in% tables) {
+      dbExecute(con, "CREATE TABLE std_hosts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ip_address TEXT NOT NULL DEFAULT '',
+        os TEXT NOT NULL DEFAULT '',
+        username TEXT NOT NULL DEFAULT '',
+        password TEXT NOT NULL DEFAULT '',
+        computer_name TEXT DEFAULT '',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )")
+      cat("数据库迁移完成：已创建 std_hosts 表\n")
+    }
+
+    # 迁移：project_tasks 表添加 is_favorite 和 importance 列
+    task_columns <- dbGetQuery(con, "PRAGMA table_info(project_tasks)")
+    if (!"is_favorite" %in% task_columns$name) {
+      dbExecute(con, "ALTER TABLE project_tasks ADD COLUMN is_favorite INTEGER DEFAULT 0")
+      cat("数据库迁移完成：已添加 is_favorite 列到 project_tasks 表\n")
+    }
+    if (!"importance" %in% task_columns$name) {
+      dbExecute(con, "ALTER TABLE project_tasks ADD COLUMN importance INTEGER DEFAULT 0")
+      cat("数据库迁移完成：已添加 importance 列到 project_tasks 表\n")
+    }
+
     if (!"config_options" %in% tables) {
       dbExecute(con, "CREATE TABLE config_options (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

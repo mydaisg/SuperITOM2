@@ -1,19 +1,2 @@
-library(shiny)
-
-# 加载配置管理器（先于 shiny::runApp，确保 host/port 从配置读取）
-source("config/config_loader.r")
-load_config()
-
-# 从配置读取服务器参数
-port <- get_config("server", "port")
-host <- get_config("server", "host")
-launch_browser <- get_config("server", "launch_browser")
-
-options(shiny.port = port)
-options(shiny.host = host)
-
-cat(sprintf("正在启动 %s v%s ...\n", get_config("app", "name"), get_config("app", "version")))
-cat(sprintf("应用将在浏览器中打开: http://localhost:%d\n", port))
-cat(sprintf("按 Ctrl+C 停止应用\n\n"))
-
-shiny::runApp(launch.browser = launch_browser)
+setwd("D:/GitHub/SuperITOM2")
+shiny::runApp(".", port=3846, host="0.0.0.0", launch.browser=FALSE)

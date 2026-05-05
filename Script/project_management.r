@@ -364,6 +364,33 @@ task_add <- function(work_package_id, phase_id, project_id, name, description,
   }, finally = { db_disconnect(con) })
 }
 
+# 切换任务收藏状态
+task_toggle_favorite <- function(id) {
+  con <- db_connect()
+  tryCatch({
+    id <- as.integer(id)
+    current <- dbGetQuery(con, sprintf("SELECT is_favorite FROM project_tasks WHERE id = %d", id))
+    new_val <- if (nrow(current) > 0 && !is.na(current$is_favorite[1]) && current$is_favorite[1] == 1) 0 else 1
+    dbExecute(con, sprintf("UPDATE project_tasks SET is_favorite = %d, updated_at = CURRENT_TIMESTAMP WHERE id = %d", new_val, id))
+    list(success = TRUE, message = ifelse(new_val == 1, "已收藏", "已取消收藏"), is_favorite = new_val)
+  }, error = function(e) {
+    list(success = FALSE, message = paste("操作失败:", e$message))
+  }, finally = { db_disconnect(con) })
+}
+
+# 设置任务重要性（0~5红旗）
+task_set_importance <- function(id, importance) {
+  con <- db_connect()
+  tryCatch({
+    id <- as.integer(id)
+    importance <- max(0, min(5, as.integer(importance)))
+    dbExecute(con, sprintf("UPDATE project_tasks SET importance = %d, updated_at = CURRENT_TIMESTAMP WHERE id = %d", importance, id))
+    list(success = TRUE, message = sprintf("重要性已设为 %d", importance))
+  }, error = function(e) {
+    list(success = FALSE, message = paste("操作失败:", e$message))
+  }, finally = { db_disconnect(con) })
+}
+
 task_update_status <- function(id, new_status, current_user = NULL) {
   con <- db_connect()
   tryCatch({
@@ -617,7 +644,7 @@ task_get_all_global <- function(status_filter = "all", priority_filter = "all") 
     if (!is.null(priority_filter) && priority_filter != "" && priority_filter != "all") {
       query <- paste(query, sprintf("AND t.priority = '%s'", priority_filter))
     }
-    query <- paste(query, "ORDER BY t.created_at DESC")
+    query <- paste(query, "ORDER BY COALESCE(t.importance, 0) DESC, t.created_at DESC")
     dbGetQuery(con, query)
   }, error = function(e) { data.frame() }, finally = { db_disconnect(con) })
 }

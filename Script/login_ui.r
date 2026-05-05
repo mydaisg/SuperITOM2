@@ -6,6 +6,14 @@ if (getRversion() >= "2.15.1") {
 
 login_ui <- function() {
   tagList(
+    tags$script(HTML("
+      $(document).on('keypress', '#login_username, #login_password', function(e) {
+        if (e.which == 13) {
+          e.preventDefault();
+          $('#login_btn').click();
+        }
+      });
+    ")),
     div(
       class = "login-container",
       style = "display: flex; justify-content: center; align-items: center; height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);",

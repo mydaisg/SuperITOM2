@@ -17,6 +17,9 @@ passwordInput <- shiny::passwordInput
 # 加载标准化模块
 source("Script/std_computer.r")
 
+# 加载测试模块（网络巡检）
+source("Script/network_test.r")
+
 # 加载项目管理模块UI
 source("Script/project_ui.r")
 
@@ -321,6 +324,13 @@ main_ui <- function() {
       )
     ),
     
+    # 测试标签页（网络巡检）
+    tabPanel(
+      "测试",
+      icon = icon("network-wired"),
+      network_test_ui()
+    ),
+
     # 标准化标签页
     tabPanel(
       "标准化",
