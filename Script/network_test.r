@@ -10,13 +10,7 @@ network_test_ui <- function() {
     fluidRow(
       column(4,
         wellPanel(
-          h4("测试配置"),
-          textInput("nt_target", "测试目标（域名/IP）", value = "qq.com"),
-          textInput("nt_domain", "AD域名（可选）", value = "lvcc.org"),
-          textInput("nt_http_target", "HTTP测试目标", value = "www.baidu.com"),
-          numericInput("nt_ping_count", "Ping 次数", value = 4, min = 1, max = 20),
-          hr(),
-          h5("测试项目"),
+          h4("测试项目"),
           actionButton("nt_run_all", "全部测试", class = "btn-primary btn-block",
             icon = icon("play-circle")),
           br(),
@@ -33,11 +27,18 @@ network_test_ui <- function() {
           actionButton("nt_run_curl", "HTTP测试 (curl)", class = "btn-default btn-block",
             icon = icon("globe")),
           hr(),
-          actionButton("nt_save_log", "保存日志", class = "btn-info btn-sm"),
-          actionButton("nt_clear", "清空结果", class = "btn-default btn-sm")
+          h4("测试配置"),
+          textInput("nt_target", "测试目标（域名/IP）", value = "qq.com"),
+          textInput("nt_domain", "AD域名（可选）", value = "lvcc.org"),
+          textInput("nt_http_target", "HTTP测试目标", value = "www.baidu.com"),
+          numericInput("nt_ping_count", "Ping 次数", value = 4, min = 1, max = 20)
         )
       ),
       column(8,
+        div(style = "margin-bottom:10px;",
+          actionButton("nt_save_log", "保存日志", class = "btn-info btn-sm", icon = icon("save")),
+          actionButton("nt_clear", "清空结果", class = "btn-default btn-sm", icon = icon("trash"))
+        ),
         h4("测试结果"),
         verbatimTextOutput("nt_output")
       )

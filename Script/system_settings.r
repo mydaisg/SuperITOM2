@@ -28,6 +28,12 @@ config_get <- function(config_key) {
   })
 }
 
+# 获取配置值（带默认值）
+config_get_value <- function(config_key, default = "") {
+  val <- config_get(config_key)
+  if (is.null(val) || val == "") default else val
+}
+
 config_add <- function(config_key, config_value, description = "") {
   con <- db_connect()
   tryCatch({

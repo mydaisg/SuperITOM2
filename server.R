@@ -1063,6 +1063,50 @@ server <- function(input, output, session) {
       )
     })
   })
+
+  # 初始化字体大小输入框的值
+  observe({
+    req(rv$logged_in)
+    is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+    if (is_admin) {
+      tfs <- config_get_value("table_font_size", "13")
+      ifs <- config_get_value("input_font_size", "13")
+      updateNumericInput(session, "cfg_table_font_size", value = as.integer(tfs))
+      updateNumericInput(session, "cfg_input_font_size", value = as.integer(ifs))
+    }
+  })
+
+  # 保存字体大小配置
+  observeEvent(input$save_font_config, {
+    req(rv$logged_in)
+    req(!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
+    req(input$cfg_table_font_size, input$cfg_input_font_size)
+
+    con <- db_connect()
+    tryCatch({
+      # 更新或插入 table_font_size
+      existing <- dbGetQuery(con, "SELECT id FROM system_config WHERE config_key = 'table_font_size'")
+      if (nrow(existing) > 0) {
+        dbExecute(con, sprintf("UPDATE system_config SET config_value = '%s', updated_at = CURRENT_TIMESTAMP WHERE config_key = 'table_font_size'",
+          as.character(input$cfg_table_font_size)))
+      } else {
+        dbExecute(con, sprintf("INSERT INTO system_config (config_key, config_value, description) VALUES ('table_font_size', '%s', '列表表格字体大小(px)')",
+          as.character(input$cfg_table_font_size)))
+      }
+      # 更新或插入 input_font_size
+      existing2 <- dbGetQuery(con, "SELECT id FROM system_config WHERE config_key = 'input_font_size'")
+      if (nrow(existing2) > 0) {
+        dbExecute(con, sprintf("UPDATE system_config SET config_value = '%s', updated_at = CURRENT_TIMESTAMP WHERE config_key = 'input_font_size'",
+          as.character(input$cfg_input_font_size)))
+      } else {
+        dbExecute(con, sprintf("INSERT INTO system_config (config_key, config_value, description) VALUES ('input_font_size', '%s', '输入框和选择框字体大小(px)')",
+          as.character(input$cfg_input_font_size)))
+      }
+      showNotification("字体大小设置已保存，刷新页面后生效", type = "message")
+    }, error = function(e) {
+      showNotification(paste("保存失败:", e$message), type = "error")
+    }, finally = { db_disconnect(con) })
+  })
   
   # 处理添加配置按钮点击事件
   observeEvent(input$add_config, {
@@ -1133,6 +1177,113 @@ server <- function(input, output, session) {
     showNotification("代码已从 GitHub 拉取", type = "message")
   })
   
+  # ========== 首页模块 ==========
+  # 我的项目（排除已完成/已关闭）
+  output$home_my_projects <- renderUI({
+    req(rv$logged_in, rv$current_user)
+    uid <- rv$current_user$id[1]
+    con <- db_connect()
+    projects <- tryCatch({
+      dbGetQuery(con, sprintf(
+        "SELECT id, project_no, name, status, priority, start_date, end_date
+         FROM projects
+         WHERE created_by = %d AND status NOT IN ('completed', 'closed')
+         ORDER BY updated_at DESC LIMIT 10", uid))
+    }, error = function(e) data.frame(), finally = db_disconnect(con))
+
+    if (nrow(projects) == 0) {
+      return(div(style = "color:#999; padding:10px;", "暂无进行中的项目"))
+    }
+
+    items <- lapply(1:nrow(projects), function(i) {
+      p <- projects[i, ]
+      status_cn <- switch(as.character(p$status),
+        "planning" = "规划中", "active" = "进行中", "suspended" = "已暂停", p$status)
+      status_color <- switch(as.character(p$status),
+        "planning" = "#5bc0de", "active" = "#337ab7", "suspended" = "#f0ad4e", "#999")
+      div(style = "padding:8px 12px; margin-bottom:6px; background:#f9f9f9; border-radius:4px; font-size:13px;",
+        span(style = sprintf("display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;color:white;background:%s;margin-right:8px;", status_color), status_cn),
+        tags$b(p$name),
+        span(style = "color:#999;margin-left:10px;font-size:12px;", sprintf("[%s]", p$project_no))
+      )
+    })
+    do.call(tagList, items)
+  })
+
+  # 我的工单（排除已完成/已关闭）
+  output$home_my_work_orders <- renderUI({
+    req(rv$logged_in, rv$current_user)
+    uid <- rv$current_user$id[1]
+    con <- db_connect()
+    orders <- tryCatch({
+      dbGetQuery(con, sprintf(
+        "SELECT wo.id, wo.order_no, wo.title, wo.status, wo.priority, wo.category
+         FROM work_orders wo
+         WHERE (wo.assigned_to = %d OR wo.handled_by = %d OR wo.created_by = %d)
+           AND wo.status NOT IN ('completed', 'closed')
+         ORDER BY wo.updated_at DESC LIMIT 10", uid, uid, uid))
+    }, error = function(e) data.frame(), finally = db_disconnect(con))
+
+    if (nrow(orders) == 0) {
+      return(div(style = "color:#999; padding:10px;", "暂无待处理的工单"))
+    }
+
+    items <- lapply(1:nrow(orders), function(i) {
+      w <- orders[i, ]
+      status_cn <- switch(as.character(w$status),
+        "pending" = "待处理", "assigned" = "已派发", "processing" = "处理中", w$status)
+      status_color <- switch(as.character(w$status),
+        "pending" = "#f0ad4e", "assigned" = "#5bc0de", "processing" = "#337ab7", "#999")
+      order_no <- ifelse(is.na(w$order_no), "-", w$order_no)
+      div(style = "padding:8px 12px; margin-bottom:6px; background:#f9f9f9; border-radius:4px; font-size:13px;",
+        span(style = sprintf("display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;color:white;background:%s;margin-right:8px;", status_color), status_cn),
+        tags$b(order_no),
+        span(style = "margin-left:8px;", w$title),
+        span(style = "color:#999;margin-left:8px;font-size:12px;", sprintf("[%s]", ifelse(is.na(w$category), "", w$category)))
+      )
+    })
+    do.call(tagList, items)
+  })
+
+  # 我的任务（排除已完成）
+  output$home_my_tasks <- renderUI({
+    req(rv$logged_in, rv$current_user)
+    uid <- rv$current_user$id[1]
+    con <- db_connect()
+    tasks <- tryCatch({
+      dbGetQuery(con, sprintf(
+        "SELECT t.id, t.task_no, t.name, t.status, t.priority, t.importance,
+                p.name as project_name
+         FROM project_tasks t
+         LEFT JOIN projects p ON t.project_id = p.id
+         WHERE t.assigned_to = %d AND t.status NOT IN ('completed')
+         ORDER BY COALESCE(t.importance, 0) DESC, t.updated_at DESC LIMIT 15", uid))
+    }, error = function(e) data.frame(), finally = db_disconnect(con))
+
+    if (nrow(tasks) == 0) {
+      return(div(style = "color:#999; padding:10px;", "暂无待处理的任务"))
+    }
+
+    items <- lapply(1:nrow(tasks), function(i) {
+      tk <- tasks[i, ]
+      status_cn <- switch(as.character(tk$status),
+        "pending" = "待处理", "in_progress" = "进行中", "blocked" = "已阻塞", tk$status)
+      status_color <- switch(as.character(tk$status),
+        "pending" = "#f0ad4e", "in_progress" = "#337ab7", "blocked" = "#d9534f", "#999")
+      importance_flags <- if (!is.na(tk$importance) && tk$importance > 0) {
+        paste(rep("\U0001F6A9", tk$importance), collapse = "")
+      } else ""
+      div(style = "padding:8px 12px; margin-bottom:6px; background:#f9f9f9; border-radius:4px; font-size:13px;",
+        span(style = sprintf("display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;color:white;background:%s;margin-right:8px;", status_color), status_cn),
+        if (importance_flags != "") span(style = "margin-right:6px;", importance_flags),
+        tags$b(ifelse(is.na(tk$task_no), "-", tk$task_no)),
+        span(style = "margin-left:8px;", tk$name),
+        span(style = "color:#999;margin-left:8px;font-size:12px;", sprintf("[%s]", ifelse(is.na(tk$project_name), "", tk$project_name)))
+      )
+    })
+    do.call(tagList, items)
+  })
+
   # 项目管理模块逻辑
   project_server(input, output, session, rv)
 

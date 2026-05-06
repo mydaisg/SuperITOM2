@@ -27,6 +27,10 @@ source("Script/project_ui.r")
 source("Script/daily_report.r")
 
 main_ui <- function() {
+  # 读取字体大小配置
+  table_font_size <- config_get_value("table_font_size", "13")
+  input_font_size <- config_get_value("input_font_size", "13")
+
   # 创建导航栏页面
   # navbarPage是Shiny中创建带有标签页的导航栏界面的函数
   navbarPage(
@@ -37,23 +41,28 @@ main_ui <- function() {
     tabPanel(
       "首页",  # 标签页标题
       icon = icon("home"),  # 标签页图标
-      fluidPage(  # 创建流体布局页面
-        titlePanel("欢迎使用 Super ITOM 2"),  # 页面标题
-        br(),  # 换行
-        fluidRow(  # 创建流体行
-          column(12,  # 创建12列宽度的列
-            h3("系统简介"),  # 三级标题
-            p("SuperITOM2 是一个综合性的IT运维管理系统，提供标准化作业、远程批量自动作业、作业记录泛应用、数据管理、模型训练、可视化分析等功能。"),  # 段落文本
-            br(),
-            h4("主要功能："),  # 四级标题
-            tags$ul(  # 创建无序列表
-              tags$li("标准化：远程对新计算机进行标准化配置"), 
-              tags$li("数据管理：管理IT运维数据"),  # 列表项
-              tags$li("模型训练：训练预测模型"),
-              tags$li("可视化：数据可视化分析"),
-              tags$li("用户管理：管理系统用户"),
-              tags$li("系统设置：配置系统参数"),
-               tags$li("作业自动化：通过ITOM实现客户端标准化作业远程化和自动化、日常IT服务远程化和脚本化、作业记录自动按模板生成日报消息/交付消息/写入日志")
+      fluidPage(
+        titlePanel("欢迎使用 Super ITOM 2"),
+        br(),
+        fluidRow(
+          column(6,
+            div(style = "border:1px solid #ddd; border-radius:8px; padding:16px; margin-bottom:16px;",
+              h4(style = "margin-top:0; color:#337ab7; border-bottom:2px solid #337ab7; padding-bottom:8px;", "我的项目"),
+              uiOutput("home_my_projects")
+            )
+          ),
+          column(6,
+            div(style = "border:1px solid #ddd; border-radius:8px; padding:16px; margin-bottom:16px;",
+              h4(style = "margin-top:0; color:#5bc0de; border-bottom:2px solid #5bc0de; padding-bottom:8px;", "我的工单"),
+              uiOutput("home_my_work_orders")
+            )
+          )
+        ),
+        fluidRow(
+          column(12,
+            div(style = "border:1px solid #ddd; border-radius:8px; padding:16px;",
+              h4(style = "margin-top:0; color:#5cb85c; border-bottom:2px solid #5cb85c; padding-bottom:8px;", "我的任务"),
+              uiOutput("home_my_tasks")
             )
           )
         )
@@ -72,9 +81,20 @@ main_ui <- function() {
       "工单",
       icon = icon("clipboard-list"),
       fluidPage(
-        # 自定义导航栏选中态样式 + admin菜单控制
+        # 自定义导航栏选中态样式 + admin菜单控制 + 字体大小配置
         tags$head(
-          tags$style(HTML("
+          tags$style(HTML(sprintf("
+            /* 全局列表字体大小配置 */
+            .dataTables_wrapper table.dataTable tbody td {
+              font-size: %spx !important;
+            }
+            .dataTables_wrapper table.dataTable thead th {
+              font-size: %spx !important;
+            }
+            /* 输入框和选择框字体大小配置 */
+            .form-control, .selectize-input, .selectize-dropdown {
+              font-size: %spx !important;
+            }
             .navbar-default .navbar-nav > .active > a,
             .navbar-default .navbar-nav > .active > a:hover,
             .navbar-default .navbar-nav > .active > a:focus {
@@ -91,7 +111,7 @@ main_ui <- function() {
             /* 默认隐藏管理菜单，JS根据角色控制显示 */
             .admin-menu-item { display: none !important; }
             body.admin-user .admin-menu-item { display: block !important; }
-          ")),
+          ", table_font_size, table_font_size, input_font_size))),
           tags$script(HTML("
             $(document).on('shiny:connected', function(event) {
               // 给管理菜单添加标识class
@@ -450,6 +470,19 @@ main_ui <- function() {
         icon = icon("cogs"),
         fluidPage(
           titlePanel("系统设置"),
+          # 字体大小快捷配置区域
+          wellPanel(
+            h4("界面字体大小"),
+            p(style = "color:#666; font-size:12px;", "调整列表表格和输入框的字体大小（保存后刷新页面生效）"),
+            fluidRow(
+              column(3, numericInput("cfg_table_font_size", "列表表格字体(px)", value = 13, min = 10, max = 20, step = 1)),
+              column(3, numericInput("cfg_input_font_size", "输入框/选择框字体(px)", value = 13, min = 10, max = 20, step = 1)),
+              column(3, div(style = "margin-top:25px;",
+                actionButton("save_font_config", "保存字体设置", class = "btn-primary btn-sm", icon = icon("save"))))
+            )
+          ),
+          hr(),
+          # 通用配置管理
           sidebarLayout(
             sidebarPanel(
               textInput("config_key", "配置键"),

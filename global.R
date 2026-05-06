@@ -120,6 +120,14 @@ migrate_database <- function() {
       cat("数据库迁移完成：已添加 importance 列到 project_tasks 表\n")
     }
 
+    # 迁移：添加字体大小配置默认值
+    existing_font_cfg <- dbGetQuery(con, "SELECT config_key FROM system_config WHERE config_key = 'table_font_size'")
+    if (nrow(existing_font_cfg) == 0) {
+      dbExecute(con, "INSERT INTO system_config (config_key, config_value, description) VALUES ('table_font_size', '13', '列表表格字体大小(px)')")
+      dbExecute(con, "INSERT INTO system_config (config_key, config_value, description) VALUES ('input_font_size', '13', '输入框和选择框字体大小(px)')")
+      cat("数据库迁移完成：已添加字体大小配置项\n")
+    }
+
     if (!"config_options" %in% tables) {
       dbExecute(con, "CREATE TABLE config_options (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

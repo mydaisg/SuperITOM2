@@ -142,11 +142,14 @@ daily_report_ui <- function() {
     ")),
     fluidRow(
       column(3, dateInput("dr_date", "选择日期", value = Sys.Date(), language = "zh-CN")),
-      column(3, selectInput("dr_user_filter", "筛选人员",
+      column(2, div(style = "margin-top:25px;",
+        actionButton("dr_today", "今天", class = "btn-default btn-sm"),
+        actionButton("dr_yesterday", "昨天", class = "btn-default btn-sm"))),
+      column(2, selectInput("dr_user_filter", "筛选人员",
         choices = c("全部人员" = "all"))),
       column(2, div(style = "margin-top:25px;",
         actionButton("dr_refresh", "刷新日报", class = "btn-primary btn-sm", icon = icon("sync")))),
-      column(4, div(style = "margin-top:25px; text-align:right;",
+      column(3, div(style = "margin-top:25px; text-align:right;",
         actionButton("dr_copy_text", "复制文本日报", class = "btn-default btn-sm", icon = icon("copy"))))
     ),
     hr(),
@@ -174,6 +177,14 @@ daily_report_ui <- function() {
 # ================================================================
 
 daily_report_server <- function(input, output, session, rv) {
+
+  # 快捷日期按钮
+  observeEvent(input$dr_today, {
+    updateDateInput(session, "dr_date", value = Sys.Date())
+  })
+  observeEvent(input$dr_yesterday, {
+    updateDateInput(session, "dr_date", value = Sys.Date() - 1)
+  })
 
   # 初始化用户筛选下拉
   observe({
