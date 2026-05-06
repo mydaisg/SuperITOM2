@@ -23,6 +23,9 @@ source("Script/network_test.r")
 # 加载项目管理模块UI
 source("Script/project_ui.r")
 
+# 加载日报模块
+source("Script/daily_report.r")
+
 main_ui <- function() {
   # 创建导航栏页面
   # navbarPage是Shiny中创建带有标签页的导航栏界面的函数
@@ -278,6 +281,13 @@ main_ui <- function() {
           )
         )
       )
+    ),
+
+    # 日报标签页（放在工单后面）
+    tabPanel(
+      "日报",
+      icon = icon("calendar-day"),
+      daily_report_ui()
     ),
 
     # 收集器标签页

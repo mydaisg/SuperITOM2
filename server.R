@@ -1136,6 +1136,9 @@ server <- function(input, output, session) {
   # 项目管理模块逻辑
   project_server(input, output, session, rv)
 
+  # 日报模块逻辑
+  daily_report_server(input, output, session, rv)
+
   # 标准化模块逻辑
   std_server(input, output, session)
 
