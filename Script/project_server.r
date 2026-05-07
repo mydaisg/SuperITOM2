@@ -826,7 +826,10 @@ project_server <- function(input, output, session, rv) {
     pc <- clr("task_priority", t$priority); sc <- clr("task_status", t$status)
     sl <- lbl("task_status", t$status)
     logs <- task_log_get_by_task(t$id); lh <- ""
+    # 计算已执行数量（执行+反馈记录总数）
+    exec_count <- 0
     if (nrow(logs) > 0) {
+      exec_count <- sum(logs$log_type %in% c("execution", "feedback"))
       for (i in 1:nrow(logs)) {
         lg <- logs[i, ]
         badge <- switch(lg$log_type,
@@ -845,12 +848,15 @@ project_server <- function(input, output, session, rv) {
     imp_val <- if (!is.null(t$importance) && !is.na(t$importance)) as.integer(t$importance) else 0L
     imp_flags <- paste0(rep('<span style="color:#d9534f;font-size:16px;">&#9873;</span>', imp_val), collapse="")
     if (imp_val == 0) imp_flags <- '<span style="color:#ccc;font-size:13px;">无</span>'
-    mc <- HTML(sprintf('<div style="padding:10px;"><div style="background:#f5f5f5;padding:14px;border-radius:6px;margin-bottom:15px;"><table style="width:100%%;font-size:14px;"><tr><td style="width:90px;font-weight:bold;color:#666;">\u4efb\u52a1\u7f16\u53f7\uff1a</td><td style="color:#337ab7;font-weight:bold;">%s</td><td style="width:90px;font-weight:bold;color:#666;">\u540d\u79f0\uff1a</td><td style="font-weight:bold;">%s</td></tr><tr><td colspan="4" style="height:6px;"></td></tr><tr><td style="font-weight:bold;color:#666;">\u4f18\u5148\u7ea7\uff1a</td><td><span style="background:%s;color:white;padding:2px 8px;border-radius:4px;">%s</span></td><td style="font-weight:bold;color:#666;">\u72b6\u6001\uff1a</td><td><span style="background:%s;color:white;padding:2px 8px;border-radius:4px;">%s</span></td></tr><tr><td colspan="4" style="height:6px;"></td></tr><tr><td style="font-weight:bold;color:#666;">\u6536\u85cf\uff1a</td><td>%s</td><td style="font-weight:bold;color:#666;">\u91cd\u8981\u6027\uff1a</td><td>%s</td></tr><tr><td colspan="4" style="height:6px;"></td></tr><tr><td style="font-weight:bold;color:#666;">\u9879\u76ee\uff1a</td><td>%s</td><td style="font-weight:bold;color:#666;">\u9636\u6bb5\uff1a</td><td>%s</td></tr><tr><td colspan="4" style="height:6px;"></td></tr><tr><td style="font-weight:bold;color:#666;">\u5de5\u4f5c\u5305\uff1a</td><td>%s</td><td style="font-weight:bold;color:#666;">\u8d1f\u8d23\u4eba\uff1a</td><td>%s</td></tr><tr><td colspan="4" style="height:6px;"></td></tr><tr><td style="font-weight:bold;color:#666;">\u622a\u6b62\u65e5\u671f\uff1a</td><td>%s</td><td style="font-weight:bold;color:#666;">\u5173\u8054\u5de5\u5355\uff1a</td><td>%s</td></tr></table></div><div style="margin-bottom:10px;"><b>\u4efb\u52a1\u63cf\u8ff0</b><div style="background:#fafafa;padding:12px;border-radius:6px;border-left:4px solid #337ab7;min-height:30px;white-space:pre-wrap;margin-top:6px;">%s</div></div></div>',
+    # 检查是否为Admin
+    is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+    mc <- HTML(sprintf('<div style="padding:10px;"><div style="background:#f5f5f5;padding:14px;border-radius:6px;margin-bottom:15px;"><table style="width:100%%;font-size:14px;"><tr><td style="width:90px;font-weight:bold;color:#666;">\u4efb\u52a1\u7f16\u53f7\uff1a</td><td style="color:#337ab7;font-weight:bold;">%s</td><td style="width:90px;font-weight:bold;color:#666;">\u540d\u79f0\uff1a</td><td style="font-weight:bold;">%s</td></tr><tr><td colspan="4" style="height:6px;"></td></tr><tr><td style="font-weight:bold;color:#666;">\u4f18\u5148\u7ea7\uff1a</td><td><span style="background:%s;color:white;padding:2px 8px;border-radius:4px;">%s</span></td><td style="font-weight:bold;color:#666;">\u72b6\u6001\uff1a</td><td><span style="background:%s;color:white;padding:2px 8px;border-radius:4px;">%s</span></td></tr><tr><td colspan="4" style="height:6px;"></td></tr><tr><td style="font-weight:bold;color:#666;">\u6536\u85cf\uff1a</td><td>%s</td><td style="font-weight:bold;color:#666;">\u91cd\u8981\u6027\uff1a</td><td>%s</td></tr><tr><td colspan="4" style="height:6px;"></td></tr><tr><td style="font-weight:bold;color:#666;">\u9879\u76ee\uff1a</td><td>%s</td><td style="font-weight:bold;color:#666;">\u9636\u6bb5\uff1a</td><td>%s</td></tr><tr><td colspan="4" style="height:6px;"></td></tr><tr><td style="font-weight:bold;color:#666;">\u5de5\u4f5c\u5305\uff1a</td><td>%s</td><td style="font-weight:bold;color:#666;">\u8d1f\u8d23\u4eba\uff1a</td><td>%s</td></tr><tr><td colspan="4" style="height:6px;"></td></tr><tr><td style="font-weight:bold;color:#666;">\u622a\u6b62\u65e5\u671f\uff1a</td><td>%s</td><td style="font-weight:bold;color:#666;">\u5173\u8054\u5de5\u5355\uff1a</td><td>%s</td></tr><tr><td colspan="4" style="height:6px;"></td></tr><tr><td style="font-weight:bold;color:#666;">\u5df2\u6267\u884c\u6570\u91cf\uff1a</td><td style="color:#5cb85c;font-weight:bold;">%d</td><td style="font-weight:bold;color:#666;"></td><td></td></tr></table></div><div style="margin-bottom:10px;"><b>\u4efb\u52a1\u63cf\u8ff0</b><div style="background:#fafafa;padding:12px;border-radius:6px;border-left:4px solid #337ab7;min-height:30px;white-space:pre-wrap;margin-top:6px;">%s</div></div></div>',
       ifelse(is.na(t$task_no), "-", t$task_no), t$name, pc, t$priority, sc, sl,
       fav_icon, imp_flags,
       ifelse(is.na(t$project_name), "-", t$project_name), ifelse(is.na(t$phase_name), "-", t$phase_name),
       ifelse(is.na(t$wp_name), "-", t$wp_name), ifelse(is.na(t$assignee_name), "\u672a\u6307\u5b9a", t$assignee_name),
       ifelse(is.na(t$due_date), "-", t$due_date), ifelse(is.na(t$work_order_id), "\u65e0", as.character(t$work_order_id)),
+      exec_count,
       ifelse(is.na(t$description), "\u65e0\u63cf\u8ff0", t$description)))
     # 初始化日志显示区
     output$task_modal_logs_area <- renderUI({ HTML(lh) })
@@ -858,6 +864,8 @@ project_server <- function(input, output, session, rv) {
     if (t$status == "pending") sb <- tagList(actionButton("task_modal_start", "\u5f00\u59cb\u6267\u884c", class = "btn-primary"), actionButton("task_modal_block", "\u6807\u8bb0\u963b\u585e", class = "btn-danger"))
     else if (t$status == "in_progress") sb <- tagList(actionButton("task_modal_complete", "\u5b8c\u6210\u4efb\u52a1", class = "btn-success"), actionButton("task_modal_block", "\u6807\u8bb0\u963b\u585e", class = "btn-danger"))
     else if (t$status == "blocked") sb <- tagList(actionButton("task_modal_start", "\u6062\u590d\u6267\u884c", class = "btn-primary"))
+    # Admin专属修改按钮
+    if (is_admin) sb <- tagList(sb, actionButton("task_modal_edit", "\u4fee\u6539", class = "btn-warning"))
     showModal(modalDialog(title = paste0("\u4efb\u52a1\u8be6\u60c5 - ", ifelse(is.na(t$task_no), "", t$task_no)),
       tagList(mc,
         div(style = "padding:0 10px;",
@@ -874,6 +882,78 @@ project_server <- function(input, output, session, rv) {
   observeEvent(input$task_modal_start, { req(rv$task_modal_id); task_update_status(rv$task_modal_id, "in_progress", rv$current_user); showNotification("\u4efb\u52a1\u5df2\u5f00\u59cb", type = "message"); removeModal(); rv$proj_data_refresh <- rv$proj_data_refresh + 1 })
   observeEvent(input$task_modal_complete, { req(rv$task_modal_id); task_update_status(rv$task_modal_id, "completed", rv$current_user); showNotification("\u4efb\u52a1\u5df2\u5b8c\u6210", type = "message"); removeModal(); rv$proj_data_refresh <- rv$proj_data_refresh + 1 })
   observeEvent(input$task_modal_block, { req(rv$task_modal_id); task_update_status(rv$task_modal_id, "blocked", rv$current_user); showNotification("\u4efb\u52a1\u5df2\u6807\u8bb0\u963b\u585e", type = "warning"); removeModal(); rv$proj_data_refresh <- rv$proj_data_refresh + 1 })
+  # Admin专属：修改任务
+  observeEvent(input$task_modal_edit, {
+    req(rv$task_modal_id)
+    # 再次检查是否为Admin
+    is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+    if (!is_admin) { showNotification("只有Admin才能修改任务", type = "error"); return() }
+
+    task <- task_get_by_id(rv$task_modal_id)
+    if (nrow(task) == 0) return()
+    t <- task[1, ]
+
+    # 获取所有用户用于选择负责人
+    con <- db_connect()
+    users <- tryCatch({
+      dbGetQuery(con, "SELECT id, username FROM users WHERE active = 1 ORDER BY username")
+    }, error = function(e) data.frame(), finally = db_disconnect(con))
+    user_choices <- c("\u672a\u6307\u5b9a" = "")
+    if (nrow(users) > 0) {
+      user_choices <- c(user_choices, setNames(users$id, users$username))
+    }
+
+    # 获取状态和优先级选项
+    priority_choices <- config_option_choices("task_priority")
+    if (length(priority_choices) == 0) priority_choices <- c("\u4f4e"="\u4f4e", "\u4e2d"="\u4e2d", "\u9ad8"="\u9ad8", "\u7d27\u6025"="\u7d27\u6025")
+    status_choices <- c("\u5f85\u5904\u7406"="pending", "\u8fdb\u884c\u4e2d"="in_progress", "\u5df2\u5b8c\u6210"="completed", "\u5df2\u963b\u585e"="blocked")
+
+    removeModal()
+    showModal(modalDialog(title = "\u4fee\u6539\u4efb\u52a1",
+      wellPanel(
+        fluidRow(
+          column(12, textInput("task_edit_name", "\u4efb\u52a1\u540d\u79f0", value = t$name))
+        ),
+        fluidRow(
+          column(6, selectInput("task_edit_priority", "\u4f18\u5148\u7ea7", choices = priority_choices, selected = t$priority)),
+          column(6, selectInput("task_edit_status", "\u72b6\u6001", choices = status_choices, selected = t$status))
+        ),
+        fluidRow(
+          column(6, selectInput("task_edit_assignee", "\u8d1f\u8d23\u4eba", choices = user_choices, selected = ifelse(is.na(t$assigned_to), "", t$assigned_to))),
+          column(6, dateInput("task_edit_due_date", "\u622a\u6b62\u65e5\u671f", value = ifelse(is.na(t$due_date), NA, t$due_date), format = "yyyy-mm-dd", language = "zh-CN"))
+        ),
+        fluidRow(
+          column(12, textAreaInput("task_edit_description", "\u4efb\u52a1\u63cf\u8ff0", value = ifelse(is.na(t$description), "", t$description), rows = 4))
+        ),
+        fluidRow(
+          column(12, div(style = "text-align:right; margin-top:10px;",
+            actionButton("task_edit_save", "\u4fdd\u5b58\u4fee\u6539", class = "btn-primary"),
+            actionButton("task_edit_cancel", "\u53d6\u6d88", class = "btn-default", style = "margin-left:10px;")
+          ))
+        )
+      ),
+      size = "m", easyClose = FALSE
+    ))
+  })
+  observeEvent(input$task_edit_save, {
+    req(rv$task_modal_id, input$task_edit_name)
+    result <- task_update(
+      rv$task_modal_id,
+      input$task_edit_name,
+      input$task_edit_description,
+      input$task_edit_priority,
+      input$task_edit_status,
+      input$task_edit_assignee,
+      input$task_edit_due_date,
+      rv$current_user
+    )
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    if (result$success) {
+      removeModal()
+      rv$proj_data_refresh <- rv$proj_data_refresh + 1
+    }
+  })
+  observeEvent(input$task_edit_cancel, { removeModal() })
   observeEvent(input$task_modal_delete, { req(rv$task_modal_id); removeModal(); showModal(modalDialog(title = "\u786e\u8ba4\u5220\u9664", "\u786e\u5b9a\u5220\u9664\u8be5\u4efb\u52a1\u53ca\u5176\u6240\u6709\u53cd\u9988\u8bb0\u5f55\u5417\uff1f", footer = tagList(actionButton("task_confirm_delete", "\u786e\u8ba4\u5220\u9664", class = "btn-danger"), modalButton("\u53d6\u6d88")), easyClose = TRUE)) })
   observeEvent(input$task_confirm_delete, { result <- task_delete(rv$task_modal_id, rv$current_user); showNotification(result$message, type = ifelse(result$success, "message", "error")); removeModal(); rv$proj_data_refresh <- rv$proj_data_refresh + 1 })
   observeEvent(input$task_modal_add_log, {

@@ -42,6 +42,15 @@ main_ui <- function() {
       "首页",  # 标签页标题
       icon = icon("home"),  # 标签页图标
       fluidPage(
+        # 首页项目点击事件处理
+        tags$script(HTML("
+          $(document).on('click', '.proj-enter-btn', function(e) {
+            e.stopPropagation(); e.preventDefault();
+            var id = $(this).data('id');
+            var name = $(this).data('name');
+            Shiny.setInputValue('proj_enter_click', {id: String(id), name: name}, {priority:'event'});
+          });
+        ")),
         titlePanel("欢迎使用 Super ITOM 2"),
         br(),
         fluidRow(
@@ -131,34 +140,34 @@ main_ui <- function() {
             });
           "))
         ),
-        # 工单统计数据（小色块，一行显示）
+        # 工单统计数据（缩小一半，在一行显示）
         fluidRow(
           column(12,
-            div(style = "margin-bottom: 15px;",
+            div(style = "margin-bottom: 10px;",
               fluidRow(
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 12px 8px; margin-bottom: 5px;",
-                  div(style = "font-size: 14px; color: #666; font-weight: 500;", "总工单"),
-                  div(style = "font-size: 26px; font-weight: bold; color: #333;", textOutput("wo_stat_total"))
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0;",
+                  div(style = "font-size: 11px; color: #666; font-weight: 500;", "总工单"),
+                  div(style = "font-size: 18px; font-weight: bold; color: #333;", textOutput("wo_stat_total"))
                 )),
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 12px 8px; margin-bottom: 5px; background: #f0ad4e; color: white;",
-                  div(style = "font-size: 14px; font-weight: 500;", "待处理"),
-                  div(style = "font-size: 26px; font-weight: bold;", textOutput("wo_stat_pending"))
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #f0ad4e; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "待处理"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("wo_stat_pending"))
                 )),
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 12px 8px; margin-bottom: 5px; background: #5bc0de; color: white;",
-                  div(style = "font-size: 14px; font-weight: 500;", "已派发"),
-                  div(style = "font-size: 26px; font-weight: bold;", textOutput("wo_stat_assigned"))
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #5bc0de; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "已派发"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("wo_stat_assigned"))
                 )),
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 12px 8px; margin-bottom: 5px; background: #337ab7; color: white;",
-                  div(style = "font-size: 14px; font-weight: 500;", "处理中"),
-                  div(style = "font-size: 26px; font-weight: bold;", textOutput("wo_stat_processing"))
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #337ab7; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "处理中"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("wo_stat_processing"))
                 )),
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 12px 8px; margin-bottom: 5px; background: #5cb85c; color: white;",
-                  div(style = "font-size: 14px; font-weight: 500;", "已完成"),
-                  div(style = "font-size: 26px; font-weight: bold;", textOutput("wo_stat_completed"))
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #5cb85c; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "已完成"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("wo_stat_completed"))
                 )),
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 12px 8px; margin-bottom: 5px; background: #777; color: white;",
-                  div(style = "font-size: 14px; font-weight: 500;", "已关闭"),
-                  div(style = "font-size: 26px; font-weight: bold;", textOutput("wo_stat_closed"))
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #777; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "已关闭"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("wo_stat_closed"))
                 ))
               )
             )
@@ -172,8 +181,9 @@ main_ui <- function() {
                 br(),
                 fluidRow(
                   column(2, uiOutput("work_order_status_filter_ui")),
-                  column(1, div(style = "margin-top: 20px;", actionButton("refresh_work_orders", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;"))),
-                  column(1, div(style = "margin-top: 20px;", actionButton("show_create_work_order", "新建工单", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;")))
+                  column(3, textInput("work_order_search", NULL, placeholder = "搜索工单...")),
+                  column(2, div(style = "margin-top: 20px;", actionButton("show_create_work_order", "新建工单", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;"))),
+                  column(1, div(style = "margin-top: 20px;", actionButton("refresh_work_orders", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
                 ),
                 DTOutput("work_order_table")
               ),

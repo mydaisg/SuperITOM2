@@ -203,14 +203,14 @@ server <- function(input, output, session) {
     as.character(stats$closed[1])
   })
   
-  # 工单状态筛选动态UI
+  # 工单状态筛选动态UI（无标签）
   output$work_order_status_filter_ui <- renderUI({
     choices <- work_order_status_choices(include_all = TRUE)
     if (length(choices) == 0) {
       choices <- c("全部工单" = "all", "待处理" = "pending", "已派发" = "assigned",
                    "处理中" = "processing", "已完成" = "completed", "已关闭" = "closed")
     }
-    selectInput("work_order_status_filter", "状态筛选", choices = choices, selected = "all")
+    selectInput("work_order_status_filter", NULL, choices = choices, selected = "all")
   })
   
   # 工单优先级动态UI（从配置读取）
@@ -259,12 +259,24 @@ server <- function(input, output, session) {
     req(rv$logged_in)
     rv$work_order_refresh_trigger
     all_orders <- work_order_get_all(input$work_order_status_filter)
-    
+
+    # 服务器端搜索过滤
+    search_term <- input$work_order_search
+    if (!is.null(search_term) && nchar(trimws(search_term)) > 0) {
+      search_term <- toupper(trimws(search_term))
+      # 在工单号、标题、描述、分类、处理人中搜索
+      all_orders <- all_orders[grepl(search_term, toupper(all_orders$order_no)) |
+                               grepl(search_term, toupper(all_orders$title)) |
+                               grepl(search_term, toupper(all_orders$description)) |
+                               grepl(search_term, toupper(all_orders$category)) |
+                               grepl(search_term, toupper(all_orders$current_handler)), ]
+    }
+
       # 列顺序：工单号、标题、描述、分类、优先级、处理人、状态、创建人、时间
       if (nrow(all_orders) > 0) {
         # 工单号链接
-        order_nos <- ifelse(is.na(all_orders$order_no), 
-                           paste0("ITS", format(as.Date(all_orders$created_at), "%Y%m%d"), sprintf("%03d", all_orders$id)), 
+        order_nos <- ifelse(is.na(all_orders$order_no),
+                           paste0("ITS", format(as.Date(all_orders$created_at), "%Y%m%d"), sprintf("%03d", all_orders$id)),
                            all_orders$order_no)
         order_nos <- sprintf('<a href="#" class="wo-view-link" data-id="%s" style="font-weight:bold;color:#337ab7;">%s</a>', all_orders$id, order_nos)
         
@@ -317,11 +329,11 @@ server <- function(input, output, session) {
       options = list(
         pageLength = 50,  # 默认显示50行
         paging = TRUE,
-        searching = TRUE,
+        searching = FALSE,  # 禁用DT内置搜索，使用自定义搜索框
         ordering = TRUE,
         info = FALSE,  # 隐藏底部信息
         lengthChange = FALSE,  # 隐藏每页显示数选择器
-        dom = '<"row"<"col-sm-6"f><"col-sm-6"p>>t',  # 搜索框和分页在同一行
+        dom = 't<"float-left"p>',  # 分页器在底部左侧
         columnDefs = list(
           # 工单号列（可点击链接）
           list(targets = 0, width = '120px', className = 'dt-center'),
@@ -404,10 +416,17 @@ server <- function(input, output, session) {
       # 获取历史评论
       comments <- work_order_get_comments(wo_id)
       
-      # 构建评论 HTML
-      comments_html <- ""
+      # 构建评论 HTML（包含添加评论输入框）
+      comments_html <- "<div style='margin-top: 15px;'><div style='font-weight: bold; color: #333; margin-bottom: 10px; font-size: 15px;'>💬 评论</div>"
+      # 添加评论输入区域
+      comments_html <- paste0(comments_html, '
+        <div style="background: #fff; padding: 12px; border-radius: 6px; border: 1px solid #ddd; margin-bottom: 12px;">
+          <textarea id="work_order_comment_input" placeholder="输入评论内容..." style="width: 100%; min-height: 60px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; resize: vertical;"></textarea>
+          <button class="btn btn-primary btn-sm" style="margin-top: 8px;" onclick="Shiny.setInputValue(\'add_work_order_comment\', $(this).closest(\'.modal\').find(\'textarea\').val(), {priority: \'event\'});">添加评论</button>
+        </div>
+      ')
+      # 历史评论
       if (nrow(comments) > 0) {
-        comments_html <- "<div style='margin-top: 15px;'><div style='font-weight: bold; color: #333; margin-bottom: 10px; font-size: 15px;'>💬 历史评论</div>"
         for (i in 1:nrow(comments)) {
           creator <- ifelse(is.na(comments$creator_name[i]), "未知用户", comments$creator_name[i])
           comment_text <- ifelse(is.na(comments$comment[i]), "", comments$comment[i])
@@ -421,10 +440,10 @@ server <- function(input, output, session) {
               <div style="font-size: 13px; line-height: 1.6; white-space: pre-wrap;">%s</div>
             </div>', creator, created_at, comment_text))
         }
-        comments_html <- paste0(comments_html, "</div>")
       } else {
-        comments_html <- "<div style='margin-top: 15px;'><div style='font-weight: bold; color: #333; margin-bottom: 8px; font-size: 15px;'>💬 历史评论</div><div style='color: #999; font-style: italic;'>暂无评论</div></div>"
+        comments_html <- paste0(comments_html, "<div style='color: #999; font-style: italic; padding: 10px;'>暂无评论</div>")
       }
+      comments_html <- paste0(comments_html, "</div>")
       
       # 状态中文映射
       status_cn <- switch(wo$status,
@@ -549,21 +568,22 @@ server <- function(input, output, session) {
       action_buttons <- ""
       if (can_assign || can_start || can_complete || can_close || is_admin) {
         action_buttons <- '<div style="margin-bottom: 10px; padding: 10px; background: #f0f7ff; border-radius: 6px;">'
-        # Admin专属修改按钮
+        # Admin专属修改和删除按钮
         if (is_admin) {
-          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-warning btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_edit\', %d, {priority: \'event\'});">修改工单</button>', wo_id))
+          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-warning btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_edit\', %d, {priority: \'event\'});">修改</button>', wo_id))
+          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-danger btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'delete_work_order_btn\', %d, {priority: \'event\'});">删除</button>', wo_id))
         }
         if (can_assign) {
-          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-primary btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_assign\', %d, {priority: \'event\'});">派发工单</button>', wo_id))
+          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-primary btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_assign\', %d, {priority: \'event\'});">派发</button>', wo_id))
         }
         if (can_start) {
           action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-info btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_start\', %d, {priority: \'event\'});">开始处理</button>', wo_id))
         }
         if (can_complete) {
-          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-success btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_complete\', %d, {priority: \'event\'});">完成工单</button>', wo_id))
+          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-success btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_complete\', %d, {priority: \'event\'});">完成</button>', wo_id))
         }
         if (can_close) {
-          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-warning btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_close\', %d, {priority: \'event\'});">关闭工单</button>', wo_id))
+          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-warning btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_close\', %d, {priority: \'event\'});">关闭</button>', wo_id))
         }
         action_buttons <- paste0(action_buttons, '</div>')
       }
@@ -1143,14 +1163,22 @@ server <- function(input, output, session) {
   observeEvent(input$add_work_order_comment, {
     req(rv$logged_in)
     req(rv$selected_work_order_id)
-    req(input$work_order_comment)
+    comment_text <- input$add_work_order_comment
+    req(comment_text)
+    comment_text <- trimws(comment_text)
+    req(nchar(comment_text) > 0)
 
-    result <- work_order_add_comment(rv$selected_work_order_id, input$work_order_comment, rv$current_user)
+    result <- work_order_add_comment(rv$selected_work_order_id, comment_text, rv$current_user)
     showNotification(result$message, type = ifelse(result$success, "message", "error"))
 
     if (result$success) {
-      updateTextAreaInput(session, "work_order_comment", value = "")
+      # 刷新评论列表
       rv$work_order_comment_refresh <- ifelse(is.null(rv$work_order_comment_refresh), 0, rv$work_order_comment_refresh + 1)
+      # 重新加载工单详情以刷新评论显示
+      wo_detail <- work_order_get_by_id(rv$selected_work_order_id)
+      if (nrow(wo_detail) > 0) {
+        rv$selected_work_order_detail <- wo_detail
+      }
     }
   })
 
@@ -1635,9 +1663,12 @@ server <- function(input, output, session) {
         "planning" = "规划中", "active" = "进行中", "suspended" = "已暂停", p$status)
       status_color <- switch(as.character(p$status),
         "planning" = "#5bc0de", "active" = "#337ab7", "suspended" = "#f0ad4e", "#999")
+      # 转义单引号避免JS错误
+      escaped_name <- gsub("'", "\\\\'", as.character(p$name))
       div(style = "padding:8px 12px; margin-bottom:6px; background:#f9f9f9; border-radius:4px; font-size:13px;",
         span(style = sprintf("display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;color:white;background:%s;margin-right:8px;", status_color), status_cn),
-        tags$b(p$name),
+        tags$a(href = "#", class = "proj-enter-btn", `data-id` = p$id, `data-name` = p$name, style = "color:#337ab7;text-decoration:none;cursor:pointer;", 
+               tags$b(p$name)),
         span(style = "color:#999;margin-left:10px;font-size:12px;", sprintf("[%s]", p$project_no))
       )
     })
@@ -1668,10 +1699,16 @@ server <- function(input, output, session) {
         "pending" = "待处理", "assigned" = "已派发", "processing" = "处理中", w$status)
       status_color <- switch(as.character(w$status),
         "pending" = "#f0ad4e", "assigned" = "#5bc0de", "processing" = "#337ab7", "#999")
-      order_no <- ifelse(is.na(w$order_no), "-", w$order_no)
+      # 处理工单号显示
+      order_no_val <- ifelse(is.na(w$order_no) || is.null(w$order_no) || nchar(trimws(as.character(w$order_no))) == 0,
+                             sprintf("ITS%s%03d", format(as.Date(w$created_at), "%Y%m%d"), w$id),
+                             w$order_no)
       div(style = "padding:8px 12px; margin-bottom:6px; background:#f9f9f9; border-radius:4px; font-size:13px;",
         span(style = sprintf("display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;color:white;background:%s;margin-right:8px;", status_color), status_cn),
-        tags$b(order_no),
+        tags$a(href = "#", style = "color:#5bc0de;text-decoration:none;cursor:pointer;", 
+               onclick = sprintf("Shiny.setInputValue('work_order_view_click', %d, {priority: 'event'});",
+                                 w$id),
+               tags$b(order_no_val)),
         span(style = "margin-left:8px;", w$title),
         span(style = "color:#999;margin-left:8px;font-size:12px;", sprintf("[%s]", ifelse(is.na(w$category), "", w$category)))
       )
@@ -1707,10 +1744,14 @@ server <- function(input, output, session) {
       importance_flags <- if (!is.na(tk$importance) && tk$importance > 0) {
         paste(rep("\U0001F6A9", tk$importance), collapse = "")
       } else ""
+      task_no <- ifelse(is.na(tk$task_no), "-", tk$task_no)
       div(style = "padding:8px 12px; margin-bottom:6px; background:#f9f9f9; border-radius:4px; font-size:13px;",
         span(style = sprintf("display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;color:white;background:%s;margin-right:8px;", status_color), status_cn),
         if (importance_flags != "") span(style = "margin-right:6px;", importance_flags),
-        tags$b(ifelse(is.na(tk$task_no), "-", tk$task_no)),
+        tags$a(href = "#", style = "color:#5cb85c;text-decoration:none;cursor:pointer;", 
+               onclick = sprintf("Shiny.setInputValue('task_view_click', %d, {priority: 'event'});",
+                                 tk$id),
+               tags$b(task_no)),
         span(style = "margin-left:8px;", tk$name),
         span(style = "color:#999;margin-left:8px;font-size:12px;", sprintf("[%s]", ifelse(is.na(tk$project_name), "", tk$project_name)))
       )
@@ -1720,6 +1761,17 @@ server <- function(input, output, session) {
 
   # 项目管理模块逻辑
   project_server(input, output, session, rv)
+
+  # 首页项目点击监听（直接监听，保证首页项目点击能正常工作）
+  observeEvent(input$proj_enter_click, {
+    req(rv$logged_in)
+    req(input$proj_enter_click$id)
+    rv$proj_nav_project_id <- input$proj_enter_click$id
+    rv$proj_nav_project_name <- input$proj_enter_click$name
+    rv$proj_nav_level <- "phases"
+    # 切换到项目管理tab
+    updateTabsetPanel(session, "main_tabs", selected = "项目")
+  })
 
   # 日报模块逻辑
   daily_report_server(input, output, session, rv)

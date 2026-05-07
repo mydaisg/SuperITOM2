@@ -414,6 +414,58 @@ task_update_status <- function(id, new_status, current_user = NULL) {
   }, finally = { db_disconnect(con) })
 }
 
+# 更新任务信息（Admin专属）
+task_update <- function(id, name, description, priority, status, assignee_id = NULL, due_date = NULL, current_user = NULL) {
+  con <- db_connect()
+  tryCatch({
+    id <- as.integer(id)
+    # 获取当前任务信息用于日志
+    old_task <- dbGetQuery(con, sprintf("SELECT * FROM project_tasks WHERE id = %d", id))
+    if (nrow(old_task) == 0) return(list(success = FALSE, message = "任务不存在"))
+
+    # 构建更新SQL
+    updates <- c()
+    updates <- c(updates, sprintf("name = '%s'", gsub("'", "''", name)))
+    updates <- c(updates, sprintf("description = '%s'", gsub("'", "''", description)))
+    updates <- c(updates, sprintf("priority = '%s'", gsub("'", "''", priority)))
+    updates <- c(updates, sprintf("status = '%s'", gsub("'", "''", status)))
+
+    if (!is.null(assignee_id) && !is.na(assignee_id) && assignee_id != "") {
+      updates <- c(updates, sprintf("assigned_to = %d", as.integer(assignee_id)))
+    } else {
+      updates <- c(updates, "assigned_to = NULL")
+    }
+
+    if (!is.null(due_date) && !is.na(due_date) && due_date != "") {
+      updates <- c(updates, sprintf("due_date = '%s'", due_date))
+    } else {
+      updates <- c(updates, "due_date = NULL")
+    }
+
+    completed_sql <- if (status == "completed") ", completed_at=CURRENT_TIMESTAMP" else ""
+    update_sql <- paste(c(
+      sprintf("UPDATE project_tasks SET %s%s, updated_at=CURRENT_TIMESTAMP WHERE id=%d",
+        paste(updates, collapse = ", "), completed_sql, id)))
+    dbExecute(con, update_sql)
+
+    # 记录修改日志
+    user_id <- ifelse(is.null(current_user), 1, current_user$id[1])
+    operator_name <- ifelse(is.null(current_user), "系统", current_user$username[1])
+    log_content <- sprintf("修改任务信息: 名称[%s→%s], 优先级[%s→%s], 状态[%s→%s]",
+      old_task$name[1], name, old_task$priority[1], priority,
+      old_task$status[1], status)
+    dbExecute(con, sprintf(
+      "INSERT INTO project_task_logs (task_id, log_type, content, created_by)
+       VALUES (%d, 'note', '%s', %d)",
+      id, gsub("'", "''", log_content), user_id))
+    log_user_operation("修改任务", sprintf("任务ID:%d", id), operator_name)
+
+    list(success = TRUE, message = "任务已更新")
+  }, error = function(e) {
+    list(success = FALSE, message = paste("更新失败:", e$message))
+  }, finally = { db_disconnect(con) })
+}
+
 task_delete <- function(id, current_user = NULL) {
   con <- db_connect()
   tryCatch({
