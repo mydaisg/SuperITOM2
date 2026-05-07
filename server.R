@@ -202,12 +202,12 @@ server <- function(input, output, session) {
     rv$work_order_refresh_trigger
     all_orders <- work_order_get_all(input$work_order_status_filter)
     
-    # 列顺序：操作、工单号、标题、描述、分类、优先级、处理人、状态、创建人、时间
+    # 列顺序：工单号、操作、标题、描述、分类、优先级、处理人、状态、创建人、时间
     if (nrow(all_orders) > 0) {
       # 选择并重命名列
       display_data <- data.frame(
-        操作 = sprintf('<button class="btn btn-xs btn-info wo-view-btn" data-id="%s">查看</button>', all_orders$id),
         工单号 = ifelse(is.na(all_orders$order_no), paste0("ITS", format(as.Date(all_orders$created_at), "%Y%m%d"), sprintf("%03d", all_orders$id)), all_orders$order_no),
+        操作 = sprintf('<button class="btn btn-xs btn-info wo-view-btn" data-id="%s">查看</button>', all_orders$id),
         标题 = all_orders$title,
         描述 = all_orders$description,
         分类 = ifelse(is.na(all_orders$category), "未分类", all_orders$category),
@@ -219,12 +219,24 @@ server <- function(input, output, session) {
         stringsAsFactors = FALSE
       )
       
-      # 状态中文映射
-      display_data$状态 <- ifelse(display_data$状态 == "pending", "待处理",
-                               ifelse(display_data$状态 == "assigned", "已派发",
-                               ifelse(display_data$状态 == "processing", "处理中",
-                               ifelse(display_data$状态 == "completed", "已完成",
-                               ifelse(display_data$状态 == "closed", "已关闭", display_data$状态)))))
+      # 状态中文映射和颜色块 HTML（状态是第8列，索引7）
+      status_colors <- data.frame(
+        raw = c("pending", "assigned", "processing", "completed", "closed"),
+        display = c("待处理", "已派发", "处理中", "已完成", "已关闭"),
+        bg = c("#f0ad4e", "#5bc0de", "#ff9800", "#5cb85c", "#d9534f"),
+        stringsAsFactors = FALSE
+      )
+      
+      # 将状态转为带颜色块的 HTML
+      display_data$状态 <- sapply(display_data$状态, function(s) {
+        color_row <- status_colors[status_colors$raw == s, ]
+        if (nrow(color_row) > 0) {
+          sprintf('<span style="background-color:%s; color:white; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;">%s</span>',
+                  color_row$bg, color_row$display)
+        } else {
+          s
+        }
+      })
     } else {
       display_data <- data.frame(
         操作 = character(),
@@ -254,10 +266,10 @@ server <- function(input, output, session) {
         ordering = TRUE,
         info = TRUE,
         columnDefs = list(
-          # 操作列（按钮）
-          list(targets = 0, width = '60px', className = 'dt-center', orderable = FALSE),
           # 工单号列
-          list(targets = 1, width = '120px', className = 'dt-center'),
+          list(targets = 0, width = '120px', className = 'dt-center'),
+          # 操作列（按钮）
+          list(targets = 1, width = '60px', className = 'dt-center', orderable = FALSE),
           # 标题列
           list(targets = 2, width = '120px', className = 'dt-left'),
           # 描述列：限制宽度
