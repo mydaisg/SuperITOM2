@@ -1,0 +1,23 @@
+{
+  "name": "superm2-dev",
+  "leadAgentId": "e37815e06d65488689e92ad22b44975d",
+  "workspacePath": "d:/GitHub/SuperITOM2",
+  "createdAt": "2026-05-06T07:46:59.116Z",
+  "options": {
+    "workspacePath": "d:/GitHub/SuperITOM2",
+    "isAutoTeam": false
+  },
+  "members": [
+    {
+      "memberId": "team-lead@superm2-dev",
+      "name": "team-lead",
+      "role": "Team Lead - coordinates the team and interacts with the user"
+    },
+    {
+      "memberId": "reviewer@superm2-dev",
+      "name": "reviewer",
+      "role": "代码审查和测试验证"
+    }
+  ],
+  "isAutoTeam": false
+}
