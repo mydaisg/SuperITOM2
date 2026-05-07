@@ -203,7 +203,7 @@ server <- function(input, output, session) {
     as.character(stats$closed[1])
   })
   
-  # 工单状态筛选动态UI（从配置读取）
+  # 工单状态筛选动态UI
   output$work_order_status_filter_ui <- renderUI({
     choices <- work_order_status_choices(include_all = TRUE)
     if (length(choices) == 0) {
@@ -260,12 +260,17 @@ server <- function(input, output, session) {
     rv$work_order_refresh_trigger
     all_orders <- work_order_get_all(input$work_order_status_filter)
     
-    # 列顺序：工单号、操作、标题、描述、分类、优先级、处理人、状态、创建人、时间
-    if (nrow(all_orders) > 0) {
-      # 选择并重命名列
-      display_data <- data.frame(
-        工单号 = ifelse(is.na(all_orders$order_no), paste0("ITS", format(as.Date(all_orders$created_at), "%Y%m%d"), sprintf("%03d", all_orders$id)), all_orders$order_no),
-        操作 = sprintf('<button class="btn btn-xs btn-info wo-view-btn" data-id="%s">查看</button>', all_orders$id),
+      # 列顺序：工单号、标题、描述、分类、优先级、处理人、状态、创建人、时间
+      if (nrow(all_orders) > 0) {
+        # 工单号链接
+        order_nos <- ifelse(is.na(all_orders$order_no), 
+                           paste0("ITS", format(as.Date(all_orders$created_at), "%Y%m%d"), sprintf("%03d", all_orders$id)), 
+                           all_orders$order_no)
+        order_nos <- sprintf('<a href="#" class="wo-view-link" data-id="%s" style="font-weight:bold;color:#337ab7;">%s</a>', all_orders$id, order_nos)
+        
+        # 选择并重命名列（去掉操作列）
+        display_data <- data.frame(
+          工单号 = order_nos,
         标题 = all_orders$title,
         描述 = all_orders$description,
         分类 = ifelse(is.na(all_orders$category), "未分类", all_orders$category),
@@ -293,7 +298,6 @@ server <- function(input, output, session) {
       })
     } else {
       display_data <- data.frame(
-        操作 = character(),
         工单号 = character(),
         标题 = character(),
         描述 = character(),
@@ -319,26 +323,24 @@ server <- function(input, output, session) {
         lengthChange = FALSE,  # 隐藏每页显示数选择器
         dom = '<"row"<"col-sm-6"f><"col-sm-6"p>>t',  # 搜索框和分页在同一行
         columnDefs = list(
-          # 工单号列
+          # 工单号列（可点击链接）
           list(targets = 0, width = '120px', className = 'dt-center'),
-          # 操作列（按钮）
-          list(targets = 1, width = '60px', className = 'dt-center', orderable = FALSE),
           # 标题列
-          list(targets = 2, width = '150px', className = 'dt-left'),
+          list(targets = 1, width = '150px', className = 'dt-left'),
           # 描述列：限制宽度
-          list(targets = 3, width = '200px', className = 'dt-left'),
+          list(targets = 2, width = '200px', className = 'dt-left'),
           # 分类列
-          list(targets = 4, width = '80px', className = 'dt-center'),
+          list(targets = 3, width = '80px', className = 'dt-center'),
           # 优先级列
-          list(targets = 5, width = '60px', className = 'dt-center'),
+          list(targets = 4, width = '60px', className = 'dt-center'),
           # 处理人列
-          list(targets = 6, width = '80px', className = 'dt-center'),
+          list(targets = 5, width = '80px', className = 'dt-center'),
           # 状态列
-          list(targets = 7, width = '80px', className = 'dt-center'),
+          list(targets = 6, width = '80px', className = 'dt-center'),
           # 创建人列
-          list(targets = 8, width = '80px', className = 'dt-center'),
+          list(targets = 7, width = '80px', className = 'dt-center'),
           # 时间列
-          list(targets = 9, width = '130px', className = 'dt-center')
+          list(targets = 8, width = '130px', className = 'dt-center')
         ),
         rowCallback = JS(
           "function(row, data, index) {
@@ -350,7 +352,7 @@ server <- function(input, output, session) {
               'white-space': 'nowrap'
             });
             // 描述列允许换行但限制行数
-            $('td:eq(3)', row).css({
+            $('td:eq(2)', row).css({
               'white-space': 'normal',
               'line-height': '1.4em',
               'max-height': '4.2em'
@@ -359,7 +361,8 @@ server <- function(input, output, session) {
         )
       ),
       callback = JS(
-        "table.on('click', 'button.wo-view-btn', function() {
+        "table.on('click', 'a.wo-view-link', function(e) {
+          e.preventDefault();
           var woId = $(this).data('id');
           Shiny.setInputValue('work_order_view_click', woId);
         });"
@@ -533,13 +536,194 @@ server <- function(input, output, session) {
       comments_html
       ))
       
+      # 根据状态决定显示哪些操作按钮
+      can_assign <- wo$status %in% c("pending")
+      can_start <- wo$status %in% c("pending", "assigned")
+      can_complete <- wo$status %in% c("processing")
+      can_close <- wo$status %in% c("completed")
+      
+      # 检查是否为Admin
+      is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+      
+      # 构建操作按钮HTML
+      action_buttons <- ""
+      if (can_assign || can_start || can_complete || can_close || is_admin) {
+        action_buttons <- '<div style="margin-bottom: 10px; padding: 10px; background: #f0f7ff; border-radius: 6px;">'
+        # Admin专属修改按钮
+        if (is_admin) {
+          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-warning btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_edit\', %d, {priority: \'event\'});">修改工单</button>', wo_id))
+        }
+        if (can_assign) {
+          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-primary btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_assign\', %d, {priority: \'event\'});">派发工单</button>', wo_id))
+        }
+        if (can_start) {
+          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-info btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_start\', %d, {priority: \'event\'});">开始处理</button>', wo_id))
+        }
+        if (can_complete) {
+          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-success btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_complete\', %d, {priority: \'event\'});">完成工单</button>', wo_id))
+        }
+        if (can_close) {
+          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-warning btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_close\', %d, {priority: \'event\'});">关闭工单</button>', wo_id))
+        }
+        action_buttons <- paste0(action_buttons, '</div>')
+      }
+      
       showModal(modalDialog(
         title = paste0("工单详情 - ", ifelse(is.na(wo$order_no), sprintf("ITS%s%03d", format(as.Date(wo$created_at), "%Y%m%d"), wo$id), wo$order_no)),
-        modal_content,
-        footer = modalButton("关闭"),
+        HTML(modal_content),
+        footer = tagList(
+          HTML(action_buttons),
+          modalButton("关闭")
+        ),
         size = "l",
         easyClose = TRUE
       ))
+    }
+  })
+  
+  # 处理弹窗内派发按钮点击事件
+  observeEvent(input$modal_work_order_assign, {
+    req(rv$logged_in)
+    wo_id <- input$modal_work_order_assign
+    req(wo_id)
+    
+    # 获取工单详情
+    wo_detail <- work_order_get_by_id(wo_id)
+    if (nrow(wo_detail) > 0) {
+      rv$selected_work_order_id <- wo_id
+      rv$selected_work_order_detail <- wo_detail
+      
+      # 获取可派发用户列表
+      users <- work_order_get_assignable_users()
+      if (nrow(users) > 0) {
+        choices <- setNames(users$id, sprintf("%s (%s)", users$username, users$role))
+        
+        # 关闭详情弹窗
+        removeModal()
+        
+        # 显示派发选择弹窗
+        showModal(modalDialog(
+          title = "派发工单",
+          wellPanel(
+            h4("选择处理人"),
+            selectInput("modal_assignee_select", "处理人", choices = choices),
+            actionButton("modal_confirm_assign", "确认派发", class = "btn-primary")
+          ),
+          footer = modalButton("取消"),
+          easyClose = TRUE
+        ))
+      }
+    }
+  })
+  
+  # 处理弹窗内开始处理按钮点击事件
+  observeEvent(input$modal_work_order_start, {
+    req(rv$logged_in)
+    wo_id <- input$modal_work_order_start
+    req(wo_id)
+    
+    result <- work_order_start_handle(wo_id, rv$current_user)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    
+    if (result$success) {
+      removeModal()
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+    }
+  })
+  
+  # 处理弹窗内完成工单按钮点击事件
+  observeEvent(input$modal_work_order_complete, {
+    req(rv$logged_in)
+    wo_id <- input$modal_work_order_complete
+    req(wo_id)
+    
+    removeModal()
+    
+    showModal(modalDialog(
+      title = "完成工单",
+      wellPanel(
+        h4("输入解决方案/处理结果"),
+        textAreaInput("modal_resolution_input", "", rows = 4),
+        actionButton("modal_confirm_complete", "确认完成", class = "btn-success")
+      ),
+      footer = modalButton("取消"),
+      easyClose = TRUE
+    ))
+    
+    # 临时保存工单ID用于完成
+    rv$temp_complete_wo_id <- wo_id
+  })
+  
+  # 处理弹窗内关闭工单按钮点击事件
+  observeEvent(input$modal_work_order_close, {
+    req(rv$logged_in)
+    wo_id <- input$modal_work_order_close
+    req(wo_id)
+    
+    removeModal()
+    
+    showModal(modalDialog(
+      title = "关闭工单",
+      wellPanel(
+        h4("选择关闭原因"),
+        selectInput("modal_close_reason_input", "", 
+                   choices = c("请选择关闭原因" = "", "已处理和交付" = "已处理和交付", "无法处理关闭" = "无法处理关闭")),
+        actionButton("modal_confirm_close", "确认关闭", class = "btn-warning")
+      ),
+      footer = modalButton("取消"),
+      easyClose = TRUE
+    ))
+    
+    rv$temp_close_wo_id <- wo_id
+  })
+  
+  # 处理弹窗内确认派发
+  observeEvent(input$modal_confirm_assign, {
+    req(rv$logged_in)
+    req(input$modal_assignee_select)
+    req(rv$selected_work_order_id)
+    
+    result <- work_order_assign(rv$selected_work_order_id, input$modal_assignee_select, rv$current_user)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    
+    if (result$success) {
+      removeModal()
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+      rv$selected_work_order_id <- NULL
+      rv$selected_work_order_detail <- NULL
+    }
+  })
+  
+  # 处理弹窗内确认完成
+  observeEvent(input$modal_confirm_complete, {
+    req(rv$logged_in)
+    req(input$modal_resolution_input)
+    req(rv$temp_complete_wo_id)
+    
+    result <- work_order_complete(rv$temp_complete_wo_id, input$modal_resolution_input, rv$current_user)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    
+    if (result$success) {
+      removeModal()
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+      rv$temp_complete_wo_id <- NULL
+    }
+  })
+  
+  # 处理弹窗内确认关闭
+  observeEvent(input$modal_confirm_close, {
+    req(rv$logged_in)
+    req(input$modal_close_reason_input)
+    req(input$modal_close_reason_input != "")
+    req(rv$temp_close_wo_id)
+    
+    result <- work_order_close(rv$temp_close_wo_id, input$modal_close_reason_input, rv$current_user)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    
+    if (result$success) {
+      removeModal()
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+      rv$temp_close_wo_id <- NULL
     }
   })
   
@@ -655,6 +839,163 @@ server <- function(input, output, session) {
   observeEvent(input$refresh_work_orders, {
     req(rv$logged_in)
     rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+  })
+  
+  # 处理新建工单按钮点击事件 - 显示弹窗
+  observeEvent(input$show_create_work_order, {
+    req(rv$logged_in)
+    
+    # 获取优先级和分类选项
+    priority_choices <- config_option_choices("work_order_priority")
+    if (length(priority_choices) == 0) {
+      priority_choices <- c("低" = "低", "中" = "中", "高" = "高", "紧急" = "紧急")
+    }
+    priority_default <- config_option_default("work_order_priority")
+    if (is.null(priority_default) || priority_default == "") priority_default <- "中"
+    
+    category_choices <- config_option_choices("work_order_category")
+    if (length(category_choices) == 0) {
+      category_choices <- c("一般" = "一般", "硬件故障" = "硬件故障", "软件故障" = "软件故障", 
+                            "网络问题" = "网络问题", "系统维护" = "系统维护", "账号权限" = "账号权限", "其他" = "其他")
+    }
+    category_default <- config_option_default("work_order_category")
+    if (is.null(category_default) || category_default == "") category_default <- "一般"
+    
+    showModal(modalDialog(
+      title = "新建工单",
+      wellPanel(
+        h4("工单信息"),
+        textInput("modal_wo_title", "标题", placeholder = "请输入工单标题"),
+        textAreaInput("modal_wo_description", "描述", rows = 4, placeholder = "请输入工单描述"),
+        selectInput("modal_wo_priority", "优先级", choices = priority_choices, selected = priority_default),
+        selectInput("modal_wo_category", "分类", choices = category_choices, selected = category_default),
+        actionButton("modal_confirm_create_wo", "创建工单", class = "btn-primary")
+      ),
+      footer = modalButton("取消"),
+      easyClose = TRUE
+    ))
+  })
+  
+  # 处理弹窗内确认创建工单
+  observeEvent(input$modal_confirm_create_wo, {
+    req(rv$logged_in)
+    req(input$modal_wo_title, input$modal_wo_description)
+    
+    result <- work_order_add(
+      input$modal_wo_title, 
+      input$modal_wo_description, 
+      input$modal_wo_priority,
+      input$modal_wo_category,
+      "",
+      rv$current_user
+    )
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    
+    if (result$success) {
+      removeModal()
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+    }
+  })
+  
+  # 处理弹窗内修改工单按钮点击事件（Admin专属）
+  observeEvent(input$modal_work_order_edit, {
+    req(rv$logged_in)
+    wo_id <- input$modal_work_order_edit
+    req(wo_id)
+    
+    # 检查是否为Admin
+    is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+    if (!is_admin) {
+      showNotification("只有Admin才能修改工单", type = "error")
+      return()
+    }
+    
+    # 获取工单详情
+    wo_detail <- work_order_get_by_id(wo_id)
+    if (nrow(wo_detail) > 0) {
+      rv$selected_work_order_id <- wo_id
+      rv$selected_work_order_detail <- wo_detail
+      
+      # 获取优先级和分类选项
+      priority_choices <- config_option_choices("work_order_priority")
+      if (length(priority_choices) == 0) {
+        priority_choices <- c("低" = "低", "中" = "中", "高" = "高", "紧急" = "紧急")
+      }
+      
+      category_choices <- config_option_choices("work_order_category")
+      if (length(category_choices) == 0) {
+        category_choices <- c("一般" = "一般", "硬件故障" = "硬件故障", "软件故障" = "软件故障", 
+                              "网络问题" = "网络问题", "系统维护" = "系统维护", "账号权限" = "账号权限", "其他" = "其他")
+      }
+      
+      wo <- wo_detail[1, ]
+      
+      # 获取状态选项
+      status_choices <- c("pending" = "待处理", "assigned" = "已派发", "processing" = "处理中", 
+                          "completed" = "已完成", "closed" = "已关闭")
+      
+      # 获取工程师列表
+      con <- db_connect()
+      engineers <- tryCatch({
+        dbGetQuery(con, "SELECT id, username FROM users 
+                      WHERE role IN ('it_desk', 'it_engineer', 'sys_engineer', 'admin') 
+                      AND active = 1 ORDER BY username")
+      }, error = function(e) data.frame(), finally = db_disconnect(con))
+      
+      engineer_choices <- c("未分配" = "unassigned")
+      if (nrow(engineers) > 0) {
+        engineer_choices <- c(engineer_choices, setNames(engineers$id, engineers$username))
+      }
+      
+      # 关闭详情弹窗
+      removeModal()
+      
+      # 显示修改弹窗
+      showModal(modalDialog(
+        title = paste0("修改工单 - ", ifelse(is.na(wo$order_no), sprintf("ITS%s%03d", format(as.Date(wo$created_at), "%Y%m%d"), wo$id), wo$order_no)),
+        wellPanel(
+          h4("修改工单信息"),
+          textInput("modal_edit_wo_order_no", "工单号", value = ifelse(is.na(wo$order_no), "", wo$order_no), placeholder = "ITSYYYYMMDDXXX"),
+          textInput("modal_edit_wo_title", "标题", value = wo$title),
+          textAreaInput("modal_edit_wo_description", "描述", rows = 4, value = wo$description),
+          selectInput("modal_edit_wo_priority", "优先级", choices = priority_choices, selected = wo$priority),
+          selectInput("modal_edit_wo_category", "分类", choices = category_choices, selected = ifelse(is.na(wo$category), "一般", wo$category)),
+          selectInput("modal_edit_wo_status", "状态", choices = status_choices, selected = wo$status),
+          selectInput("modal_edit_wo_assigned_to", "指派给", choices = engineer_choices, 
+                      selected = ifelse(is.na(wo$assigned_to), "unassigned", wo$assigned_to)),
+          actionButton("modal_confirm_edit_wo", "保存修改", class = "btn-warning")
+        ),
+        footer = modalButton("取消"),
+        easyClose = TRUE
+      ))
+    }
+  })
+  
+  # 处理弹窗内确认修改工单
+  observeEvent(input$modal_confirm_edit_wo, {
+    req(rv$logged_in)
+    req(rv$selected_work_order_id)
+    req(input$modal_edit_wo_order_no, input$modal_edit_wo_title, input$modal_edit_wo_description)
+    
+    result <- work_order_edit(
+      rv$selected_work_order_id,
+      input$modal_edit_wo_order_no,
+      input$modal_edit_wo_title,
+      input$modal_edit_wo_description,
+      input$modal_edit_wo_priority,
+      input$modal_edit_wo_category,
+      input$modal_edit_wo_status,
+      input$modal_edit_wo_assigned_to,
+      rv$current_user
+    )
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    
+    if (result$success) {
+      removeModal()
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+      rv$selected_work_order_id <- NULL
+      rv$selected_work_order_detail <- NULL
+    }
   })
   
   # 处理派发工单按钮点击事件

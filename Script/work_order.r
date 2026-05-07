@@ -182,14 +182,16 @@ work_order_generate_number <- function() {
       })
     }
     
-    # 达到最大重试次数，返回带时间戳的唯一ID
+    # 达到最大重试次数，使用备用方案
     warning("工单号重试达到上限，使用备用方案")
-    return(sprintf("%s%s%04d", prefix, format(Sys.time(), "%H%M%S"), as.integer(Sys.time()) %% 10000))
-    
+    # 备用方案：使用时间戳生成3位伪随机流水号
+    backup_seq <- (as.integer(Sys.time()) %% 1000) + 1
+    return(sprintf("%s%03d", prefix, backup_seq))
   }, error = function(e) {
     warning(paste("生成工单号失败:", e$message))
-    # 失败时返回带时间戳的唯一ID
-    return(sprintf("%s%s%04d", "ITS", format(Sys.time(), "%Y%m%d%H%M%S"), as.integer(Sys.time()) %% 10000))
+    # 备用方案：使用时间戳生成3位伪随机流水号
+    backup_seq <- (as.integer(Sys.time()) %% 1000) + 1
+    return(sprintf("%s%03d", prefix, backup_seq))
   }, finally = {
     db_disconnect(con)
   })
@@ -421,16 +423,24 @@ work_order_get_stats <- function() {
   })
 }
 
-# 编辑工单
-work_order_edit <- function(id, title, description, priority, category, current_user = NULL) {
+# 编辑工单（修改所有信息）
+work_order_edit <- function(id, order_no, title, description, priority, category, status, assigned_to, current_user = NULL) {
   con <- db_connect()
   tryCatch({
     id <- as.integer(id)
+    
+    # 处理assigned_to字段
+    if (is.null(assigned_to) || assigned_to == "" || assigned_to == "unassigned") {
+      assigned_part <- "assigned_to = NULL"
+    } else {
+      assigned_part <- sprintf("assigned_to = %d", as.integer(assigned_to))
+    }
+    
     query <- sprintf("UPDATE work_orders
-                     SET title = '%s', description = '%s', priority = '%s',
-                         category = '%s', updated_at = CURRENT_TIMESTAMP
+                     SET order_no = '%s', title = '%s', description = '%s', priority = '%s',
+                         category = '%s', status = '%s', %s, updated_at = CURRENT_TIMESTAMP
                      WHERE id = %d",
-                     title, description, priority, category, id)
+                     order_no, title, description, priority, category, status, assigned_part, id)
     dbExecute(con, query)
 
     # 记录日志
@@ -456,6 +466,9 @@ work_order_add_comment <- function(work_order_id, comment, current_user = NULL) 
                      VALUES (%d, '%s', %d)",
                      work_order_id, comment, user_id)
     dbExecute(con, query)
+    Sys.sleep(0.01)
+    update_sql <- paste0("UPDATE work_order_comments SET created_at = datetime('now', 'localtime') WHERE id = (SELECT MAX(id) FROM work_order_comments WHERE work_order_id = ", work_order_id, ")")
+    dbExecute(con, update_sql)
 
     # 记录日志
     operator_name <- ifelse(is.null(current_user), "系统", current_user$username[1])

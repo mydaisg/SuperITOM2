@@ -108,6 +108,25 @@ migrate_database <- function() {
       )")
       cat("数据库迁移完成：已创建 std_hosts 表\n")
     }
+    
+    # 迁移：确保 work_order_comments 表存在
+    if (!"work_order_comments" %in% tables) {
+      dbExecute(con, "CREATE TABLE work_order_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        work_order_id INTEGER NOT NULL,
+        comment TEXT NOT NULL,
+        created_by INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )")
+      cat("数据库迁移完成：已创建 work_order_comments 表\n")
+    } else {
+      # 检查并添加缺失的 created_at 列
+      comment_columns <- dbGetQuery(con, "PRAGMA table_info(work_order_comments)")
+      if (!"created_at" %in% comment_columns$name) {
+        dbExecute(con, "ALTER TABLE work_order_comments ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP")
+        cat("数据库迁移完成：已添加 created_at 列到 work_order_comments 表\n")
+      }
+    }
 
     # 迁移：修复 work_orders 表中的重复工单号（按日期顺序重新编号）
     if ("work_orders" %in% tables) {

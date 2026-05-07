@@ -171,8 +171,9 @@ main_ui <- function() {
               tabPanel("工单列表",
                 br(),
                 fluidRow(
-                  column(3, uiOutput("work_order_status_filter_ui")),
-                  column(1, div(style = "margin-top: 20px;", actionButton("refresh_work_orders", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+                  column(2, uiOutput("work_order_status_filter_ui")),
+                  column(1, div(style = "margin-top: 20px;", actionButton("refresh_work_orders", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;"))),
+                  column(1, div(style = "margin-top: 20px;", actionButton("show_create_work_order", "新建工单", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;")))
                 ),
                 DTOutput("work_order_table")
               ),
