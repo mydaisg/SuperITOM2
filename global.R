@@ -15,6 +15,8 @@ db_path <- get_db_path()
 
 db_connect <- function() {
   con <- dbConnect(RSQLite::SQLite(), db_path)
+  # 设置为本地时区，避免 CURRENT_TIMESTAMP 返回 UTC 时间
+  dbExecute(con, "PRAGMA localtime = 1")
   return(con)
 }
 

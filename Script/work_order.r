@@ -147,13 +147,16 @@ work_order_generate_number <- function() {
       dbExecute(con, query)
       
       tryCatch({
-        # 查询今天已有的最大流水号
-        query <- sprintf("SELECT order_no FROM work_orders WHERE order_no LIKE '%s%%' ORDER BY order_no DESC LIMIT 1", prefix)
+        # 查询今天已有的最大流水号（只匹配正确格式：ITSYYYYMMDD + 3位数字）
+        # GLOB 模式匹配：prefix + 3个数字结尾
+        glob_pattern <- paste0(prefix, "???")
+        query <- sprintf("SELECT order_no FROM work_orders WHERE order_no GLOB '%s' ORDER BY order_no DESC LIMIT 1", glob_pattern)
         result <- dbGetQuery(con, query)
         
         if (nrow(result) > 0 && !is.na(result$order_no[1])) {
-          # 提取流水号并+1
-          last_seq <- as.integer(substr(result$order_no[1], nchar(prefix) + 1))
+          # 提取流水号并+1（取最后3位）
+          last_seq_str <- substr(result$order_no[1], nchar(prefix) + 1, nchar(prefix) + 3)
+          last_seq <- as.integer(last_seq_str)
           new_seq <- last_seq + 1
         } else {
           # 今天第一个工单
