@@ -109,6 +109,47 @@ migrate_database <- function() {
       cat("数据库迁移完成：已创建 std_hosts 表\n")
     }
 
+    # 迁移：修复 work_orders 表中的重复工单号（按日期顺序重新编号）
+    if ("work_orders" %in% tables) {
+      # 检查 order_no 是否有重复值
+      dup_check <- dbGetQuery(con, "SELECT order_no, COUNT(*) as cnt FROM work_orders WHERE order_no IS NOT NULL AND order_no != '' GROUP BY order_no HAVING cnt > 1")
+      if (nrow(dup_check) > 0) {
+        cat("发现 work_orders 表中有重复工单号，正在按顺序重新编号...\n")
+        # 获取今天日期前缀
+        today <- format(Sys.Date(), "%Y%m%d")
+        prefix <- paste0("ITS", today)
+        
+        # 找出今天前缀的最大序号
+        max_seq_query <- sprintf("SELECT order_no FROM work_orders WHERE order_no LIKE '%s%%' AND order_no NOT LIKE '%%_copy%%' ORDER BY order_no DESC LIMIT 1", prefix)
+        max_seq_result <- dbGetQuery(con, max_seq_query)
+        
+        if (nrow(max_seq_result) > 0) {
+          last_seq <- as.integer(substr(max_seq_result$order_no[1], nchar(prefix) + 1, nchar(max_seq_result$order_no[1])))
+        } else {
+          last_seq <- 0
+        }
+        
+        # 修复每个重复的工单号
+        for (i in 1:nrow(dup_check)) {
+          dup_order_no <- dup_check$order_no[i]
+          # 获取该工单号的所有记录，按 ID 排序
+          dup_records <- dbGetQuery(con, sprintf("SELECT id FROM work_orders WHERE order_no = '%s' ORDER BY id", dup_order_no))
+          if (nrow(dup_records) > 1) {
+            # 第一条保留，其他的需要更新为下一个序号
+            for (j in 2:nrow(dup_records)) {
+              old_id <- dup_records$id[j]
+              last_seq <- last_seq + 1
+              new_order_no <- sprintf("%s%03d", prefix, last_seq)
+              dbExecute(con, sprintf("UPDATE work_orders SET order_no = '%s' WHERE id = %d", new_order_no, old_id))
+              cat(sprintf("  修复：ID=%d 的工单号从 %s 改为 %s\n", old_id, dup_order_no, new_order_no))
+            }
+          }
+        }
+        cat("重复工单号修复完成\n")
+      }
+      cat("数据库迁移完成：work_orders 表检查完毕\n")
+    }
+
     # 迁移：project_tasks 表添加 is_favorite 和 importance 列
     task_columns <- dbGetQuery(con, "PRAGMA table_info(project_tasks)")
     if (!"is_favorite" %in% task_columns$name) {
@@ -169,6 +210,25 @@ migrate_database <- function() {
       dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order, is_default) VALUES ('task_priority', '中', '中', '#5bc0de', 2, 1)")
       dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('task_priority', '高', '高', '#f0ad4e', 3)")
       dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('task_priority', '紧急', '紧急', '#d9534f', 4)")
+      # 种子数据：work_order_status
+      dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order, is_default) VALUES ('work_order_status', 'pending', '待处理', '#f0ad4e', 1, 1)")
+      dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('work_order_status', 'assigned', '已派发', '#5bc0de', 2)")
+      dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('work_order_status', 'processing', '处理中', '#ff9800', 3)")
+      dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('work_order_status', 'completed', '已完成', '#5cb85c', 4)")
+      dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('work_order_status', 'closed', '已关闭', '#d9534f', 5)")
+      # 种子数据：work_order_priority
+      dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('work_order_priority', '低', '低', '#5cb85c', 1)")
+      dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order, is_default) VALUES ('work_order_priority', '中', '中', '#f0ad4e', 2, 1)")
+      dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('work_order_priority', '高', '高', '#ff9800', 3)")
+      dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('work_order_priority', '紧急', '紧急', '#d9534f', 4)")
+      # 种子数据：work_order_category
+      dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order, is_default) VALUES ('work_order_category', '一般', '一般', '#5bc0de', 1, 1)")
+      dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('work_order_category', '硬件故障', '硬件故障', '#d9534f', 2)")
+      dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('work_order_category', '软件故障', '软件故障', '#ff9800', 3)")
+      dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('work_order_category', '网络问题', '网络问题', '#5f9ea0', 4)")
+      dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('work_order_category', '系统维护', '系统维护', '#6a5acd', 5)")
+      dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('work_order_category', '账号权限', '账号权限', '#9370db', 6)")
+      dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('work_order_category', '其他', '其他', '#999', 7)")
       cat("数据库迁移完成：已创建 config_options 表并初始化默认数据\n")
     }
 

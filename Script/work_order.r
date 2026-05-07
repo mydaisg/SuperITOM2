@@ -131,7 +131,7 @@ work_order_get_by_id <- function(id) {
   })
 }
 
-# 生成工单号：ITS + YYYYMMDD + 3位流水号
+# 生成工单号：ITS + YYYYMMDD + 3位流水号（防并发重复）
 work_order_generate_number <- function() {
   con <- db_connect()
   tryCatch({
@@ -139,26 +139,57 @@ work_order_generate_number <- function() {
     today <- format(Sys.Date(), "%Y%m%d")
     prefix <- paste0("ITS", today)
     
-    # 查询今天已有的最大流水号
-    query <- sprintf("SELECT order_no FROM work_orders WHERE order_no LIKE '%s%%' ORDER BY order_no DESC LIMIT 1", prefix)
-    result <- dbGetQuery(con, query)
-    
-    if (nrow(result) > 0 && !is.na(result$order_no[1])) {
-      # 提取流水号并+1
-      last_seq <- as.integer(substr(result$order_no[1], nchar(prefix) + 1))
-      new_seq <- last_seq + 1
-    } else {
-      # 今天第一个工单
-      new_seq <- 1
+    # 最大重试次数，防止无限循环
+    max_retry <- 10
+    for (retry in 1:max_retry) {
+      # 使用 IMMEDIATE 事务获取写锁，防止并发
+      query <- "BEGIN IMMEDIATE"
+      dbExecute(con, query)
+      
+      tryCatch({
+        # 查询今天已有的最大流水号
+        query <- sprintf("SELECT order_no FROM work_orders WHERE order_no LIKE '%s%%' ORDER BY order_no DESC LIMIT 1", prefix)
+        result <- dbGetQuery(con, query)
+        
+        if (nrow(result) > 0 && !is.na(result$order_no[1])) {
+          # 提取流水号并+1
+          last_seq <- as.integer(substr(result$order_no[1], nchar(prefix) + 1))
+          new_seq <- last_seq + 1
+        } else {
+          # 今天第一个工单
+          new_seq <- 1
+        }
+        
+        # 生成新的工单号
+        order_no <- sprintf("%s%03d", prefix, new_seq)
+        
+        # 检查工单号是否已存在（并发场景下的二次确认）
+        check_query <- sprintf("SELECT COUNT(*) as cnt FROM work_orders WHERE order_no = '%s'", order_no)
+        check_result <- dbGetQuery(con, check_query)
+        
+        if (check_result$cnt[1] == 0) {
+          # 工单号不重复，提交事务并返回
+          dbExecute(con, "COMMIT")
+          return(order_no)
+        }
+        
+        # 工单号已存在，回滚并重试
+        dbExecute(con, "ROLLBACK")
+        
+      }, error = function(e2) {
+        dbExecute(con, "ROLLBACK")
+        stop(e2)
+      })
     }
     
-    # 生成新的工单号
-    order_no <- sprintf("%s%03d", prefix, new_seq)
-    return(order_no)
+    # 达到最大重试次数，返回带时间戳的唯一ID
+    warning("工单号重试达到上限，使用备用方案")
+    return(sprintf("%s%s%04d", prefix, format(Sys.time(), "%H%M%S"), as.integer(Sys.time()) %% 10000))
+    
   }, error = function(e) {
     warning(paste("生成工单号失败:", e$message))
-    # 失败时返回默认值
-    return(sprintf("ITS%s001", format(Sys.Date(), "%Y%m%d")))
+    # 失败时返回带时间戳的唯一ID
+    return(sprintf("%s%s%04d", "ITS", format(Sys.time(), "%Y%m%d%H%M%S"), as.integer(Sys.time()) %% 10000))
   }, finally = {
     db_disconnect(con)
   })

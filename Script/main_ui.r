@@ -171,13 +171,9 @@ main_ui <- function() {
               tabPanel("工单列表",
                 br(),
                 fluidRow(
-                  column(4, selectInput("work_order_status_filter", "状态筛选",
-                           choices = c("全部工单" = "all", "待处理" = "pending", "已派发" = "assigned",
-                                      "处理中" = "processing", "已完成" = "completed", "已关闭" = "closed"),
-                           selected = "all")),
+                  column(3, uiOutput("work_order_status_filter_ui")),
                   column(1, div(style = "margin-top: 20px;", actionButton("refresh_work_orders", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
                 ),
-                br(),
                 DTOutput("work_order_table")
               ),
               tabPanel("工单派发",
@@ -266,9 +262,8 @@ main_ui <- function() {
                 h4("编辑工单"),
                 fluidRow(
                   column(4, textInput("edit_work_order_title", "工单标题")),
-                  column(2, selectInput("edit_work_order_priority", "优先级", choices = c("低", "中", "高", "紧急"))),
-                  column(3, selectInput("edit_work_order_category", "分类",
-                             choices = c("一般", "硬件故障", "软件故障", "网络问题", "系统维护", "账号权限", "其他"))),
+                  column(2, uiOutput("edit_work_order_priority_ui")),
+                  column(3, uiOutput("edit_work_order_category_ui")),
                   column(3, div(style = "margin-top: 20px;",
                     actionButton("save_edit_work_order", "保存修改", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px; margin-right: 5px;"),
                     actionButton("cancel_edit_work_order", "取消", class = "btn-default", style = "padding: 4px 10px; font-size: 12px;")
@@ -289,9 +284,8 @@ main_ui <- function() {
               h4("创建新工单"),
               fluidRow(
                 column(4, textInput("work_order_title", "工单标题")),
-                column(2, selectInput("work_order_priority", "优先级", choices = c("低", "中", "高", "紧急"))),
-                column(3, selectInput("work_order_category", "分类",
-                           choices = c("一般", "硬件故障", "软件故障", "网络问题", "系统维护", "账号权限", "其他"))),
+                column(2, uiOutput("work_order_priority_ui")),
+                column(3, uiOutput("work_order_category_ui")),
                 column(1, div(style = "margin-top: 20px;", actionButton("add_work_order", "创建工单", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;")))
               ),
               fluidRow(
@@ -506,9 +500,13 @@ main_ui <- function() {
           p("管理项目状态、优先级等下拉选项。修改后立即生效，所有界面自动使用最新配置。"),
           fluidRow(
             column(3, selectInput("co_category", "配置类别",
-              choices = c("项目状态"="project_status", "项目优先级"="project_priority",
-                          "阶段状态"="phase_status", "工作包状态"="wp_status",
-                          "任务状态"="task_status", "任务优先级"="task_priority"))),
+              choices = c(
+                "项目管理" = list("项目状态"="project_status", "项目优先级"="project_priority",
+                                  "阶段状态"="phase_status", "工作包状态"="wp_status",
+                                  "任务状态"="task_status", "任务优先级"="task_priority"),
+                "工单管理" = list("工单状态"="work_order_status", "工单优先级"="work_order_priority",
+                                  "工单分类"="work_order_category")
+              ))),
             column(2, actionButton("co_refresh", "刷新列表", class = "btn-info btn-sm", style = "margin-top:24px;"))
           ),
           DTOutput("co_option_table"),

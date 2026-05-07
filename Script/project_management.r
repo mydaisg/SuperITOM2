@@ -605,6 +605,91 @@ config_option_categories <- function() {
 }
 
 # ================================================================
+# 工单配置选项初始化（如果不存在默认选项）
+# ================================================================
+
+# 初始化工单相关配置选项
+init_work_order_config_options <- function() {
+  con <- db_connect()
+  tryCatch({
+    # 检查是否已有工单配置
+    existing <- dbGetQuery(con, "SELECT DISTINCT category FROM config_options WHERE category LIKE 'work_order_%'")$category
+    
+    # 工单状态选项
+    if (!"work_order_status" %in% existing) {
+      statuses <- list(
+        list(value = "pending", label = "待处理", color = "#f0ad4e", sort = 1, is_default = 1),
+        list(value = "assigned", label = "已派发", color = "#5bc0de", sort = 2, is_default = 0),
+        list(value = "processing", label = "处理中", color = "#ff9800", sort = 3, is_default = 0),
+        list(value = "completed", label = "已完成", color = "#5cb85c", sort = 4, is_default = 0),
+        list(value = "closed", label = "已关闭", color = "#d9534f", sort = 5, is_default = 0)
+      )
+      for (s in statuses) {
+        dbExecute(con, sprintf(
+          "INSERT INTO config_options (category, option_value, option_label, color, sort_order, is_default)
+           VALUES ('work_order_status', '%s', '%s', '%s', %d, %d)",
+          s$value, s$label, s$color, s$sort, s$is_default))
+      }
+    }
+    
+    # 工单优先级选项
+    if (!"work_order_priority" %in% existing) {
+      priorities <- list(
+        list(value = "低", label = "低", color = "#5cb85c", sort = 1, is_default = 0),
+        list(value = "中", label = "中", color = "#f0ad4e", sort = 2, is_default = 1),
+        list(value = "高", label = "高", color = "#ff9800", sort = 3, is_default = 0),
+        list(value = "紧急", label = "紧急", color = "#d9534f", sort = 4, is_default = 0)
+      )
+      for (p in priorities) {
+        dbExecute(con, sprintf(
+          "INSERT INTO config_options (category, option_value, option_label, color, sort_order, is_default)
+           VALUES ('work_order_priority', '%s', '%s', '%s', %d, %d)",
+          p$value, p$label, p$color, p$sort, p$is_default))
+      }
+    }
+    
+    # 工单分类选项
+    if (!"work_order_category" %in% existing) {
+      categories <- list(
+        list(value = "一般", label = "一般", color = "#5bc0de", sort = 1, is_default = 1),
+        list(value = "硬件故障", label = "硬件故障", color = "#d9534f", sort = 2, is_default = 0),
+        list(value = "软件故障", label = "软件故障", color = "#ff9800", sort = 3, is_default = 0),
+        list(value = "网络问题", label = "网络问题", color = "#5f9ea0", sort = 4, is_default = 0),
+        list(value = "系统维护", label = "系统维护", color = "#6a5acd", sort = 5, is_default = 0),
+        list(value = "账号权限", label = "账号权限", color = "#9370db", sort = 6, is_default = 0),
+        list(value = "其他", label = "其他", color = "#999", sort = 7, is_default = 0)
+      )
+      for (c in categories) {
+        dbExecute(con, sprintf(
+          "INSERT INTO config_options (category, option_value, option_label, color, sort_order, is_default)
+           VALUES ('work_order_category', '%s', '%s', '%s', %d, %d)",
+          c$value, c$label, c$color, c$sort, c$is_default))
+      }
+    }
+    
+    TRUE
+  }, error = function(e) {
+    warning(paste("初始化工单配置选项失败:", e$message))
+    FALSE
+  }, finally = { db_disconnect(con) })
+}
+
+# 获取工单状态选项（带"全部"选项）
+work_order_status_choices <- function(include_all = TRUE) {
+  config_option_choices("work_order_status", include_all = include_all)
+}
+
+# 获取工单状态颜色
+work_order_status_color <- function(status) {
+  config_option_color("work_order_status", status)
+}
+
+# 获取工单状态中文名
+work_order_status_label <- function(status) {
+  config_option_label("work_order_status", status)
+}
+
+# ================================================================
 # 全局查询函数（跨项目视图）
 # ================================================================
 

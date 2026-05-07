@@ -24,6 +24,13 @@ source("Script/std_computer.r")        # 标准化模块
 # - session: 管理用户会话
 server <- function(input, output, session) {
   
+  # 初始化工单配置选项（确保如果已有 config_options 表但没有工单配置时能正确初始化）
+  tryCatch({
+    init_work_order_config_options()
+  }, error = function(e) {
+    warning("初始化工单配置选项失败: ", e$message)
+  })
+  
   # 创建响应式值对象，用于管理应用状态
   # reactiveValues是Shiny的核心功能，用于存储和管理响应式状态
   # 当这些值发生变化时，依赖它们的UI和计算会自动更新
@@ -196,6 +203,57 @@ server <- function(input, output, session) {
     as.character(stats$closed[1])
   })
   
+  # 工单状态筛选动态UI（从配置读取）
+  output$work_order_status_filter_ui <- renderUI({
+    choices <- work_order_status_choices(include_all = TRUE)
+    if (length(choices) == 0) {
+      choices <- c("全部工单" = "all", "待处理" = "pending", "已派发" = "assigned",
+                   "处理中" = "processing", "已完成" = "completed", "已关闭" = "closed")
+    }
+    selectInput("work_order_status_filter", "状态筛选", choices = choices, selected = "all")
+  })
+  
+  # 工单优先级动态UI（从配置读取）
+  output$work_order_priority_ui <- renderUI({
+    choices <- config_option_choices("work_order_priority")
+    if (length(choices) == 0) {
+      choices <- c("低" = "低", "中" = "中", "高" = "高", "紧急" = "紧急")
+    }
+    selected <- config_option_default("work_order_priority")
+    if (is.null(selected) || selected == "") selected <- "中"
+    selectInput("work_order_priority", "优先级", choices = choices, selected = selected)
+  })
+  
+  # 工单分类动态UI（从配置读取）
+  output$work_order_category_ui <- renderUI({
+    choices <- config_option_choices("work_order_category")
+    if (length(choices) == 0) {
+      choices <- c("一般" = "一般", "硬件故障" = "硬件故障", "软件故障" = "软件故障", 
+                    "网络问题" = "网络问题", "系统维护" = "系统维护", "账号权限" = "账号权限", "其他" = "其他")
+    }
+    selected <- config_option_default("work_order_category")
+    if (is.null(selected) || selected == "") selected <- "一般"
+    selectInput("work_order_category", "分类", choices = choices, selected = selected)
+  })
+  
+  # 编辑工单时的优先级和分类UI（从配置读取）
+  output$edit_work_order_priority_ui <- renderUI({
+    choices <- config_option_choices("work_order_priority")
+    if (length(choices) == 0) {
+      choices <- c("低" = "低", "中" = "中", "高" = "高", "紧急" = "紧急")
+    }
+    selectInput("edit_work_order_priority", "优先级", choices = choices)
+  })
+  
+  output$edit_work_order_category_ui <- renderUI({
+    choices <- config_option_choices("work_order_category")
+    if (length(choices) == 0) {
+      choices <- c("一般" = "一般", "硬件故障" = "硬件故障", "软件故障" = "软件故障", 
+                    "网络问题" = "网络问题", "系统维护" = "系统维护", "账号权限" = "账号权限", "其他" = "其他")
+    }
+    selectInput("edit_work_order_category", "分类", choices = choices)
+  })
+  
   # 渲染工单表格（使用触发器确保自动刷新）
   output$work_order_table <- renderDT({
     req(rv$logged_in)
@@ -219,23 +277,19 @@ server <- function(input, output, session) {
         stringsAsFactors = FALSE
       )
       
-      # 状态中文映射和颜色块 HTML（状态是第8列，索引7）
-      status_colors <- data.frame(
-        raw = c("pending", "assigned", "processing", "completed", "closed"),
-        display = c("待处理", "已派发", "处理中", "已完成", "已关闭"),
-        bg = c("#f0ad4e", "#5bc0de", "#ff9800", "#5cb85c", "#d9534f"),
-        stringsAsFactors = FALSE
-      )
-      
-      # 将状态转为带颜色块的 HTML
+      # 使用配置的函数获取状态颜色和标签
       display_data$状态 <- sapply(display_data$状态, function(s) {
-        color_row <- status_colors[status_colors$raw == s, ]
-        if (nrow(color_row) > 0) {
-          sprintf('<span style="background-color:%s; color:white; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;">%s</span>',
-                  color_row$bg, color_row$display)
-        } else {
-          s
-        }
+        color <- work_order_status_color(s)
+        label <- work_order_status_label(s)
+        sprintf('<span style="background-color:%s; color:white; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;">%s</span>',
+                color, label)
+      })
+      
+      # 使用配置的函数获取优先级颜色
+      display_data$优先级 <- sapply(display_data$优先级, function(p) {
+        color <- config_option_color("work_order_priority", p)
+        sprintf('<span style="background-color:%s; color:white; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;">%s</span>',
+                color, p)
       })
     } else {
       display_data <- data.frame(
@@ -257,31 +311,30 @@ server <- function(input, output, session) {
       display_data,
       escape = FALSE,  # 允许HTML按钮
       options = list(
-        pageLength = 10,
-        scrollX = TRUE,
-        scrollY = "400px",
-        scrollCollapse = TRUE,
+        pageLength = 50,  # 默认显示50行
         paging = TRUE,
         searching = TRUE,
         ordering = TRUE,
-        info = TRUE,
+        info = FALSE,  # 隐藏底部信息
+        lengthChange = FALSE,  # 隐藏每页显示数选择器
+        dom = '<"row"<"col-sm-6"f><"col-sm-6"p>>t',  # 搜索框和分页在同一行
         columnDefs = list(
           # 工单号列
           list(targets = 0, width = '120px', className = 'dt-center'),
           # 操作列（按钮）
           list(targets = 1, width = '60px', className = 'dt-center', orderable = FALSE),
           # 标题列
-          list(targets = 2, width = '120px', className = 'dt-left'),
+          list(targets = 2, width = '150px', className = 'dt-left'),
           # 描述列：限制宽度
           list(targets = 3, width = '200px', className = 'dt-left'),
           # 分类列
-          list(targets = 4, width = '70px', className = 'dt-center'),
+          list(targets = 4, width = '80px', className = 'dt-center'),
           # 优先级列
           list(targets = 5, width = '60px', className = 'dt-center'),
           # 处理人列
           list(targets = 6, width = '80px', className = 'dt-center'),
           # 状态列
-          list(targets = 7, width = '70px', className = 'dt-center'),
+          list(targets = 7, width = '80px', className = 'dt-center'),
           # 创建人列
           list(targets = 8, width = '80px', className = 'dt-center'),
           # 时间列
@@ -345,6 +398,31 @@ server <- function(input, output, session) {
     if (nrow(wo_detail) > 0) {
       wo <- wo_detail[1, ]
       
+      # 获取历史评论
+      comments <- work_order_get_comments(wo_id)
+      
+      # 构建评论 HTML
+      comments_html <- ""
+      if (nrow(comments) > 0) {
+        comments_html <- "<div style='margin-top: 15px;'><div style='font-weight: bold; color: #333; margin-bottom: 10px; font-size: 15px;'>💬 历史评论</div>"
+        for (i in 1:nrow(comments)) {
+          creator <- ifelse(is.na(comments$creator_name[i]), "未知用户", comments$creator_name[i])
+          comment_text <- ifelse(is.na(comments$comment[i]), "", comments$comment[i])
+          created_at <- ifelse(is.na(comments$created_at[i]), "", comments$created_at[i])
+          comments_html <- paste0(comments_html, sprintf('
+            <div style="background: #fff8e7; padding: 10px 12px; margin-bottom: 8px; border-radius: 6px; border-left: 4px solid #f0ad4e;">
+              <div style="font-size: 12px; color: #666; margin-bottom: 6px;">
+                <span style="font-weight: bold; color: #337ab7;">%s</span>
+                <span style="margin-left: 10px;">%s</span>
+              </div>
+              <div style="font-size: 13px; line-height: 1.6; white-space: pre-wrap;">%s</div>
+            </div>', creator, created_at, comment_text))
+        }
+        comments_html <- paste0(comments_html, "</div>")
+      } else {
+        comments_html <- "<div style='margin-top: 15px;'><div style='font-weight: bold; color: #333; margin-bottom: 8px; font-size: 15px;'>💬 历史评论</div><div style='color: #999; font-style: italic;'>暂无评论</div></div>"
+      }
+      
       # 状态中文映射
       status_cn <- switch(wo$status,
         "pending" = "待处理",
@@ -376,7 +454,7 @@ server <- function(input, output, session) {
       
       # 构建弹窗内容
       modal_content <- HTML(sprintf('
-        <div style="padding: 10px;">
+        <div style="padding: 10px; max-height: 70vh; overflow-y: auto;">
           <div style="background: #f5f5f5; padding: 14px; border-radius: 6px; margin-bottom: 15px;">
             <table style="width: 100%%; font-size: 14px;">
               <tr>
@@ -428,10 +506,12 @@ server <- function(input, output, session) {
             <div style="background: #fafafa; padding: 14px; border-radius: 6px; border-left: 4px solid #337ab7; min-height: 50px; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; line-height: 1.7;">%s</div>
           </div>
           
-          <div>
+          <div style="margin-bottom: 15px;">
             <div style="font-weight: bold; color: #333; margin-bottom: 8px; font-size: 15px;">✅ 解决方案/关闭原因</div>
             <div style="background: #f0f9e8; padding: 14px; border-radius: 6px; border-left: 4px solid #5cb85c; min-height: 50px; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; line-height: 1.7;">%s</div>
           </div>
+          
+          %s
         </div>
       ',
       ifelse(is.na(wo$order_no), sprintf("ITS%s%03d", format(as.Date(wo$created_at), "%Y%m%d"), wo$id), wo$order_no),
@@ -449,7 +529,8 @@ server <- function(input, output, session) {
       ifelse(is.na(wo$handled_at), "未开始", wo$handled_at),
       ifelse(is.na(wo$completed_at), "未完成", wo$completed_at),
       ifelse(is.na(wo$description), "无描述", wo$description),
-      ifelse(is.na(wo$resolution), "暂无", wo$resolution)
+      ifelse(is.na(wo$resolution), "暂无", wo$resolution),
+      comments_html
       ))
       
       showModal(modalDialog(
