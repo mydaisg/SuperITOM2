@@ -275,13 +275,15 @@ wp_delete <- function(id) {
 task_get_by_wp <- function(work_package_id) {
   con <- db_connect()
   tryCatch({
-    dbGetQuery(con, sprintf(
-      "SELECT t.*, u.username as assignee_name, u2.username as creator_name
+    query <- sprintf(
+      "SELECT t.*, u.username as assignee_name, u2.username as creator_name,
+              (SELECT COUNT(*) FROM project_task_logs WHERE task_id = t.id AND log_type IN ('execution', 'feedback')) as exec_count
        FROM project_tasks t
        LEFT JOIN users u ON t.assigned_to = u.id
        LEFT JOIN users u2 ON t.created_by = u2.id
        WHERE t.work_package_id = %d ORDER BY t.created_at DESC",
-      as.integer(work_package_id)))
+      as.integer(work_package_id))
+    dbGetQuery(con, query)
   }, error = function(e) {
     data.frame()
   }, finally = { db_disconnect(con) })

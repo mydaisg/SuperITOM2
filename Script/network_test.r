@@ -1,6 +1,6 @@
 # 测试模块（网络巡检）
 # 独立一级模块，逐条命令实时显示结果
-# 参照客户端网络测试命令V3
+# 参考 network_diagnostic.R 实现
 
 # UI部分
 network_test_ui <- function() {
@@ -26,6 +26,12 @@ network_test_ui <- function() {
             icon = icon("route")),
           actionButton("nt_run_curl", "HTTP测试 (curl)", class = "btn-default btn-block",
             icon = icon("globe")),
+          hr(),
+          h4("文件服务器"),
+          actionButton("nt_run_fileserver1", "文件服务器 #1 (10.10.50.50)", class = "btn-default btn-block",
+            icon = icon("folder")),
+          actionButton("nt_run_fileserver2", "文件服务器 #2 (10.10.50.150)", class = "btn-default btn-block",
+            icon = icon("folder")),
           hr(),
           h4("测试配置"),
           textInput("nt_target", "测试目标（域名/IP）", value = "qq.com"),
@@ -55,27 +61,60 @@ network_test_server <- function(input, output, session) {
   # 累计显示的文本
   nt_result <- reactiveVal("")
 
-  # 待执行的命令队列 list of list(label, cmd)
+  # 待执行的命令队列 list of list(label, cmd, type)
+  # type: "system" - Windows命令 | "socket" - 端口测试 | "r" - R函数
   nt_queue <- reactiveVal(list())
 
   # 是否正在执行中
   nt_running <- reactiveVal(FALSE)
 
-  # 执行单条命令，返回格式化文本
-  nt_exec_cmd <- function(label, cmd) {
+  # 执行 Windows 系统命令
+  nt_exec_system <- function(label, cmd) {
     header <- sprintf("\n== %s ==\n$ %s\n\n", label, cmd)
-    cmd_safe <- gsub('"', '^"', cmd)
-    full_cmd <- sprintf('cmd.exe /C "chcp 65001 >nul & %s"', cmd_safe)
-    out <- tryCatch(
-      suppressWarnings(system(full_cmd, intern = TRUE, ignore.stderr = FALSE)),
-      error = function(e) paste("执行失败:", e$message)
-    )
-    out <- iconv(out, from = "", to = "UTF-8", sub = "byte")
-    if (length(out) == 0) out <- "(无输出)"
-    paste0(header, paste(out, collapse = "\n"), "\n")
+    out <- tryCatch({
+      result <- system(cmd, intern = TRUE, ignore.stderr = TRUE)
+      if (length(result) == 0) "(无输出)" else paste(result, collapse = "\n")
+    }, error = function(e) {
+      paste("执行失败:", e$message)
+    })
+    paste0(header, out, "\n")
   }
 
-  # 逐条执行队列中的命令
+  # 使用 R socketConnection 测试 TCP 端口
+  nt_exec_port_test <- function(ip, port) {
+    label <- sprintf("文件服务器 %s - 端口 %s", ip, port)
+    header <- sprintf("\n== %s ==\n\n", label)
+    out <- tryCatch({
+      con <- socketConnection(host = ip, port = port, open = "r+b", blocking = TRUE, timeout = 3)
+      close(con)
+      paste0("ComputerName     : ", ip, "\n",
+             "RemoteAddress    : ", ip, "\n",
+             "RemotePort       : ", port, "\n",
+             "TcpTestSucceeded : TRUE")
+    }, error = function(e) {
+      paste0("ComputerName     : ", ip, "\n",
+             "RemoteAddress    : ", ip, "\n",
+             "RemotePort       : ", port, "\n",
+             "TcpTestSucceeded : FALSE\n",
+             "Error            : ", e$message)
+    })
+    paste0(header, out, "\n")
+  }
+
+  # 使用 R 内置 ping
+  nt_exec_ping <- function(ip, count = 4) {
+    label <- sprintf("文件服务器 %s - Ping", ip)
+    header <- sprintf("\n== %s ==\n\n", label)
+    out <- tryCatch({
+      result <- system(sprintf("ping -n %d %s", count, ip), intern = TRUE, ignore.stderr = TRUE)
+      if (length(result) == 0) "(无输出)" else paste(result, collapse = "\n")
+    }, error = function(e) {
+      paste("执行失败:", e$message)
+    })
+    paste0(header, out, "\n")
+  }
+
+  # 逐条执行队列中的任务
   observe({
     if (!nt_running()) return()
     queue <- nt_queue()
@@ -94,7 +133,12 @@ network_test_server <- function(input, output, session) {
     remaining <- queue[-1]
     nt_queue(remaining)
 
-    result_text <- nt_exec_cmd(task$label, task$cmd)
+    result_text <- switch(task$type,
+      "system" = nt_exec_system(task$label, task$cmd),
+      "port" = nt_exec_port_test(task$ip, task$port),
+      "ping" = nt_exec_ping(task$ip, task$count),
+      paste("未知任务类型:", task$type)
+    )
     nt_result(paste0(nt_result(), result_text))
 
     invalidateLater(50, session)
@@ -105,26 +149,29 @@ network_test_server <- function(input, output, session) {
     nt_result()
   })
 
-  # 构建命令的辅助函数（顺序参照V3脚本）
+  # 构建命令的辅助函数
   .build_cmd_ipconfig <- function() {
-    list(label = "网卡信息", cmd = 'ipconfig /all | findstr /i "v4 Host Servers"')
+    list(label = "网卡信息", cmd = 'ipconfig /all | findstr /i "v4 Host Servers"', type = "system")
   }
   .build_cmd_ping <- function(target, ping_n) {
-    list(label = sprintf("连通性测试 - ping %s", target), cmd = sprintf("ping %s -n %d", target, ping_n))
+    list(label = sprintf("连通性测试 - ping %s", target), cmd = sprintf("ping %s -n %d", target, ping_n), type = "system")
   }
   .build_cmd_nslookup <- function(target) {
-    list(label = sprintf("DNS解析 - nslookup %s", target), cmd = sprintf("nslookup %s", target))
+    list(label = sprintf("DNS解析 - nslookup %s", target), cmd = sprintf("nslookup %s", target), type = "system")
   }
   .build_cmd_nltest <- function(domain) {
     dc <- if (!is.null(domain) && domain != "") domain else "lvcc.org"
-    list(label = sprintf("域控检测 - nltest /dsgetdc:%s", dc), cmd = sprintf("nltest /dsgetdc:%s", dc))
+    list(label = sprintf("域控检测 - nltest /dsgetdc:%s", dc), cmd = sprintf("nltest /dsgetdc:%s", dc), type = "system")
   }
   .build_cmd_tracert <- function(target) {
-    list(label = sprintf("路由追踪 - tracert %s", target), cmd = sprintf("tracert %s", target))
+    list(label = sprintf("路由追踪 - tracert %s", target), cmd = sprintf("tracert %s", target), type = "system")
   }
   .build_cmd_curl <- function(http_target) {
     target <- if (!is.null(http_target) && http_target != "") http_target else "www.baidu.com"
-    list(label = sprintf("HTTP测试 - curl -I %s", target), cmd = sprintf("curl -I %s", target))
+    list(label = sprintf("HTTP测试 - curl -I %s", target), cmd = sprintf("curl -I %s", target), type = "system")
+  }
+  .build_cmd_fileserver <- function(ip) {
+    list(label = sprintf("文件服务器 %s - SMB连接测试", ip), cmd = sprintf("net use \\\\%s", ip), type = "system")
   }
 
   # 启动队列执行的通用函数
@@ -147,7 +194,7 @@ network_test_server <- function(input, output, session) {
     nt_running(TRUE)
   }
 
-  # 全部测试（V3顺序：ipconfig → ping → nslookup → nltest → tracert → curl）
+  # 全部测试
   observeEvent(input$nt_run_all, {
     target <- trimws(input$nt_target)
     domain <- trimws(input$nt_domain)
@@ -211,6 +258,32 @@ network_test_server <- function(input, output, session) {
   observeEvent(input$nt_run_curl, {
     http_target <- trimws(input$nt_http_target)
     .start_test(list(.build_cmd_curl(http_target)))
+  })
+
+  # 文件服务器 #1 测试
+  observeEvent(input$nt_run_fileserver1, {
+    ip <- "10.10.50.50"
+    cmd_list <- list(
+      .build_cmd_fileserver(ip),
+      list(label = sprintf("文件服务器 %s - 端口 445", ip), ip = ip, port = 445, type = "port"),
+      list(label = sprintf("文件服务器 %s - 端口 139", ip), ip = ip, port = 139, type = "port"),
+      list(label = sprintf("文件服务器 %s - 端口 5000", ip), ip = ip, port = 5000, type = "port"),
+      list(label = sprintf("文件服务器 %s - Ping", ip), ip = ip, count = 4, type = "ping")
+    )
+    .start_test(cmd_list)
+  })
+
+  # 文件服务器 #2 测试
+  observeEvent(input$nt_run_fileserver2, {
+    ip <- "10.10.50.150"
+    cmd_list <- list(
+      .build_cmd_fileserver(ip),
+      list(label = sprintf("文件服务器 %s - 端口 445", ip), ip = ip, port = 445, type = "port"),
+      list(label = sprintf("文件服务器 %s - 端口 139", ip), ip = ip, port = 139, type = "port"),
+      list(label = sprintf("文件服务器 %s - 端口 5000", ip), ip = ip, port = 5000, type = "port"),
+      list(label = sprintf("文件服务器 %s - Ping", ip), ip = ip, count = 4, type = "ping")
+    )
+    .start_test(cmd_list)
   })
 
   # 清空

@@ -1,0 +1,23 @@
+========================================
+       网络测试报告 (V3)
+========================================
+开始时间: 2026-05-10 09:53:20
+测试目标: qq.com
+========================================
+
+== 域控检测 - nltest /dsgetdc:lvcc.org ==
+$ nltest /dsgetdc:lvcc.org
+
+           DC: \\WIN-SLVVKURISM5.lvcc.org
+      Address: \\10.10.50.252
+     Dom Guid: 651845e8-bce1-4102-b2bb-f02e7b7e567f
+     Dom Name: lvcc.org
+  Forest Name: lvcc.org
+ Dc Site Name: Default-First-Site-Name
+Our Site Name: Default-First-Site-Name
+        Flags: PDC GC DS LDAP KDC TIMESERV GTIMESERV WRITABLE DNS_DC DNS_DOMAIN DNS_FOREST CLOSE_SITE FULL_SECRET WS DS_8 DS_9
+The command completed successfully
+========================================
+结束时间: 2026-05-10 09:53:20
+========================================
+

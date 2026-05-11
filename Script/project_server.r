@@ -252,28 +252,32 @@ project_server <- function(input, output, session, rv) {
       if (nrow(data) > 0) {
         # 按重要性排序
         data$importance <- ifelse(is.na(data$importance), 0L, as.integer(data$importance))
+        data$exec_count <- ifelse(is.na(data$exec_count), 0L, as.integer(data$exec_count))
         data <- data[order(-data$importance), , drop=FALSE]
         display <- data.frame(
           `收藏` = sapply(1:nrow(data), function(i) render_fav_icon(data$id[i], data$is_favorite[i])),
           `重要性` = sapply(1:nrow(data), function(i) render_importance(data$id[i], data$importance[i])),
-          `操作` = sprintf('<button class="btn btn-sm btn-info task-view-btn" data-id="%s">\u67e5\u770b</button> <button class="btn btn-sm btn-warning task-to-wo-btn" data-id="%s">\u8f6c\u5de5\u5355</button>', data$id, data$id),
+          `操作` = sprintf('<button class="btn btn-sm btn-info task-view-btn" data-id="%s">查看</button> <button class="btn btn-sm btn-warning task-to-wo-btn" data-id="%s">转工单</button>', data$id, data$id),
           `任务编号` = ifelse(is.na(data$task_no), "-", data$task_no),
           `任务名称` = sprintf('<a href="#" class="task-view-btn" data-id="%s" style="color:#337ab7;font-weight:bold;cursor:pointer;">%s</a>', data$id, data$name),
+          `负责人` = ifelse(is.na(data$assignee_name), "未指定", data$assignee_name),
+          `已执行数量` = sapply(data$exec_count, function(v) sprintf('<span style="color:%s;font-weight:bold;">%d</span>', ifelse(v > 0, "#28a745", "#999"), v)),
           `优先级` = sapply(data$priority, function(v) sprintf('<span style="background:%s;color:white;padding:2px 8px;border-radius:3px;">%s</span>', clr("task_priority", v), v)),
           `状态` = sapply(data$status, function(v) sprintf('<span style="background:%s;color:white;padding:2px 8px;border-radius:3px;">%s</span>', clr("task_status", v), lbl("task_status", v))),
-          `负责人` = ifelse(is.na(data$assignee_name), "\u672a\u6307\u5b9a", data$assignee_name),
           `截止日期` = ifelse(is.na(data$due_date), "-", data$due_date),
           `关联工单` = ifelse(is.na(data$work_order_id), "-", as.character(data$work_order_id)),
           `更新时间` = ifelse(is.na(data$updated_at), "-", data$updated_at),
           stringsAsFactors=FALSE, check.names=FALSE)
       } else {
-        display <- data.frame(`收藏`=character(), `重要性`=character(), `操作`=character(), `任务编号`=character(), `任务名称`=character(), `优先级`=character(), `状态`=character(), `负责人`=character(), `截止日期`=character(), `关联工单`=character(), `更新时间`=character(), stringsAsFactors=FALSE, check.names=FALSE)
+        display <- data.frame(`收藏`=character(), `重要性`=character(), `操作`=character(), `任务编号`=character(), `任务名称`=character(), `负责人`=character(), `已执行数量`=character(), `优先级`=character(), `状态`=character(), `截止日期`=character(), `关联工单`=character(), `更新时间`=character(), stringsAsFactors=FALSE, check.names=FALSE)
       }
     }
     DT::datatable(display, escape = FALSE,
       options = list(pageLength = 20, scrollX = TRUE, dom = 'lfrtip',
-        lengthMenu = list(c(10,20,50,-1), c('10','20','50','\u5168\u90e8')),
-        columnDefs = list(list(targets = 0, width = '150px', className = 'dt-center', orderable = FALSE))),
+        lengthMenu = list(c(10,20,50,-1), c('10','20','50','全部')),
+        columnDefs = list(
+          list(targets = 0, width = '150px', className = 'dt-center', orderable = FALSE),
+          list(targets = 9, width = '60px', className = 'dt-center'))),
       rownames = FALSE, selection = 'none', class = 'cell-border stripe hover')
   })
 

@@ -36,6 +36,103 @@ main_ui <- function() {
   navbarPage(
     title = "SuperITOM2",  # 应用标题
     theme = shinytheme("cosmo"),  # 使用cosmo主题，使界面更美观
+    collapsible = TRUE,  # 移动端导航栏可折叠
+    
+    # URL路由同步脚本 - 放在header中避免导航容器警告
+    header = tags$script(HTML("
+      // 路由表：URL路径 -> 标签文本
+      var routeMap = {
+        '/home': '首页',
+        '/project': '项目',
+        '/work_order': '工单',
+        '/daily_report': '日报',
+        '/collector': '收集器',
+        '/inspection': '巡检',
+        '/network_test': '测试',
+        '/std': '标准化',
+        '/data': '数据',
+        '/model': '模型',
+        '/visualization': '可视化',
+        '/admin': '管理'
+      };
+      
+      // 查找包含指定文本的导航链接
+      function findNavLink(text) {
+        var $links = $('.navbar-nav li a, .navbar-nav a, ul.nav a, .nav-tabs a');
+        for (var i = 0; i < $links.length; i++) {
+          var $link = $links.eq(i);
+          var linkText = $link.text().trim();
+          // 排除图标（只保留文字部分）
+          linkText = linkText.replace(/\\s*<[^>]*>\\s*/g, '').trim();
+          if (linkText === text || linkText.indexOf(text) >= 0) {
+            return $link;
+          }
+        }
+        return null;
+      }
+      
+      // 从URL hash获取目标标签
+      function getTargetFromHash() {
+        var hash = window.location.hash.replace('#', '');
+        if (!hash) return '首页';
+        // 精确匹配
+        if (routeMap['/' + hash]) return routeMap['/' + hash];
+        if (routeMap[hash]) return routeMap[hash];
+        // 模糊匹配
+        for (var path in routeMap) {
+          if (hash.startsWith(path.replace('/', '')) || hash === path.slice(1)) {
+            return routeMap[path];
+          }
+        }
+        return '首页';
+      }
+      
+      // 切换到指定标签
+      function switchToTab(text) {
+        var $link = findNavLink(text);
+        if ($link && $link.length) {
+          $link[0].click();
+        }
+      }
+      
+      // 点击导航链接时更新URL hash
+      $(document).on('click', '.navbar-nav li a, .navbar-nav > li > a', function(e) {
+        var $link = $(this);
+        var text = $link.text().trim().replace(/\\s*<[^>]*>\\s*/g, '').trim();
+        
+        // 遍历路由映射，找到匹配的标签
+        for (var path in routeMap) {
+          if (routeMap[path] === text) {
+            history.replaceState(null, '', '#' + path.replace('/', ''));
+            break;
+          }
+        }
+      });
+      
+      // 页面加载后根据URL切换标签
+      $(document).on('shiny:connected', function() {
+        var target = getTargetFromHash();
+        // 延迟等待DOM和Shiny完全加载
+        var attempts = 0;
+        var maxAttempts = 20;
+        var interval = setInterval(function() {
+          attempts++;
+          var $link = findNavLink(target);
+          if ($link && $link.length && !$link.closest('li').hasClass('active')) {
+            clearInterval(interval);
+            $link[0].click();
+          } else if (attempts >= maxAttempts) {
+            clearInterval(interval);
+          }
+        }, 300);
+      });
+      
+      // 监听浏览器前进/后退
+      window.addEventListener('hashchange', function() {
+        var target = getTargetFromHash();
+        switchToTab(target);
+      });
+    ")),
     
     # 首页标签页
     tabPanel(
