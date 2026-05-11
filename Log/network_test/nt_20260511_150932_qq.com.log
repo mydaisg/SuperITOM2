@@ -1,0 +1,51 @@
+========================================
+       网络测试报告 (V3)
+========================================
+开始时间: 2026-05-11 15:09:27
+测试目标: qq.com
+========================================
+
+== 文件服务器 10.10.50.50 - SMB连接测试 ==
+$ net use \\10.10.50.50
+
+The command completed successfully.
+
+
+== 文件服务器 10.10.50.50 - 端口 445 ==
+
+ComputerName     : 10.10.50.50
+RemoteAddress    : 10.10.50.50
+RemotePort       : 445
+TcpTestSucceeded : TRUE
+
+== 文件服务器 10.10.50.50 - 端口 139 ==
+
+ComputerName     : 10.10.50.50
+RemoteAddress    : 10.10.50.50
+RemotePort       : 139
+TcpTestSucceeded : TRUE
+
+== 文件服务器 10.10.50.50 - 端口 5000 ==
+
+ComputerName     : 10.10.50.50
+RemoteAddress    : 10.10.50.50
+RemotePort       : 5000
+TcpTestSucceeded : TRUE
+
+== 文件服务器 10.10.50.50 - Ping ==
+
+
+Pinging 10.10.50.50 with 32 bytes of data:
+Reply from 10.10.50.50: bytes=32 time=1ms TTL=63
+Reply from 10.10.50.50: bytes=32 time=1ms TTL=63
+Reply from 10.10.50.50: bytes=32 time=1ms TTL=63
+Reply from 10.10.50.50: bytes=32 time=1ms TTL=63
+
+Ping statistics for 10.10.50.50:
+    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 1ms, Maximum = 1ms, Average = 1ms
+========================================
+结束时间: 2026-05-11 15:09:30
+========================================
+
