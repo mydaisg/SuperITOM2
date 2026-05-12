@@ -393,8 +393,9 @@ main_ui <- function() {
               fluidRow(
                 column(4, textInput("work_order_title", "工单标题")),
                 column(2, uiOutput("work_order_priority_ui")),
-                column(3, uiOutput("work_order_category_ui")),
-                column(1, div(style = "margin-top: 20px;", actionButton("add_work_order", "创建工单", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;")))
+                column(2, textInput("work_order_request_user", "请求用户")),
+                column(2, uiOutput("work_order_category_ui")),
+                column(2, div(style = "margin-top: 20px;", actionButton("add_work_order", "创建工单", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;")))
               ),
               fluidRow(
                 column(12, textAreaInput("work_order_description", "工单描述", rows = 2))

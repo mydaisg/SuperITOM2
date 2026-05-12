@@ -12,7 +12,7 @@ work_order_get_all <- function(status_filter = NULL, assigned_to = NULL) {
                 ELSE wo.description
               END as description,
               wo.priority, wo.status, wo.category, wo.subcategory,
-              wo.assigned_to, wo.assigned_by, wo.assigned_at,
+              wo.assigned_to, wo.assigned_by, wo.request_user, wo.assigned_at,
               wo.handled_by, wo.handled_at, wo.completed_at,
               wo.created_by, wo.created_at, wo.updated_at
               FROM work_orders wo"
@@ -63,6 +63,12 @@ work_order_get_all <- function(status_filter = NULL, assigned_to = NULL) {
         if (is.na(x)) return(NA_character_)
         name <- users$username[users$id == x]
         if (length(name) > 0) name[1] else NA_character_
+      })
+
+      # 添加请求用户名称（request_user 是用户名文本）
+      result$request_user_name <- sapply(result$request_user, function(x) {
+        if (is.na(x) || x == "") return(NA_character_)
+        x
       })
 
       # 添加当前处理人名称
@@ -119,6 +125,12 @@ work_order_get_by_id <- function(id) {
         if (is.na(x)) return(NA)
         name <- users$username[users$id == x]
         if (length(name) > 0) name[1] else NA
+      })
+
+      # 添加请求用户名称（request_user 是用户名文本）
+      result$request_user_name <- sapply(result$request_user, function(x) {
+        if (is.na(x) || x == "") return(NA)
+        x
       })
     }
 
@@ -201,19 +213,23 @@ work_order_generate_number <- function() {
 }
 
 # 创建工单
-work_order_add <- function(title, description, priority = "中", category = "一般", 
-                           subcategory = "", current_user = NULL) {
+work_order_add <- function(title, description, priority = "中", category = "一般",
+                           subcategory = "", request_user = NULL, current_user = NULL) {
   con <- db_connect()
   tryCatch({
     user_id <- ifelse(is.null(current_user), 1, current_user$id[1])
-    
+
     # 生成工单号
     order_no <- work_order_generate_number()
-    
-    query <- sprintf("INSERT INTO work_orders 
-                     (order_no, title, description, priority, status, category, subcategory, created_by, created_at) 
-                     VALUES ('%s', '%s', '%s', '%s', 'pending', '%s', '%s', %d, CURRENT_TIMESTAMP)",
-                     order_no, title, description, priority, category, subcategory, user_id)
+
+    # 处理 request_user（请求用户）
+    req_user_part <- ifelse(is.null(request_user) || request_user == "", "NULL",
+                            sprintf("'%s'", gsub("'", "''", request_user)))
+
+    query <- sprintf("INSERT INTO work_orders
+                     (order_no, title, description, priority, status, category, subcategory, request_user, created_by, created_at)
+                     VALUES ('%s', '%s', '%s', '%s', 'pending', '%s', '%s', %s, %d, CURRENT_TIMESTAMP)",
+                     order_no, title, description, priority, category, subcategory, req_user_part, user_id)
     dbExecute(con, query)
     
     # 记录日志
@@ -427,23 +443,30 @@ work_order_get_stats <- function() {
 }
 
 # 编辑工单（修改所有信息）
-work_order_edit <- function(id, order_no, title, description, priority, category, status, assigned_to, current_user = NULL) {
+work_order_edit <- function(id, order_no, title, description, priority, category, status, assigned_to, request_user = NULL, current_user = NULL) {
   con <- db_connect()
   tryCatch({
     id <- as.integer(id)
-    
+
     # 处理assigned_to字段
     if (is.null(assigned_to) || assigned_to == "" || assigned_to == "unassigned") {
       assigned_part <- "assigned_to = NULL"
     } else {
       assigned_part <- sprintf("assigned_to = %d", as.integer(assigned_to))
     }
-    
+
+    # 处理 request_user 字段
+    if (is.null(request_user) || request_user == "") {
+      req_user_part <- "request_user = NULL"
+    } else {
+      req_user_part <- sprintf("request_user = '%s'", gsub("'", "''", request_user))
+    }
+
     query <- sprintf("UPDATE work_orders
                      SET order_no = '%s', title = '%s', description = '%s', priority = '%s',
-                         category = '%s', status = '%s', %s, updated_at = CURRENT_TIMESTAMP
+                         category = '%s', status = '%s', %s, %s, updated_at = CURRENT_TIMESTAMP
                      WHERE id = %d",
-                     order_no, title, description, priority, category, status, assigned_part, id)
+                     order_no, title, description, priority, category, status, assigned_part, req_user_part, id)
     dbExecute(con, query)
 
     # 记录日志

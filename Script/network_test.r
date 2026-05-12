@@ -76,7 +76,7 @@ network_test_ui <- function() {
     titlePanel("网络测试"),
     br(),
     fluidRow(
-      column(4,
+      column(3,
         wellPanel(
           h4("测试项目"),
           actionButton("nt_run_all", "全部测试", class = "btn-primary btn-block",
@@ -108,9 +108,10 @@ network_test_ui <- function() {
           numericInput("nt_ping_count", "Ping 次数", value = 4, min = 1, max = 20)
         )
       ),
-      column(8,
+      column(9,
         div(style = "margin-bottom:10px;",
           actionButton("nt_save_log", "保存日志", class = "btn-info btn-sm", icon = icon("save")),
+          actionButton("nt_load_log", "历史日志", class = "btn-default btn-sm", icon = icon("folder-open")),
           actionButton("nt_clear", "清空结果", class = "btn-default btn-sm", icon = icon("trash"))
         ),
         h4("测试结果"),
@@ -371,7 +372,7 @@ network_test_server <- function(input, output, session) {
     nt_running(TRUE)
   }
 
-  # 全部测试
+  # 全部测试（包含文件服务器）
   observeEvent(input$nt_run_all, {
     target <- trimws(input$nt_target)
     domain <- trimws(input$nt_domain)
@@ -388,9 +389,19 @@ network_test_server <- function(input, output, session) {
       .build_cmd_nslookup(target),
       .build_cmd_nltest(domain),
       .build_cmd_tracert(target),
-      .build_cmd_curl(http_target)
+      .build_cmd_curl(http_target),
+      # 文件服务器 #1 测试
+      .build_cmd_fileserver("10.10.50.50"),
+      list(label = "文件服务器 10.10.50.50 - 端口 445", ip = "10.10.50.50", port = 445, type = "port"),
+      list(label = "文件服务器 10.10.50.50 - 端口 139", ip = "10.10.50.50", port = 139, type = "port"),
+      list(label = "文件服务器 10.10.50.50 - Ping", ip = "10.10.50.50", count = 4, type = "ping"),
+      # 文件服务器 #2 测试
+      .build_cmd_fileserver("10.10.50.150"),
+      list(label = "文件服务器 10.10.50.150 - 端口 445", ip = "10.10.50.150", port = 445, type = "port"),
+      list(label = "文件服务器 10.10.50.150 - 端口 139", ip = "10.10.50.150", port = 139, type = "port"),
+      list(label = "文件服务器 10.10.50.150 - Ping", ip = "10.10.50.150", count = 4, type = "ping")
     )
-    .start_test(cmd_list, "综合测试")
+    .start_test(cmd_list, "综合测试（包含文件服务器）")
   })
 
   # 单项测试：网卡信息
@@ -491,6 +502,57 @@ network_test_server <- function(input, output, session) {
       showNotification(sprintf("日志已保存: %s", filename), type = "message", duration = 5)
     }, error = function(e) {
       showNotification(paste("保存失败:", e$message), type = "error")
+    })
+  })
+
+  # 加载历史日志
+  observeEvent(input$nt_load_log, {
+    if (nt_running()) {
+      showNotification("测试正在执行中，请稍后", type = "warning"); return()
+    }
+
+    tryCatch({
+      if (!dir.exists(nt_log_dir)) {
+        showNotification("暂无历史日志", type = "message"); return()
+      }
+
+      log_files <- list.files(nt_log_dir, pattern = "\\.log$", full.names = FALSE)
+      if (length(log_files) == 0) {
+        showNotification("暂无历史日志", type = "message"); return()
+      }
+
+      # 按时间倒序排列
+      log_files <- rev(sort(log_files))
+
+      # 显示选择对话框
+      showModal(modalDialog(
+        title = "选择历史日志",
+        selectInput("nt_select_log", "日志文件：",
+          choices = setNames(file.path(nt_log_dir, log_files), log_files),
+          selected = file.path(nt_log_dir, log_files[1])),
+        footer = tagList(
+          modalButton("取消"),
+          actionButton("nt_load_selected_log", "加载", class = "btn-primary")
+        ),
+        easyClose = TRUE
+      ))
+    }, error = function(e) {
+      showNotification(paste("读取日志失败:", e$message), type = "error")
+    })
+  })
+
+  # 加载选中的日志
+  observeEvent(input$nt_load_selected_log, {
+    removeModal()
+    log_path <- input$nt_select_log
+    if (is.null(log_path) || log_path == "") return()
+
+    tryCatch({
+      content <- paste(readLines(log_path, warn = FALSE), collapse = "\n")
+      nt_result(content)
+      showNotification("日志已加载", type = "message", duration = 3)
+    }, error = function(e) {
+      showNotification(paste("加载失败:", e$message), type = "error")
     })
   })
 }

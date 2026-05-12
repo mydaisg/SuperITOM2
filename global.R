@@ -171,6 +171,15 @@ migrate_database <- function() {
       cat("数据库迁移完成：work_orders 表检查完毕\n")
     }
 
+    # 迁移：work_orders 表添加 request_user 列（请求用户/工单来源者）
+    if ("work_orders" %in% tables) {
+      wo_columns <- dbGetQuery(con, "PRAGMA table_info(work_orders)")
+      if (!"request_user" %in% wo_columns$name) {
+        dbExecute(con, "ALTER TABLE work_orders ADD COLUMN request_user TEXT")
+        cat("数据库迁移完成：已添加 request_user 列到 work_orders 表\n")
+      }
+    }
+
     # 迁移：project_tasks 表添加 is_favorite 和 importance 列
     task_columns <- dbGetQuery(con, "PRAGMA table_info(project_tasks)")
     if (!"is_favorite" %in% task_columns$name) {

@@ -272,14 +272,14 @@ server <- function(input, output, session) {
                                grepl(search_term, toupper(all_orders$current_handler)), ]
     }
 
-      # 列顺序：工单号、标题、描述、分类、优先级、处理人、状态、创建人、时间
+      # 列顺序：工单号、标题、描述、分类、优先级、处理人、状态、请求用户、创建人、时间
       if (nrow(all_orders) > 0) {
         # 工单号链接
         order_nos <- ifelse(is.na(all_orders$order_no),
                            paste0("ITS", format(as.Date(all_orders$created_at), "%Y%m%d"), sprintf("%03d", all_orders$id)),
                            all_orders$order_no)
         order_nos <- sprintf('<a href="#" class="wo-view-link" data-id="%s" style="font-weight:bold;color:#337ab7;">%s</a>', all_orders$id, order_nos)
-        
+
         # 选择并重命名列（去掉操作列）
         display_data <- data.frame(
           工单号 = order_nos,
@@ -289,6 +289,7 @@ server <- function(input, output, session) {
         优先级 = all_orders$priority,
         处理人 = ifelse(is.na(all_orders$current_handler), "未分配", all_orders$current_handler),
         状态 = all_orders$status,
+        请求用户 = ifelse(is.na(all_orders$request_user_name), "—", all_orders$request_user_name),
         创建人 = ifelse(is.na(all_orders$creator_name), "未知", all_orders$creator_name),
         时间 = all_orders$created_at,
         stringsAsFactors = FALSE
@@ -317,6 +318,7 @@ server <- function(input, output, session) {
         优先级 = character(),
         处理人 = character(),
         状态 = character(),
+        请求用户 = character(),
         创建人 = character(),
         时间 = character(),
         stringsAsFactors = FALSE
@@ -336,23 +338,25 @@ server <- function(input, output, session) {
         dom = 't<"float-left"p>',  # 分页器在底部左侧
         columnDefs = list(
           # 工单号列（可点击链接）
-          list(targets = 0, width = '120px', className = 'dt-center'),
+          list(targets = 0, width = '100px', className = 'dt-center'),
           # 标题列
-          list(targets = 1, width = '150px', className = 'dt-left'),
+          list(targets = 1, width = '120px', className = 'dt-left'),
           # 描述列：限制宽度
-          list(targets = 2, width = '200px', className = 'dt-left'),
+          list(targets = 2, width = '150px', className = 'dt-left'),
           # 分类列
-          list(targets = 3, width = '80px', className = 'dt-center'),
+          list(targets = 3, width = '70px', className = 'dt-center'),
           # 优先级列
-          list(targets = 4, width = '60px', className = 'dt-center'),
+          list(targets = 4, width = '55px', className = 'dt-center'),
           # 处理人列
-          list(targets = 5, width = '80px', className = 'dt-center'),
+          list(targets = 5, width = '70px', className = 'dt-center'),
           # 状态列
-          list(targets = 6, width = '80px', className = 'dt-center'),
+          list(targets = 6, width = '70px', className = 'dt-center'),
+          # 请求用户列
+          list(targets = 7, width = '70px', className = 'dt-center'),
           # 创建人列
-          list(targets = 7, width = '80px', className = 'dt-center'),
+          list(targets = 8, width = '70px', className = 'dt-center'),
           # 时间列
-          list(targets = 8, width = '130px', className = 'dt-center')
+          list(targets = 9, width = '120px', className = 'dt-center')
         ),
         rowCallback = JS(
           "function(row, data, index) {
@@ -503,7 +507,7 @@ server <- function(input, output, session) {
               <tr>
                 <td style="font-weight: bold; color: #666;">处理人：</td>
                 <td>%s</td>
-                <td style="font-weight: bold; color: #666;">指派给：</td>
+                <td style="font-weight: bold; color: #666;">请求用户：</td>
                 <td>%s</td>
               </tr>
               <tr><td colspan="4" style="height: 8px;"></td></tr>
@@ -545,7 +549,7 @@ server <- function(input, output, session) {
       ifelse(is.na(wo$category), "未分类", wo$category),
       ifelse(is.na(wo$creator_name), "未知", wo$creator_name),
       ifelse(is.na(wo$handler_name), ifelse(is.na(wo$assignee_name), "未分配", wo$assignee_name), wo$handler_name),
-      ifelse(is.na(wo$assignee_name), "未指派", wo$assignee_name),
+      ifelse(is.na(wo$request_user_name), "—", wo$request_user_name),
       wo$created_at,
       ifelse(is.na(wo$assigned_at), "未指派", wo$assigned_at),
       ifelse(is.na(wo$handled_at), "未开始", wo$handled_at),
@@ -795,12 +799,13 @@ server <- function(input, output, session) {
     cat(sprintf("标题: %s\n", wo$title[1]))
     cat(sprintf("优先级: %s\n", wo$priority[1]))
     cat(sprintf("当前状态: %s\n", wo$status[1]))
+    cat(sprintf("请求用户: %s\n", ifelse(is.na(wo$request_user_name[1]) || wo$request_user_name[1] == "", "—", wo$request_user_name[1])))
     cat(sprintf("创建人: %s\n", ifelse(is.na(wo$creator_name[1]), "未知", wo$creator_name[1])))
     if (!is.na(wo$assignee_name[1])) {
       cat(sprintf("当前处理人: %s\n", wo$assignee_name[1]))
     }
   })
-  
+
   # 显示选中工单信息（处理页面）
   output$selected_work_order_info2 <- renderPrint({
     req(rv$selected_work_order_detail)
@@ -811,6 +816,7 @@ server <- function(input, output, session) {
     cat(sprintf("优先级: %s\n", wo$priority[1]))
     cat(sprintf("分类: %s\n", ifelse(is.na(wo$category[1]), "未分类", wo$category[1])))
     cat(sprintf("当前状态: %s\n", wo$status[1]))
+    cat(sprintf("请求用户: %s\n", ifelse(is.na(wo$request_user_name[1]) || wo$request_user_name[1] == "", "—", wo$request_user_name[1])))
     cat(sprintf("创建人: %s\n", ifelse(is.na(wo$creator_name[1]), "未知", wo$creator_name[1])))
     if (!is.na(wo$assignee_name[1])) {
       cat(sprintf("指派给: %s\n", wo$assignee_name[1]))
@@ -834,23 +840,25 @@ server <- function(input, output, session) {
   observeEvent(input$add_work_order, {
     req(rv$logged_in)
     req(input$work_order_title, input$work_order_description, input$work_order_priority)
-    
+
     result <- work_order_add(
-      input$work_order_title, 
-      input$work_order_description, 
+      input$work_order_title,
+      input$work_order_description,
       input$work_order_priority,
       input$work_order_category,
       "",
+      input$work_order_request_user,
       rv$current_user
     )
     showNotification(result$message, type = ifelse(result$success, "message", "error"))
-    
+
     # 清空输入
     updateTextInput(session, "work_order_title", value = "")
     updateTextAreaInput(session, "work_order_description", value = "")
+    updateTextInput(session, "work_order_request_user", value = "")
     updateSelectInput(session, "work_order_priority", selected = "中")
     updateSelectInput(session, "work_order_category", selected = "一般")
-    
+
     # 触发刷新
     rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
   })
@@ -887,6 +895,7 @@ server <- function(input, output, session) {
         h4("工单信息"),
         textInput("modal_wo_title", "标题", placeholder = "请输入工单标题"),
         textAreaInput("modal_wo_description", "描述", rows = 4, placeholder = "请输入工单描述"),
+        textInput("modal_wo_request_user", "请求用户", placeholder = "请输入请求用户（工单来源者）"),
         selectInput("modal_wo_priority", "优先级", choices = priority_choices, selected = priority_default),
         selectInput("modal_wo_category", "分类", choices = category_choices, selected = category_default),
         actionButton("modal_confirm_create_wo", "创建工单", class = "btn-primary")
@@ -895,18 +904,19 @@ server <- function(input, output, session) {
       easyClose = TRUE
     ))
   })
-  
+
   # 处理弹窗内确认创建工单
   observeEvent(input$modal_confirm_create_wo, {
     req(rv$logged_in)
     req(input$modal_wo_title, input$modal_wo_description)
-    
+
     result <- work_order_add(
-      input$modal_wo_title, 
-      input$modal_wo_description, 
+      input$modal_wo_title,
+      input$modal_wo_description,
       input$modal_wo_priority,
       input$modal_wo_category,
       "",
+      input$modal_wo_request_user,
       rv$current_user
     )
     showNotification(result$message, type = ifelse(result$success, "message", "error"))
@@ -978,10 +988,11 @@ server <- function(input, output, session) {
           textInput("modal_edit_wo_order_no", "工单号", value = ifelse(is.na(wo$order_no), "", wo$order_no), placeholder = "ITSYYYYMMDDXXX"),
           textInput("modal_edit_wo_title", "标题", value = wo$title),
           textAreaInput("modal_edit_wo_description", "描述", rows = 4, value = wo$description),
+          textInput("modal_edit_wo_request_user", "请求用户", value = ifelse(is.na(wo$request_user), "", wo$request_user), placeholder = "请输入请求用户"),
           selectInput("modal_edit_wo_priority", "优先级", choices = priority_choices, selected = wo$priority),
           selectInput("modal_edit_wo_category", "分类", choices = category_choices, selected = ifelse(is.na(wo$category), "一般", wo$category)),
           selectInput("modal_edit_wo_status", "状态", choices = status_choices, selected = wo$status),
-          selectInput("modal_edit_wo_assigned_to", "指派给", choices = engineer_choices, 
+          selectInput("modal_edit_wo_assigned_to", "指派给", choices = engineer_choices,
                       selected = ifelse(is.na(wo$assigned_to), "unassigned", wo$assigned_to)),
           actionButton("modal_confirm_edit_wo", "保存修改", class = "btn-warning")
         ),
@@ -996,7 +1007,7 @@ server <- function(input, output, session) {
     req(rv$logged_in)
     req(rv$selected_work_order_id)
     req(input$modal_edit_wo_order_no, input$modal_edit_wo_title, input$modal_edit_wo_description)
-    
+
     result <- work_order_edit(
       rv$selected_work_order_id,
       input$modal_edit_wo_order_no,
@@ -1006,6 +1017,7 @@ server <- function(input, output, session) {
       input$modal_edit_wo_category,
       input$modal_edit_wo_status,
       input$modal_edit_wo_assigned_to,
+      input$modal_edit_wo_request_user,
       rv$current_user
     )
     showNotification(result$message, type = ifelse(result$success, "message", "error"))
