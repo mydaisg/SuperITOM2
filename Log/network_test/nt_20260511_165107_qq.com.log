@@ -1,0 +1,97 @@
+========================================
+       网络测试报告 (V3)
+========================================
+开始时间: 2026-05-11 16:50:49
+测试目标: (本机网络配置)
+========================================
+
+== 网卡信息 ==
+$ ipconfig /all
+
+
+Windows IP Configuration
+
+   Host Name . . . . . . . . . . . . : DWTCNSGZRD002
+   Primary Dns Suffix  . . . . . . . : lvcc.org
+   Node Type . . . . . . . . . . . . : Hybrid
+   IP Routing Enabled. . . . . . . . : No
+   WINS Proxy Enabled. . . . . . . . : No
+   DNS Suffix Search List. . . . . . : lvcc.org
+
+Ethernet adapter 以太网:
+
+   Connection-specific DNS Suffix  . : 
+   Description . . . . . . . . . . . : Realtek PCIe GbE Family Controller
+   Physical Address. . . . . . . . . : 00-68-EB-97-70-EF
+   DHCP Enabled. . . . . . . . . . . : Yes
+   Autoconfiguration Enabled . . . . : Yes
+   Link-local IPv6 Address . . . . . : fe80::d97d:725b:9d4b:ac8d%18(Preferred) 
+   IPv4 Address. . . . . . . . . . . : 10.3.3.131(Preferred) 
+   Subnet Mask . . . . . . . . . . . : 255.255.254.0
+   Lease Obtained. . . . . . . . . . : 2026年5月7日 8:45:01
+   Lease Expires . . . . . . . . . . : 2026年5月12日 2:44:59
+   Default Gateway . . . . . . . . . : 10.3.3.254
+   DHCP Server . . . . . . . . . . . : 10.3.3.254
+   DHCPv6 IAID . . . . . . . . . . . : 83912939
+   DHCPv6 Client DUID. . . . . . . . : 00-01-00-01-31-60-FE-DB-00-68-EB-97-70-EF
+   DNS Servers . . . . . . . . . . . : 10.10.50.253
+                                       223.5.5.5
+   NetBIOS over Tcpip. . . . . . . . : Enabled
+
+Wireless LAN adapter WLAN:
+
+   Media State . . . . . . . . . . . : Media disconnected
+   Connection-specific DNS Suffix  . : 
+   Description . . . . . . . . . . . : Realtek RTL8821CE 802.11ac PCIe Adapter
+   Physical Address. . . . . . . . . : 18-47-3D-96-C0-35
+   DHCP Enabled. . . . . . . . . . . : Yes
+   Autoconfiguration Enabled . . . . : Yes
+
+Wireless LAN adapter 本地连接* 1:
+
+   Media State . . . . . . . . . . . : Media disconnected
+   Connection-specific DNS Suffix  . : 
+   Description . . . . . . . . . . . : Microsoft Wi-Fi Direct Virtual Adapter
+   Physical Address. . . . . . . . . : 1A-47-3D-96-C0-35
+   DHCP Enabled. . . . . . . . . . . : Yes
+   Autoconfiguration Enabled . . . . : Yes
+
+Wireless LAN adapter 本地连接* 3:
+
+   Media State . . . . . . . . . . . : Media disconnected
+   Connection-specific DNS Suffix  . : 
+   Description . . . . . . . . . . . : Microsoft Wi-Fi Direct Virtual Adapter #2
+   Physical Address. . . . . . . . . : 9A-47-3D-96-C0-35
+   DHCP Enabled. . . . . . . . . . . : Yes
+   Autoconfiguration Enabled . . . . : Yes
+
+Ethernet adapter 蓝牙网络连接:
+
+   Media State . . . . . . . . . . . : Media disconnected
+   Connection-specific DNS Suffix  . : 
+   Description . . . . . . . . . . . : Bluetooth Device (Personal Area Network)
+   Physical Address. . . . . . . . . : 18-47-3D-96-C0-36
+   DHCP Enabled. . . . . . . . . . . : Yes
+   Autoconfiguration Enabled . . . . : Yes
+
+Ethernet adapter vEthernet (WSL):
+
+   Connection-specific DNS Suffix  . : 
+   Description . . . . . . . . . . . : Hyper-V Virtual Ethernet Adapter
+   Physical Address. . . . . . . . . : 00-15-5D-F2-B8-35
+   DHCP Enabled. . . . . . . . . . . : No
+   Autoconfiguration Enabled . . . . : Yes
+   Link-local IPv6 Address . . . . . : fe80::6b07:b0bf:d5cc:6e9f%59(Preferred) 
+   IPv4 Address. . . . . . . . . . . : 172.28.0.1(Preferred) 
+   Subnet Mask . . . . . . . . . . . : 255.255.240.0
+   Default Gateway . . . . . . . . . : 
+   DHCPv6 IAID . . . . . . . . . . . : 989861213
+   DHCPv6 Client DUID. . . . . . . . : 00-01-00-01-31-60-FE-DB-00-68-EB-97-70-EF
+   DNS Servers . . . . . . . . . . . : fec0:0:0:ffff::1%1
+                                       fec0:0:0:ffff::2%1
+                                       fec0:0:0:ffff::3%1
+   NetBIOS over Tcpip. . . . . . . . : Enabled
+========================================
+结束时间: 2026-05-11 16:50:50
+========================================
+

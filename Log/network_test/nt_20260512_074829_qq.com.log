@@ -1,0 +1,25 @@
+========================================
+       网络测试报告 (V3)
+========================================
+开始时间: 2026-05-12 07:48:21
+测试目标: qq.com
+========================================
+
+== 连通性测试 - ping qq.com ==
+$ ping qq.com -n 4
+
+
+Pinging qq.com [157.255.219.143] with 32 bytes of data:
+Reply from 157.255.219.143: bytes=32 time=27ms TTL=51
+Reply from 157.255.219.143: bytes=32 time=27ms TTL=51
+Reply from 157.255.219.143: bytes=32 time=27ms TTL=51
+Reply from 157.255.219.143: bytes=32 time=27ms TTL=51
+
+Ping statistics for 157.255.219.143:
+    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 27ms, Maximum = 27ms, Average = 27ms
+========================================
+结束时间: 2026-05-12 07:48:25
+========================================
+
