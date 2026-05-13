@@ -280,6 +280,7 @@ main_ui <- function() {
                   column(2, uiOutput("work_order_status_filter_ui")),
                   column(3, textInput("work_order_search", NULL, placeholder = "搜索工单...")),
                   column(2, div(style = "margin-top: 20px;", actionButton("show_create_work_order", "新建工单", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;"))),
+                  column(2, div(style = "margin-top: 20px;", actionButton("show_quick_work_order", "快速创建", class = "btn-success", style = "padding: 4px 10px; font-size: 12px;"))),
                   column(1, div(style = "margin-top: 20px;", actionButton("refresh_work_orders", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
                 ),
                 DTOutput("work_order_table")
@@ -402,6 +403,29 @@ main_ui <- function() {
               )
             )
           )
+        ),
+
+        # 快速工单（粘贴格式化工单文本）
+        fluidRow(
+          column(12,
+            wellPanel(
+              h4("快速工单"),
+              p("粘贴以下格式的文本，自动解析并创建工单：", style = "color: #666; font-size: 12px;"),
+              pre('IT服务请求 20260512 1110：
+用户：谢芳材-供应链中心-副总经理
+内容：两栋楼的"监控角度需要修正"...
+@韩荣昌-IT部-IT工程师(Sky)', style = "font-size: 11px; background: #f5f5f5; padding: 8px;"),
+              fluidRow(
+                column(10, textAreaInput("quick_work_order_text", "粘贴格式化工单", rows = 4, placeholder = "请粘贴格式化工单内容...")),
+                column(2,
+                  div(style = "margin-top: 50px;",
+                    actionButton("create_quick_work_order", "快速创建", class = "btn-success", style = "padding: 8px 16px; font-size: 14px;")
+                  ),
+                  uiOutput("quick_work_order_preview")
+                )
+              )
+            )
+          )
         )
       )
     ),
@@ -438,20 +462,124 @@ main_ui <- function() {
     # 巡检标签页
     tabPanel(
       "巡检",
-      icon = icon("search"),  # 巡检图标
+      icon = icon("clipboard-check"),
       fluidPage(
-        titlePanel("巡检管理"),
-        sidebarLayout(
-          sidebarPanel(
-            textInput("inspection_name", "巡检名称"),
-            selectInput("inspection_type", "巡检类型", choices = c("系统巡检", "网络巡检", "安全巡检", "应用巡检")),
-            textAreaInput("inspection_schedule", "巡检计划"),
-            actionButton("add_inspection", "创建巡检", class = "btn-primary"),
-            br(), br(),
-            actionButton("refresh_inspections", "刷新巡检", class = "btn-info")
+        # 巡检统计数据
+        fluidRow(
+          column(12,
+            div(style = "margin-bottom: 10px;",
+              fluidRow(
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0;",
+                  div(style = "font-size: 11px; color: #666; font-weight: 500;", "巡检计划"),
+                  div(style = "font-size: 18px; font-weight: bold; color: #333;", textOutput("insp_stat_plans"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #5cb85c; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "进行中"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_active_plans"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #f0ad4e; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "待执行"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_pending_tasks"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #5bc0de; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "已完成"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_completed_tasks"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #d9534f; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "异常"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_abnormal_tasks"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #9370db; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "待整改"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_issues"))
+                ))
+              )
+            )
+          )
+        ),
+        # 巡检标签页内容
+        tabsetPanel(
+          # 我的任务
+          tabPanel("我的任务",
+            br(),
+            fluidRow(
+              column(3, selectInput("insp_my_status_filter", "任务状态", choices = NULL)),
+              column(2, div(style = "margin-top: 20px;", actionButton("insp_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+            ),
+            DTOutput("insp_my_task_table")
           ),
-          mainPanel(
-            DTOutput("inspection_table")
+          # 巡检计划
+          tabPanel("巡检计划",
+            br(),
+            fluidRow(
+              column(2, selectInput("insp_plan_status_filter", "计划状态", choices = NULL)),
+              column(3, div(style = "margin-top: 20px;", actionButton("insp_create_plan", "创建计划", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;"))),
+              column(2, div(style = "margin-top: 20px;", actionButton("insp_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+            ),
+            DTOutput("inspection_plan_table"),
+            br(),
+            wellPanel(
+              h4("生成巡检任务"),
+              fluidRow(
+                column(3, selectInput("insp_task_inspector", "检查人", choices = NULL)),
+                column(3, dateInput("insp_task_date", "计划日期", value = Sys.Date(), format = "yyyy-mm-dd")),
+                column(3, div(style = "margin-top: 20px;", actionButton("insp_generate_tasks", "生成任务", class = "btn-success", style = "padding: 4px 10px; font-size: 12px;")))
+              )
+            ),
+            br(),
+            fluidRow(
+              column(12,
+                h4("该计划下的巡检任务"),
+                selectInput("insp_task_status_filter", "任务状态筛选", choices = NULL),
+                DTOutput("inspection_task_table")
+              )
+            )
+          ),
+          # 巡检记录
+          tabPanel("巡检记录",
+            br(),
+            fluidRow(
+              column(3, selectInput("insp_record_status_filter", "任务状态", choices = NULL)),
+              column(2, div(style = "margin-top: 20px;", actionButton("insp_record_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+            ),
+            DTOutput("insp_record_table")
+          ),
+          # 巡检异常
+          tabPanel("巡检异常",
+            br(),
+            fluidRow(
+              column(3, selectInput("insp_issue_status_filter", "异常状态", choices = NULL)),
+              column(2, div(style = "margin-top: 20px;", actionButton("insp_issue_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+            ),
+            DTOutput("insp_issue_table")
+          ),
+          # 已删除记录（Admin专属）- 使用 conditionalPanel 条件渲染
+          conditionalPanel(
+            condition = "input.isAdminInspectionUser == true",
+            tabPanel("已删除记录",
+              br(),
+              fluidRow(
+                column(12,
+                  div(style = "background: #fff3cd; padding: 10px; border-radius: 4px; margin-bottom: 15px;",
+                    strong("提示："), "此页面仅Admin可见，显示已删除的巡检计划和记录，可用于审计追溯。"
+                  )
+                )
+              ),
+              fluidRow(
+                column(6,
+                  wellPanel(
+                    h4("已删除的巡检计划", style = "color: #d9534f;"),
+                    DTOutput("insp_deleted_plans_table")
+                  )
+                ),
+                column(6,
+                  wellPanel(
+                    h4("已删除的巡检记录", style = "color: #d9534f;"),
+                    DTOutput("insp_deleted_records_table")
+                  )
+                )
+              )
+            )
           )
         )
       )

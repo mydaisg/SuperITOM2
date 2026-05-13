@@ -199,6 +199,7 @@ migrate_database <- function() {
       cat("数据库迁移完成：已添加字体大小配置项\n")
     }
 
+    # 迁移：添加工单配置默认值
     if (!"config_options" %in% tables) {
       dbExecute(con, "CREATE TABLE config_options (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -260,6 +261,272 @@ migrate_database <- function() {
       dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('work_order_category', '账号权限', '账号权限', '#9370db', 6)")
       dbExecute(con, "INSERT INTO config_options (category, option_value, option_label, color, sort_order) VALUES ('work_order_category', '其他', '其他', '#999', 7)")
       cat("数据库迁移完成：已创建 config_options 表并初始化默认数据\n")
+    }
+
+    # ===============================================
+    # 巡检管理模块数据库表
+    # ===============================================
+    
+    # 巡检计划表 (inspection_plans)
+    if (!"inspection_plans" %in% tables) {
+      dbExecute(con, "CREATE TABLE inspection_plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_no TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        category TEXT DEFAULT '日常巡检',
+        inspection_category TEXT NOT NULL,
+        cycle_type TEXT DEFAULT 'once',
+        cycle_value TEXT,
+        start_date TEXT,
+        end_date TEXT,
+        responsible_user INTEGER,
+        status TEXT DEFAULT 'draft',
+        created_by INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )")
+      cat("数据库迁移完成：已创建 inspection_plans 表\n")
+    }
+    
+    # 巡检检查项表 (inspection_items)
+    if (!"inspection_items" %in% tables) {
+      dbExecute(con, "CREATE TABLE inspection_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_id INTEGER NOT NULL,
+        category TEXT NOT NULL,
+        item_name TEXT NOT NULL,
+        item_description TEXT,
+        check_standard TEXT,
+        scoring_type TEXT DEFAULT 'pass_fail',
+        max_score INTEGER DEFAULT 100,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (plan_id) REFERENCES inspection_plans(id)
+      )")
+      cat("数据库迁移完成：已创建 inspection_items 表\n")
+    }
+    
+    # 巡检检查项模板表 (inspection_item_templates)
+    if (!"inspection_item_templates" %in% tables) {
+      dbExecute(con, "CREATE TABLE inspection_item_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category TEXT NOT NULL,
+        item_name TEXT NOT NULL,
+        item_description TEXT,
+        check_standard TEXT,
+        scoring_type TEXT DEFAULT 'pass_fail',
+        max_score INTEGER DEFAULT 100,
+        sort_order INTEGER DEFAULT 0,
+        active INTEGER DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )")
+      cat("数据库迁移完成：已创建 inspection_item_templates 表\n")
+      
+      # 初始化默认检查项模板
+      templates <- list(
+        # 数据中心巡检
+        list(category = "数据中心巡检", name = "温湿度检查", desc = "检查数据中心温湿度", standard = "温度18-26℃，湿度40-60%"),
+        list(category = "数据中心巡检", name = "消防设备检查", desc = "检查消防栓、灭火器", standard = "设备完好，在有效期内"),
+        list(category = "数据中心巡检", name = "UPS运行检查", desc = "检查UPS状态", standard = "UPS运行正常，负载率<80%"),
+        list(category = "数据中心巡检", name = "空调运行检查", desc = "检查精密空调", standard = "空调运行正常，无报警"),
+        list(category = "数据中心巡检", name = "门禁系统检查", desc = "检查门禁记录", standard = "无异常进入记录"),
+        # 电力机房巡检
+        list(category = "电力机房巡检", name = "配电柜检查", desc = "检查配电柜状态", standard = "指示灯正常，无报警"),
+        list(category = "电力机房巡检", name = "蓄电池检查", desc = "检查蓄电池", standard = "电压正常，无漏液"),
+        list(category = "电力机房巡检", name = "市电输入检查", desc = "检查市电供电", standard = "市电供电正常"),
+        list(category = "电力机房巡检", name = "发电机检查", desc = "检查发电机", standard = "油位正常，待机状态"),
+        # 会议室巡检
+        list(category = "会议室巡检", name = "投影设备检查", desc = "检查投影仪", standard = "投影清晰，遥控正常"),
+        list(category = "会议室巡检", name = "音响设备检查", desc = "检查音响", standard = "音质正常，无杂音"),
+        list(category = "会议室巡检", name = "视频会议检查", desc = "检查视频会议设备", standard = "画面清晰，麦克风正常"),
+        list(category = "会议室巡检", name = "照明空调检查", desc = "检查照明和空调", standard = "设备正常，可用"),
+        # 设备间巡检
+        list(category = "设备间巡检", name = "网络设备检查", desc = "检查交换机、路由器", standard = "指示灯正常，无报错"),
+        list(category = "设备间巡检", name = "服务器运行检查", desc = "检查服务器状态", standard = "系统运行正常，无告警"),
+        list(category = "设备间巡检", name = "布线整理检查", desc = "检查线缆布线", standard = "线缆整齐，无脱落"),
+        list(category = "设备间巡检", name = "环境卫生检查", desc = "检查设备间卫生", standard = "无灰尘，无杂物")
+      )
+      
+      for (i in seq_along(templates)) {
+        t <- templates[[i]]
+        dbExecute(con, sprintf(
+          "INSERT INTO inspection_item_templates (category, item_name, item_description, check_standard, scoring_type, max_score, sort_order) 
+           VALUES ('%s', '%s', '%s', '%s', 'pass_fail', 100, %d)",
+          t$category, gsub("'", "''", t$name), gsub("'", "''", t$desc), gsub("'", "''", t$standard), i
+        ))
+      }
+      cat("数据库迁移完成：已初始化检查项模板数据\n")
+    }
+    
+    # 迁移：为已存在的表添加新字段
+    # inspection_plans 表添加 inspection_category 字段
+    columns_plans <- dbGetQuery(con, "PRAGMA table_info(inspection_plans)")
+    if ("inspection_category" %in% columns_plans$name == FALSE) {
+      tryCatch({
+        dbExecute(con, "ALTER TABLE inspection_plans ADD COLUMN inspection_category TEXT")
+        cat("数据库迁移完成：已添加 inspection_category 列到 inspection_plans 表\n")
+      }, error = function(e) {
+        cat("警告：添加 inspection_category 列失败:", e$message, "\n")
+      })
+    }
+    
+    # inspection_items 表添加 category 字段
+    columns_items <- dbGetQuery(con, "PRAGMA table_info(inspection_items)")
+    if ("category" %in% columns_items$name == FALSE) {
+      tryCatch({
+        dbExecute(con, "ALTER TABLE inspection_items ADD COLUMN category TEXT DEFAULT ''")
+        cat("数据库迁移完成：已添加 category 列到 inspection_items 表\n")
+      }, error = function(e) {
+        cat("警告：添加 category 列失败:", e$message, "\n")
+      })
+    }
+    
+    # 巡检任务表 (inspection_tasks)
+    if (!"inspection_tasks" %in% tables) {
+      dbExecute(con, "CREATE TABLE inspection_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_no TEXT UNIQUE NOT NULL,
+        plan_id INTEGER NOT NULL,
+        item_id INTEGER,
+        item_name TEXT,
+        item_description TEXT,
+        check_standard TEXT,
+        inspector INTEGER,
+        scheduled_date TEXT,
+        location TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (plan_id) REFERENCES inspection_plans(id),
+        FOREIGN KEY (inspector) REFERENCES users(id)
+      )")
+      cat("数据库迁移完成：已创建 inspection_tasks 表\n")
+    }
+    
+    # 巡检记录表 (inspection_records)
+    if (!"inspection_records" %in% tables) {
+      dbExecute(con, "CREATE TABLE inspection_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        inspector INTEGER,
+        result_type TEXT NOT NULL,
+        score INTEGER,
+        remark TEXT,
+        photos TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (task_id) REFERENCES inspection_tasks(id),
+        FOREIGN KEY (inspector) REFERENCES users(id)
+      )")
+      cat("数据库迁移完成：已创建 inspection_records 表\n")
+    }
+    
+    # 巡检问题/异常表 (inspection_issues)
+    if (!"inspection_issues" %in% tables) {
+      dbExecute(con, "CREATE TABLE inspection_issues (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        record_id INTEGER,
+        task_id INTEGER,
+        issue_type TEXT,
+        issue_description TEXT,
+        severity TEXT DEFAULT 'medium',
+        photos TEXT,
+        related_work_order_id INTEGER,
+        status TEXT DEFAULT 'pending',
+        created_by INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (task_id) REFERENCES inspection_tasks(id),
+        FOREIGN KEY (related_work_order_id) REFERENCES work_orders(id)
+      )")
+      cat("数据库迁移完成：已创建 inspection_issues 表\n")
+    }
+
+    # 巡检计划评论表 (inspection_plan_comments)
+    if (!"inspection_plan_comments" %in% tables) {
+      dbExecute(con, "CREATE TABLE inspection_plan_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_id INTEGER NOT NULL,
+        comment TEXT NOT NULL,
+        created_by INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (plan_id) REFERENCES inspection_plans(id)
+      )")
+      cat("数据库迁移完成：已创建 inspection_plan_comments 表\n")
+    }
+
+    # 检查 inspection_plans 表是否有 updated_at 字段（兼容旧数据库）
+    columns_plans <- dbGetQuery(con, "PRAGMA table_info(inspection_plans)")
+    if ("updated_at" %in% columns_plans$name == FALSE) {
+      tryCatch({
+        dbExecute(con, "ALTER TABLE inspection_plans ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP")
+        cat("数据库迁移完成：已添加 updated_at 列到 inspection_plans 表\n")
+      }, error = function(e) {
+        cat("警告：添加 updated_at 列失败:", e$message, "\n")
+      })
+    }
+    
+    # ===============================================
+    # 巡检模块软删除支持
+    # ===============================================
+    
+    # inspection_plans 表添加 is_deleted 字段
+    if ("is_deleted" %in% columns_plans$name == FALSE) {
+      tryCatch({
+        dbExecute(con, "ALTER TABLE inspection_plans ADD COLUMN is_deleted INTEGER DEFAULT 0")
+        cat("数据库迁移完成：已添加 is_deleted 列到 inspection_plans 表\n")
+      }, error = function(e) {
+        cat("警告：添加 is_deleted 列失败:", e$message, "\n")
+      })
+    }
+    
+    # inspection_tasks 表添加 is_deleted 字段
+    columns_tasks <- dbGetQuery(con, "PRAGMA table_info(inspection_tasks)")
+    if ("is_deleted" %in% columns_tasks$name == FALSE) {
+      tryCatch({
+        dbExecute(con, "ALTER TABLE inspection_tasks ADD COLUMN is_deleted INTEGER DEFAULT 0")
+        cat("数据库迁移完成：已添加 is_deleted 列到 inspection_tasks 表\n")
+      }, error = function(e) {
+        cat("警告：添加 is_deleted 列失败:", e$message, "\n")
+      })
+    }
+    
+    # inspection_tasks 表添加新字段（支持多检查项JSON存储）
+    columns_tasks <- dbGetQuery(con, "PRAGMA table_info(inspection_tasks)")
+    if ("item_ids" %in% columns_tasks$name == FALSE) {
+      tryCatch({
+        dbExecute(con, "ALTER TABLE inspection_tasks ADD COLUMN item_ids TEXT")
+        cat("数据库迁移完成：已添加 item_ids 列到 inspection_tasks 表\n")
+      }, error = function(e) {
+        cat("警告：添加 item_ids 列失败:", e$message, "\n")
+      })
+    }
+    if ("item_names" %in% columns_tasks$name == FALSE) {
+      tryCatch({
+        dbExecute(con, "ALTER TABLE inspection_tasks ADD COLUMN item_names TEXT")
+        cat("数据库迁移完成：已添加 item_names 列到 inspection_tasks 表\n")
+      }, error = function(e) {
+        cat("警告：添加 item_names 列失败:", e$message, "\n")
+      })
+    }
+    if ("check_standards" %in% columns_tasks$name == FALSE) {
+      tryCatch({
+        dbExecute(con, "ALTER TABLE inspection_tasks ADD COLUMN check_standards TEXT")
+        cat("数据库迁移完成：已添加 check_standards 列到 inspection_tasks 表\n")
+      }, error = function(e) {
+        cat("警告：添加 check_standards 列失败:", e$message, "\n")
+      })
+    }
+    
+    # inspection_records 表添加 is_deleted 字段
+    columns_records <- dbGetQuery(con, "PRAGMA table_info(inspection_records)")
+    if ("is_deleted" %in% columns_records$name == FALSE) {
+      tryCatch({
+        dbExecute(con, "ALTER TABLE inspection_records ADD COLUMN is_deleted INTEGER DEFAULT 0")
+        cat("数据库迁移完成：已添加 is_deleted 列到 inspection_records 表\n")
+      }, error = function(e) {
+        cat("警告：添加 is_deleted 列失败:", e$message, "\n")
+      })
     }
 
   }, error = function(e) {

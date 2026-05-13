@@ -527,3 +527,150 @@ work_order_get_comments <- function(work_order_id) {
     db_disconnect(con)
   })
 }
+
+# 解析快速工单格式文本
+# 格式：
+# IT服务请求 20260512 1110：
+# 用户：谢芳材-供应链中心-副总经理
+# 内容：两栋楼的"监控角度需要修正"...
+# @韩荣昌-IT部-IT工程师(Sky)
+#
+# 返回：list(success, category, request_user, description, assignee_name, message)
+work_order_parse_quick_text <- function(text) {
+  if (is.null(text) || trimws(text) == "") {
+    return(list(success = FALSE, message = "请输入工单内容"))
+  }
+
+  lines <- strsplit(text, "\n")[[1]]
+  lines <- trimws(lines)
+  lines <- lines[lines != ""]  # 移除空行
+
+  if (length(lines) < 3) {
+    return(list(success = FALSE, message = "格式不正确，至少需要：类别、用户、内容"))
+  }
+
+  tryCatch({
+    # 第一行：类别 日期 时间
+    first_line <- lines[1]
+    # 使用正则提取：类别（可能有空格）、日期（8位）、时间（4位）
+    # 例如："IT服务请求 20260512 1110：" 或 "IT服务请求 20260512 1110"
+    first_line <- gsub("：$", "", first_line)  # 移除末尾冒号
+    parts <- strsplit(trimws(first_line), "\\s+")[[1]]
+
+    if (length(parts) < 3) {
+      return(list(success = FALSE, message = "第一行格式错误，应为：类别 日期 时间（如：IT服务请求 20260512 1110）"))
+    }
+
+    # 类别是第一个到倒数第三个部分（日期和时间之间可能有空格）
+    date_part <- parts[length(parts) - 1]
+    time_part <- parts[length(parts)]
+
+    # 验证日期格式（8位数字）
+    if (!grepl("^\\d{8}$", date_part)) {
+      return(list(success = FALSE, message = "日期格式错误，应为8位数字（如：20260512）"))
+    }
+
+    # 验证时间格式（4位数字）
+    if (!grepl("^\\d{4}$", time_part)) {
+      return(list(success = FALSE, message = "时间格式错误，应为4位数字（如：1110）"))
+    }
+
+    # 类别是从开始到日期之前的所有内容
+    category <- paste(parts[-c(length(parts)-1, length(parts))], collapse = " ")
+
+    # 第二行：用户
+    second_line <- lines[2]
+    if (!grepl("^用户[：:]", second_line)) {
+      return(list(success = FALSE, message = "第二行应以'用户：'开头"))
+    }
+    request_user <- trimws(gsub("^用户[：:]", "", second_line))
+
+    # 最后一行：@人员（分派人）
+    last_line <- trimws(lines[length(lines)])
+    assignee_name <- NULL
+    assignee_full <- NULL  # 保存完整信息用于显示
+    if (grepl("^@", last_line)) {
+      assignee_full <- trimws(gsub("^@", "", last_line))
+    } else {
+      # 如果最后一行不是@开头，可能是内容的一部分
+      # 查找包含@的行
+      at_lines <- lines[grepl("@", lines)]
+      if (length(at_lines) > 0) {
+        for (l in rev(at_lines)) {
+          if (grepl("^@", trimws(l))) {
+            assignee_full <- trimws(gsub("^@", "", l))
+            break
+          }
+        }
+      }
+    }
+    
+    # 从完整信息中提取姓名（取第一个"-"之前的部分）
+    if (!is.null(assignee_full) && assignee_full != "") {
+      # 韩荣昌-IT部-IT工程师(Sky) -> 韩荣昌
+      if (grepl("-", assignee_full)) {
+        assignee_name <- strsplit(assignee_full, "-")[[1]][1]
+      } else {
+        assignee_name <- assignee_full
+      }
+    }
+
+    # 内容：从"内容："之后到最后@行之前的所有内容
+    content_lines <- c()
+    for (i in 3:length(lines)) {
+      line <- lines[i]
+      # 如果这行是@开头，跳过（内容已结束）
+      if (grepl("^@", trimws(line))) {
+        break
+      }
+      # 如果这行以"内容："开头，提取冒号后的内容
+      if (grepl("^内容[：:]", line)) {
+        content_lines <- c(content_lines, trimws(gsub("^内容[：:]", "", line)))
+      } else {
+        # 直接内容行
+        content_lines <- c(content_lines, line)
+      }
+    }
+
+    description <- paste(content_lines, collapse = "\n")
+
+    if (description == "") {
+      return(list(success = FALSE, message = "未找到工单内容"))
+    }
+
+    return(list(
+      success = TRUE,
+      category = category,
+      request_user = request_user,
+      description = description,
+      assignee_name = assignee_name,
+      assignee_full = assignee_full,
+      message = "解析成功"
+    ))
+  }, error = function(e) {
+    return(list(success = FALSE, message = paste("解析失败:", e$message)))
+  })
+}
+
+# 根据用户名查找用户ID（支持模糊匹配）
+work_order_find_user_by_name <- function(name) {
+  if (is.null(name) || name == "") {
+    return(NULL)
+  }
+
+  con <- db_connect()
+  tryCatch({
+    # 尝试精确匹配
+    query <- sprintf("SELECT id FROM users WHERE username = '%s' OR username LIKE '%%%s%%'", name, name)
+    result <- dbGetQuery(con, query)
+
+    if (nrow(result) > 0) {
+      return(result$id[1])
+    }
+    return(NULL)
+  }, error = function(e) {
+    return(NULL)
+  }, finally = {
+    db_disconnect(con)
+  })
+}

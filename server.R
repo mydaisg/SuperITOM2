@@ -10,7 +10,9 @@ source("Script/work_order.r")       # 工单管理模块
 source("Script/project_management.r") # 项目管理模块（数据层）
 source("Script/project_server.r")     # 项目管理模块（服务端逻辑）
 source("Script/information_collector.r")  # 信息收集器模块
-source("Script/inspection_patrol.r")    # 巡检管理模块
+source("Script/inspection_patrol.r")    # 巡检管理模块（旧版兼容）
+source("Script/inspection_management.r") # 巡检管理模块（数据层）
+source("Script/inspection_server.r")    # 巡检管理模块（服务端）
 source("Script/login_ui.r")         # 登录界面定义
 source("Script/main_ui.r")          # 主界面定义
 source("Script/github_autosubmit.r") # GitHub自动提交功能
@@ -862,6 +864,99 @@ server <- function(input, output, session) {
     # 触发刷新
     rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
   })
+
+  # 处理快速工单按钮点击事件
+  observeEvent(input$create_quick_work_order, {
+    req(rv$logged_in)
+    req(input$quick_work_order_text)
+
+    text <- trimws(input$quick_work_order_text)
+    if (text == "") {
+      showNotification("请输入工单内容", type = "warning")
+      return()
+    }
+
+    # 解析文本
+    parsed <- work_order_parse_quick_text(text)
+
+    if (!parsed$success) {
+      showNotification(parsed$message, type = "error")
+      return()
+    }
+
+    # 生成工单标题：从内容中提取前20个字符作为标题
+    title_content <- gsub("[\\n\\r]", " ", parsed$description)  # 替换换行符为空格
+    if (nchar(title_content) > 20) {
+      title_content <- substr(title_content, 1, 20)
+    }
+    title <- paste0(parsed$category, " - ", title_content)
+
+    # 创建工单
+    result <- work_order_add(
+      title = title,
+      description = parsed$description,
+      priority = "中",
+      category = parsed$category,
+      subcategory = "",
+      request_user = parsed$request_user,
+      current_user = rv$current_user
+    )
+
+    if (result$success) {
+      # 如果指定了分派人，查找用户ID并派发
+      if (!is.null(parsed$assignee_name) && parsed$assignee_name != "") {
+        assignee_id <- work_order_find_user_by_name(parsed$assignee_name)
+        if (!is.null(assignee_id)) {
+          # 获取刚创建的工单ID
+          con <- db_connect()
+          tryCatch({
+            # 查找最新创建的工单（按创建时间倒序）
+            latest_order <- dbGetQuery(con, "SELECT id FROM work_orders ORDER BY created_at DESC LIMIT 1")
+            if (nrow(latest_order) > 0) {
+              assign_result <- work_order_assign(latest_order$id[1], assignee_id, rv$current_user)
+              if (assign_result$success) {
+                showNotification(paste0("工单创建成功并已派发给：", parsed$assignee_name), type = "message")
+              } else {
+                showNotification(paste0("工单创建成功，但派发失败：", assign_result$message), type = "warning")
+              }
+            }
+          }, error = function(e) {
+            showNotification(paste0("工单创建成功，但派发失败：", e$message), type = "warning")
+          }, finally = {
+            db_disconnect(con)
+          })
+        } else {
+          showNotification(paste0("工单创建成功，但未找到分派人：", parsed$assignee_name), type = "warning")
+        }
+      } else {
+        showNotification("工单创建成功", type = "message")
+      }
+
+      # 清空输入
+      updateTextAreaInput(session, "quick_work_order_text", value = "")
+
+      # 触发刷新
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+    } else {
+      showNotification(result$message, type = "error")
+    }
+  })
+  
+  # 处理快速创建按钮点击事件 - 滚动到快速工单区域并聚焦文本框
+  observeEvent(input$show_quick_work_order, {
+    shinyjs::runjs('
+      // 滚动到快速工单区域
+      var quickPanel = document.querySelector(".well-panel h4");
+      if (quickPanel && quickPanel.innerText.indexOf("快速工单") !== -1) {
+        quickPanel.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      // 聚焦到文本框
+      setTimeout(function() {
+        var textarea = document.querySelector("#quick_work_order_text");
+        if (textarea) textarea.focus();
+      }, 300);
+    ')
+  })
   
   # 处理刷新工单按钮点击事件
   observeEvent(input$refresh_work_orders, {
@@ -1263,49 +1358,6 @@ server <- function(input, output, session) {
     output$collector_table <- renderDT({
       DT::datatable(
         info_collector_get_all(),
-        options = list(pageLength = 10, scrollX = TRUE),
-        rownames = FALSE
-      )
-    })
-  })
-  
-  # 初始渲染巡检表格
-  output$inspection_table <- renderDT({
-    DT::datatable(
-      inspection_patrol_get_all(),
-      options = list(pageLength = 10, scrollX = TRUE),
-      rownames = FALSE
-    )
-  })
-  
-  # 处理创建巡检按钮点击事件
-  observeEvent(input$add_inspection, {
-    # 检查登录状态
-    req(rv$logged_in)
-    # 确保必要输入存在
-    req(input$inspection_name, input$inspection_type, input$inspection_schedule)
-    # 调用inspection_patrol_add函数创建巡检
-    result <- inspection_patrol_add(input$inspection_name, input$inspection_type, input$inspection_schedule, rv$current_user)
-    # 显示操作结果通知
-    showNotification(result$message, type = ifelse(result$success, "message", "error"))
-    # 刷新巡检表格
-    output$inspection_table <- renderDT({
-      DT::datatable(
-        inspection_patrol_get_all(),
-        options = list(pageLength = 10, scrollX = TRUE),
-        rownames = FALSE
-      )
-    })
-  })
-  
-  # 处理刷新巡检按钮点击事件
-  observeEvent(input$refresh_inspections, {
-    # 检查登录状态
-    req(rv$logged_in)
-    # 刷新巡检表格
-    output$inspection_table <- renderDT({
-      DT::datatable(
-        inspection_patrol_get_all(),
         options = list(pageLength = 10, scrollX = TRUE),
         rownames = FALSE
       )
@@ -1793,6 +1845,9 @@ server <- function(input, output, session) {
 
   # 测试模块逻辑（网络巡检）
   network_test_server(input, output, session)
+
+  # 巡检模块逻辑
+  inspection_server(input, output, session, rv)
 }
 
 # 总结：
