@@ -140,7 +140,7 @@ project_server <- function(input, output, session, rv) {
       fluidRow(
         column(7, div(style = "padding:10px 15px; background:#f5f5f5; border-radius:4px;", crumbs)),
         column(3, selectInput("proj_status_filter", NULL,
-          choices = config_option_choices("project_status", include_all = TRUE), selected = "all")),
+          choices = config_option_choices("project_status", include_all = TRUE), selected = ifelse(is.null(input$proj_status_filter), "all", input$proj_status_filter))),
         column(2, div(style = "margin-top:2px;", actionButton("proj_refresh", "\u5237\u65b0", class = "btn-info btn-sm"))))
     } else if (level == "phases") {
       fluidRow(
@@ -272,12 +272,24 @@ project_server <- function(input, output, session, rv) {
         display <- data.frame(`收藏`=character(), `重要性`=character(), `操作`=character(), `任务编号`=character(), `任务名称`=character(), `负责人`=character(), `已执行数量`=character(), `优先级`=character(), `状态`=character(), `截止日期`=character(), `关联工单`=character(), `更新时间`=character(), stringsAsFactors=FALSE, check.names=FALSE)
       }
     }
+    
+    # 根据层级设置正确的 columnDefs
+    col_count <- ncol(display)
+    dt_cols <- list(
+      list(targets = 0, width = '150px', className = 'dt-center', orderable = FALSE)
+    )
+    # 最后一列居中对齐（如果索引有效）
+    if (col_count > 1) {
+      dt_cols <- c(dt_cols, list(
+        list(targets = col_count - 1, width = '60px', className = 'dt-center')
+      ))
+    }
+    
     DT::datatable(display, escape = FALSE,
-      options = list(pageLength = 20, scrollX = TRUE, dom = 'lfrtip',
+      options = list(pageLength = 20, scrollX = TRUE, dom = 'lrtip',
+        searching = FALSE,
         lengthMenu = list(c(10,20,50,-1), c('10','20','50','全部')),
-        columnDefs = list(
-          list(targets = 0, width = '150px', className = 'dt-center', orderable = FALSE),
-          list(targets = 9, width = '60px', className = 'dt-center'))),
+        columnDefs = dt_cols),
       rownames = FALSE, selection = 'none', class = 'cell-border stripe hover')
   })
 

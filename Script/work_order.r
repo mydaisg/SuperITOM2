@@ -313,6 +313,12 @@ work_order_complete <- function(id, resolution, current_user = NULL) {
                      resolution, id)
     dbExecute(con, query)
 
+    # 同步更新关联的巡检异常状态为"已解决"
+    dbExecute(con, sprintf(
+      "UPDATE inspection_issues SET status = 'resolved', updated_at = CURRENT_TIMESTAMP 
+       WHERE related_work_order_id = %d AND status IN ('pending', 'processing')",
+      id))
+
     # 记录日志
     operator_name <- ifelse(is.null(current_user), "系统", current_user$username[1])
     log_user_operation("完成工单", sprintf("工单ID: %d", id), operator_name)
@@ -345,6 +351,19 @@ work_order_close <- function(id, close_reason = "", current_user = NULL) {
                        WHERE id = %d", id)
     }
     dbExecute(con, query)
+
+    # 同步更新关联的巡检异常状态为"已关闭"（如果关闭原因是"已处理和交付"则设为已解决）
+    if (close_reason == "已处理和交付") {
+      dbExecute(con, sprintf(
+        "UPDATE inspection_issues SET status = 'resolved', updated_at = CURRENT_TIMESTAMP 
+         WHERE related_work_order_id = %d AND status IN ('pending', 'processing')",
+        id))
+    } else {
+      dbExecute(con, sprintf(
+        "UPDATE inspection_issues SET status = 'closed', updated_at = CURRENT_TIMESTAMP 
+         WHERE related_work_order_id = %d AND status IN ('pending', 'processing')",
+        id))
+    }
 
     # 记录日志
     operator_name <- ifelse(is.null(current_user), "系统", current_user$username[1])

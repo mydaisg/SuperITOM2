@@ -17,6 +17,7 @@ source("Script/login_ui.r")         # 登录界面定义
 source("Script/main_ui.r")          # 主界面定义
 source("Script/github_autosubmit.r") # GitHub自动提交功能
 source("Script/std_computer.r")        # 标准化模块
+source("Script/data_center_server.r")   # 数据中心模块（数据归集）
 
 # 定义server函数
 # 这是Shiny应用的服务器逻辑核心
@@ -944,7 +945,7 @@ server <- function(input, output, session) {
   
   # 处理快速创建按钮点击事件 - 滚动到快速工单区域并聚焦文本框
   observeEvent(input$show_quick_work_order, {
-    shinyjs::runjs('
+    runjs('
       // 滚动到快速工单区域
       var quickPanel = document.querySelector(".well-panel h4");
       if (quickPanel && quickPanel.innerText.indexOf("快速工单") !== -1) {
@@ -1845,6 +1846,9 @@ server <- function(input, output, session) {
 
   # 测试模块逻辑（网络巡检）
   network_test_server(input, output, session)
+
+  # 数据中心模块逻辑（数据归集）
+  data_center_server("data_center", rv)
 
   # 巡检模块逻辑
   inspection_server(input, output, session, rv)

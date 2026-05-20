@@ -26,6 +26,9 @@ source("Script/project_ui.r")
 # 加载日报模块
 source("Script/daily_report.r")
 
+# 加载数据中心模块（数据归集）
+source("Script/data_center_ui.r")
+
 main_ui <- function() {
   # 读取字体大小配置
   table_font_size <- config_get_value("table_font_size", "13")
@@ -34,6 +37,7 @@ main_ui <- function() {
   # 创建导航栏页面
   # navbarPage是Shiny中创建带有标签页的导航栏界面的函数
   navbarPage(
+    id = "main_tabs",  # 用于 updateTabsetPanel 切换标签
     title = "SuperITOM2",  # 应用标题
     theme = shinytheme("cosmo"),  # 使用cosmo主题，使界面更美观
     collapsible = TRUE,  # 移动端导航栏可折叠
@@ -44,12 +48,12 @@ main_ui <- function() {
       var routeMap = {
         '/home': '首页',
         '/project': '项目',
+        '/inspection': '巡检',
         '/work_order': '工单',
+        '/std': '标准化',
+        '/network_test': '测试',
         '/daily_report': '日报',
         '/collector': '收集器',
-        '/inspection': '巡检',
-        '/network_test': '测试',
-        '/std': '标准化',
         '/data': '数据',
         '/model': '模型',
         '/visualization': '可视化',
@@ -180,6 +184,132 @@ main_ui <- function() {
       "项目",
       icon = icon("project-diagram"),
       project_ui()
+    ),
+
+    # 巡检标签页
+    tabPanel(
+      "巡检",
+      icon = icon("clipboard-check"),
+      fluidPage(
+        # 巡检统计数据
+        fluidRow(
+          column(12,
+            div(style = "margin-bottom: 10px;",
+              fluidRow(
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0;",
+                  div(style = "font-size: 11px; color: #666; font-weight: 500;", "巡检计划"),
+                  div(style = "font-size: 18px; font-weight: bold; color: #333;", textOutput("insp_stat_plans"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #5cb85c; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "进行中"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_active_plans"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #f0ad4e; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "待执行"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_pending_tasks"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #5bc0de; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "已完成"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_completed_tasks"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #d9534f; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "异常"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_abnormal_tasks"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #9370db; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "待整改"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_issues"))
+                ))
+              )
+            )
+          )
+        ),
+        # 巡检标签页内容
+        tabsetPanel(
+          # 我的任务
+          tabPanel("我的任务",
+            br(),
+            fluidRow(
+              column(3, selectInput("insp_my_status_filter", "任务状态", choices = NULL)),
+              column(2, div(style = "margin-top: 20px;", actionButton("insp_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+            ),
+            DTOutput("insp_my_task_table")
+          ),
+          # 巡检计划
+          tabPanel("巡检计划",
+            br(),
+            fluidRow(
+              column(2, selectInput("insp_plan_status_filter", "计划状态", choices = NULL)),
+              column(3, div(style = "margin-top: 20px;", actionButton("insp_create_plan", "创建计划", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;"))),
+              column(2, div(style = "margin-top: 20px;", actionButton("insp_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+            ),
+            DTOutput("inspection_plan_table"),
+            br(),
+            wellPanel(
+              h4("生成巡检任务"),
+              fluidRow(
+                column(3, selectInput("insp_task_inspector", "检查人", choices = NULL)),
+                column(3, dateInput("insp_task_date", "计划日期", value = Sys.Date(), format = "yyyy-mm-dd")),
+                column(3, div(style = "margin-top: 20px;", actionButton("insp_generate_tasks", "生成任务", class = "btn-success", style = "padding: 4px 10px; font-size: 12px;")))
+              )
+            ),
+            br(),
+            fluidRow(
+              column(12,
+                h4("该计划下的巡检任务"),
+                selectInput("insp_task_status_filter", "任务状态筛选", choices = NULL),
+                DTOutput("inspection_task_table")
+              )
+            )
+          ),
+          # 巡检记录
+          tabPanel("巡检记录",
+            br(),
+            fluidRow(
+              column(3, selectInput("insp_record_status_filter", "任务状态", choices = NULL)),
+              column(2, div(style = "margin-top: 20px;", actionButton("insp_record_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+            ),
+            DTOutput("insp_record_table")
+          ),
+          # 巡检异常
+          tabPanel("巡检异常",
+            br(),
+            fluidRow(
+              column(3, selectInput("insp_issue_status_filter", "异常状态", choices = NULL)),
+              column(2, div(style = "margin-top: 20px;", actionButton("insp_issue_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+            ),
+            DTOutput("insp_issue_table")
+          ),
+          # 已删除记录（Admin专属）- 使用 conditionalPanel 条件渲染
+          conditionalPanel(
+            condition = "input.isAdminInspectionUser == true",
+            tabPanel("已删除记录",
+              br(),
+              fluidRow(
+                column(12,
+                  div(style = "background: #fff3cd; padding: 10px; border-radius: 4px; margin-bottom: 15px;",
+                    strong("提示："), "此页面仅Admin可见，显示已删除的巡检计划和记录，可用于审计追溯。"
+                  )
+                )
+              ),
+              fluidRow(
+                column(6,
+                  wellPanel(
+                    h4("已删除的巡检计划", style = "color: #d9534f;"),
+                    DTOutput("insp_deleted_plans_table")
+                  )
+                ),
+                column(6,
+                  wellPanel(
+                    h4("已删除的巡检记录", style = "color: #d9534f;"),
+                    DTOutput("insp_deleted_records_table")
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
     ),
 
     # 工单标签页
@@ -430,7 +560,21 @@ main_ui <- function() {
       )
     ),
 
-    # 日报标签页（放在工单后面）
+    # 标准化标签页
+    tabPanel(
+      "标准化",
+      icon = icon("cogs"),  # 齿轮图标
+      std_ui()
+    ),
+    
+    # 测试标签页（网络巡检）
+    tabPanel(
+      "测试",
+      icon = icon("network-wired"),
+      network_test_ui()
+    ),
+
+    # 日报标签页
     tabPanel(
       "日报",
       icon = icon("calendar-day"),
@@ -459,166 +603,11 @@ main_ui <- function() {
       )
     ),
     
-    # 巡检标签页
-    tabPanel(
-      "巡检",
-      icon = icon("clipboard-check"),
-      fluidPage(
-        # 巡检统计数据
-        fluidRow(
-          column(12,
-            div(style = "margin-bottom: 10px;",
-              fluidRow(
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0;",
-                  div(style = "font-size: 11px; color: #666; font-weight: 500;", "巡检计划"),
-                  div(style = "font-size: 18px; font-weight: bold; color: #333;", textOutput("insp_stat_plans"))
-                )),
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #5cb85c; color: white;",
-                  div(style = "font-size: 11px; font-weight: 500;", "进行中"),
-                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_active_plans"))
-                )),
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #f0ad4e; color: white;",
-                  div(style = "font-size: 11px; font-weight: 500;", "待执行"),
-                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_pending_tasks"))
-                )),
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #5bc0de; color: white;",
-                  div(style = "font-size: 11px; font-weight: 500;", "已完成"),
-                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_completed_tasks"))
-                )),
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #d9534f; color: white;",
-                  div(style = "font-size: 11px; font-weight: 500;", "异常"),
-                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_abnormal_tasks"))
-                )),
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #9370db; color: white;",
-                  div(style = "font-size: 11px; font-weight: 500;", "待整改"),
-                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_issues"))
-                ))
-              )
-            )
-          )
-        ),
-        # 巡检标签页内容
-        tabsetPanel(
-          # 我的任务
-          tabPanel("我的任务",
-            br(),
-            fluidRow(
-              column(3, selectInput("insp_my_status_filter", "任务状态", choices = NULL)),
-              column(2, div(style = "margin-top: 20px;", actionButton("insp_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
-            ),
-            DTOutput("insp_my_task_table")
-          ),
-          # 巡检计划
-          tabPanel("巡检计划",
-            br(),
-            fluidRow(
-              column(2, selectInput("insp_plan_status_filter", "计划状态", choices = NULL)),
-              column(3, div(style = "margin-top: 20px;", actionButton("insp_create_plan", "创建计划", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;"))),
-              column(2, div(style = "margin-top: 20px;", actionButton("insp_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
-            ),
-            DTOutput("inspection_plan_table"),
-            br(),
-            wellPanel(
-              h4("生成巡检任务"),
-              fluidRow(
-                column(3, selectInput("insp_task_inspector", "检查人", choices = NULL)),
-                column(3, dateInput("insp_task_date", "计划日期", value = Sys.Date(), format = "yyyy-mm-dd")),
-                column(3, div(style = "margin-top: 20px;", actionButton("insp_generate_tasks", "生成任务", class = "btn-success", style = "padding: 4px 10px; font-size: 12px;")))
-              )
-            ),
-            br(),
-            fluidRow(
-              column(12,
-                h4("该计划下的巡检任务"),
-                selectInput("insp_task_status_filter", "任务状态筛选", choices = NULL),
-                DTOutput("inspection_task_table")
-              )
-            )
-          ),
-          # 巡检记录
-          tabPanel("巡检记录",
-            br(),
-            fluidRow(
-              column(3, selectInput("insp_record_status_filter", "任务状态", choices = NULL)),
-              column(2, div(style = "margin-top: 20px;", actionButton("insp_record_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
-            ),
-            DTOutput("insp_record_table")
-          ),
-          # 巡检异常
-          tabPanel("巡检异常",
-            br(),
-            fluidRow(
-              column(3, selectInput("insp_issue_status_filter", "异常状态", choices = NULL)),
-              column(2, div(style = "margin-top: 20px;", actionButton("insp_issue_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
-            ),
-            DTOutput("insp_issue_table")
-          ),
-          # 已删除记录（Admin专属）- 使用 conditionalPanel 条件渲染
-          conditionalPanel(
-            condition = "input.isAdminInspectionUser == true",
-            tabPanel("已删除记录",
-              br(),
-              fluidRow(
-                column(12,
-                  div(style = "background: #fff3cd; padding: 10px; border-radius: 4px; margin-bottom: 15px;",
-                    strong("提示："), "此页面仅Admin可见，显示已删除的巡检计划和记录，可用于审计追溯。"
-                  )
-                )
-              ),
-              fluidRow(
-                column(6,
-                  wellPanel(
-                    h4("已删除的巡检计划", style = "color: #d9534f;"),
-                    DTOutput("insp_deleted_plans_table")
-                  )
-                ),
-                column(6,
-                  wellPanel(
-                    h4("已删除的巡检记录", style = "color: #d9534f;"),
-                    DTOutput("insp_deleted_records_table")
-                  )
-                )
-              )
-            )
-          )
-        )
-      )
-    ),
-    
-    # 测试标签页（网络巡检）
-    tabPanel(
-      "测试",
-      icon = icon("network-wired"),
-      network_test_ui()
-    ),
-
-    # 标准化标签页
-    tabPanel(
-      "标准化",
-      icon = icon("cogs"),  # 齿轮图标
-      std_ui()
-    ),
-    
-    # 数据管理标签页
+    # 数据中心标签页（数据归集）
     tabPanel(
       "数据",
-      icon = icon("database"),  # 数据库图标
-      fluidPage(
-        titlePanel("数据"),
-        sidebarLayout(  # 创建侧边栏布局
-          sidebarPanel(  # 侧边栏面板
-            textInput("data_name", "数据名称"),  # 文本输入框
-            selectInput("data_type", "数据类型", choices = c("服务器", "网络", "应用", "数据库", "其他")),  # 下拉选择框
-            textAreaInput("data_value", "数据值"),  # 文本区域输入框
-            actionButton("add_data", "添加数据", class = "btn-primary"),  # 主要操作按钮
-            br(), br(),
-            actionButton("refresh_data", "刷新数据", class = "btn-info")  # 信息类按钮
-          ),
-          mainPanel(  # 主面板
-            DTOutput("data_table")  # 数据表格输出
-          )
-        )
-      )
+      icon = icon("database"),
+      data_center_ui()
     ),
     
     # 模型训练标签页

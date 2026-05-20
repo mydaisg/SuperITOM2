@@ -1,0 +1,182 @@
+========================================
+       网络测试报告 (V3)
+========================================
+开始时间: 2026-05-20 08:04:47
+测试目标: 综合测试（包含文件服务器）
+========================================
+
+== 网卡信息 ==
+$ ipconfig /all
+
+
+Windows IP Configuration
+
+   Host Name . . . . . . . . . . . . : DWTCNSGZRD002
+   Primary Dns Suffix  . . . . . . . : lvcc.org
+   Node Type . . . . . . . . . . . . : Hybrid
+   IP Routing Enabled. . . . . . . . : No
+   WINS Proxy Enabled. . . . . . . . : No
+   DNS Suffix Search List. . . . . . : lvcc.org
+
+Ethernet adapter 以太网:
+
+   Connection-specific DNS Suffix  . : 
+   Description . . . . . . . . . . . : Realtek PCIe GbE Family Controller
+   Physical Address. . . . . . . . . : 00-68-EB-97-70-EF
+   DHCP Enabled. . . . . . . . . . . : Yes
+   Autoconfiguration Enabled . . . . : Yes
+   IPv4 Address. . . . . . . . . . . : 10.3.3.131(Preferred) 
+   Subnet Mask . . . . . . . . . . . : 255.255.254.0
+   Lease Obtained. . . . . . . . . . : 2026年5月18日 7:49:06
+   Lease Expires . . . . . . . . . . : 2026年5月20日 19:48:50
+   Default Gateway . . . . . . . . . : 10.3.3.254
+   DHCP Server . . . . . . . . . . . : 10.3.3.254
+   DNS Servers . . . . . . . . . . . : 10.10.50.253
+                                       223.5.5.5
+   NetBIOS over Tcpip. . . . . . . . : Enabled
+
+== 连通性测试 - ping qq.com ==
+$ ping qq.com -n 4
+
+
+Pinging qq.com [157.255.219.143] with 32 bytes of data:
+Reply from 157.255.219.143: bytes=32 time=28ms TTL=51
+Reply from 157.255.219.143: bytes=32 time=28ms TTL=51
+Reply from 157.255.219.143: bytes=32 time=27ms TTL=51
+Reply from 157.255.219.143: bytes=32 time=29ms TTL=51
+
+Ping statistics for 157.255.219.143:
+    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 27ms, Maximum = 29ms, Average = 28ms
+
+== DNS解析 - nslookup qq.com ==
+$ nslookup qq.com
+
+Server:  UnKnown
+Address:  10.10.50.253
+
+Name:    qq.com
+Address:  157.255.219.143
+
+
+== 域控检测 - nltest /dsgetdc:lvcc.org ==
+$ nltest /dsgetdc:lvcc.org
+
+           DC: \\PublicServer.lvcc.org
+      Address: \\10.10.50.253
+     Dom Guid: 651845e8-bce1-4102-b2bb-f02e7b7e567f
+     Dom Name: lvcc.org
+  Forest Name: lvcc.org
+ Dc Site Name: Default-First-Site-Name
+Our Site Name: Default-First-Site-Name
+        Flags: GC DS LDAP KDC TIMESERV WRITABLE DNS_DC DNS_DOMAIN DNS_FOREST CLOSE_SITE FULL_SECRET WS DS_8 DS_9
+The command completed successfully
+
+== 路由追踪 - tracert qq.com ==
+$ tracert qq.com
+
+
+Tracing route to qq.com [157.255.219.143]
+over a maximum of 30 hops:
+
+  1     *        *        *     Request timed out.
+  2     *        *        *     Request timed out.
+  3    74 ms     7 ms    19 ms  193.84.194.113.adsl-pool.jx.chinaunicom.com [113.194.84.193] 
+  4     *        8 ms     *     170.116.17.58.adsl-pool.jx.chinaunicom.com [58.17.116.170] 
+  5    10 ms    11 ms    10 ms  29.47.35.171.adsl-pool.jx.chinaunicom.com [171.35.47.29] 
+  6     *        *        *     Request timed out.
+  7     *       25 ms     *     221.4.0.174 
+  8     *        *        *     Request timed out.
+  9     *        *        *     Request timed out.
+ 10     *        *        *     Request timed out.
+ 11     *        *        *     Request timed out.
+ 12     *        *        *     Request timed out.
+ 13    28 ms    27 ms    27 ms  30.143.234.183 
+ 14    28 ms    27 ms    27 ms  157.255.219.143 
+
+Trace complete.
+
+== HTTP测试 - curl -I www.baidu.com ==
+$ curl -I www.baidu.com
+
+HTTP/1.1 200 OK
+Cache-Control: private, no-cache, no-store, proxy-revalidate, no-transform
+Content-Length: 0
+Content-Type: text/html
+Pragma: no-cache
+Server: bfe
+Date: Wed, 20 May 2026 00:06:46 GMT
+
+
+== 文件服务器 10.10.50.50 - SMB连接测试 ==
+$ net use \\10.10.50.50
+
+The command completed successfully.
+
+
+== 文件服务器 10.10.50.50 - 端口 445 ==
+
+ComputerName     : 10.10.50.50
+RemoteAddress    : 10.10.50.50
+RemotePort       : 445
+TcpTestSucceeded : TRUE
+
+== 文件服务器 10.10.50.50 - 端口 139 ==
+
+ComputerName     : 10.10.50.50
+RemoteAddress    : 10.10.50.50
+RemotePort       : 139
+TcpTestSucceeded : TRUE
+
+== 文件服务器 10.10.50.50 - Ping ==
+
+
+Pinging 10.10.50.50 with 32 bytes of data:
+Reply from 10.10.50.50: bytes=32 time=1ms TTL=63
+Reply from 10.10.50.50: bytes=32 time=1ms TTL=63
+Reply from 10.10.50.50: bytes=32 time=1ms TTL=63
+Reply from 10.10.50.50: bytes=32 time=1ms TTL=63
+
+Ping statistics for 10.10.50.50:
+    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 1ms, Maximum = 1ms, Average = 1ms
+
+== 文件服务器 10.10.50.150 - SMB连接测试 ==
+$ net use \\10.10.50.150
+
+The command completed successfully.
+
+
+== 文件服务器 10.10.50.150 - 端口 445 ==
+
+ComputerName     : 10.10.50.150
+RemoteAddress    : 10.10.50.150
+RemotePort       : 445
+TcpTestSucceeded : TRUE
+
+== 文件服务器 10.10.50.150 - 端口 139 ==
+
+ComputerName     : 10.10.50.150
+RemoteAddress    : 10.10.50.150
+RemotePort       : 139
+TcpTestSucceeded : TRUE
+
+== 文件服务器 10.10.50.150 - Ping ==
+
+
+Pinging 10.10.50.150 with 32 bytes of data:
+Reply from 10.10.50.150: bytes=32 time=1ms TTL=63
+Reply from 10.10.50.150: bytes=32 time=1ms TTL=63
+Reply from 10.10.50.150: bytes=32 time=1ms TTL=63
+Reply from 10.10.50.150: bytes=32 time=2ms TTL=63
+
+Ping statistics for 10.10.50.150:
+    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 1ms, Maximum = 2ms, Average = 1ms
+========================================
+结束时间: 2026-05-20 08:06:54
+========================================
+

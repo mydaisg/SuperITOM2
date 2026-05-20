@@ -625,6 +625,33 @@ inspection_record_add <- function(task_id, result_type, score, remark, photos_js
       new_status, as.integer(task_id)
     ))
     
+    # 获取该任务所属的计划ID
+    task_info <- dbGetQuery(con, sprintf("SELECT plan_id FROM inspection_tasks WHERE id = %d", as.integer(task_id)))
+    if (nrow(task_info) > 0) {
+      plan_id <- task_info$plan_id[1]
+      
+      # 更新计划状态为 active（如果有待执行任务或已完成任务）
+      dbExecute(con, sprintf(
+        "UPDATE inspection_plans SET status = 'active', updated_at = CURRENT_TIMESTAMP 
+         WHERE id = %d AND status = 'draft'",
+        plan_id))
+      
+      # 检查该计划所有任务状态，如果全部完成则更新计划状态为 completed
+      task_stats <- dbGetQuery(con, sprintf(
+        "SELECT 
+           COUNT(*) as total,
+           SUM(CASE WHEN status IN ('completed', 'abnormal') THEN 1 ELSE 0 END) as finished
+         FROM inspection_tasks 
+         WHERE plan_id = %d AND is_deleted = 0", plan_id))
+      
+      if (task_stats$total[1] > 0 && task_stats$finished[1] == task_stats$total[1]) {
+        # 所有任务都已完成，更新计划状态
+        dbExecute(con, sprintf(
+          "UPDATE inspection_plans SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = %d",
+          plan_id))
+      }
+    }
+    
     # 获取新记录ID
     record_id <- dbGetQuery(con, "SELECT last_insert_rowid() as id")$id[1]
     
@@ -665,6 +692,33 @@ inspection_record_add_batch <- function(task_id, results_json, overall_result, t
       "UPDATE inspection_tasks SET status = '%s', updated_at = CURRENT_TIMESTAMP WHERE id = %d",
       new_status, as.integer(task_id)
     ))
+    
+    # 获取该任务所属的计划ID
+    task_info <- dbGetQuery(con, sprintf("SELECT plan_id FROM inspection_tasks WHERE id = %d", as.integer(task_id)))
+    if (nrow(task_info) > 0) {
+      plan_id <- task_info$plan_id[1]
+      
+      # 更新计划状态为 active（如果有待执行任务或已完成任务）
+      dbExecute(con, sprintf(
+        "UPDATE inspection_plans SET status = 'active', updated_at = CURRENT_TIMESTAMP 
+         WHERE id = %d AND status = 'draft'",
+        plan_id))
+      
+      # 检查该计划所有任务状态，如果全部完成则更新计划状态为 completed
+      task_stats <- dbGetQuery(con, sprintf(
+        "SELECT 
+           COUNT(*) as total,
+           SUM(CASE WHEN status IN ('completed', 'abnormal') THEN 1 ELSE 0 END) as finished
+         FROM inspection_tasks 
+         WHERE plan_id = %d AND is_deleted = 0", plan_id))
+      
+      if (task_stats$total[1] > 0 && task_stats$finished[1] == task_stats$total[1]) {
+        # 所有任务都已完成，更新计划状态
+        dbExecute(con, sprintf(
+          "UPDATE inspection_plans SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = %d",
+          plan_id))
+      }
+    }
     
     # 获取新记录ID
     record_id <- dbGetQuery(con, "SELECT last_insert_rowid() as id")$id[1]
@@ -1197,6 +1251,53 @@ inspection_issue_update_status <- function(id, status, current_user = NULL) {
     return(list(success = TRUE, message = "异常状态更新成功"))
   }, error = function(e) {
     return(list(success = FALSE, message = paste("更新失败:", e$message)))
+  }, finally = {
+    db_disconnect(con)
+  })
+}
+
+# 根据任务ID获取所有异常详情
+inspection_issue_get_by_task <- function(task_id) {
+  con <- db_connect()
+  tryCatch({
+    query <- sprintf(
+      "SELECT i.*, 
+              t.task_no, t.item_names, t.item_name,
+              p.name as plan_name,
+              u.username as creator_name, 
+              wo.order_no as work_order_no,
+              wo.id as work_order_id
+       FROM inspection_issues i
+       LEFT JOIN inspection_tasks t ON i.task_id = t.id
+       LEFT JOIN inspection_plans p ON t.plan_id = p.id
+       LEFT JOIN users u ON i.created_by = u.id
+       LEFT JOIN work_orders wo ON i.related_work_order_id = wo.id
+       WHERE i.task_id = %d
+       ORDER BY i.created_at DESC",
+      as.integer(task_id)
+    )
+    issues <- dbGetQuery(con, query)
+    
+    if (nrow(issues) == 0) {
+      return(data.frame())
+    }
+    
+    # 处理item_names显示
+    issues$item_names_display <- sapply(seq_len(nrow(issues)), function(i) {
+      items <- issues$item_names[i]
+      if (is.na(items) || items == "") {
+        if (!is.na(issues$item_name[i]) && issues$item_name[i] != "") {
+          return(issues$item_name[i])
+        }
+        return("—")
+      }
+      return(items)
+    })
+    
+    return(issues)
+  }, error = function(e) {
+    warning(paste("获取任务异常失败:", e$message))
+    return(data.frame())
   }, finally = {
     db_disconnect(con)
   })

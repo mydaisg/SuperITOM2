@@ -265,6 +265,8 @@ inspection_server <- function(input, output, session, rv) {
   output$inspection_task_table <- renderDT({
     req(rv$logged_in)
     rv$inspection_refresh_trigger
+    # 依赖选中的计划ID，当用户选择不同计划时刷新
+    rv$inspection_selected_plan_id
     
     tasks <- inspection_task_get_all(input$insp_task_status_filter, rv$inspection_selected_plan_id)
     
@@ -407,7 +409,8 @@ inspection_server <- function(input, output, session, rv) {
       })
       
       display_data <- data.frame(
-        任务编号 = ifelse(is.na(records$task_no), "—", records$task_no),
+        任务编号 = sprintf('<a href="#" class="insp-record-link" data-id="%d" style="font-weight:bold;color:#337ab7;">%s</a>',
+                          records$task_id, ifelse(is.na(records$task_no), "—", records$task_no)),
         检查项 = ifelse(is.na(records$item_names_display), "—", records$item_names_display),
         计划 = ifelse(is.na(records$plan_name), "—", records$plan_name),
         检查人 = ifelse(is.na(records$inspector_name), "—", records$inspector_name),
@@ -437,6 +440,12 @@ inspection_server <- function(input, output, session, rv) {
         list(targets = 6, width = '50px', className = 'dt-center'),
         list(targets = 7, width = '130px')
       )
+    ), callback = JS(
+      "table.on('click', 'a.insp-record-link', function(e) {
+        e.preventDefault();
+        var id = $(this).data('id');
+        Shiny.setInputValue('insp_record_view', id, {priority: 'event'});
+      });"
     ), rownames = FALSE, selection = 'single', class = 'cell-border stripe hover')
   })
   
@@ -507,7 +516,8 @@ inspection_server <- function(input, output, session, rv) {
                           grouped_issues$task_id, grouped_issues$task_no),
         计划 = ifelse(is.na(grouped_issues$plan_name), "—", grouped_issues$plan_name),
         检查项 = ifelse(is.na(grouped_issues$item_names_display), "—", grouped_issues$item_names_display),
-        异常数 = sprintf('<span style="background:#d9534f;color:white;padding:2px 8px;border-radius:10px;font-size:11px;">%d项</span>', grouped_issues$issue_count),
+        异常数 = sprintf('<a href="#" class="insp-issue-detail-link" data-id="%d" style="background:#d9534f;color:white;padding:2px 8px;border-radius:10px;font-size:11px;text-decoration:none;">%d项</a>', 
+                        grouped_issues$task_id, grouped_issues$issue_count),
         严重程度 = ifelse(is.na(grouped_issues$severity_summary), "—", grouped_issues$severity_summary),
         状态 = grouped_issues$status_label,
         关联工单 = grouped_issues$wo_link,
@@ -541,6 +551,11 @@ inspection_server <- function(input, output, session, rv) {
         e.preventDefault();
         var id = $(this).data('id');
         Shiny.setInputValue('insp_task_view', id, {priority: 'event'});
+      });
+      table.on('click', 'a.insp-issue-detail-link', function(e) {
+        e.preventDefault();
+        var id = $(this).data('id');
+        Shiny.setInputValue('insp_issue_detail_view', id, {priority: 'event'});
       });"
     ), rownames = FALSE, selection = 'single', class = 'cell-border stripe hover')
   })
@@ -1442,5 +1457,194 @@ inspection_server <- function(input, output, session, rv) {
   # 刷新按钮
   observeEvent(input$insp_refresh, {
     rv$inspection_refresh_trigger <- rv$inspection_refresh_trigger + 1
+  })
+  
+  # 巡检记录刷新按钮
+  observeEvent(input$insp_record_refresh, {
+    rv$inspection_refresh_trigger <- rv$inspection_refresh_trigger + 1
+  })
+  
+  # 巡检异常刷新按钮
+  observeEvent(input$insp_issue_refresh, {
+    rv$inspection_refresh_trigger <- rv$inspection_refresh_trigger + 1
+  })
+  
+  # ========================================
+  # 查看巡检异常详情
+  # ========================================
+  observeEvent(input$insp_issue_detail_view, {
+    req(rv$logged_in, input$insp_issue_detail_view)
+    
+    task_id <- as.integer(input$insp_issue_detail_view)
+    
+    # 获取该任务的所有异常
+    issues <- inspection_issue_get_by_task(task_id)
+    if (nrow(issues) == 0) {
+      showNotification("未找到异常记录", type = "error")
+      return()
+    }
+    
+    # 获取任务信息
+    task <- inspection_task_get_by_id(task_id)
+    task_info <- ""
+    if (nrow(task) > 0) {
+      t <- task[1, ]
+      task_info <- sprintf("任务编号: %s | 计划: %s | 检查项: %s",
+                          ifelse(is.na(t$task_no), "—", t$task_no),
+                          ifelse(is.na(t$plan_name), "—", t$plan_name),
+                          ifelse(is.na(t$item_name), "—", t$item_name))
+    }
+    
+    # 构建异常详情HTML
+    issues_html <- ""
+    for (i in 1:nrow(issues)) {
+      iss <- issues[i, ]
+      severity_cn <- switch(iss$severity, "low" = "低", "medium" = "中", "high" = "高", iss$severity)
+      severity_color <- switch(iss$severity, "low" = "#5cb85c", "medium" = "#f0ad4e", "high" = "#d9534f", "#999")
+      status_cn <- switch(iss$status, "pending" = "待处理", "processing" = "处理中", 
+                         "resolved" = "已解决", "closed" = "已关闭", iss$status)
+      status_color <- switch(iss$status, "pending" = "#f0ad4e", "processing" = "#5bc0de", 
+                            "resolved" = "#5cb85c", "closed" = "#999", "#999")
+      
+      issues_html <- paste0(issues_html, sprintf('
+        <div style="background:#fff3f3;padding:12px;margin-bottom:12px;border-radius:6px;border-left:4px solid #d9534f;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+            <span style="background:%s;color:white;padding:2px 8px;border-radius:4px;">严重程度: %s</span>
+            <span style="background:%s;color:white;padding:2px 8px;border-radius:4px;">状态: %s</span>
+          </div>
+          <div style="margin-bottom:8px;"><strong>问题类型：</strong>%s</div>
+          <div style="margin-bottom:8px;"><strong>问题描述：</strong>%s</div>
+          <div style="color:#666;font-size:12px;">
+            <span>发现时间: %s</span>
+            %s
+          </div>
+        </div>', 
+        severity_color, severity_cn,
+        status_color, status_cn,
+        ifelse(is.na(iss$issue_type), "—", iss$issue_type),
+        ifelse(is.na(iss$issue_description), "—", iss$issue_description),
+        ifelse(is.na(iss$created_at), "—", iss$created_at),
+        if (!is.na(iss$work_order_no) && !is.null(iss$work_order_no)) {
+          sprintf('<span style="margin-left:20px;">关联工单: <a href="#" onclick="Shiny.setInputValue(\'work_order_view_click\', %d, {priority: \'event\'});" style="color:#337ab7;">%s</a></span>', iss$work_order_id, iss$work_order_no)
+        } else "<span style='margin-left:20px;'>关联工单: —</span>"))
+    }
+    
+    showModal(modalDialog(
+      title = sprintf("异常详情 - %d项异常", nrow(issues)),
+      HTML(sprintf('
+        <div style="padding:10px;max-height:70vh;overflow-y:auto;">
+          <div style="background:#f5f5f5;padding:10px;border-radius:4px;margin-bottom:15px;font-size:13px;color:#666;">
+            %s
+          </div>
+          <h4>异常列表</h4>
+          %s
+        </div>
+      ', task_info, issues_html)),
+      footer = modalButton("关闭"),
+      easyClose = TRUE, size = "l"
+    ))
+  })
+  
+  # ========================================
+  # 查看巡检记录详情
+  # ========================================
+  observeEvent(input$insp_record_view, {
+    req(rv$logged_in, input$insp_record_view)
+    
+    task_id <- as.integer(input$insp_record_view)
+    
+    # 获取任务信息
+    task <- inspection_task_get_by_id(task_id)
+    if (nrow(task) == 0) {
+      showNotification("未找到该任务", type = "error")
+      return()
+    }
+    t <- task[1, ]
+    
+    # 获取该任务的巡检记录
+    records <- inspection_record_get_by_task(task_id)
+    if (nrow(records) == 0) {
+      showNotification("未找到巡检记录", type = "error")
+      return()
+    }
+    r <- records[1, ]
+    
+    # 任务状态
+    status_cn <- switch(t$status, "pending" = "待执行", "processing" = "执行中",
+                       "completed" = "已完成", "abnormal" = "异常", t$status)
+    status_color <- switch(t$status, "pending" = "#f0ad4e", "processing" = "#5bc0de",
+                          "completed" = "#5cb85c", "abnormal" = "#d9534f", "#999")
+    
+    # 结果
+    result_cn <- switch(r$result_type, "normal" = "正常", "abnormal" = "存在异常", r$result_type)
+    result_color <- switch(r$result_type, "normal" = "#5cb85c", "abnormal" = "#d9534f", "#999")
+    
+    # 检查项详情
+    items_html <- "<p style='color:#999;'>暂无详细检查记录</p>"
+    if (!is.na(r$results_json) && !is.null(r$results_json) && r$results_json != "") {
+      tryCatch({
+        results <- jsonlite::fromJSON(r$results_json)
+        if (length(results) > 0) {
+          items_html <- "<ul style='list-style:none;padding:0;'>"
+          for (item_id in names(results)) {
+            item_result <- results[[item_id]]
+            result_type <- item_result$result_type
+            result_text <- switch(result_type, "normal" = "✅ 正常", "abnormal" = "❌ 异常", "na" = "⚪ 不适用", result_type)
+            result_class <- switch(result_type, "normal" = "#5cb85c", "abnormal" = "#d9534f", "#999")
+            items_html <- paste0(items_html, sprintf('
+              <li style="padding:8px 0;border-bottom:1px solid #eee;">
+                <span style="background:%s;color:white;padding:2px 8px;border-radius:4px;margin-right:8px;">%s</span>
+                <span>评分: %d</span>
+                %s
+              </li>', result_class, result_text,
+              ifelse(is.na(item_result$score), 0, item_result$score),
+              ifelse(is.na(item_result$remark) || item_result$remark == "", "", sprintf('<br><span style="color:#666;font-size:12px;">备注: %s</span>', item_result$remark))))
+          }
+          items_html <- paste0(items_html, "</ul>")
+        }
+      }, error = function(e) {
+        items_html <- "<p style='color:#999;'>检查项详情解析失败</p>"
+      })
+    }
+    
+    showModal(modalDialog(
+      title = sprintf("巡检记录详情 - %s", ifelse(is.na(t$task_no), "—", t$task_no)),
+      HTML(sprintf('
+        <div style="padding:10px;max-height:70vh;overflow-y:auto;">
+          <div style="background:#e3f2fd;padding:12px;border-radius:6px;margin-bottom:15px;">
+            <table style="width:100%%;font-size:14px;">
+              <tr><td style="width:100px;color:#666;">巡检计划：</td><td><strong>%s</strong></td></tr>
+              <tr><td style="color:#666;">检查项：</td><td>%s</td></tr>
+              <tr><td style="color:#666;">检查人：</td><td>%s</td></tr>
+              <tr><td style="color:#666;">计划日期：</td><td>%s</td></tr>
+              <tr><td style="color:#666;">任务状态：</td><td><span style="background:%s;color:white;padding:2px 8px;border-radius:4px;">%s</span></td></tr>
+            </table>
+          </div>
+          
+          <div style="background:#f5f5f5;padding:12px;border-radius:6px;margin-bottom:15px;">
+            <table style="width:100%%;font-size:14px;">
+              <tr><td style="width:100px;color:#666;">巡检结果：</td><td><span style="background:%s;color:white;padding:2px 8px;border-radius:4px;font-weight:bold;">%s</span></td></tr>
+              <tr><td style="color:#666;">综合评分：</td><td><strong style="font-size:18px;">%d</strong> 分</td></tr>
+              <tr><td style="color:#666;">提交时间：</td><td>%s</td></tr>
+              <tr><td style="color:#666;">巡检总结：</td><td>%s</td></tr>
+            </table>
+          </div>
+          
+          <h4>检查项详情</h4>
+          %s
+        </div>
+      ', ifelse(is.na(t$plan_name), "—", t$plan_name),
+         ifelse(is.na(t$item_name), "—", t$item_name),
+         ifelse(is.na(t$inspector_name), "—", t$inspector_name),
+         ifelse(is.na(t$scheduled_date), "—", t$scheduled_date),
+         status_color, status_cn,
+         result_color, result_cn,
+         ifelse(is.na(r$score), 0, r$score),
+         ifelse(is.na(r$created_at), "—", substr(r$created_at, 1, 19)),
+         ifelse(is.na(r$remark) || r$remark == "", "无总结", r$remark),
+         items_html)),
+      footer = modalButton("关闭"),
+      easyClose = TRUE, size = "l"
+    ))
   })
 }
