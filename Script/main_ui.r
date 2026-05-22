@@ -29,6 +29,9 @@ source("Script/daily_report.r")
 # 加载数据中心模块（数据归集）
 source("Script/data_center_ui.r")
 
+# 加载流程模块
+source("Script/process_ui.r")
+
 main_ui <- function() {
   # 读取字体大小配置
   table_font_size <- config_get_value("table_font_size", "13")
@@ -55,6 +58,7 @@ main_ui <- function() {
         '/daily_report': '日报',
         '/collector': '收集器',
         '/data': '数据',
+        '/process': '流程',
         '/model': '模型',
         '/visualization': '可视化',
         '/admin': '管理'
@@ -98,6 +102,11 @@ main_ui <- function() {
           $link[0].click();
         }
       }
+      
+      // 监听 Shiny 服务端发起的导航请求（穿透链接）
+      Shiny.addCustomMessageHandler('navigateToTab', function(tabName) {
+        switchToTab(tabName);
+      });
       
       // 点击导航链接时更新URL hash
       $(document).on('click', '.navbar-nav li a, .navbar-nav > li > a', function(e) {
@@ -280,11 +289,12 @@ main_ui <- function() {
             ),
             DTOutput("insp_issue_table")
           ),
-          # 已删除记录（Admin专属）- 使用 conditionalPanel 条件渲染
-          conditionalPanel(
-            condition = "input.isAdminInspectionUser == true",
-            tabPanel("已删除记录",
-              br(),
+          # 已删除记录（Admin专属）
+          tabPanel("已删除记录",
+            br(),
+            # Admin 可见内容
+            conditionalPanel(
+              condition = "input.isAdminInspectionUser == true",
               fluidRow(
                 column(12,
                   div(style = "background: #fff3cd; padding: 10px; border-radius: 4px; margin-bottom: 15px;",
@@ -305,6 +315,13 @@ main_ui <- function() {
                     DTOutput("insp_deleted_records_table")
                   )
                 )
+              )
+            ),
+            # 非Admin提示
+            conditionalPanel(
+              condition = "input.isAdminInspectionUser != true",
+              div(class = "alert alert-warning",
+                icon("exclamation-triangle"), " 您没有权限查看已删除记录"
               )
             )
           )
@@ -609,7 +626,14 @@ main_ui <- function() {
       icon = icon("database"),
       data_center_ui()
     ),
-    
+
+    # 流程引擎标签页
+    tabPanel(
+      "流程",
+      icon = icon("project-diagram"),
+      process_ui()
+    ),
+
     # 模型训练标签页
     tabPanel(
       "模型",

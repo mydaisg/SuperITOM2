@@ -86,7 +86,17 @@ data_center_ui <- function() {
         }
       "))
     ),
-    
+
+    # 卡片点击事件处理（div 需要用 JS 触发 Shiny input）
+    tags$script(HTML("
+      $(document).on('click', '.data-module-card', function(e) {
+        var id = $(this).attr('id');
+        if (id) {
+          Shiny.setInputValue(id, {click: Date.now()}, {priority: 'event'});
+        }
+      });
+    ")),
+
     fluidPage(
       # 页面标题
       div(style = "text-align: center; margin: 20px 0;",
