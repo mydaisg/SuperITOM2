@@ -1434,14 +1434,50 @@ server <- function(input, output, session) {
     req(rv$logged_in)
     # 更新可视化图表输出
     output$viz_plot <- renderPlotly({
-      # 调用viz_generate函数生成可视化图表
       viz_generate(input$viz_type, input$viz_data)
     })
   })
-  
+
   # 初始渲染可视化图表
   output$viz_plot <- renderPlotly({
     viz_generate(input$viz_type, input$viz_data)
+  })
+
+  # 可视化页 - 流程监控指标（依赖 rv 的登录状态，确保 render 执行）
+  output$viz_mtr_complete_rate <- renderText({
+    req(rv$logged_in)
+    rv$proc_timeout_counter
+    if (exists("process_get_monitor_metrics", mode="function")) {
+      m <- process_get_monitor_metrics(); sprintf("%.1f%%",m$complete_rate)
+    } else "0%"
+  })
+  output$viz_mtr_timeout_rate <- renderText({
+    req(rv$logged_in)
+    rv$proc_timeout_counter
+    if (exists("process_get_monitor_metrics", mode="function")) {
+      m <- process_get_monitor_metrics(); sprintf("%.1f%%",m$timeout_rate)
+    } else "0%"
+  })
+  output$viz_mtr_avg_duration <- renderText({
+    req(rv$logged_in)
+    rv$proc_timeout_counter
+    if (exists("process_get_monitor_metrics", mode="function")) {
+      m <- process_get_monitor_metrics(); sprintf("%.1f 分钟",m$avg_duration_min)
+    } else "0"
+  })
+  output$viz_mtr_running <- renderText({
+    req(rv$logged_in)
+    rv$proc_timeout_counter
+    if (exists("process_get_monitor_metrics", mode="function")) {
+      m <- process_get_monitor_metrics(); as.character(m$running_instances)
+    } else "0"
+  })
+  output$viz_mtr_today <- renderText({
+    req(rv$logged_in)
+    rv$proc_timeout_counter
+    if (exists("process_get_monitor_metrics", mode="function")) {
+      m <- process_get_monitor_metrics(); sprintf("启动 %d / 完成 %d",m$today_started,m$today_completed)
+    } else "暂无"
   })
   
   # 处理用户刷新按钮点击事件
@@ -1857,6 +1893,27 @@ server <- function(input, output, session) {
 
   # 流程模块逻辑
   process_server(input, output, session, rv)
+
+  # 流程引擎初始化：注册适配器（仅一次）
+  if (!exists("process_adapters_initialized") || !process_adapters_initialized) {
+    tryCatch({
+      register_builtin_adapters()
+      process_adapters_initialized <- TRUE
+    }, error = function(e) {
+      cat("流程引擎适配器初始化跳过（模块函数暂不可用）:", e$message, "\n")
+    })
+  }
+
+  # 流程超时检测（每60秒自动检查）
+  rv$proc_timeout_counter <- 0
+  observe({
+    invalidateLater(60000, session)
+    n <- process_check_timeouts()
+    if (n > 0) {
+      rv$proc_timeout_counter <- rv$proc_timeout_counter + 1
+      cat(sprintf("[%s] 流程超时检测: %d 个节点已超时处理\n", format(Sys.time(),"%H:%M:%S"), n))
+    }
+  })
 
 }
 

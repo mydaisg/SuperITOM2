@@ -660,20 +660,44 @@ main_ui <- function() {
       )
     ),
     
-    # 数据可视化标签页
+    # 数据可视化标签页（含流程监控）
     tabPanel(
       "可视化",
-      icon = icon("chart-line"),  # 图表图标
+      icon = icon("chart-line"),
       fluidPage(
+        # 流程监控指标卡片
+        fluidRow(
+          column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#e8f5e9;",
+            h3(textOutput("viz_mtr_complete_rate"),style="margin:0;color:#2e7d32;font-size:24px;"),
+            p("流程完成率",style="margin:3px 0 0;font-size:12px;"))),
+          column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#fff3e0;",
+            h3(textOutput("viz_mtr_timeout_rate"),style="margin:0;color:#e65100;font-size:24px;"),
+            p("超时率",style="margin:3px 0 0;font-size:12px;"))),
+          column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#e3f2fd;",
+            h3(textOutput("viz_mtr_avg_duration"),style="margin:0;color:#1565c0;font-size:24px;"),
+            p("平均耗时",style="margin:3px 0 0;font-size:12px;"))),
+          column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#f3e5f5;",
+            h3(textOutput("viz_mtr_running"),style="margin:0;color:#7b1fa2;font-size:24px;"),
+            p("运行中流程",style="margin:3px 0 0;font-size:12px;")))
+        ),
+        fluidRow(
+          column(6, div(class="well well-sm",style="padding:8px;margin-bottom:10px;",
+            h5("今日活动",style="margin:0 0 5px;color:#555;font-size:13px;"),
+            span(textOutput("viz_mtr_today"),style="color:#337ab7;font-size:16px;font-weight:bold;"))),
+          column(6, div(class="well well-sm",style="padding:8px;margin-bottom:10px;",
+            h5("流程引擎",style="margin:0 0 5px;color:#555;font-size:13px;"),
+            span("前往 流程模块 创建和管理流程", style="font-size:13px;color:#666;")))
+        ),
+        hr(),
         titlePanel("数据可视化"),
         sidebarLayout(
           sidebarPanel(
             selectInput("viz_type", "图表类型", choices = c("折线图", "柱状图", "散点图", "饼图", "热力图")),
-            selectInput("viz_data", "数据源", choices = c("ITOM数据", "模型数据")),
+            selectInput("viz_data", "数据源", choices = c("ITOM数据", "模型数据", "流程监控")),
             actionButton("generate_viz", "生成图表", class = "btn-primary")
           ),
           mainPanel(
-            plotlyOutput("viz_plot")  # Plotly交互式图表输出
+            plotlyOutput("viz_plot")
           )
         )
       )
