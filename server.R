@@ -18,6 +18,8 @@ source("Script/main_ui.r")          # 主界面定义
 source("Script/github_autosubmit.r") # GitHub自动提交功能
 source("Script/std_computer.r")        # 标准化模块
 source("Script/data_center_server.r")   # 数据中心模块（数据归集）
+source("Script/process_engine.r")       # 流程引擎核心
+source("Script/process_server.r")       # 流程模块服务端
 
 # 定义server函数
 # 这是Shiny应用的服务器逻辑核心
@@ -1852,6 +1854,10 @@ server <- function(input, output, session) {
 
   # 巡检模块逻辑
   inspection_server(input, output, session, rv)
+
+  # 流程模块逻辑
+  process_server(input, output, session, rv)
+
 }
 
 # 总结：

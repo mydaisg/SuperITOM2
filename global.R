@@ -529,6 +529,147 @@ migrate_database <- function() {
       })
     }
 
+    # ===============================================
+    # 流程引擎模块数据库表
+    # ===============================================
+    
+    if (!"process_definitions" %in% tables) {
+      dbExecute(con, "CREATE TABLE process_definitions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        def_no TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        version INTEGER DEFAULT 1,
+        definition TEXT,
+        category TEXT DEFAULT 'general',
+        status TEXT DEFAULT 'draft',
+        created_by INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime')),
+        UNIQUE(def_no, version)
+      )")
+      cat("数据库迁移完成：已创建 process_definitions 表\n")
+    }
+    
+    if (!"process_definition_versions" %in% tables) {
+      dbExecute(con, "CREATE TABLE process_definition_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        def_id INTEGER NOT NULL,
+        version INTEGER NOT NULL,
+        definition TEXT NOT NULL,
+        change_log TEXT,
+        published_by INTEGER,
+        published_at TEXT DEFAULT (datetime('now','localtime')),
+        UNIQUE(def_id, version)
+      )")
+      cat("数据库迁移完成：已创建 process_definition_versions 表\n")
+    }
+    
+    if (!"process_instances" %in% tables) {
+      dbExecute(con, "CREATE TABLE process_instances (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instance_no TEXT NOT NULL UNIQUE,
+        def_id INTEGER NOT NULL,
+        def_version INTEGER DEFAULT 1,
+        title TEXT,
+        status TEXT DEFAULT 'running',
+        priority TEXT DEFAULT 'normal',
+        context_data TEXT,
+        context_version INTEGER DEFAULT 0,
+        current_node TEXT,
+        started_by INTEGER,
+        started_at TEXT DEFAULT (datetime('now','localtime')),
+        completed_at TEXT,
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 process_instances 表\n")
+    }
+    
+    if (!"process_nodes" %in% tables) {
+      dbExecute(con, "CREATE TABLE process_nodes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instance_id INTEGER NOT NULL,
+        node_id TEXT NOT NULL,
+        node_type TEXT NOT NULL,
+        node_name TEXT,
+        status TEXT DEFAULT 'pending',
+        assignee INTEGER,
+        auto_action TEXT,
+        timeout_minutes INTEGER DEFAULT 0,
+        timeout_action TEXT DEFAULT 'terminate',
+        retry_count INTEGER DEFAULT 0,
+        max_retries INTEGER DEFAULT 3,
+        entered_at TEXT,
+        completed_at TEXT,
+        result TEXT,
+        remark TEXT,
+        UNIQUE(instance_id, node_id)
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_pnode_inst ON process_nodes(instance_id)")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_pnode_status ON process_nodes(status)")
+      cat("数据库迁移完成：已创建 process_nodes 表及索引\n")
+    }
+    
+    if (!"process_logs" %in% tables) {
+      dbExecute(con, "CREATE TABLE process_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instance_id INTEGER,
+        node_id TEXT,
+        log_level TEXT DEFAULT 'info',
+        log_type TEXT,
+        message TEXT NOT NULL,
+        duration_ms INTEGER,
+        detail TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_plog_inst ON process_logs(instance_id)")
+      cat("数据库迁移完成：已创建 process_logs 表及索引\n")
+    }
+    
+    if (!"process_events" %in% tables) {
+      dbExecute(con, "CREATE TABLE process_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT NOT NULL,
+        instance_id INTEGER,
+        node_id TEXT,
+        source TEXT,
+        status TEXT DEFAULT 'success',
+        message TEXT,
+        payload TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_pevent_type ON process_events(event_type)")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_pevent_inst ON process_events(instance_id)")
+      cat("数据库迁移完成：已创建 process_events 表及索引\n")
+    }
+    
+    if (!"process_context_history" %in% tables) {
+      dbExecute(con, "CREATE TABLE process_context_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instance_id INTEGER NOT NULL,
+        version INTEGER NOT NULL,
+        context_data TEXT NOT NULL,
+        changed_by TEXT,
+        change_reason TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        UNIQUE(instance_id, version)
+      )")
+      cat("数据库迁移完成：已创建 process_context_history 表\n")
+    }
+
+    if (!"process_links" %in% tables) {
+      dbExecute(con, "CREATE TABLE process_links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instance_id INTEGER NOT NULL,
+        module_type TEXT NOT NULL,
+        module_id INTEGER NOT NULL,
+        module_no TEXT,
+        link_type TEXT DEFAULT 'source',
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 process_links 表\n")
+    }
+
   }, error = function(e) {
     cat("数据库迁移失败:", e$message, "\n")
   }, finally = {
