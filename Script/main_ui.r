@@ -32,6 +32,9 @@ source("Script/data_center_ui.r")
 # 加载流程模块
 source("Script/process_ui.r")
 
+# 加载绩效模块
+source("Script/performance_ui.r")
+
 main_ui <- function() {
   # 读取字体大小配置
   table_font_size <- config_get_value("table_font_size", "13")
@@ -632,6 +635,13 @@ main_ui <- function() {
       "流程",
       icon = icon("project-diagram"),
       process_ui()
+    ),
+
+    # 绩效管理标签页
+    tabPanel(
+      "绩效",
+      icon = icon("chart-bar"),
+      performance_ui()
     ),
 
     # 模型训练标签页

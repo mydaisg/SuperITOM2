@@ -570,7 +570,106 @@ process_build_definition <- function(nodes_config) {
 }
 
 ##################
-# 示例流程
+# 表单模板管理
+##################
+
+# 模板 CRUD
+form_template_list <- function(category = NULL) {
+  con <- db_connect()
+  tryCatch({
+    where <- "WHERE 1=1"
+    if (!is.null(category) && nchar(category)>0) where <- paste0(where, sprintf(" AND category='%s'",category))
+    dbGetQuery(con, sprintf("SELECT * FROM process_form_templates %s ORDER BY updated_at DESC", where))
+  }, finally={ db_disconnect(con) })
+}
+
+form_template_get <- function(template_id) {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, sprintf("SELECT * FROM process_form_templates WHERE id=%d", as.integer(template_id)))
+  }, finally={ db_disconnect(con) })
+}
+
+form_template_create <- function(name, description = "", category = "general", created_by = NULL) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("INSERT INTO process_form_templates (name,description,category,created_by) VALUES ('%s','%s','%s',%s)",
+      gsub("'","''",name),gsub("'","''",description),category,
+      ifelse(is.null(created_by),"NULL",as.character(created_by))))
+    id <- dbGetQuery(con, "SELECT last_insert_rowid() as id")$id[1]
+    list(success=TRUE, id=id, message=sprintf("表单模板「%s」创建成功",name))
+  }, error=function(e) list(success=FALSE, message=paste("创建失败:",e$message)),
+  finally={ db_disconnect(con) })
+}
+
+form_template_update <- function(template_id, name, description, category) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("UPDATE process_form_templates SET name='%s',description='%s',category='%s',updated_at=datetime('now','localtime') WHERE id=%d",
+      gsub("'","''",name),gsub("'","''",description),category,as.integer(template_id)))
+    list(success=TRUE, message="更新成功")
+  }, error=function(e) list(success=FALSE, message=paste("更新失败:",e$message)),
+  finally={ db_disconnect(con) })
+}
+
+form_template_delete <- function(template_id) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("DELETE FROM process_form_template_fields WHERE template_id=%d", as.integer(template_id)))
+    dbExecute(con, sprintf("DELETE FROM process_form_templates WHERE id=%d", as.integer(template_id)))
+    list(success=TRUE, message="已删除")
+  }, error=function(e) list(success=FALSE, message=paste("删除失败:",e$message)),
+  finally={ db_disconnect(con) })
+}
+
+# 字段管理
+form_template_get_fields <- function(template_id) {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, sprintf("SELECT * FROM process_form_template_fields WHERE template_id=%d ORDER BY sort_order,id", as.integer(template_id)))
+  }, finally={ db_disconnect(con) })
+}
+
+form_template_add_field <- function(template_id, field_key, field_label, field_type = "text", field_options = NULL, required = FALSE, sort_order = 0, default_value = "") {
+  con <- db_connect()
+  tryCatch({
+    options_json <- if (is.null(field_options)) "NULL" else sprintf("'%s'", gsub("'","''",jsonlite::toJSON(field_options,auto_unbox=TRUE)))
+    dbExecute(con, sprintf("INSERT INTO process_form_template_fields (template_id,field_key,field_label,field_type,field_options,required,sort_order,default_value) VALUES (%d,'%s','%s','%s',%s,%d,%d,'%s')",
+      as.integer(template_id),gsub("'","''",field_key),gsub("'","''",field_label),field_type,
+      options_json,as.integer(required),as.integer(sort_order),gsub("'","''",default_value)))
+    id <- dbGetQuery(con, "SELECT last_insert_rowid() as id")$id[1]
+    list(success=TRUE, id=id, message=sprintf("字段「%s」已添加",field_label))
+  }, error=function(e) list(success=FALSE, message=paste("添加字段失败:",e$message)),
+  finally={ db_disconnect(con) })
+}
+
+form_template_remove_field <- function(field_id) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("DELETE FROM process_form_template_fields WHERE id=%d", as.integer(field_id)))
+    list(success=TRUE, message="字段已移除")
+  }, error=function(e) list(success=FALSE, message=paste("移除失败:",e$message)),
+  finally={ db_disconnect(con) })
+}
+
+# 模板 → JSON 生成
+form_template_to_json <- function(template_id) {
+  tpl <- form_template_get(template_id)
+  fields <- form_template_get_fields(template_id)
+  if (nrow(fields)==0) return("")
+  field_list <- list()
+  for (i in 1:nrow(fields)) {
+    f <- fields[i, ]
+    fi <- list(key=f$field_key, label=f$field_label, type=f$field_type, required=as.logical(f$required))
+    if (!is.null(f$field_options) && !is.na(f$field_options) && nchar(f$field_options)>0) {
+      opts <- tryCatch(jsonlite::fromJSON(f$field_options), error=function(e) NULL)
+      if (!is.null(opts)) fi$options <- opts
+    }
+    if (!is.null(f$default_value) && !is.na(f$default_value) && nchar(f$default_value)>0) fi$default <- f$default_value
+    field_list[[i]] <- fi
+  }
+  jsonlite::toJSON(list(fields=field_list), auto_unbox=TRUE, pretty=TRUE)
+}
 ##################
 
 #' 简单审批：开始 → 审批 → 结束

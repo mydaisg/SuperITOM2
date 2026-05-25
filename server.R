@@ -20,6 +20,8 @@ source("Script/std_computer.r")        # 标准化模块
 source("Script/data_center_server.r")   # 数据中心模块（数据归集）
 source("Script/process_engine.r")       # 流程引擎核心
 source("Script/process_server.r")       # 流程模块服务端
+source("Script/performance_management.r") # 绩效数据层
+source("Script/performance_server.r")   # 绩效模块服务端
 
 # 定义server函数
 # 这是Shiny应用的服务器逻辑核心
@@ -1893,6 +1895,9 @@ server <- function(input, output, session) {
 
   # 流程模块逻辑
   process_server(input, output, session, rv)
+
+  # 绩效模块逻辑
+  performance_server(input, output, session, rv)
 
   # 流程引擎初始化：注册适配器（仅一次）
   if (!exists("process_adapters_initialized") || !process_adapters_initialized) {

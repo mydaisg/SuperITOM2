@@ -11,6 +11,12 @@ process_ui <- function() {
       $(document).on('click','.proc-inst-suspend-btn',function(e){e.preventDefault();Shiny.setInputValue('proc_inst_suspend_click',$(this).data('inst'),{priority:'event'});});
       $(document).on('click','.proc-inst-resume-btn',function(e){e.preventDefault();Shiny.setInputValue('proc_inst_resume_click',$(this).data('inst'),{priority:'event'});});
       $(document).on('click','.proc-inst-log-btn',function(e){e.preventDefault();Shiny.setInputValue('process_inst_log_click',$(this).data('inst'),{priority:'event'});});
+      $(document).on('click','.proc-ft-edit-btn',function(e){e.preventDefault();Shiny.setInputValue('proc_ft_edit_click',$(this).data('id'),{priority:'event'});});
+      $(document).on('click','.proc-ft-json-btn',function(e){e.preventDefault();Shiny.setInputValue('proc_ft_json_click',$(this).data('id'),{priority:'event'});});
+      $(document).on('click','.proc-ft-del-btn',function(e){e.preventDefault();if(confirm('确定删除此模板？'))Shiny.setInputValue('proc_ft_del_click',$(this).data('id'),{priority:'event'});});
+      $(document).on('click','a[id^=\\'proc_ft_rm_\\']',function(e){e.preventDefault();
+        var id = this.id.replace('proc_ft_rm_','');
+        if(confirm('确定移除该字段？')) Shiny.setInputValue('proc_ft_rm_field',id,{priority:'event'});});
       $(document).on('change','#proc_template_select',function(){
         var tpl = $(this).val();
         if(tpl=='custom'){ $('#proc_json_editor_row').show(); } else { $('#proc_json_editor_row').hide(); }
@@ -87,6 +93,20 @@ process_ui <- function() {
             )
           )
         ),
+
+        # ===== 表单模板 =====
+        tabPanel("表单模板", icon=icon("file-alt"), br(),
+          fluidRow(
+            column(2, selectInput("proc_ft_category","分类",
+              choices=c("全部"="","审批"="approval","工单"="work_order","通用"="general","巡检"="inspection"),selected="")),
+            column(2, div(style="margin-top:25px;",
+              actionButton("proc_ft_refresh","刷新",class="btn-info btn-sm"),
+              actionButton("proc_ft_create","新建模板",class="btn-primary btn-sm",icon=icon("plus"))))
+          ), br(),
+          DT::DTOutput("proc_ft_list"),
+          br(), hr(),
+          # 模板编辑区
+          uiOutput("proc_ft_editor")),
 
         # ===== 流程实例 =====
         tabPanel("流程实例", br(),

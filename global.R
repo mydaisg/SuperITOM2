@@ -670,6 +670,67 @@ migrate_database <- function() {
       cat("数据库迁移完成：已创建 process_links 表\n")
     }
 
+    if (!"process_form_templates" %in% tables) {
+      dbExecute(con, "CREATE TABLE process_form_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        category TEXT DEFAULT 'general',
+        created_by INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 process_form_templates 表\n")
+    }
+
+    if (!"process_form_template_fields" %in% tables) {
+      dbExecute(con, "CREATE TABLE process_form_template_fields (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        template_id INTEGER NOT NULL,
+        field_key TEXT NOT NULL,
+        field_label TEXT NOT NULL,
+        field_type TEXT DEFAULT 'text',
+        field_options TEXT,
+        required INTEGER DEFAULT 0,
+        sort_order INTEGER DEFAULT 0,
+        default_value TEXT
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_ff_tpl ON process_form_template_fields(template_id)")
+      cat("数据库迁移完成：已创建 process_form_template_fields 表及索引\n")
+    }
+
+    # ===============================================
+    # 绩效模块数据库表
+    # ===============================================
+
+    if (!"performance_sheets" %in% tables) {
+      dbExecute(con, "CREATE TABLE performance_sheets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        year_month TEXT NOT NULL UNIQUE,
+        status TEXT DEFAULT 'draft',
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 performance_sheets 表\n")
+    }
+
+    if (!"performance_work_items" %in% tables) {
+      dbExecute(con, "CREATE TABLE performance_work_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sheet_id INTEGER NOT NULL,
+        employee_id INTEGER NOT NULL,
+        indicator_code TEXT NOT NULL,
+        source_type TEXT,
+        source_id INTEGER,
+        source_title TEXT,
+        deduction_level INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_pwi_sheet ON performance_work_items(sheet_id)")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_pwi_emp ON performance_work_items(employee_id)")
+      cat("数据库迁移完成：已创建 performance_work_items 表及索引\n")
+    }
+
   }, error = function(e) {
     cat("数据库迁移失败:", e$message, "\n")
   }, finally = {

@@ -130,8 +130,12 @@ process_server <- function(input, output, session, rv) {
   # 监控日志
   ##################
   observe({
+    process_refresh_trigger()
     insts <- process_instance_list()
-    choices <- stats::setNames(insts$id, sprintf("%s - %s", insts$instance_no, insts$title%||%""))
+    titles <- if (nrow(insts)>0) {
+      ifelse(is.na(insts$title%||%""), "", insts$title)
+    } else character(0)
+    choices <- if (nrow(insts)>0) stats::setNames(insts$id, sprintf("%s - %s", insts$instance_no, titles)) else character(0)
     updateSelectInput(session,"proc_log_inst_select",choices=c("请选择"="",choices))
   })
 
@@ -166,6 +170,230 @@ process_server <- function(input, output, session, rv) {
   observeEvent(input$proc_refresh_defs, { process_refresh_trigger(process_refresh_trigger()+1) })
   observeEvent(input$proc_refresh_insts, { process_refresh_trigger(process_refresh_trigger()+1) })
   observeEvent(input$proc_refresh_logs, { process_refresh_trigger(process_refresh_trigger()+1) })
+  observeEvent(input$proc_ft_refresh, { process_refresh_trigger(process_refresh_trigger()+1) })
+
+  ##################
+  # 表单模板管理
+  ##################
+
+  # 模板列表
+  output$proc_ft_list <- DT::renderDT({
+    process_refresh_trigger()
+    templates <- form_template_list(category=input$proc_ft_category)
+    if (nrow(templates)==0) return(DT::datatable(data.frame(信息="暂无表单模板"),options=list(dom='t')))
+    display <- data.frame(
+      ID=templates$id, 名称=templates$name, 描述=templates$description%||%"", 分类=templates$category,
+      创建时间=templates$created_at,
+      操作=sprintf('
+        <button class="btn btn-info btn-xs proc-ft-edit-btn" data-id="%s">编辑</button>
+        <button class="btn btn-success btn-xs proc-ft-json-btn" data-id="%s">生成JSON</button>
+        <button class="btn btn-danger btn-xs proc-ft-del-btn" data-id="%s">删除</button>',
+        templates$id, templates$id, templates$id),
+      stringsAsFactors=FALSE)
+    DT::datatable(display,escape=FALSE,options=list(pageLength=10,dom='rtip',scrollX=TRUE,
+      columnDefs=list(list(targets=4,orderable=FALSE))),rownames=FALSE,class='cell-border stripe hover')
+  })
+
+  # 新建模板
+  observeEvent(input$proc_ft_create, {
+    showModal(modalDialog(title="新建表单模板",
+      textInput("proc_ft_new_name","模板名称"),
+      textInput("proc_ft_new_desc","描述"),
+      selectInput("proc_ft_new_cat","分类",choices=c("通用"="general","审批"="approval","工单"="work_order","巡检"="inspection"),selected="general"),
+      footer=tagList(modalButton("取消"),actionButton("proc_ft_save","创建",class="btn-primary")),easyClose=TRUE))
+  })
+
+  observeEvent(input$proc_ft_save, {
+    req(input$proc_ft_new_name)
+    result <- form_template_create(name=input$proc_ft_new_name,description=input$proc_ft_new_desc%||%"",
+      category=input$proc_ft_new_cat,created_by=if(!is.null(rv$current_user))rv$current_user$id[1]else NULL)
+    removeModal()
+    if (result$success) {
+      process_refresh_trigger(process_refresh_trigger()+1)
+      # 自动打开编辑区
+      showNotification(sprintf("%s，请在编辑区添加字段",result$message),type="message",duration=5)
+      selected_ft_id(result$id)
+    } else showNotification(result$message,type="error")
+  })
+
+  # 当前编辑的模板
+  selected_ft_id <- reactiveVal(NULL)
+
+  # 编辑模板
+  observeEvent(input$proc_ft_edit_click, {
+    selected_ft_id(as.integer(input$proc_ft_edit_click))
+  })
+
+  # 渲染编辑区
+  output$proc_ft_editor <- renderUI({
+    tid <- selected_ft_id()
+    if (is.null(tid)) return(div(style="text-align:center;color:#95a5a6;padding:20px;","点击列表中的「编辑」按钮编辑模板字段"))
+    tpl <- form_template_get(tid)
+    if (is.null(tpl)||nrow(tpl)==0) return(p("模板不存在"))
+    fields <- form_template_get_fields(tid)
+    tagList(
+      h4(icon("edit"),sprintf("编辑模板: %s",tpl$name[1])),
+      fluidRow(
+        column(4,
+          p(style="font-size:12px;color:#666;",tpl$description[1]%||%""),
+          selectInput("proc_ft_field_type","字段类型",width="100%",
+            choices=c("单行文本"="text","多行文本"="textarea","下拉选择"="select","数字"="number","日期"="date","复选框"="checkbox")),
+          textInput("proc_ft_field_key","字段标识(key)",width="100%",placeholder="如: result"),
+          textInput("proc_ft_field_label","字段标签(label)",width="100%",placeholder="如: 审批意见"),
+          textInput("proc_ft_field_options","选项(逗号分隔,select用)",width="100%",placeholder="同意,驳回"),
+          checkboxInput("proc_ft_field_required","必填",value=FALSE),
+          actionButton("proc_ft_add_field","添加字段",class="btn-success btn-sm",icon=icon("plus"))
+        ),
+        column(8,
+          h5("已配置的字段",style="margin-top:0;"),
+          if (nrow(fields)==0) {
+            p(style="color:#95a5a6;","暂无字段，请在左侧添加")
+          } else {
+            lapply(1:nrow(fields), function(i) {
+              f <- fields[i, ]
+              opts <- ""
+              if (!is.na(f$field_options) && nchar(f$field_options)>0) {
+                opts <- tryCatch(paste(jsonlite::fromJSON(f$field_options),collapse=", "),error=function(e)"")
+              }
+              div(style="border:1px solid #eee;border-radius:4px;padding:8px;margin-bottom:6px;background:#fafafa;",
+                div(style="display:flex;justify-content:space-between;align-items:center;",
+                  span(style="font-weight:bold;",sprintf("%s (%s)",f$field_label,f$field_type)),
+                  actionLink(paste0("proc_ft_rm_",f$id),"移除",style="color:#d9534f;font-size:12px;")),
+                div(style="font-size:12px;color:#666;margin-top:3px;",
+                  sprintf("key: %s | 必填: %s", f$field_key, ifelse(f$required,"是","否")),
+                  if (nchar(opts)>0) sprintf(" | 选项: %s", opts) else "")
+              )
+            })
+          },
+          hr(),
+          div(style="text-align:right;",
+            actionButton("proc_ft_gen_json","生成 JSON",class="btn-success btn-sm",icon=icon("code")),
+            actionButton("proc_ft_close_editor","关闭编辑",class="btn-default btn-sm"))
+        )
+      )
+    )
+  })
+
+  # 添加字段
+  observeEvent(input$proc_ft_add_field, {
+    tid <- selected_ft_id()
+    req(tid, input$proc_ft_field_key, input$proc_ft_field_label)
+    options <- NULL
+    if (input$proc_ft_field_options!="") {
+      options <- trimws(strsplit(input$proc_ft_field_options,",")[[1]])
+    }
+    result <- form_template_add_field(template_id=tid, field_key=input$proc_ft_field_key,
+      field_label=input$proc_ft_field_label, field_type=input$proc_ft_field_type,
+      field_options=options, required=isTRUE(input$proc_ft_field_required))
+    if (result$success) {
+      showNotification(result$message,type="message")
+      # 清空输入
+      shiny::updateTextInput(session,"proc_ft_field_key",value="")
+      shiny::updateTextInput(session,"proc_ft_field_label",value="")
+      shiny::updateTextInput(session,"proc_ft_field_options",value="")
+      shiny::updateCheckboxInput(session,"proc_ft_field_required",value=FALSE)
+    } else showNotification(result$message,type="error")
+  })
+
+  # 生成 JSON（复制到剪贴板 + 预览）
+  observeEvent(input$proc_ft_gen_json, {
+    tid <- selected_ft_id()
+    req(tid)
+    json <- form_template_to_json(tid)
+    if (json=="") { showNotification("模板没有字段",type="warning"); return() }
+    showModal(modalDialog(title="表单模板 JSON",
+      p("将此 JSON 粘贴到流程定义的 task 节点中的 form.fields:"),
+      textAreaInput("proc_ft_json_out","",value=json,rows=10),
+      tags$script(HTML(sprintf("
+        $('#proc_ft_json_out').on('click',function(){ this.select(); document.execCommand('copy');
+          Shiny.setInputValue('proc_ft_copied',{time:Date.now()},{priority:'event'}); });"))),
+      footer=tagList(
+        actionButton("proc_ft_use_json","应用到流程定义",class="btn-success btn-sm",icon=icon("arrow-right")),
+        modalButton("关闭")),size="l",easyClose=TRUE))
+  })
+
+  # 应用 JSON 到流程定义
+  observeEvent(input$proc_ft_use_json, {
+    tid <- selected_ft_id()
+    req(tid)
+    removeModal()
+    showModal(modalDialog(title="应用到流程定义",
+      p("请选择要应用此表单模板的流程定义:"),
+      selectInput("proc_ft_apply_def","流程定义",choices=NULL),
+      p(style="font-size:12px;color:#7f8c8d;","将在选择的流程定义的第一个 task 节点中添加此表单字段"),
+      footer=tagList(modalButton("取消"),actionButton("proc_ft_apply_confirm","应用",class="btn-primary")),easyClose=TRUE))
+    # 加载流程定义列表
+    updateSelectInput(session,"proc_ft_apply_def",choices=stats::setNames(
+      process_def_list()$id, process_def_list()$name))
+  })
+
+  # 确认应用到流程定义
+  observeEvent(input$proc_ft_apply_confirm, {
+    req(input$proc_ft_apply_def, selected_ft_id())
+    def_id <- as.integer(input$proc_ft_apply_def)
+    tid <- selected_ft_id()
+    json <- form_template_to_json(tid)
+    def <- tryCatch(jsonlite::fromJSON(process_def_get(def_id)$definition[1],simplifyVector=FALSE),error=function(e)NULL)
+    if (is.null(def)||is.null(def$nodes)) { showNotification("流程定义解析失败",type="error"); return() }
+    # 找到第一个 task 节点，添加 form 字段
+    applied <- FALSE
+    for (i in seq_along(def$nodes)) {
+      if (!is.null(def$nodes[[i]]$type) && def$nodes[[i]]$type=="task") {
+        fields <- tryCatch(jsonlite::fromJSON(json,simplifyVector=FALSE),error=function(e)NULL)
+        if (!is.null(fields) && !is.null(fields$fields)) {
+          def$nodes[[i]]$form <- fields
+          applied <- TRUE
+        }
+        break
+      }
+    }
+    if (!applied) { showNotification("没有找到 task 节点或字段为空",type="warning"); return() }
+    new_def_json <- jsonlite::toJSON(def, auto_unbox=TRUE, pretty=TRUE)
+    # 更新流程定义
+    con <- db_connect()
+    tryCatch({
+      dbExecute(con, sprintf("UPDATE process_definitions SET definition='%s',updated_at=datetime('now','localtime') WHERE id=%d",
+        gsub("'","''",new_def_json),def_id))
+    }, finally={ db_disconnect(con) })
+    removeModal()
+    process_refresh_trigger(process_refresh_trigger()+1)
+    showNotification("表单字段已应用到流程定义中，请重新发布后生效",type="message",duration=8)
+  })
+
+  # 删除模板
+  observeEvent(input$proc_ft_del_click, {
+    result <- form_template_delete(as.integer(input$proc_ft_del_click))
+    process_refresh_trigger(process_refresh_trigger()+1)
+    if (result$success) {
+      selected_ft_id(NULL)
+      showNotification(result$message,type="message")
+    } else showNotification(result$message,type="error")
+  })
+
+  # 移除字段（通过JS传递的字段ID）
+  observeEvent(input$proc_ft_rm_field, {
+    result <- form_template_remove_field(as.integer(input$proc_ft_rm_field))
+    if (result$success) showNotification("字段已移除",type="message") else showNotification(result$message,type="error")
+  })
+
+  # 关闭编辑区
+  observeEvent(input$proc_ft_close_editor, {
+    selected_ft_id(NULL)
+  })
+
+  # 生成 JSON 按钮（从列表直接）
+  observeEvent(input$proc_ft_json_click, {
+    tid <- as.integer(input$proc_ft_json_click)
+    selected_ft_id(tid)
+    json <- form_template_to_json(tid)
+    if (json=="") { showNotification("模板没有字段",type="warning"); return() }
+    showModal(modalDialog(title="表单模板 JSON",
+      textAreaInput("proc_ft_json_out2","",value=json,rows=8),
+      footer=modalButton("关闭"),size="m",easyClose=TRUE))
+  })
+
+  # JS 事件代理（表单模板按钮）
+  # 已通过下面的 renderUI 渲染
 
   # ===== 一键体验（三种类型） =====
   observeEvent(input$proc_demo_simple, { launch_demo("simple") })
@@ -269,7 +497,9 @@ process_server <- function(input, output, session, rv) {
     jsonlite::toJSON(list(
       nodes=list(
         list(id="start", type="start", label="开始"),
-        list(id="auto_create", type="auto", label="自动创建工单"),
+        list(id="auto_create", type="auto", label="自动创建工单",
+          action=list(module="work_order", method="create",
+            args=list(title="流程自动创建的工单", description="由流程引擎自动触发创建", category="故障", priority="normal"))),
         list(id="approve", type="task", label="审批工单", timeout_minutes=1440L),
         list(id="end", type="end", label="结束")
       ),
@@ -364,8 +594,11 @@ process_server <- function(input, output, session, rv) {
   })
 
   # ===== 启动 =====
+  proc_starting_def <- reactiveVal(NULL)
+
   observeEvent(input$process_start_click, {
     def_id <- as.integer(input$process_start_click)
+    proc_starting_def(def_id)
     def <- process_def_get(def_id)
     if (is.null(def)) { showNotification("流程定义不存在",type="error"); return() }
     showModal(modalDialog(title=sprintf("启动流程: %s",def$name[1]),
@@ -375,9 +608,10 @@ process_server <- function(input, output, session, rv) {
   })
 
   observeEvent(input$proc_confirm_start, {
-    req(input$process_start_click)
+    def_id <- proc_starting_def()
+    req(def_id)
     context <- tryCatch(jsonlite::fromJSON(input$proc_start_context,simplifyVector=FALSE),error=function(e)list(title=input$proc_start_title,priority="normal"))
-    result <- process_instance_start(def_id=as.integer(input$process_start_click),title=input$proc_start_title,context_data=context,
+    result <- process_instance_start(def_id=def_id, title=input$proc_start_title, context_data=context,
       started_by=if(!is.null(rv$current_user))rv$current_user$id[1]else NULL)
     removeModal()
     if (result$success) {
