@@ -78,13 +78,18 @@ sysmon_check_history <- function(host_id, limit=20) {
 sysmon_ping_check <- function(ip) {
   start <- Sys.time()
   result <- tryCatch({
-    out <- system(sprintf("ping -n 1 -w 3000 %s", ip), intern=TRUE, ignore.stderr=TRUE)
+    # 用 system2 替代 system，避免 ignore.stderr 在 Windows 上的不可靠行为
+    out <- system2("ping", c("-n", "1", "-w", "3000", ip), stdout=TRUE, stderr=TRUE)
     out <- iconv(out, from="GBK", to="UTF-8", sub="")
-    elapsed <- as.integer(difftime(Sys.time(), start, units="ms"))
-    if (any(grepl("TTL=|ttl=|Reply from|来自", out, ignore.case=TRUE))) {
+    elapsed <- as.integer(as.numeric(difftime(Sys.time(), start, units="secs")) * 1000)
+    output_text <- paste(out, collapse=" ")
+    # 成功：匹配英文/中文的 Ping 成功标识
+    if (grepl("TTL=|Reply from|来自|回复|bytes=|time[<=>]|time=", output_text, ignore.case=TRUE)) {
       list(success=TRUE, ms=elapsed, detail="Ping OK")
+    } else if (grepl("无法访问|超时|timed out|unreachable|could not find|找不到主机|请求超时", output_text, ignore.case=TRUE)) {
+      list(success=FALSE, ms=elapsed, detail="Ping 目标不可达")
     } else {
-      list(success=FALSE, ms=elapsed, detail="Ping 超时或无响应")
+      list(success=FALSE, ms=elapsed, detail="Ping 无响应")
     }
   }, error=function(e) list(success=FALSE, ms=0, detail=paste("Ping失败:", e$message)))
   result
@@ -95,10 +100,10 @@ sysmon_port_check <- function(ip, port) {
   result <- tryCatch({
     con <- suppressWarnings(socketConnection(host=ip, port=as.integer(port), open="r+b", blocking=TRUE, timeout=3))
     close(con)
-    elapsed <- as.integer(difftime(Sys.time(), start, units="ms"))
+    elapsed <- as.integer(as.numeric(difftime(Sys.time(), start, units="secs")) * 1000)
     list(success=TRUE, ms=elapsed, detail=sprintf("端口 %d 开放", port))
   }, error=function(e) {
-    elapsed <- as.integer(difftime(Sys.time(), start, units="ms"))
+    elapsed <- as.integer(as.numeric(difftime(Sys.time(), start, units="secs")) * 1000)
     list(success=FALSE, ms=elapsed, detail=sprintf("端口 %d 关闭", port))
   })
   result

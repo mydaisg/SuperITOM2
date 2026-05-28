@@ -21,7 +21,7 @@ sysmon_server <- function(input, output, session, rv) {
       if (result$success) {
         check <- sysmon_ping_check(local_ip)
         sysmon_check_log(result$id, "ping", ifelse(check$success,"success","fail"), check$ms, check$detail)
-        sysmon_host_update_status(result$id, "online", check$ms)
+        sysmon_host_update_status(result$id, ifelse(check$success,"online","offline"), check$ms)
         sysmon_trigger(sysmon_trigger()+1)
       }
     }
@@ -229,5 +229,20 @@ sysmon_server <- function(input, output, session, rv) {
     sysmon_host_delete(as.integer(input$sysmon_del_click))
     sysmon_trigger(sysmon_trigger()+1)
     showNotification("已移除",type="message")
+  })
+
+  # ========== 自动检测（每3分钟） ==========
+  observe({
+    invalidateLater(180000, session)
+    hosts <- sysmon_host_list()
+    if (nrow(hosts) == 0) return()
+    for (i in seq_len(nrow(hosts))) {
+      h <- hosts[i, ]
+      check <- sysmon_ping_check(h$ip)
+      status <- ifelse(check$success, "online", "offline")
+      sysmon_check_log(h$id, "ping", ifelse(check$success,"success","fail"), check$ms, check$detail)
+      sysmon_host_update_status(h$id, status, check$ms)
+    }
+    sysmon_trigger(sysmon_trigger()+1)
   })
 }

@@ -14,14 +14,14 @@ source("Script/inspection_patrol.r")    # 巡检管理模块（旧版兼容）
 source("Script/inspection_management.r") # 巡检管理模块（数据层）
 source("Script/inspection_server.r")    # 巡检管理模块（服务端）
 source("Script/login_ui.r")         # 登录界面定义
-source("Script/main_ui.r")          # 主界面定义
+source("Script/data_center_server.r")   # 数据中心模块（数据归集）
+source("Script/process_engine.r")       # 流程引擎核心（定义 %||% 等工具函数，network_test.r 依赖）
 source("Script/github_autosubmit.r") # GitHub自动提交功能
 source("Script/std_computer.r")        # 标准化模块
-source("Script/data_center_server.r")   # 数据中心模块（数据归集）
+source("Script/main_ui.r")          # 主界面定义
+source("Script/process_server.r")       # 流程模块服务端
 source("Script/sysmon_management.r")   # 性能监控数据层
 source("Script/sysmon_server.r")       # 性能监控服务端
-source("Script/process_engine.r")       # 流程引擎核心
-source("Script/process_server.r")       # 流程模块服务端
 source("Script/performance_management.r") # 绩效数据层
 source("Script/performance_server.r")   # 绩效模块服务端
 
