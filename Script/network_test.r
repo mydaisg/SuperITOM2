@@ -101,10 +101,34 @@ network_test_ui <- function() {
           actionButton("nt_run_fileserver2", "文件服务器 #2 (10.10.50.150)", class = "btn-default btn-block",
             icon = icon("folder")),
           hr(),
+          h4("邮箱测试"),
+          actionButton("nt_run_email_all", "邮箱诊断", class = "btn-warning btn-block",
+            icon = icon("envelope")),
+          br(),
+          actionButton("nt_run_email_mx", "MX记录查询", class = "btn-default btn-block",
+            icon = icon("server")),
+          actionButton("nt_run_email_a", "A记录(邮件子域)", class = "btn-default btn-block",
+            icon = icon("globe")),
+          actionButton("nt_run_email_smtp", "SMTP端口(25/465/587)", class = "btn-default btn-block",
+            icon = icon("plug")),
+          actionButton("nt_run_email_pop3", "POP3端口(110/995)", class = "btn-default btn-block",
+            icon = icon("inbox")),
+          actionButton("nt_run_email_imap", "IMAP端口(143/993)", class = "btn-default btn-block",
+            icon = icon("cloud-download-alt")),
+          actionButton("nt_run_email_spf", "SPF记录检查", class = "btn-default btn-block",
+            icon = icon("shield-alt")),
+          actionButton("nt_run_email_dkim", "DKIM记录检查", class = "btn-default btn-block",
+            icon = icon("key")),
+          actionButton("nt_run_email_dmarc", "DMARC记录检查", class = "btn-default btn-block",
+            icon = icon("flag")),
+          actionButton("nt_run_email_ptr", "PTR反向解析", class = "btn-default btn-block",
+            icon = icon("exchange-alt")),
+          hr(),
           h4("测试配置"),
           textInput("nt_target", "测试目标（域名/IP）", value = "qq.com"),
           textInput("nt_domain", "AD域名（可选）", value = "lvcc.org"),
           textInput("nt_http_target", "HTTP测试目标", value = "www.baidu.com"),
+          textInput("nt_email_domain", "邮箱域名", value = "CNLVCC.Com"),
           numericInput("nt_ping_count", "Ping 次数", value = 4, min = 1, max = 20)
         )
       ),
@@ -235,7 +259,7 @@ network_test_server <- function(input, output, session) {
     label <- sprintf("文件服务器 %s - 端口 %s", ip, port)
     header <- sprintf("\n== %s ==\n\n", label)
     out <- tryCatch({
-      con <- socketConnection(host = ip, port = port, open = "r+b", blocking = TRUE, timeout = 3)
+      con <- suppressWarnings(socketConnection(host = ip, port = port, open = "r+b", blocking = TRUE, timeout = 3))
       close(con)
       paste0("ComputerName     : ", ip, "\n",
              "RemoteAddress    : ", ip, "\n",
@@ -270,6 +294,137 @@ network_test_server <- function(input, output, session) {
     paste0(header, out, "\n")
   }
 
+  # ========== 邮箱诊断函数 ==========
+
+  # MX 记录查询
+  nt_exec_mx <- function(domain) {
+    label <- sprintf("MX记录查询 - %s", domain)
+    header <- sprintf("\n== %s ==\n\n", label)
+    result <- system(sprintf("nslookup -type=mx %s", domain), intern = TRUE, ignore.stderr = TRUE)
+    result <- iconv(result, from = "GBK", to = "UTF-8", sub = "")
+    paste0(header, paste(result, collapse = "\n"), "\n")
+  }
+
+  # A 记录查询（邮件子域名: mail, smtp, pop, imap）
+  nt_exec_a_record <- function(domain) {
+    subdomains <- c("mail", "smtp", "pop", "imap", paste0("mail.",domain))
+    results <- ""
+    # 先查主域名 MX 指向的域名
+    mx_result <- system(sprintf("nslookup -type=mx %s", domain), intern = TRUE, ignore.stderr = TRUE)
+    mx_result <- iconv(mx_result, from = "GBK", to = "UTF-8", sub = "")
+    mx_lines <- mx_result[grepl("mail exchanger", mx_result, ignore.case=TRUE)]
+    mx_targets <- gsub(".*= ", "", mx_lines)
+    mx_targets <- trimws(gsub("\\s+", " ", mx_targets))
+    if (length(mx_targets) > 0) {
+      results <- paste0(results, sprintf("MX目标服务器:\n%s\n\n", paste(mx_targets, collapse="\n")))
+      for (mt in mx_targets) {
+        parts <- trimws(strsplit(mt, " ")[[1]])
+        mx_host <- parts[length(parts)]
+        label <- sprintf("A记录 - MX目标: %s", mx_host)
+        header <- sprintf("== %s ==\n$ nslookup %s\n\n", label, mx_host)
+        a_result <- system(sprintf("nslookup %s", mx_host), intern = TRUE, ignore.stderr = TRUE)
+        a_result <- iconv(a_result, from = "GBK", to = "UTF-8", sub = "")
+        results <- paste0(results, header, paste(a_result, collapse = "\n"), "\n\n")
+      }
+    }
+    # 查常见邮件子域名
+    for (sd in subdomains) {
+      if (sd == paste0("mail.",domain)) next
+      label <- sprintf("A记录 - 子域: %s.%s", sd, domain)
+      header <- sprintf("== %s ==\n$ nslookup %s.%s\n\n", label, sd, domain)
+      a_result <- system(sprintf("nslookup %s.%s", sd, domain), intern = TRUE, ignore.stderr = TRUE)
+      a_result <- iconv(a_result, from = "GBK", to = "UTF-8", sub = "")
+      results <- paste0(results, header, paste(a_result, collapse = "\n"), "\n\n")
+    }
+    results
+  }
+
+  # DNS TXT 记录查询（SPF/DKIM/DMARC）
+  nt_exec_txt <- function(query, label_prefix) {
+    label <- sprintf("%s - %s", label_prefix, query)
+    header <- sprintf("\n== %s ==\n\n", label)
+    result <- system(sprintf("nslookup -type=txt %s", query), intern = TRUE, ignore.stderr = TRUE)
+    result <- iconv(result, from = "GBK", to = "UTF-8", sub = "")
+    out <- paste(result, collapse = "\n")
+    # 提取 TXT 记录值
+    txt_match <- regmatches(out, gregexpr('"([^"]+)"', out))[[1]]
+    txt_vals <- gsub('"', '', txt_match)
+    if (length(txt_vals) > 0) {
+      out <- paste0(out, "\n--- 解析结果 ---\n", paste(txt_vals, collapse = "\n"))
+    }
+    paste0(header, out, "\n")
+  }
+
+  # PTR 反向解析
+  nt_exec_ptr <- function(domain) {
+    label <- sprintf("PTR反向解析 - %s", domain)
+    header <- sprintf("\n== %s ==\n\n", label)
+    mx_result <- system(sprintf("nslookup -type=mx %s", domain), intern = TRUE, ignore.stderr = TRUE)
+    mx_result <- iconv(mx_result, from = "GBK", to = "UTF-8", sub = "")
+    mx_lines <- mx_result[grepl("mail exchanger", mx_result, ignore.case=TRUE)]
+    mx_targets <- gsub(".*= ", "", mx_lines)
+    mx_targets <- trimws(gsub("\\s+", " ", mx_targets))
+    if (length(mx_targets) == 0) {
+      return(paste0(header, "--- PTR反向解析 ---\n未能获取到 ", domain, " 的MX记录，无法反向解析\n"))
+    }
+    results <- ""
+    for (mt in mx_targets) {
+      parts <- trimws(strsplit(mt, " ")[[1]])
+      mx_host <- parts[length(parts)]
+      ip_result <- system(sprintf("nslookup %s", mx_host), intern = TRUE, ignore.stderr = TRUE)
+      ip_result <- iconv(ip_result, from = "GBK", to = "UTF-8", sub = "")
+      ip_lines <- ip_result[grepl("Address", ip_result, ignore.case=TRUE) & !grepl("#", ip_result)]
+      ips <- unique(unlist(regmatches(ip_lines, gregexpr("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}", ip_lines))))
+      results <- paste0(results, sprintf("MX: %s\n", mx_host))
+      for (ip in ips) {
+        ptr <- system(sprintf("nslookup %s", ip), intern = TRUE, ignore.stderr = TRUE)
+        ptr <- iconv(ptr, from = "GBK", to = "UTF-8", sub = "")
+        ptr_name_lines <- ptr[grepl("name\\s*=", ptr, ignore.case=TRUE) | grepl("名称", ptr)]
+        if (length(ptr_name_lines) > 0) {
+          pname <- trimws(gsub(".*name\\s*=\\s*|.*名称\\s*:\\s*", "", ptr_name_lines[1], ignore.case=TRUE))
+          match <- if (grepl(gsub("\\.$","",domain), pname, ignore.case=TRUE)) " ✓ 匹配域名" else " ✗ 不匹配域名"
+          results <- paste0(results, sprintf("  %-15s → %s%s\n", ip, pname, match))
+        } else {
+          results <- paste0(results, sprintf("  %-15s → (无PTR记录)\n", ip))
+        }
+      }
+    }
+    paste0(header, results, "--- PTR解析完成 ---\n")
+  }
+
+  # 邮件端口测试（通用：SMTP/POP3/IMAP）
+  nt_exec_mail_ports <- function(domain, protocol = "smtp") {
+    port_map <- list(
+      smtp = c(25, 465, 587),
+      pop3  = c(110, 995),
+      imap  = c(143, 993)
+    )
+    ports <- port_map[[protocol]] %||% c(25, 465, 587)
+    proto_name <- toupper(protocol)
+    results <- ""
+    for (p in ports) {
+      label <- sprintf("%s端口测试 - %s:%d", proto_name, domain, p)
+      header <- sprintf("\n== %s ==\n\n", label)
+      tls_label <- if (p %in% c(465, 995, 993)) " (TLS加密)" else ""
+      protocol_label <- switch(as.character(p),
+        "25"="SMTP", "465"="SMTPS", "587"="SMTP Submission",
+        "110"="POP3", "995"="POP3S",
+        "143"="IMAP", "993"="IMAPS",
+        as.character(p))
+      res <- tryCatch({
+        con <- suppressWarnings(socketConnection(host = domain, port = p, open = "r+b", blocking = TRUE, timeout = 5))
+        close(con)
+        sprintf("Port %-4d : OPEN    [%s]%s", p, protocol_label, tls_label)
+      }, error = function(e) {
+        err <- iconv(e$message, from = "GBK", to = "UTF-8", sub = "")
+        err_short <- substr(err, 1, 40)
+        sprintf("Port %-4d : CLOSED  [%s] (%s)", p, protocol_label, err_short)
+      })
+      results <- paste0(results, header, res, "\n")
+    }
+    results
+  }
+
   # 逐条执行队列中的任务
   observe({
     if (!nt_running()) return()
@@ -293,6 +448,11 @@ network_test_server <- function(input, output, session) {
       "system" = nt_exec_system(task$label, task$cmd),
       "port" = nt_exec_port_test(task$ip, task$port),
       "ping" = nt_exec_ping(task$ip, task$count),
+      "email_mx" = nt_exec_mx(task$domain),
+      "email_a" = nt_exec_a_record(task$domain),
+      "email_ptr" = nt_exec_ptr(task$domain),
+      "email_txt" = nt_exec_txt(task$query, task$label_prefix),
+      "email_mailport" = nt_exec_mail_ports(task$domain, task$protocol),
       paste("未知任务类型:", task$type)
     )
     nt_result(paste0(nt_result(), result_text))
@@ -472,6 +632,86 @@ network_test_server <- function(input, output, session) {
       list(label = sprintf("文件服务器 %s - Ping", ip), ip = ip, count = 4, type = "ping")
     )
     .start_test(cmd_list, ip)
+  })
+
+  # ========== 邮箱诊断 ==========
+
+  # 获取邮箱域名
+  .get_email_domain <- function() {
+    d <- trimws(input$nt_email_domain)
+    if (is.null(d) || d == "") d <- trimws(input$nt_target)
+    d
+  }
+
+  # 邮箱全诊断（MX + A记录 + 所有端口 + SPF + DKIM + DMARC）
+  observeEvent(input$nt_run_email_all, {
+    domain <- .get_email_domain()
+    cmd_list <- list(
+      list(type="email_mx", domain=domain),
+      list(type="email_a", domain=domain),
+      list(type="email_ptr", domain=domain),
+      list(type="email_mailport", domain=domain, protocol="smtp"),
+      list(type="email_mailport", domain=domain, protocol="pop3"),
+      list(type="email_mailport", domain=domain, protocol="imap"),
+      list(type="email_txt", query=domain, label_prefix="SPF记录检查"),
+      list(type="email_txt", query=paste0("default._domainkey.", domain), label_prefix="DKIM记录检查 (default selector)"),
+      list(type="email_txt", query=paste0("_dmarc.", domain), label_prefix="DMARC记录检查")
+    )
+    .start_test(cmd_list, sprintf("邮箱诊断: %s", domain))
+  })
+
+  # MX记录
+  observeEvent(input$nt_run_email_mx, {
+    domain <- .get_email_domain()
+    .start_test(list(list(type="email_mx", domain=domain)), sprintf("MX查询: %s", domain))
+  })
+
+  # A记录
+  observeEvent(input$nt_run_email_a, {
+    domain <- .get_email_domain()
+    .start_test(list(list(type="email_a", domain=domain)), sprintf("A记录: %s", domain))
+  })
+
+  # SMTP端口
+  observeEvent(input$nt_run_email_smtp, {
+    domain <- .get_email_domain()
+    .start_test(list(list(type="email_mailport", domain=domain, protocol="smtp")), sprintf("SMTP端口: %s", domain))
+  })
+
+  # POP3端口
+  observeEvent(input$nt_run_email_pop3, {
+    domain <- .get_email_domain()
+    .start_test(list(list(type="email_mailport", domain=domain, protocol="pop3")), sprintf("POP3端口: %s", domain))
+  })
+
+  # IMAP端口
+  observeEvent(input$nt_run_email_imap, {
+    domain <- .get_email_domain()
+    .start_test(list(list(type="email_mailport", domain=domain, protocol="imap")), sprintf("IMAP端口: %s", domain))
+  })
+
+  # SPF
+  observeEvent(input$nt_run_email_spf, {
+    domain <- .get_email_domain()
+    .start_test(list(list(type="email_txt", query=domain, label_prefix="SPF记录检查")), sprintf("SPF: %s", domain))
+  })
+
+  # DKIM
+  observeEvent(input$nt_run_email_dkim, {
+    domain <- .get_email_domain()
+    .start_test(list(list(type="email_txt", query=paste0("default._domainkey.", domain), label_prefix="DKIM记录检查 (default selector)")), sprintf("DKIM: %s", domain))
+  })
+
+  # DMARC
+  observeEvent(input$nt_run_email_dmarc, {
+    domain <- .get_email_domain()
+    .start_test(list(list(type="email_txt", query=paste0("_dmarc.", domain), label_prefix="DMARC记录检查")), sprintf("DMARC: %s", domain))
+  })
+
+  # PTR
+  observeEvent(input$nt_run_email_ptr, {
+    domain <- .get_email_domain()
+    .start_test(list(list(type="email_ptr", domain=domain)), sprintf("PTR: %s", domain))
   })
 
   # 清空

@@ -109,54 +109,33 @@ viz_generate <- function(viz_type, data_source) {
 
 # 流程监控图表
 viz_generate_process_charts <- function(viz_type) {
-  stats <- process_get_monitor_metrics()
+  stats <- tryCatch(appr_stats(), error=function(e) list(total=0,pending=0,approved=0,rejected=0,tpls=0))
 
   if (viz_type == "柱状图") {
-    # 流程状态分布
-    con <- db_connect()
-    term_count <- tryCatch(
-      dbGetQuery(con, "SELECT COUNT(*) as c FROM process_instances WHERE status='terminated'")$c[1],
-      error = function(e) 0, finally = { db_disconnect(con) })
     data <- data.frame(
-      状态 = c("运行中", "已完成", "已终止"),
-      数量 = c(stats$running_instances, stats$total_instances - stats$running_instances - term_count, term_count)
+      状态 = c("审批中", "已通过", "已驳回"),
+      数量 = c(stats$pending, stats$approved, stats$rejected)
     )
     p <- ggplot(data, aes(x = 状态, y = 数量, fill = 状态)) +
       geom_bar(stat = "identity") +
-      scale_fill_manual(values = c("运行中" = "#5cb85c", "已完成" = "#5bc0de", "已终止" = "#d9534f")) +
-      labs(title = "流程实例状态分布", x = "", y = "数量") +
+      scale_fill_manual(values = c("审批中" = "#f39c12", "已通过" = "#27ae60", "已驳回" = "#e74c3c")) +
+      labs(title = "审批实例状态分布", x = "", y = "数量") +
       theme_minimal()
     return(ggplotly(p))
 
   } else if (viz_type == "饼图") {
-    node_counts <- stats$node_counts
-    if (nrow(node_counts) > 0) {
-      p <- ggplot(node_counts, aes(x = "", y = cnt, fill = node_type)) +
-        geom_bar(stat = "identity", width = 1) +
-        coord_polar("y") +
-        labs(title = "流程节点类型分布") +
-        theme_void()
-      return(ggplotly(p))
-    }
-  } else if (viz_type == "折线图") {
-    # 模拟流程完成趋势（无实时日数据时用模拟）
-    set.seed(123)
-    days <- 14
     data <- data.frame(
-      日期 = seq(Sys.Date() - days + 1, Sys.Date(), by = "day"),
-      启动数 = pmax(0, round(rnorm(days, stats$today_started / max(1, days) * 2, 1))),
-      完成数 = pmax(0, round(rnorm(days, stats$today_completed / max(1, days) * 2, 1)))
+      类型 = c("审批中", "已通过", "已驳回"),
+      数量 = c(stats$pending, stats$approved, stats$rejected)
     )
-    p <- ggplot(data, aes(x = 日期)) +
-      geom_line(aes(y = 启动数, color = "启动"), size = 1) +
-      geom_line(aes(y = 完成数, color = "完成"), size = 1) +
-      scale_color_manual(values = c("启动" = "#337ab7", "完成" = "#5cb85c")) +
-      labs(title = "近14天流程活动趋势", x = "", y = "数量", color = "") +
-      theme_minimal() +
-      theme(legend.position = "bottom")
+    p <- ggplot(data, aes(x = "", y = 数量, fill = 类型)) +
+      geom_bar(stat = "identity", width = 1) +
+      coord_polar("y") +
+      labs(title = "审批状态分布") +
+      scale_fill_manual(values = c("审批中" = "#f39c12", "已通过" = "#27ae60", "已驳回" = "#e74c3c")) +
+      theme_void()
     return(ggplotly(p))
+  } else {
+    return(plotly::plot_ly() %>% plotly::add_annotations(text="审批模块统计", showarrow=FALSE, font=list(size=20)))
   }
-
-  # 默认返回指标卡片
-  return(NULL)
 }

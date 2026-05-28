@@ -731,6 +731,132 @@ migrate_database <- function() {
       cat("数据库迁移完成：已创建 performance_work_items 表及索引\n")
     }
 
+    # ===============================================
+    # 审批模块数据库表（企业微信风格）
+    # ===============================================
+
+    if (!"appr_templates" %in% tables) {
+      dbExecute(con, "CREATE TABLE appr_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        category TEXT DEFAULT 'general',
+        icon TEXT DEFAULT 'file-text',
+        form_fields TEXT,
+        approver_config TEXT,
+        cc_config TEXT,
+        status TEXT DEFAULT 'draft',
+        created_by INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 appr_templates 表\n")
+    }
+
+    if (!"appr_instances" %in% tables) {
+      dbExecute(con, "CREATE TABLE appr_instances (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instance_no TEXT UNIQUE NOT NULL,
+        template_id INTEGER,
+        template_name TEXT,
+        title TEXT,
+        form_data TEXT,
+        current_step INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'pending',
+        applicant_id INTEGER,
+        started_at TEXT DEFAULT (datetime('now','localtime')),
+        completed_at TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_appr_inst_applicant ON appr_instances(applicant_id)")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_appr_inst_status ON appr_instances(status)")
+      cat("数据库迁移完成：已创建 appr_instances 表及索引\n")
+    }
+
+    if (!"appr_steps" %in% tables) {
+      dbExecute(con, "CREATE TABLE appr_steps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instance_id INTEGER NOT NULL,
+        step_index INTEGER NOT NULL,
+        step_type TEXT DEFAULT 'approver',
+        operator_type TEXT DEFAULT 'fixed',
+        operator_ids TEXT,
+        approver_names TEXT,
+        status TEXT DEFAULT 'pending',
+        entered_at TEXT,
+        UNIQUE(instance_id, step_index)
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_appr_step_inst ON appr_steps(instance_id)")
+      cat("数据库迁移完成：已创建 appr_steps 表及索引\n")
+    }
+
+    if (!"appr_records" %in% tables) {
+      dbExecute(con, "CREATE TABLE appr_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instance_id INTEGER NOT NULL,
+        step_id INTEGER,
+        operator_id INTEGER,
+        operator_name TEXT,
+        action TEXT NOT NULL,
+        comment TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_appr_rec_inst ON appr_records(instance_id)")
+      cat("数据库迁移完成：已创建 appr_records 表及索引\n")
+    }
+
+    if (!"appr_cc_records" %in% tables) {
+      dbExecute(con, "CREATE TABLE appr_cc_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instance_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        user_name TEXT,
+        is_read INTEGER DEFAULT 0,
+        read_at TEXT
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_appr_cc_user ON appr_cc_records(user_id)")
+      cat("数据库迁移完成：已创建 appr_cc_records 表及索引\n")
+    }
+
+    # ===============================================
+    # 性能监控模块数据库表（无代理监控）
+    # ===============================================
+
+    if (!"sysmon_hosts" %in% tables) {
+      dbExecute(con, "CREATE TABLE sysmon_hosts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        hostname TEXT NOT NULL,
+        ip TEXT NOT NULL,
+        port INTEGER DEFAULT 0,
+        os_type TEXT DEFAULT 'windows',
+        status TEXT DEFAULT 'unknown',
+        credential_id INTEGER,
+        last_check TEXT,
+        last_online TEXT,
+        response_time_ms INTEGER DEFAULT 0,
+        is_active INTEGER DEFAULT 1,
+        remark TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_sysmon_ip ON sysmon_hosts(ip)")
+      cat("数据库迁移完成：已创建 sysmon_hosts 表及索引\n")
+    }
+
+    if (!"sysmon_checks" %in% tables) {
+      dbExecute(con, "CREATE TABLE sysmon_checks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        host_id INTEGER NOT NULL,
+        check_type TEXT DEFAULT 'ping',
+        status TEXT DEFAULT 'unknown',
+        response_time_ms INTEGER DEFAULT 0,
+        detail TEXT,
+        checked_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_sysmon_chk_host ON sysmon_checks(host_id)")
+      cat("数据库迁移完成：已创建 sysmon_checks 表及索引\n")
+    }
+
   }, error = function(e) {
     cat("数据库迁移失败:", e$message, "\n")
   }, finally = {

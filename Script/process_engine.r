@@ -1,32 +1,17 @@
-# 流程引擎核心模块 v3 — 完整功能
+# 审批引擎（企业微信风格）
+# 模板+表单+审批链，简单直观
 
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
 ##################
 # 编号生成
 ##################
-
-process_generate_no <- function(prefix = "PRC") {
+appr_gen_no <- function(prefix = "APR") {
   date_str <- format(Sys.Date(), "%Y%m%d")
   con <- db_connect()
   tryCatch({
     today_prefix <- sprintf("%s%s", prefix, date_str)
-    max_no <- dbGetQuery(con, sprintf("SELECT MAX(def_no) as max_no FROM process_definitions WHERE def_no LIKE '%s%%'", today_prefix))
-    seq <- 1
-    if (!is.na(max_no$max_no[1])) {
-      last_seq <- as.integer(substr(max_no$max_no[1], nchar(today_prefix) + 1, nchar(today_prefix) + 3))
-      if (!is.na(last_seq)) seq <- last_seq + 1
-    }
-    sprintf("%s%03d", today_prefix, seq)
-  }, finally = { db_disconnect(con) })
-}
-
-process_instance_generate_no <- function() {
-  date_str <- format(Sys.Date(), "%Y%m%d")
-  con <- db_connect()
-  tryCatch({
-    today_prefix <- sprintf("PFI%s", date_str)
-    max_no <- dbGetQuery(con, sprintf("SELECT MAX(instance_no) as max_no FROM process_instances WHERE instance_no LIKE '%s%%'", today_prefix))
+    max_no <- dbGetQuery(con, sprintf("SELECT MAX(instance_no) as max_no FROM appr_instances WHERE instance_no LIKE '%s%%'", today_prefix))
     seq <- 1
     if (!is.na(max_no$max_no[1])) {
       last_seq <- as.integer(substr(max_no$max_no[1], nchar(today_prefix) + 1, nchar(today_prefix) + 3))
@@ -37,739 +22,296 @@ process_instance_generate_no <- function() {
 }
 
 ##################
-# 日志与事件
+# 模板管理
 ##################
-
-process_log_write <- function(instance_id, node_id = NULL, log_level = "info", log_type = "general", message, duration_ms = NULL, detail = NULL) {
-  tryCatch({
-    con <- db_connect(); on.exit(db_disconnect(con))
-    dbExecute(con, sprintf(
-      "INSERT INTO process_logs (instance_id,node_id,log_level,log_type,message,duration_ms,detail) VALUES (%s,%s,'%s','%s','%s',%s,%s)",
-      ifelse(is.null(instance_id),"NULL",as.character(instance_id)),
-      ifelse(is.null(node_id),"NULL",sprintf("'%s'",gsub("'","''",node_id))),
-      log_level,log_type,gsub("'","''",substr(message,1,500)),
-      ifelse(is.null(duration_ms),"NULL",as.character(duration_ms)),
-      ifelse(is.null(detail),"NULL",sprintf("'%s'",gsub("'","''",detail)))))
-  }, error = function(e) { warning("日志写入失败:", e$message) })
+appr_tpl_list <- function() {
+  con <- db_connect()
+  tryCatch({ dbGetQuery(con, "SELECT * FROM appr_templates ORDER BY updated_at DESC") },
+  finally={ db_disconnect(con) })
 }
 
-process_event_record <- function(event_type, instance_id = NULL, node_id = NULL, source = "engine", status = "success", message = NULL, payload = NULL) {
-  tryCatch({
-    con <- db_connect(); on.exit(db_disconnect(con))
-    dbExecute(con, sprintf(
-      "INSERT INTO process_events (event_type,instance_id,node_id,source,status,message,payload) VALUES ('%s',%s,%s,'%s','%s',%s,%s)",
-      event_type,
-      ifelse(is.null(instance_id),"NULL",as.character(instance_id)),
-      ifelse(is.null(node_id),"NULL",sprintf("'%s'",gsub("'","''",node_id))),
-      source,status,
-      ifelse(is.null(message),"NULL",sprintf("'%s'",gsub("'","''",message))),
-      ifelse(is.null(payload),"NULL",sprintf("'%s'",gsub("'","''",payload)))))
-  }, error = function(e) { warning("事件记录失败:", e$message) })
-}
-
-##################
-# 流程定义管理
-##################
-
-process_def_create <- function(name, description = "", category = "general", definition = "{}", created_by = NULL) {
+appr_tpl_get <- function(id) {
   con <- db_connect()
   tryCatch({
-    def_no <- process_generate_no()
+    r <- dbGetQuery(con, sprintf("SELECT * FROM appr_templates WHERE id=%d", as.integer(id)))
+    if (nrow(r)==0) NULL else r
+  }, finally={ db_disconnect(con) })
+}
+
+appr_tpl_create <- function(name, description="", category="general", icon="file-text",
+                             form_fields="[]", approver_config="[]", cc_config="[]", created_by=NULL) {
+  con <- db_connect()
+  tryCatch({
     dbExecute(con, sprintf(
-      "INSERT INTO process_definitions (def_no,name,description,category,definition,created_by) VALUES ('%s','%s','%s','%s','%s',%s)",
-      def_no,gsub("'","''",name),gsub("'","''",description),category,gsub("'","''",definition),
+      "INSERT INTO appr_templates (name,description,category,icon,form_fields,approver_config,cc_config,created_by) VALUES ('%s','%s','%s','%s','%s','%s','%s',%s)",
+      gsub("'","''",name),gsub("'","''",description),category,icon,
+      gsub("'","''",form_fields),gsub("'","''",approver_config),gsub("'","''",cc_config),
       ifelse(is.null(created_by),"NULL",as.character(created_by))))
     id <- dbGetQuery(con, "SELECT last_insert_rowid() as id")$id[1]
-    process_log_write(NULL,NULL,"info","def_create",sprintf("创建流程定义: %s (%s)",name,def_no))
-    list(success=TRUE, id=id, def_no=def_no, message=sprintf("流程定义「%s」创建成功",name))
-  }, error=function(e) { list(success=FALSE, message=paste("创建失败:",e$message))
+    list(success=TRUE, id=id, message=sprintf("模板「%s」创建成功",name))
+  }, error=function(e) list(success=FALSE, message=e$message),
+  finally={ db_disconnect(con) })
+}
+
+appr_tpl_update <- function(id, name, description="", category=NULL, icon=NULL, form_fields=NULL, approver_config=NULL, cc_config=NULL) {
+  con <- db_connect()
+  tryCatch({
+    sets <- sprintf("name='%s',description='%s',updated_at=datetime('now','localtime')",
+      gsub("'","''",name),gsub("'","''",description))
+    if (!is.null(category)) sets <- paste0(sets, sprintf(",category='%s'",category))
+    if (!is.null(icon)) sets <- paste0(sets, sprintf(",icon='%s'",icon))
+    if (!is.null(form_fields)) sets <- paste0(sets, sprintf(",form_fields='%s'",gsub("'","''",form_fields)))
+    if (!is.null(approver_config)) sets <- paste0(sets, sprintf(",approver_config='%s'",gsub("'","''",approver_config)))
+    if (!is.null(cc_config)) sets <- paste0(sets, sprintf(",cc_config='%s'",gsub("'","''",cc_config)))
+    dbExecute(con, sprintf("UPDATE appr_templates SET %s WHERE id=%d", sets, as.integer(id)))
+    list(success=TRUE, message="更新成功")
+  }, error=function(e) list(success=FALSE, message=e$message),
+  finally={ db_disconnect(con) })
+}
+
+appr_tpl_publish <- function(id) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("UPDATE appr_templates SET status='published',updated_at=datetime('now','localtime') WHERE id=%d",as.integer(id)))
+    list(success=TRUE, message="已发布")
   }, finally={ db_disconnect(con) })
 }
 
-process_def_list <- function(category = NULL, status = NULL) {
+appr_tpl_delete <- function(id) {
   con <- db_connect()
   tryCatch({
-    where <- "WHERE 1=1"
-    if (!is.null(category) && nchar(category)>0) where <- paste0(where, sprintf(" AND category='%s'",category))
-    if (!is.null(status) && nchar(status)>0) where <- paste0(where, sprintf(" AND status='%s'",status))
-    dbGetQuery(con, sprintf(
-      "SELECT pd.*,u.username as creator_name FROM process_definitions pd LEFT JOIN users u ON pd.created_by=u.id %s ORDER BY pd.updated_at DESC",where))
-  }, finally={ db_disconnect(con) })
-}
-
-process_def_get <- function(def_id) {
-  con <- db_connect()
-  tryCatch({
-    result <- dbGetQuery(con, sprintf(
-      "SELECT pd.*,u.username as creator_name FROM process_definitions pd LEFT JOIN users u ON pd.created_by=u.id WHERE pd.id=%d",as.integer(def_id)))
-    if (nrow(result)==0) NULL else result
-  }, finally={ db_disconnect(con) })
-}
-
-process_def_publish <- function(def_id, change_log = "") {
-  con <- db_connect()
-  tryCatch({
-    def <- process_def_get(def_id)
-    if (is.null(def)) return(list(success=FALSE, message="流程定义不存在"))
-    if (def$status[1]=="published") return(list(success=TRUE, message="已发布"))
-    new_ver <- def$version[1] + 1
-    dbExecute(con, sprintf("INSERT INTO process_definition_versions (def_id,version,definition,change_log) VALUES (%d,%d,'%s','%s')",
-      as.integer(def_id),new_ver,gsub("'","''",def$definition[1]),gsub("'","''",change_log)))
-    dbExecute(con, sprintf("UPDATE process_definitions SET version=%d,status='published',updated_at=datetime('now','localtime') WHERE id=%d",new_ver,as.integer(def_id)))
-    process_log_write(NULL,NULL,"info","def_publish",sprintf("发布流程定义: %s v%d",def$name[1],new_ver))
-    list(success=TRUE, message=sprintf("发布成功（v%d）",new_ver))
-  }, error=function(e) { list(success=FALSE, message=paste("发布失败:",e$message))
-  }, finally={ db_disconnect(con) })
-}
-
-process_def_get_versions <- function(def_id) {
-  con <- db_connect()
-  tryCatch({
-    dbGetQuery(con, sprintf("SELECT * FROM process_definition_versions WHERE def_id=%d ORDER BY version DESC",as.integer(def_id)))
+    dbExecute(con, sprintf("DELETE FROM appr_templates WHERE id=%d",as.integer(id)))
+    list(success=TRUE, message="已删除")
   }, finally={ db_disconnect(con) })
 }
 
 ##################
-# 流程实例管理
+# 审批实例管理
 ##################
-
-process_instance_start <- function(def_id, title = NULL, context_data = NULL, started_by = NULL) {
+appr_inst_create <- function(template_id, title, form_data="{}", applicant_id=NULL) {
+  tpl <- appr_tpl_get(template_id)
+  if (is.null(tpl) || tpl$status[1]!="published") return(list(success=FALSE, message="模板不存在或未发布"))
   con <- db_connect()
   tryCatch({
-    def <- process_def_get(def_id)
-    if (is.null(def)) return(list(success=FALSE, message="流程定义不存在"))
-    if (def$status[1]!="published") return(list(success=FALSE, message="流程定义未发布"))
-    instance_no <- process_instance_generate_no()
-    if (is.null(title)||title=="") title <- def$name[1]
-    if (is.null(context_data)) context_data <- list()
-    context_json <- jsonlite::toJSON(context_data, auto_unbox=TRUE)
+    no <- appr_gen_no()
+    form_json <- if (is.character(form_data)) form_data else jsonlite::toJSON(form_data, auto_unbox=TRUE)
     dbExecute(con, sprintf(
-      "INSERT INTO process_instances (instance_no,def_id,def_version,title,status,context_data,context_version,started_by) VALUES ('%s',%d,%d,'%s','running','%s',1,%s)",
-      instance_no,as.integer(def_id),def$version[1],gsub("'","''",title),gsub("'","''",context_json),
-      ifelse(is.null(started_by),"NULL",as.character(started_by))))
-    instance_id <- dbGetQuery(con, "SELECT last_insert_rowid() as id")$id[1]
-    process_log_write(instance_id,NULL,"info","instance_start",sprintf("启动流程: %s (%s)",title,instance_no))
-    process_event_record("instance_start",instance_id,NULL,source="engine",status="success",message=sprintf("流程 %s 已启动",instance_no))
-    # 保存初始上下文版本
-    process_context_save(instance_id, context_data, changed_by=ifelse(is.null(started_by),"system",as.character(started_by)), reason="流程启动")
-    # 激活开始节点
-    definition <- tryCatch(jsonlite::fromJSON(def$definition[1],simplifyVector=FALSE),error=function(e)NULL)
-    if (!is.null(definition$nodes)) {
-      for (node in definition$nodes) { if (!is.null(node$type)&&node$type=="start") { process_activate_node(instance_id,node); break } }
+      "INSERT INTO appr_instances (instance_no,template_id,template_name,title,form_data,current_step,status,applicant_id) VALUES ('%s',%d,'%s','%s','%s',0,'pending',%s)",
+      no,as.integer(template_id),gsub("'","''",tpl$name[1]),gsub("'","''",title),
+      gsub("'","''",form_json),ifelse(is.null(applicant_id),"NULL",as.character(applicant_id))))
+    inst_id <- dbGetQuery(con, "SELECT last_insert_rowid() as id")$id[1]
+    # 创建审批步骤
+    approver_config <- tryCatch(jsonlite::fromJSON(tpl$approver_config[1],simplifyVector=FALSE),error=function(e)list())
+    for (i in seq_along(approver_config)) {
+      step <- approver_config[[i]]
+      operator_ids <- if (!is.null(step$approver_ids)) jsonlite::toJSON(step$approver_ids, auto_unbox=TRUE) else "[]"
+      approver_names <- if (!is.null(step$approver_names)) jsonlite::toJSON(step$approver_names, auto_unbox=TRUE) else "[]"
+      dbExecute(con, sprintf(
+        "INSERT INTO appr_steps (instance_id,step_index,step_type,operator_type,operator_ids,approver_names,status) VALUES (%d,%d,'approver','%s','%s','%s','pending')",
+        inst_id,i,step$operator_type%||%"fixed",operator_ids,approver_names))
     }
-    list(success=TRUE, id=instance_id, instance_no=instance_no, def_name=def$name[1], message=sprintf("流程实例 %s 已启动",instance_no))
-  }, error=function(e) { list(success=FALSE, message=paste("启动失败:",e$message))
-  }, finally={ db_disconnect(con) })
-}
-
-process_instance_list <- function(status = NULL, user_id = NULL) {
-  con <- db_connect()
-  tryCatch({
-    where <- "WHERE 1=1"
-    if (!is.null(status)&&nchar(status)>0) where <- paste0(where, sprintf(" AND pi.status='%s'",status))
-    if (!is.null(user_id)) where <- paste0(where, sprintf(" AND pi.started_by=%d",as.integer(user_id)))
-    dbGetQuery(con, sprintf(
-      "SELECT pi.*,pd.name as def_name,u.username as started_by_name FROM process_instances pi LEFT JOIN process_definitions pd ON pi.def_id=pd.id LEFT JOIN users u ON pi.started_by=u.id %s ORDER BY pi.started_at DESC",where))
-  }, finally={ db_disconnect(con) })
-}
-
-process_instance_get <- function(instance_id) {
-  con <- db_connect()
-  tryCatch({
-    result <- dbGetQuery(con, sprintf(
-      "SELECT pi.*,pd.name as def_name,pd.definition FROM process_instances pi LEFT JOIN process_definitions pd ON pi.def_id=pd.id WHERE pi.id=%d",as.integer(instance_id)))
-    if (nrow(result)==0) NULL else result
-  }, finally={ db_disconnect(con) })
-}
-
-process_instance_terminate <- function(instance_id) {
-  con <- db_connect()
-  tryCatch({
-    dbExecute(con, sprintf("UPDATE process_instances SET status='terminated',completed_at=datetime('now','localtime'),updated_at=datetime('now','localtime') WHERE id=%d",as.integer(instance_id)))
-    dbExecute(con, sprintf("UPDATE process_nodes SET status='skipped' WHERE instance_id=%d AND status='active'",as.integer(instance_id)))
-    process_log_write(instance_id,NULL,"warn","instance_terminate","流程已终止")
-    list(success=TRUE, message="流程已终止")
-  }, finally={ db_disconnect(con) })
-}
-
-process_instance_suspend <- function(instance_id) {
-  con <- db_connect()
-  tryCatch({
-    dbExecute(con, sprintf("UPDATE process_instances SET status='suspended',updated_at=datetime('now','localtime') WHERE id=%d AND status='running'",as.integer(instance_id)))
-    process_log_write(instance_id,NULL,"info","instance_suspend","流程已暂停")
-    list(success=TRUE, message="流程已暂停")
-  }, finally={ db_disconnect(con) })
-}
-
-process_instance_resume <- function(instance_id) {
-  con <- db_connect()
-  tryCatch({
-    dbExecute(con, sprintf("UPDATE process_instances SET status='running',updated_at=datetime('now','localtime') WHERE id=%d AND status='suspended'",as.integer(instance_id)))
-    process_log_write(instance_id,NULL,"info","instance_resume","流程已恢复")
-    list(success=TRUE, message="流程已恢复")
-  }, finally={ db_disconnect(con) })
-}
-
-##################
-# 节点管理
-##################
-
-process_activate_node <- function(instance_id, node_def) {
-  tryCatch({
-    existing <- process_get_node(instance_id, node_def$id)
-    if (!is.null(existing)) return(TRUE)
-    con <- db_connect(); on.exit(db_disconnect(con))
-    dbExecute(con, sprintf(
-      "INSERT INTO process_nodes (instance_id,node_id,node_type,node_name,status,auto_action,timeout_minutes,timeout_action,max_retries,entered_at) VALUES (%d,'%s','%s','%s','active',%s,%d,'%s',%d,datetime('now','localtime'))",
-      as.integer(instance_id),node_def$id,node_def$type,gsub("'","''",node_def$label%||%node_def$id),
-      if(is.null(node_def$action))"NULL" else sprintf("'%s'",gsub("'","''",jsonlite::toJSON(node_def$action,auto_unbox=TRUE))),
-      node_def$timeout_minutes%||%0,node_def$timeout_action%||%"terminate",node_def$max_retries%||%3))
-    dbExecute(con, sprintf("UPDATE process_instances SET current_node='%s',updated_at=datetime('now','localtime') WHERE id=%d",node_def$id,as.integer(instance_id)))
-    TRUE
-  }, error=function(e) { process_log_write(instance_id,node_def$id%||%"","error","node_error",sprintf("激活节点失败:%s",e$message)); FALSE })
-}
-
-process_get_node <- function(instance_id, node_id) {
-  con <- db_connect()
-  tryCatch({
-    result <- dbGetQuery(con, sprintf("SELECT * FROM process_nodes WHERE instance_id=%d AND node_id='%s'",as.integer(instance_id),node_id))
-    if (nrow(result)==0) NULL else result
-  }, finally={ db_disconnect(con) })
-}
-
-process_get_active_nodes <- function(instance_id) {
-  con <- db_connect()
-  tryCatch({
-    dbGetQuery(con, sprintf("SELECT * FROM process_nodes WHERE instance_id=%d ORDER BY id",as.integer(instance_id)))
-  }, finally={ db_disconnect(con) })
-}
-
-##################
-# 上下文管理
-##################
-
-process_context_save <- function(instance_id, context_data, changed_by = "system", reason = "") {
-  con <- db_connect()
-  tryCatch({
-    inst <- process_instance_get(instance_id)
-    if (is.null(inst)) return()
-    new_version <- inst$context_version[1] + 1
-    context_json <- jsonlite::toJSON(context_data, auto_unbox=TRUE)
-    dbExecute(con, sprintf(
-      "INSERT INTO process_context_history (instance_id,version,context_data,changed_by,change_reason) VALUES (%d,%d,'%s','%s','%s')",
-      as.integer(instance_id),new_version,gsub("'","''",context_json),gsub("'","''",as.character(changed_by)),gsub("'","''",reason)))
-    dbExecute(con, sprintf(
-      "UPDATE process_instances SET context_data='%s',context_version=%d,updated_at=datetime('now','localtime') WHERE id=%d",
-      gsub("'","''",context_json),new_version,as.integer(instance_id)))
-  }, finally={ db_disconnect(con) })
-}
-
-process_context_get_history <- function(instance_id) {
-  con <- db_connect()
-  tryCatch({
-    dbGetQuery(con, sprintf("SELECT * FROM process_context_history WHERE instance_id=%d ORDER BY version DESC",as.integer(instance_id)))
-  }, finally={ db_disconnect(con) })
-}
-
-##################
-# 流转引擎
-##################
-
-process_advance <- function(instance_id) {
-  instance <- process_instance_get(instance_id)
-  if (is.null(instance)) return(list(success=FALSE, message="实例不存在"))
-  if (instance$status[1]!="running") return(list(success=FALSE, message="流程不在运行状态"))
-  current_node_id <- instance$current_node[1]
-  if (is.null(current_node_id)||is.na(current_node_id)) return(list(success=FALSE, message="无当前节点"))
-  definition <- tryCatch(jsonlite::fromJSON(instance$definition[1],simplifyVector=FALSE),error=function(e)NULL)
-  if (is.null(definition)||is.null(definition$nodes)) return(list(success=FALSE, message="流程定义JSON解析失败"))
-  # 查找当前节点
-  current_node <- NULL
-  for (n in definition$nodes) { if (!is.null(n$id)&&n$id==current_node_id) { current_node<-n; break } }
-  if (is.null(current_node)) return(list(success=FALSE, message=sprintf("节点 %s 未在定义中找到",current_node_id)))
-  # -- end →
-  if (current_node$type=="end") {
-    con <- db_connect()
-    tryCatch({ dbExecute(con, sprintf("UPDATE process_instances SET status='completed',completed_at=datetime('now','localtime'),updated_at=datetime('now','localtime') WHERE id=%d",as.integer(instance_id)))
-    }, finally={ db_disconnect(con) })
-    process_log_write(instance_id,current_node_id,"info","instance_complete","流程已完成")
-    process_event_record("instance_end",instance_id,current_node_id,source="engine",status="success",message="流程已完成")
-    return(list(success=TRUE, message="流程已完成", completed=TRUE, instance_id=instance_id))
-  }
-  # 获取上下文
-  context_data <- tryCatch(jsonlite::fromJSON(instance$context_data[1],simplifyVector=FALSE),error=function(e)list())
-  # 查找出线
-  next_node_id <- NULL
-  for (t in definition$transitions) {
-    if (!is.null(t$from)&&t$from==current_node_id) {
-      cond <- t$condition%||%""
-      if (nchar(cond)==0||evaluate_condition(cond,context_data)) { next_node_id<-t$to; break }
-    }
-  }
-  if (is.null(next_node_id)) {
-    process_log_write(instance_id,current_node_id,"warn","transition","无匹配条件分支")
-    return(list(success=FALSE, message="无匹配条件分支"))
-  }
-  # 查找目标节点
-  next_node_def <- NULL
-  for (n in definition$nodes) { if (!is.null(n$id)&&n$id==next_node_id) { next_node_def<-n; break } }
-  if (is.null(next_node_def)) return(list(success=FALSE, message=sprintf("目标节点 %s 未定义",next_node_id)))
-  # 标记当前节点完成
-  con <- db_connect()
-  tryCatch({ dbExecute(con, sprintf("UPDATE process_nodes SET status='completed',completed_at=datetime('now','localtime') WHERE instance_id=%d AND node_id='%s' AND status='active'",as.integer(instance_id),current_node_id))
-  }, finally={ db_disconnect(con) })
-  # 激活下一个节点
-  node_label <- next_node_def$label%||%next_node_id
-  process_activate_node(instance_id, next_node_def)
-  process_log_write(instance_id,next_node_id,"info","node_enter",sprintf("进入节点: %s (%s)",node_label,next_node_def$type))
-  process_event_record("node_activate",instance_id,next_node_id,source="engine",status="success",message=sprintf("激活节点: %s",node_label))
-  # 自动节点：执行适配器调用，再推进
-  if (next_node_def$type=="auto") {
-    process_execute_auto_node_now(instance_id)
-    return(list(success=TRUE, message=sprintf("自动节点「%s」已执行",node_label)))
-  }
-  # 结束节点：推进
-  if (next_node_def$type=="end") return(process_advance(instance_id))
-  # 条件节点：直接评估并推进
-  if (next_node_def$type=="condition") {
-    process_log_write(instance_id,next_node_id,"info","condition_eval","评估条件节点，自动推进")
-    return(process_advance(instance_id))
-  }
-  list(success=TRUE, message=sprintf("已流转到「%s」（%s）",node_label,next_node_def$type),
-       next_node=next_node_id, next_node_type=next_node_def$type, next_node_label=node_label)
-}
-
-##################
-# 条件表达式评估
-##################
-
-evaluate_condition <- function(condition_str, context) {
-  if (is.null(condition_str)||nchar(condition_str)==0||condition_str=="true") return(TRUE)
-  sandbox_env <- new.env(parent=emptyenv())
-  sandbox_env$context <- context
-  if (!is.null(context$result)) sandbox_env$result <- context$result
-  tryCatch(isTRUE(eval(parse(text=condition_str),envir=sandbox_env)), error=function(e)FALSE)
-}
-
-##################
-# 超时检测
-##################
-
-process_check_timeouts <- function() {
-  con <- db_connect()
-  tryCatch({
-    overdue <- dbGetQuery(con, "
-      SELECT pn.id as node_id, pn.instance_id, pn.node_id as node_def_id, pn.node_name, pn.node_type,
-             pn.timeout_minutes, pn.timeout_action, pn.entered_at,
-             pi.instance_no, pi.title
-      FROM process_nodes pn
-      JOIN process_instances pi ON pn.instance_id = pi.id
-      WHERE pn.status = 'active'
-        AND pn.timeout_minutes > 0
-        AND pn.entered_at IS NOT NULL
-        AND (julianday('now') - julianday(pn.entered_at)) * 1440 > pn.timeout_minutes
-    ")
-    if (nrow(overdue) > 0) {
-      for (i in 1:nrow(overdue)) {
-        node <- overdue[i, ]
-        process_log_write(node$instance_id, node$node_def_id, "warn", "timeout",
-          sprintf("节点超时: %s (%d分钟)", node$node_name, node$timeout_minutes))
-        process_event_record("node_timeout", node$instance_id, node$node_def_id,
-          source="scheduler", status="success",
-          message=sprintf("超时策略: %s", node$timeout_action))
-        switch(node$timeout_action,
-          "terminate" = process_instance_terminate(node$instance_id),
-          "notify" = process_log_write(node$instance_id, node$node_def_id, "info", "timeout_notify", "超时通知（待实现）"),
-          "skip" = process_advance(node$instance_id)
-        )
+    # 创建抄送记录
+    cc_config <- tryCatch(jsonlite::fromJSON(tpl$cc_config[1],simplifyVector=FALSE),error=function(e)list())
+    for (cc in cc_config) {
+      for (uid in cc$user_ids) {
+        uname <- cc$user_names%||%""
+        dbExecute(con, sprintf("INSERT INTO appr_cc_records (instance_id,user_id,user_name) VALUES (%d,%d,'%s')",
+          inst_id,as.integer(uid),gsub("'","''",uname)))
       }
     }
-    nrow(overdue)
-  }, finally={ db_disconnect(con) })
+    # 激活第一步
+    dbExecute(con, sprintf("UPDATE appr_steps SET status='active',entered_at=datetime('now','localtime') WHERE instance_id=%d AND step_index=1",inst_id))
+    dbExecute(con, sprintf("UPDATE appr_instances SET current_step=1 WHERE id=%d",inst_id))
+    list(success=TRUE, id=inst_id, instance_no=no, message=sprintf("审批 %s 已提交",no))
+  }, error=function(e) list(success=FALSE, message=e$message),
+  finally={ db_disconnect(con) })
 }
 
-##################
-# 自动节点适配器执行
-##################
-
-process_execute_auto_node_now <- function(instance_id) {
-  instance <- process_instance_get(instance_id)
-  if (is.null(instance)) return(list(success=FALSE, message="实例不存在"))
-  current_node_id <- instance$current_node[1]
-  definition <- tryCatch(jsonlite::fromJSON(instance$definition[1],simplifyVector=FALSE),error=function(e)NULL)
-  if (is.null(definition)||is.null(definition$nodes)) return(list(success=FALSE))
-  node_def <- NULL
-  for (n in definition$nodes) { if (!is.null(n$id)&&n$id==current_node_id) { node_def<-n; break } }
-  if (is.null(node_def)||node_def$type!="auto") return(list(success=FALSE, message="当前节点不是自动节点"))
-  start_time <- Sys.time()
-  result <- list(success=TRUE, message="自动执行完成")
-  # 调用适配器
-  action_info <- node_def$action
-  if (!is.null(action_info)) {
-    if (is.character(action_info)) {
-      action_info <- tryCatch(jsonlite::fromJSON(action_info,simplifyVector=FALSE),error=function(e)list(module="",method=""))
-    }
-    module <- action_info$module%||%""
-    method <- action_info$method%||%""
-    args <- action_info$args%||%list()
-    if (nchar(module)>0 && nchar(method)>0) {
-      result <- process_module_adapter_invoke(module, method, args)
-    }
-  }
-  elapsed_ms <- as.integer(difftime(Sys.time(), start_time, units="secs")*1000)
-  process_log_write(instance_id, current_node_id, "info", "auto_exec",
-    sprintf("自动节点执行: %s", result$message), duration_ms=elapsed_ms)
-  process_event_record("auto_exec", instance_id, current_node_id, source="engine",
-    status=ifelse(result$success,"success","failure"), message=result$message)
-  # 标记节点完成并推进
-  con <- db_connect()
-  tryCatch({
-    dbExecute(con, sprintf("UPDATE process_nodes SET result='%s',remark='%s',completed_at=datetime('now','localtime') WHERE instance_id=%d AND node_id='%s' AND status='active'",
-      ifelse(result$success,"success","failed"),gsub("'","''",result$message%||%""),as.integer(instance_id),current_node_id))
-  }, finally={ db_disconnect(con) })
-  process_advance(instance_id)
-  result
-}
-
-##################
-# 查询
-##################
-
-process_get_todos <- function(user_id) {
-  con <- db_connect()
-  tryCatch({
-    dbGetQuery(con, sprintf(
-      "SELECT pn.id as node_instance_id,pn.node_name,pn.node_type,pn.entered_at,pn.timeout_minutes,
-              pi.instance_no,pi.title as instance_title,pd.name as def_name,pi.id as instance_id
-       FROM process_nodes pn JOIN process_instances pi ON pn.instance_id=pi.id
-       JOIN process_definitions pd ON pi.def_id=pd.id
-       WHERE pn.status='active' AND pn.node_type='task' AND (pn.assignee IS NULL OR pn.assignee=%d) AND pi.status='running'
-       ORDER BY pn.entered_at DESC",as.integer(user_id)))
-  }, finally={ db_disconnect(con) })
-}
-
-process_get_logs <- function(instance_id, limit=100) {
-  con <- db_connect()
-  tryCatch({
-    dbGetQuery(con, sprintf("SELECT * FROM process_logs WHERE instance_id=%d ORDER BY created_at DESC LIMIT %d",as.integer(instance_id),as.integer(limit)))
-  }, finally={ db_disconnect(con) })
-}
-
-process_get_events <- function(instance_id, limit=100) {
-  con <- db_connect()
-  tryCatch({
-    dbGetQuery(con, sprintf("SELECT * FROM process_events WHERE instance_id=%d ORDER BY created_at DESC LIMIT %d",as.integer(instance_id),as.integer(limit)))
-  }, finally={ db_disconnect(con) })
-}
-
-##################
-# 模块适配器框架
-##################
-
-module_adapters <- list()
-
-process_register_module_adapter <- function(module_type, adapter) {
-  module_adapters[[module_type]] <<- adapter
-}
-
-process_module_adapter_invoke <- function(module_type, method, args = list()) {
-  adapter <- module_adapters[[module_type]]
-  if (is.null(adapter)) return(list(success=FALSE, message=sprintf("模块适配器未注册: %s",module_type)))
-  func <- adapter[[method]]
-  if (is.null(func)) return(list(success=FALSE, message=sprintf("适配器方法未实现: %s.%s",module_type,method)))
-  do.call(func, args)
-}
-
-register_builtin_adapters <- function() {
-  process_register_module_adapter("work_order", list(
-    get = function(id) work_order_get_by_id(id),
-    create = function(title, description="", category="故障", priority="normal", request_user="", creator=NULL) {
-      result <- work_order_add(title=title, description=description, category=category,
-                                priority=priority, request_user=request_user, creator=creator)
-      if (result$success) list(success=TRUE, id=result$id, no=result$order_no) else result
-    },
-    update = function(id, ...) work_order_edit(id, list(...)),
-    get_status = function(id) { wo <- work_order_get_by_id(id); if(is.null(wo))NULL else wo$status }
-  ))
-  process_register_module_adapter("project", list(
-    get = function(id) project_get_by_id(id),
-    get_status = function(id) { p <- project_get_by_id(id); if(is.null(p))NULL else p$status[1] }
-  ))
-  cat("流程引擎：内置模块适配器已注册（工单/项目）\n")
-}
-
-# 初始化标志：确保注册只执行一次
-process_adapters_initialized <- FALSE
-
-##################
-# 流程状态统计
-##################
-
-process_get_stats <- function() {
-  con <- db_connect()
-  tryCatch({
-    total <- dbGetQuery(con, "SELECT COUNT(*) as c FROM process_instances")$c[1]
-    running <- dbGetQuery(con, "SELECT COUNT(*) as c FROM process_instances WHERE status='running'")$c[1]
-    completed <- dbGetQuery(con, "SELECT COUNT(*) as c FROM process_instances WHERE status='completed'")$c[1]
-    terminated <- dbGetQuery(con, "SELECT COUNT(*) as c FROM process_instances WHERE status='terminated'")$c[1]
-    list(total=total, running=running, completed=completed, terminated=terminated, defs=nrow(process_def_list()))
-  }, finally={ db_disconnect(con) })
-}
-
-#' 监控指标
-process_get_monitor_metrics <- function() {
-  con <- db_connect()
-  tryCatch({
-    # 完成率
-    total <- dbGetQuery(con, "SELECT COUNT(*) as c FROM process_instances")$c[1]
-    completed <- if (total>0) dbGetQuery(con, "SELECT COUNT(*) as c FROM process_instances WHERE status='completed'")$c[1] else 0
-    complete_rate <- if (total>0) round(completed/total*100,1) else 0
-    # 超时率
-    timed_out <- dbGetQuery(con, "SELECT COUNT(*) as c FROM process_events WHERE event_type='node_timeout'")$c[1]
-    total_events <- dbGetQuery(con, "SELECT COUNT(*) as c FROM process_events")$c[1]
-    timeout_rate <- if (total_events>0) round(timed_out/total_events*100,1) else 0
-    # 平均耗时
-    avg_duration <- dbGetQuery(con, "SELECT AVG((julianday(completed_at)-julianday(started_at))*1440) as avg_min FROM process_instances WHERE status='completed' AND completed_at IS NOT NULL")$avg_min[1]
-    if (is.na(avg_duration)) avg_duration <- 0
-    # 今日启动/完成
-    today <- format(Sys.Date(),"%Y-%m-%d")
-    today_started <- dbGetQuery(con, sprintf("SELECT COUNT(*) as c FROM process_instances WHERE started_at LIKE '%s%%'",today))$c[1]
-    today_completed <- dbGetQuery(con, sprintf("SELECT COUNT(*) as c FROM process_instances WHERE completed_at LIKE '%s%%'",today))$c[1]
-    # 各类型节点执行次数
-    node_counts <- dbGetQuery(con, "SELECT node_type,COUNT(*) as cnt FROM process_nodes GROUP BY node_type ORDER BY cnt DESC")
-    list(
-      complete_rate=complete_rate, timeout_rate=timeout_rate,
-      avg_duration_min=round(avg_duration,1),
-      today_started=today_started, today_completed=today_completed,
-      total_instances=total, running_instances=dbGetQuery(con,"SELECT COUNT(*) as c FROM process_instances WHERE status='running'")$c[1],
-      node_counts=node_counts
-    )
-  }, finally={ db_disconnect(con) })
-}
-
-#' 定义编辑辅助：从简单配置生成JSON
-process_build_definition <- function(nodes_config) {
-  # nodes_config: list of node specs
-  # 每个 node: list(id, type, label, timeout_minutes=0, form_fields=NULL)
-  # 自动连接：按顺序 start -> ... -> end
-  nodes <- list()
-  transitions <- list()
-  for (i in seq_along(nodes_config)) {
-    n <- nodes_config[[i]]
-    node <- list(id=n$id, type=n$type, label=n$label)
-    if (!is.null(n$timeout_minutes)&&n$timeout_minutes>0) node$timeout_minutes <- n$timeout_minutes
-    if (!is.null(n$timeout_action)) node$timeout_action <- n$timeout_action
-    if (!is.null(n$form_fields)) node$form <- list(fields=n$form_fields)
-    if (!is.null(n$action)) node$action <- n$action
-    nodes[[i]] <- node
-    if (i > 1) {
-      transitions[[i-1]] <- list(from=nodes_config[[i-1]]$id, to=n$id, condition="")
-    }
-  }
-  jsonlite::toJSON(list(nodes=nodes, transitions=transitions), auto_unbox=TRUE, pretty=TRUE)
-}
-
-##################
-# 表单模板管理
-##################
-
-# 模板 CRUD
-form_template_list <- function(category = NULL) {
+appr_inst_list <- function(applicant_id=NULL, status=NULL) {
   con <- db_connect()
   tryCatch({
     where <- "WHERE 1=1"
-    if (!is.null(category) && nchar(category)>0) where <- paste0(where, sprintf(" AND category='%s'",category))
-    dbGetQuery(con, sprintf("SELECT * FROM process_form_templates %s ORDER BY updated_at DESC", where))
+    if (!is.null(applicant_id)) where <- paste0(where, sprintf(" AND a.applicant_id=%d",as.integer(applicant_id)))
+    if (!is.null(status) && nchar(status)>0) where <- paste0(where, sprintf(" AND a.status='%s'",status))
+    dbGetQuery(con, sprintf(
+      "SELECT a.*,u.display_name,u.username FROM appr_instances a LEFT JOIN users u ON a.applicant_id=u.id %s ORDER BY a.created_at DESC",where))
   }, finally={ db_disconnect(con) })
 }
 
-form_template_get <- function(template_id) {
+appr_inst_get <- function(id) {
   con <- db_connect()
   tryCatch({
-    dbGetQuery(con, sprintf("SELECT * FROM process_form_templates WHERE id=%d", as.integer(template_id)))
+    r <- dbGetQuery(con, sprintf("SELECT a.*,u.display_name,u.username FROM appr_instances a LEFT JOIN users u ON a.applicant_id=u.id WHERE a.id=%d",as.integer(id)))
+    if (nrow(r)==0) NULL else r
   }, finally={ db_disconnect(con) })
 }
 
-form_template_create <- function(name, description = "", category = "general", created_by = NULL) {
+# 待我审批的
+appr_pending_list <- function(user_id) {
   con <- db_connect()
   tryCatch({
-    dbExecute(con, sprintf("INSERT INTO process_form_templates (name,description,category,created_by) VALUES ('%s','%s','%s',%s)",
-      gsub("'","''",name),gsub("'","''",description),category,
-      ifelse(is.null(created_by),"NULL",as.character(created_by))))
-    id <- dbGetQuery(con, "SELECT last_insert_rowid() as id")$id[1]
-    list(success=TRUE, id=id, message=sprintf("表单模板「%s」创建成功",name))
-  }, error=function(e) list(success=FALSE, message=paste("创建失败:",e$message)),
-  finally={ db_disconnect(con) })
-}
-
-form_template_update <- function(template_id, name, description, category) {
-  con <- db_connect()
-  tryCatch({
-    dbExecute(con, sprintf("UPDATE process_form_templates SET name='%s',description='%s',category='%s',updated_at=datetime('now','localtime') WHERE id=%d",
-      gsub("'","''",name),gsub("'","''",description),category,as.integer(template_id)))
-    list(success=TRUE, message="更新成功")
-  }, error=function(e) list(success=FALSE, message=paste("更新失败:",e$message)),
-  finally={ db_disconnect(con) })
-}
-
-form_template_delete <- function(template_id) {
-  con <- db_connect()
-  tryCatch({
-    dbExecute(con, sprintf("DELETE FROM process_form_template_fields WHERE template_id=%d", as.integer(template_id)))
-    dbExecute(con, sprintf("DELETE FROM process_form_templates WHERE id=%d", as.integer(template_id)))
-    list(success=TRUE, message="已删除")
-  }, error=function(e) list(success=FALSE, message=paste("删除失败:",e$message)),
-  finally={ db_disconnect(con) })
-}
-
-# 字段管理
-form_template_get_fields <- function(template_id) {
-  con <- db_connect()
-  tryCatch({
-    dbGetQuery(con, sprintf("SELECT * FROM process_form_template_fields WHERE template_id=%d ORDER BY sort_order,id", as.integer(template_id)))
+    dbGetQuery(con, sprintf(
+      "SELECT a.id,a.instance_no,a.template_name,a.title,a.status,a.applicant_id,a.started_at,
+              u.display_name as applicant_name,u.username as applicant_username,
+              s.id as step_id,s.step_index,s.entered_at
+       FROM appr_instances a
+       JOIN appr_steps s ON a.id=s.instance_id
+       LEFT JOIN users u ON a.applicant_id=u.id
+       WHERE s.status='active' AND s.step_type='approver'
+         AND s.operator_ids LIKE '%%\"%d\"%%'
+       ORDER BY s.entered_at DESC", as.integer(user_id)))
   }, finally={ db_disconnect(con) })
 }
 
-form_template_add_field <- function(template_id, field_key, field_label, field_type = "text", field_options = NULL, required = FALSE, sort_order = 0, default_value = "") {
+# 我已处理的
+appr_done_list <- function(user_id) {
   con <- db_connect()
   tryCatch({
-    options_json <- if (is.null(field_options)) "NULL" else sprintf("'%s'", gsub("'","''",jsonlite::toJSON(field_options,auto_unbox=TRUE)))
-    dbExecute(con, sprintf("INSERT INTO process_form_template_fields (template_id,field_key,field_label,field_type,field_options,required,sort_order,default_value) VALUES (%d,'%s','%s','%s',%s,%d,%d,'%s')",
-      as.integer(template_id),gsub("'","''",field_key),gsub("'","''",field_label),field_type,
-      options_json,as.integer(required),as.integer(sort_order),gsub("'","''",default_value)))
-    id <- dbGetQuery(con, "SELECT last_insert_rowid() as id")$id[1]
-    list(success=TRUE, id=id, message=sprintf("字段「%s」已添加",field_label))
-  }, error=function(e) list(success=FALSE, message=paste("添加字段失败:",e$message)),
-  finally={ db_disconnect(con) })
+    dbGetQuery(con, sprintf(
+      "SELECT DISTINCT a.id,a.instance_no,a.template_name,a.title,a.status,a.applicant_id,a.started_at,a.completed_at,
+              u.display_name as applicant_name,u.username as applicant_username,
+              r.action as my_action,r.created_at as my_done_at
+       FROM appr_instances a
+       JOIN appr_records r ON a.id=r.instance_id AND r.operator_id=%d
+       LEFT JOIN users u ON a.applicant_id=u.id
+       ORDER BY r.created_at DESC", as.integer(user_id)))
+  }, finally={ db_disconnect(con) })
 }
 
-form_template_remove_field <- function(field_id) {
+# 抄送我的
+appr_cc_list <- function(user_id) {
   con <- db_connect()
   tryCatch({
-    dbExecute(con, sprintf("DELETE FROM process_form_template_fields WHERE id=%d", as.integer(field_id)))
-    list(success=TRUE, message="字段已移除")
-  }, error=function(e) list(success=FALSE, message=paste("移除失败:",e$message)),
-  finally={ db_disconnect(con) })
+    dbGetQuery(con, sprintf(
+      "SELECT c.id as cc_id,c.is_read,c.read_at,
+              a.id as instance_id,a.instance_no,a.template_name,a.title,a.status,a.applicant_id,a.started_at,a.completed_at,
+              u.display_name as applicant_name,u.username as applicant_username
+       FROM appr_cc_records c
+       JOIN appr_instances a ON c.instance_id=a.id
+       LEFT JOIN users u ON a.applicant_id=u.id
+       WHERE c.user_id=%d
+       ORDER BY a.created_at DESC", as.integer(user_id)))
+  }, finally={ db_disconnect(con) })
 }
 
-# 模板 → JSON 生成
-form_template_to_json <- function(template_id) {
-  tpl <- form_template_get(template_id)
-  fields <- form_template_get_fields(template_id)
-  if (nrow(fields)==0) return("")
-  field_list <- list()
-  for (i in 1:nrow(fields)) {
-    f <- fields[i, ]
-    fi <- list(key=f$field_key, label=f$field_label, type=f$field_type, required=as.logical(f$required))
-    if (!is.null(f$field_options) && !is.na(f$field_options) && nchar(f$field_options)>0) {
-      opts <- tryCatch(jsonlite::fromJSON(f$field_options), error=function(e) NULL)
-      if (!is.null(opts)) fi$options <- opts
+##################
+# 审批操作
+##################
+
+# 通过
+appr_approve <- function(instance_id, step_id, operator_id, operator_name, comment="") {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf(
+      "UPDATE appr_steps SET status='approved' WHERE id=%d", as.integer(step_id)))
+    dbExecute(con, sprintf(
+      "INSERT INTO appr_records (instance_id,step_id,operator_id,operator_name,action,comment) VALUES (%d,%d,%d,'%s','approve','%s')",
+      as.integer(instance_id),as.integer(step_id),as.integer(operator_id),
+      gsub("'","''",operator_name%||%""),gsub("'","''",comment)))
+    # 检查是否有下一步
+    cur_step <- dbGetQuery(con, sprintf("SELECT step_index FROM appr_steps WHERE id=%d",as.integer(step_id)))$step_index[1]
+    next_step <- dbGetQuery(con, sprintf("SELECT id,step_index FROM appr_steps WHERE instance_id=%d AND step_index=%d",
+      as.integer(instance_id), as.integer(cur_step)+1))
+    if (nrow(next_step)>0) {
+      dbExecute(con, sprintf("UPDATE appr_steps SET status='active',entered_at=datetime('now','localtime') WHERE id=%d",next_step$id[1]))
+      dbExecute(con, sprintf("UPDATE appr_instances SET current_step=%d WHERE id=%d",next_step$step_index[1],as.integer(instance_id)))
+      list(success=TRUE, message="已通过，流转到下一步", done=FALSE)
+    } else {
+      dbExecute(con, sprintf("UPDATE appr_instances SET status='approved',completed_at=datetime('now','localtime'),current_step=99 WHERE id=%d",as.integer(instance_id)))
+      list(success=TRUE, message="审批已全部通过，流程完成", done=TRUE)
     }
-    if (!is.null(f$default_value) && !is.na(f$default_value) && nchar(f$default_value)>0) fi$default <- f$default_value
-    field_list[[i]] <- fi
-  }
-  jsonlite::toJSON(list(fields=field_list), auto_unbox=TRUE, pretty=TRUE)
-}
-##################
-
-#' 简单审批：开始 → 审批 → 结束
-process_create_demo_simple <- function(created_by = NULL) {
-  process_create_demo_def("简单审批", "开始→审批→结束", category="审批", created_by=created_by)
+  }, error=function(e) list(success=FALSE, message=e$message),
+  finally={ db_disconnect(con) })
 }
 
-#' 条件分支：开始 → 审批 → [条件] → 同意→通知→结束 / 驳回→结束
-process_create_demo_condition <- function(created_by = NULL) {
-  process_create_demo_def("条件分支审批", "开始→审批→条件判断→同意/驳回", category="审批", created_by=created_by,
-    demo_type = "condition")
+# 驳回
+appr_reject <- function(instance_id, step_id, operator_id, operator_name, comment="") {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("UPDATE appr_steps SET status='rejected' WHERE id=%d", as.integer(step_id)))
+    dbExecute(con, sprintf(
+      "INSERT INTO appr_records (instance_id,step_id,operator_id,operator_name,action,comment) VALUES (%d,%d,%d,'%s','reject','%s')",
+      as.integer(instance_id),as.integer(step_id),as.integer(operator_id),
+      gsub("'","''",operator_name%||%""),gsub("'","''",comment)))
+    dbExecute(con, sprintf("UPDATE appr_instances SET status='rejected',completed_at=datetime('now','localtime') WHERE id=%d",as.integer(instance_id)))
+    list(success=TRUE, message="已驳回", done=TRUE)
+  }, error=function(e) list(success=FALSE, message=e$message),
+  finally={ db_disconnect(con) })
 }
 
-#' 自动创建工单：开始 → 创建工单(自动) → 审批 → 结束
-process_create_demo_auto <- function(created_by = NULL) {
-  process_create_demo_def("自动工单流程", "开始→创建工单→审批→结束", category="工单", created_by=created_by,
-    demo_type = "auto")
+# 撤销
+appr_withdraw <- function(instance_id, applicant_id) {
+  con <- db_connect()
+  tryCatch({
+    inst <- appr_inst_get(instance_id)
+    if (is.null(inst) || inst$applicant_id[1]!=applicant_id) return(list(success=FALSE, message="无权撤销"))
+    dbExecute(con, sprintf("UPDATE appr_instances SET status='withdrawn',completed_at=datetime('now','localtime') WHERE id=%d",as.integer(instance_id)))
+    dbExecute(con, sprintf("UPDATE appr_steps SET status='skipped' WHERE instance_id=%d AND status='active'",as.integer(instance_id)))
+    dbExecute(con, sprintf("INSERT INTO appr_records (instance_id,operator_id,action,comment) VALUES (%d,%d,'withdraw','申请人撤销')",
+      as.integer(instance_id),as.integer(applicant_id)))
+    list(success=TRUE, message="已撤销")
+  }, finally={ db_disconnect(con) })
 }
 
-process_create_demo_def <- function(name, description, category, created_by = NULL, demo_type = "simple") {
-  if (demo_type == "condition") {
-    nodes <- list(
-      list(id="start", type="start", label="开始"),
-      list(id="approve", type="task", label="审批确认", timeout_minutes=1440,
-           form=list(fields=list(
-             list(key="result", label="审批意见", type="select", options=list("同意","驳回"), required=TRUE),
-             list(key="remark", label="审批备注", type="textarea")
-           ))),
-      list(id="condition", type="condition", label="审批判断"),
-      list(id="notify", type="auto", label="发送通知"),
-      list(id="reject_end", type="end", label="已驳回"),
-      list(id="end", type="end", label="结束")
-    )
-    transitions <- list(
-      list(from="start", to="approve", condition=""),
-      list(from="approve", to="condition", condition=""),
-      list(from="condition", to="notify", condition="result=='同意'"),
-      list(from="condition", to="reject_end", condition="result=='驳回'"),
-      list(from="notify", to="end", condition="")
-    )
-  } else if (demo_type == "auto") {
-    nodes <- list(
-      list(id="start", type="start", label="开始"),
-      list(id="auto_create", type="auto", label="自动创建工单"),
-      list(id="approve", type="task", label="审批工单", timeout_minutes=1440),
-      list(id="end", type="end", label="结束")
-    )
-    transitions <- list(
-      list(from="start", to="auto_create", condition=""),
-      list(from="auto_create", to="approve", condition=""),
-      list(from="approve", to="end", condition="")
-    )
-  } else {
-    nodes <- list(
-      list(id="start", type="start", label="开始"),
-      list(id="approve", type="task", label="审批确认", timeout_minutes=1440),
-      list(id="end", type="end", label="结束")
-    )
-    transitions <- list(
-      list(from="start", to="approve", condition=""),
-      list(from="approve", to="end", condition="")
-    )
-  }
-  json <- jsonlite::toJSON(list(nodes=nodes, transitions=transitions), auto_unbox=TRUE, pretty=TRUE)
-  result <- process_def_create(name, description, category=category, definition=json, created_by=created_by)
-  if (result$success) process_def_publish(result$id, change_log="自动发布")
-  result
-}
-
-#' 一键创建并启动（指定类型）
-process_create_and_start <- function(demo_type = "simple", started_by = NULL) {
-  def_result <- switch(demo_type,
-    "condition" = process_create_demo_condition(created_by = started_by),
-    "auto" = process_create_demo_auto(created_by = started_by),
-    process_create_demo_simple(created_by = started_by))
-  if (!def_result$success) return(def_result)
-  inst_result <- process_instance_start(def_id=def_result$id,
-    title=sprintf("示例-%s",switch(demo_type,"simple"="简单审批","condition"="条件分支","auto"="自动工单")),
-    context_data=list(title="示例",priority="normal"), started_by=started_by)
-  if (!inst_result$success) return(inst_result)
-  advance <- process_advance(inst_result$id)
-  list(success=TRUE, def_id=def_result$id, def_no=def_result$def_no,
-       instance_id=inst_result$id, instance_no=inst_result$instance_no,
-       advance=advance, def_name=def_result$def_no,
-       demo_type=demo_type,
-       message=sprintf("已创建并启动「%s」", switch(demo_type,"simple"="简单审批","condition"="条件分支审批","auto"="自动工单流程")))
+# 催办
+appr_urge <- function(instance_id, operator_id) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("INSERT INTO appr_records (instance_id,operator_id,action,comment) VALUES (%d,%d,'urge','催办')",
+      as.integer(instance_id),as.integer(operator_id)))
+    list(success=TRUE, message="已催办")
+  }, finally={ db_disconnect(con) })
 }
 
 ##################
-# 状态标签
+# 操作记录
 ##################
-
-process_status_label <- function(status) {
-  labels <- c("running"="运行中","completed"="已完成","terminated"="已终止","suspended"="已暂停",
-              "draft"="草稿","published"="已发布","archived"="已归档",
-              "active"="进行中","pending"="待处理","skipped"="已跳过","failed"="失败","timeout"="超时",
-              "task"="任务","auto"="自动","condition"="条件","start"="开始","end"="结束")
-  result <- labels[status]
-  result[is.na(result)] <- status[is.na(result)]
-  unname(result)
+appr_records_get <- function(instance_id) {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, sprintf("SELECT * FROM appr_records WHERE instance_id=%d ORDER BY created_at", as.integer(instance_id)))
+  }, finally={ db_disconnect(con) })
 }
 
-# 注册内置适配器（在 server.R 中调用，避免 source 时执行）
+appr_steps_get <- function(instance_id) {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, sprintf("SELECT * FROM appr_steps WHERE instance_id=%d ORDER BY step_index", as.integer(instance_id)))
+  }, finally={ db_disconnect(con) })
+}
+
+##################
+# 统计
+##################
+appr_stats <- function() {
+  con <- db_connect()
+  tryCatch({
+    total <- dbGetQuery(con, "SELECT COUNT(*) as c FROM appr_instances")$c[1]
+    pending <- dbGetQuery(con, "SELECT COUNT(*) as c FROM appr_instances WHERE status='pending'")$c[1]
+    approved <- dbGetQuery(con, "SELECT COUNT(*) as c FROM appr_instances WHERE status='approved'")$c[1]
+    rejected <- dbGetQuery(con, "SELECT COUNT(*) as c FROM appr_instances WHERE status='rejected'")$c[1]
+    tpls <- nrow(appr_tpl_list())
+    list(total=total, pending=pending, approved=approved, rejected=rejected, tpls=tpls)
+  }, finally={ db_disconnect(con) })
+}
+
+##################
+# 示例模板
+##################
+appr_create_demo_tpl <- function(created_by=NULL) {
+  form_fields <- jsonlite::toJSON(list(
+    list(key="reason", label="审批事由", type="text", required=TRUE, placeholder="请填写"),
+    list(key="detail", label="详细说明", type="textarea", required=FALSE, placeholder="选填")
+  ), auto_unbox=TRUE, pretty=TRUE)
+  approver_config <- jsonlite::toJSON(list(
+    list(step_name="直属上级审批", operator_type="fixed", approver_ids=list(1), approver_names=list("管理员")),
+    list(step_name="负责人审批", operator_type="fixed", approver_ids=list(1), approver_names=list("管理员"))
+  ), auto_unbox=TRUE, pretty=TRUE)
+  cc_config <- jsonlite::toJSON(list(
+    list(user_ids=list(1), user_names=list("管理员"))
+  ), auto_unbox=TRUE, pretty=TRUE)
+  appr_tpl_create(name="通用审批", description="适用于日常审批场景，支持两级审批+抄送",
+    category="general", icon="file-text",
+    form_fields=form_fields, approver_config=approver_config, cc_config=cc_config,
+    created_by=created_by)
+}

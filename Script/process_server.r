@@ -1,763 +1,415 @@
-# 流程模块服务端 v3 — 完整功能
+# 审批模块服务端（企业微信风格）
 
 process_server <- function(input, output, session, rv) {
-
-  process_refresh_trigger <- reactiveVal(0)
-
-  # 超时触发时自动刷新（rv$proc_timeout_counter 由超时检测递增）
-  observe({
-    rv$proc_timeout_counter
-    process_refresh_trigger(isolate(process_refresh_trigger()) + 1)
+  appr_trigger <- reactiveVal(0)
+  current_user_id <- reactive({
+    if (!is.null(rv$current_user) && nrow(rv$current_user)>0) rv$current_user$id[1] else NULL
+  })
+  current_user_name <- reactive({
+    if (!is.null(rv$current_user) && nrow(rv$current_user)>0)
+      (rv$current_user$display_name%||%rv$current_user$username)[1] else ""
   })
 
-  # 选择要处理的待办节点详情（用于表单渲染）
-  current_todo_details <- reactiveVal(NULL)
-
-  # 存储构建的定义JSON（跨模态使用）
-  built_json <- reactiveVal("")
-
-  ##################
-  # 统计卡片（与项目模块风格一致）
-  ##################
-  output$proc_stat_cards <- renderUI({
-    process_refresh_trigger()
-    stats <- process_get_stats()
+  # 统计卡片
+  output$appr_stat_cards <- renderUI({
+    appr_trigger()
+    s <- appr_stats()
+    uid <- current_user_id()
+    my_pending <- if (!is.null(uid)) nrow(appr_pending_list(uid)) else 0
+    my_cc <- if (!is.null(uid)) nrow(appr_cc_list(uid)) else 0
     fluidRow(
-      column(2, div(class="well well-sm",style="text-align:center;padding:12px 8px;",
-        div(style="font-size:14px;color:#666;font-weight:500;","流程定义"),
-        div(style="font-size:26px;font-weight:bold;color:#333;",stats$defs))),
-      column(2, div(class="well well-sm",style="text-align:center;padding:12px 8px;",
-        div(style="font-size:14px;color:#666;font-weight:500;","运行中"),
-        div(style="font-size:26px;font-weight:bold;color:#e67e22;",stats$running))),
-      column(2, div(class="well well-sm",style="text-align:center;padding:12px 8px;",
-        div(style="font-size:14px;color:#666;font-weight:500;","已完成"),
-        div(style="font-size:26px;font-weight:bold;color:#27ae60;",stats$completed))),
-      column(2, div(class="well well-sm",style="text-align:center;padding:12px 8px;",
-        div(style="font-size:14px;color:#666;font-weight:500;","已终止"),
-        div(style="font-size:26px;font-weight:bold;color:#e74c3c;",stats$terminated))),
-      column(2, div(class="well well-sm",style="text-align:center;padding:12px 8px;",
-        div(style="font-size:14px;color:#666;font-weight:500;","待处理"),
-        div(style="font-size:26px;font-weight:bold;color:#3498db;",
-          if(!is.null(rv$current_user)&&nrow(rv$current_user)>0) nrow(process_get_todos(rv$current_user$id[1])) else 0))),
-      column(2, div(class="well well-sm",style="text-align:center;padding:12px 8px;",
-        div(style="font-size:14px;color:#666;font-weight:500;","总实例"),
-        div(style="font-size:26px;font-weight:bold;color:#795548;",stats$total)))
+      column(3, div(class="well well-sm",style="text-align:center;padding:12px;background:#e3f2fd;",
+        div(style="font-size:13px;color:#666;","我的待审批"),
+        div(style="font-size:28px;font-weight:bold;color:#1565c0;",my_pending))),
+      column(3, div(class="well well-sm",style="text-align:center;padding:12px;background:#e8f5e9;",
+        div(style="font-size:13px;color:#666;","已通过"),
+        div(style="font-size:28px;font-weight:bold;color:#2e7d32;",s$approved))),
+      column(3, div(class="well well-sm",style="text-align:center;padding:12px;background:#fff3e0;",
+        div(style="font-size:13px;color:#666;","抄送我的"),
+        div(style="font-size:28px;font-weight:bold;color:#e65100;",my_cc))),
+      column(3, div(class="well well-sm",style="text-align:center;padding:12px;background:#f3e5f5;",
+        div(style="font-size:13px;color:#666;","审批模板"),
+        div(style="font-size:28px;font-weight:bold;color:#7b1fa2;",s$tpls)))
     )
   })
 
   ##################
-  # 统计概览
+  # 待审批
   ##################
-  output$proc_stat_total <- renderText({ process_refresh_trigger(); nrow(process_def_list()) })
-  output$proc_stat_running <- renderText({ process_refresh_trigger(); nrow(process_instance_list(status="running")) })
-  output$proc_stat_completed <- renderText({ process_refresh_trigger(); nrow(process_instance_list(status="completed")) })
-  output$proc_stat_todos <- renderText({
-    process_refresh_trigger()
-    if (!is.null(rv$current_user)&&nrow(rv$current_user)>0) nrow(process_get_todos(rv$current_user$id[1])) else 0
-  })
-  output$proc_stat_total2 <- renderText({ process_refresh_trigger(); nrow(process_instance_list()) })
-
-  ##################
-  # 我的待办
-  ##################
-  output$proc_todo_table <- DT::renderDT({
-    process_refresh_trigger()
-    if (is.null(rv$current_user)||nrow(rv$current_user)==0) return(DT::datatable(data.frame(信息="请先登录"),options=list(dom='t')))
-    todos <- process_get_todos(rv$current_user$id[1])
-    if (nrow(todos)==0) return(DT::datatable(data.frame(信息="暂无待办任务"),options=list(dom='t')))
+  output$appr_pending_table <- DT::renderDT({
+    appr_trigger()
+    uid <- current_user_id()
+    if (is.null(uid)) return(DT::datatable(data.frame(信息="请先登录"),options=list(dom='t')))
+    items <- appr_pending_list(uid)
+    if (nrow(items)==0) return(DT::datatable(data.frame(信息="暂无待审批"),options=list(dom='t')))
     display <- data.frame(
-      流程名称=todos$instance_title, 流程编号=todos$instance_no,
-      节点=todos$node_name, 到达时间=todos$entered_at,
-      操作=sprintf('<button class="btn btn-success btn-xs process-todo-btn" data-inst="%s" data-node="%s">处理</button>',
-                    todos$instance_id, todos$node_instance_id),
+      编号=items$instance_no, 模板=items$template_name, 标题=items$title,
+      申请人=sprintf("<span style='color:#666;'>%s</span>",items$applicant_name%||%items$applicant_username),
+      到达时间=items$entered_at,
+      操作=sprintf('<button class="btn btn-success btn-xs appr-detail-btn" data-id="%s">处理</button>', items$id),
       stringsAsFactors=FALSE)
-    DT::datatable(display,escape=FALSE,options=list(pageLength=10,dom='rtip',scrollX=TRUE),rownames=FALSE,class='cell-border stripe hover')
+    DT::datatable(display,escape=FALSE,options=list(pageLength=20,dom='rtip',scrollX=TRUE,
+      columnDefs=list(list(targets=5,orderable=FALSE))),rownames=FALSE,class='cell-border stripe hover')
   })
 
   ##################
-  # 流程定义
+  # 我发起的
   ##################
-  output$proc_def_table <- DT::renderDT({
-    process_refresh_trigger()
-    defs <- process_def_list(input$proc_def_status_filter)
-    if (nrow(defs)==0) return(DT::datatable(data.frame(信息="暂无流程定义"),options=list(dom='t')))
-    display <- data.frame(
-      编号=defs$def_no, 名称=defs$name, 分类=defs$category,
-      版本=sprintf("v%d",defs$version), 状态=process_status_label(defs$status),
-      创建时间=defs$created_at,
-      操作=ifelse(defs$status=="draft",
-        sprintf('<button class="btn btn-info btn-xs process-publish-btn" data-id="%d">发布</button>',defs$id),
-        sprintf('<button class="btn btn-success btn-xs process-start-btn" data-id="%d">启动</button>',defs$id)),
-      stringsAsFactors=FALSE)
-    DT::datatable(display,escape=FALSE,options=list(pageLength=15,dom='rtip',scrollX=TRUE,columnDefs=list(list(targets=6,orderable=FALSE))),
-      rownames=FALSE,class='cell-border stripe hover')
-  })
-
-  ##################
-  # 流程实例
-  ##################
-  output$proc_instance_table <- DT::renderDT({
-    process_refresh_trigger()
-    insts <- process_instance_list(input$proc_inst_status_filter)
-    if (nrow(insts)==0) return(DT::datatable(data.frame(信息="暂无流程实例"),options=list(dom='t')))
-    current_nodes <- sapply(insts$id,function(id){
-      nodes<-process_get_active_nodes(id); active<-nodes[nodes$status=="active",]
-      if(nrow(active)>0) sprintf("%s(%s)",active$node_name[1],process_status_label(active$node_type[1])) else "-"})
+  output$appr_my_table <- DT::renderDT({
+    appr_trigger()
+    uid <- current_user_id()
+    if (is.null(uid)) return(DT::datatable(data.frame(信息="请先登录"),options=list(dom='t')))
+    items <- appr_inst_list(applicant_id=uid, status=input$appr_my_status)
+    if (nrow(items)==0) return(DT::datatable(data.frame(信息="暂无记录"),options=list(dom='t')))
+    status_labels <- c("pending"="审批中","approved"="已通过","rejected"="已驳回","withdrawn"="已撤销")
+    status_colors <- c("pending"="#f39c12","approved"="#27ae60","rejected"="#e74c3c","withdrawn"="#95a5a6")
+    sts <- sapply(items$status, function(s)
+      sprintf("<span style='color:%s;font-weight:bold;'>%s</span>",status_colors[s]%||%"#666",status_labels[s]%||%s))
     actions <- mapply(function(id, status) {
-      log_btn <- sprintf('<button class="btn btn-default btn-xs proc-inst-log-btn" data-inst="%s">日志</button>', id)
-      if (status == "running") {
-        paste0(log_btn,
-          sprintf(' <button class="btn btn-warning btn-xs proc-inst-suspend-btn" data-inst="%s">暂停</button>', id),
-          sprintf(' <button class="btn btn-danger btn-xs proc-inst-term-btn" data-inst="%s">终止</button>', id))
-      } else if (status == "suspended") {
-        paste0(log_btn,
-          sprintf(' <button class="btn btn-success btn-xs proc-inst-resume-btn" data-inst="%s">恢复</button>', id))
-      } else {
-        log_btn
-      }
-    }, insts$id, insts$status, SIMPLIFY=TRUE)
-    display <- data.frame(
-      实例编号=insts$instance_no, 流程=insts$def_name%||%insts$title,
-      状态=process_status_label(insts$status), 当前节点=current_nodes,
-      启动时间=insts$started_at, 操作=actions, stringsAsFactors=FALSE)
-    DT::datatable(display,escape=FALSE,options=list(pageLength=15,dom='rtip',scrollX=TRUE,columnDefs=list(list(targets=5,orderable=FALSE))),
-      rownames=FALSE,class='cell-border stripe hover')
+      btns <- sprintf('<button class="btn btn-info btn-xs appr-detail-btn" data-id="%s">详情</button>', id)
+      if (status=="pending") btns <- paste0(btns,
+        sprintf(' <button class="btn btn-warning btn-xs appr-urge-btn" data-id="%s">催办</button>',id),
+        sprintf(' <button class="btn btn-default btn-xs appr-withdraw-btn" data-id="%s">撤销</button>',id))
+      btns
+    }, items$id, items$status, SIMPLIFY=TRUE)
+    display <- data.frame(编号=items$instance_no,模板=items$template_name,标题=items$title,
+      状态=sts,提交时间=items$started_at,操作=actions,stringsAsFactors=FALSE)
+    DT::datatable(display,escape=FALSE,options=list(pageLength=20,dom='rtip',scrollX=TRUE,
+      columnDefs=list(list(targets=5,orderable=FALSE))),rownames=FALSE,class='cell-border stripe hover')
   })
 
-  # 暂停/恢复按钮JS（已内联到UI模板中）
-
   ##################
-  # 监控日志
+  # 我处理的
   ##################
-  observe({
-    process_refresh_trigger()
-    insts <- process_instance_list()
-    titles <- if (nrow(insts)>0) {
-      ifelse(is.na(insts$title%||%""), "", insts$title)
-    } else character(0)
-    choices <- if (nrow(insts)>0) stats::setNames(insts$id, sprintf("%s - %s", insts$instance_no, titles)) else character(0)
-    updateSelectInput(session,"proc_log_inst_select",choices=c("请选择"="",choices))
-  })
-
-  output$proc_log_table <- DT::renderDT({
-    req(input$proc_log_inst_select); process_refresh_trigger()
-    logs <- process_get_logs(as.integer(input$proc_log_inst_select))
-    if (nrow(logs)==0) return(DT::datatable(data.frame(信息="暂无日志"),options=list(dom='t')))
-    display <- data.frame(时间=logs$created_at,级别=logs$log_level,类型=logs$log_type,
-      节点=logs$node_id%||%"",消息=logs$message,stringsAsFactors=FALSE)
+  output$appr_done_table <- DT::renderDT({
+    appr_trigger()
+    uid <- current_user_id()
+    if (is.null(uid)) return(DT::datatable(data.frame(信息="请先登录"),options=list(dom='t')))
+    items <- appr_done_list(uid)
+    if (nrow(items)==0) return(DT::datatable(data.frame(信息="暂无处理记录"),options=list(dom='t')))
+    action_labels <- c("approve"="已通过","reject"="已驳回","withdraw"="已撤销","urge"="催办")
+    display <- data.frame(编号=items$instance_no,模板=items$template_name,标题=items$title,
+      申请人=items$applicant_name%||%items$applicant_username,
+      我的操作=action_labels[items$my_action]%||%items$my_action,
+      操作时间=items$my_done_at,stringsAsFactors=FALSE)
     DT::datatable(display,options=list(pageLength=20,dom='rtip',scrollX=TRUE),rownames=FALSE,class='cell-border stripe hover')
   })
 
-  output$proc_event_table <- DT::renderDT({
-    req(input$proc_log_inst_select); process_refresh_trigger()
-    events <- process_get_events(as.integer(input$proc_log_inst_select))
-    if (nrow(events)==0) return(DT::datatable(data.frame(信息="暂无事件"),options=list(dom='t')))
-    display <- data.frame(类型=events$event_type,状态=events$status,消息=events$message%||%"",来源=events$source,时间=events$created_at,stringsAsFactors=FALSE)
-    DT::datatable(display,options=list(pageLength=10,dom='rtip',scrollX=TRUE),rownames=FALSE,class='cell-border stripe hover')
+  ##################
+  # 抄送我的
+  ##################
+  output$appr_cc_table <- DT::renderDT({
+    appr_trigger()
+    uid <- current_user_id()
+    if (is.null(uid)) return(DT::datatable(data.frame(信息="请先登录"),options=list(dom='t')))
+    items <- appr_cc_list(uid)
+    if (nrow(items)==0) return(DT::datatable(data.frame(信息="暂无抄送"),options=list(dom='t')))
+    display <- data.frame(编号=items$instance_no,模板=items$template_name,标题=items$title,
+      申请人=items$applicant_name%||%items$applicant_username,
+      状态=items$status,时间=items$started_at,stringsAsFactors=FALSE)
+    DT::datatable(display,options=list(pageLength=20,dom='rtip',scrollX=TRUE),rownames=FALSE,class='cell-border stripe hover')
   })
 
-  output$proc_context_table <- DT::renderDT({
-    req(input$proc_log_inst_select); process_refresh_trigger()
-    ctx <- process_context_get_history(as.integer(input$proc_log_inst_select))
-    if (nrow(ctx)==0) return(DT::datatable(data.frame(信息="无上下文变更历史"),options=list(dom='t')))
-    display <- data.frame(版本=ctx$version,变更人=ctx$changed_by,原因=ctx$change_reason,时间=ctx$created_at,stringsAsFactors=FALSE)
-    DT::datatable(display,options=list(pageLength=10,dom='rtip',scrollX=TRUE),rownames=FALSE,class='cell-border stripe hover')
+  ##################
+  # 审批模板列表
+  ##################
+  output$appr_tpl_table <- DT::renderDT({
+    appr_trigger()
+    tpls <- appr_tpl_list()
+    if (nrow(tpls)==0) return(DT::datatable(data.frame(信息="暂无模板"),options=list(dom='t')))
+    display <- data.frame(
+      名称=tpls$name, 描述=tpls$description%||%"", 分类=tpls$category,
+      状态=ifelse(tpls$status=="published","已发布","草稿"),
+      操作=sprintf(
+        '<button class="btn btn-success btn-xs appr-start-btn" data-id="%s">发起</button>
+         <button class="btn btn-info btn-xs appr-detail-btn" data-id="%s">编辑</button>
+         %s
+         <button class="btn btn-danger btn-xs appr-del-tpl-btn" data-id="%s">删除</button>',
+        tpls$id, tpls$id,
+        ifelse(tpls$status=="draft",sprintf('<button class="btn btn-primary btn-xs appr-publish-btn" data-id="%s">发布</button>',tpls$id),""),
+        tpls$id),
+      stringsAsFactors=FALSE)
+    DT::datatable(display,escape=FALSE,options=list(pageLength=20,dom='rtip',scrollX=TRUE,
+      columnDefs=list(list(targets=4,orderable=FALSE))),rownames=FALSE,class='cell-border stripe hover')
   })
 
   ##################
   # 操作处理
   ##################
-  observeEvent(input$proc_refresh_defs, { process_refresh_trigger(process_refresh_trigger()+1) })
-  observeEvent(input$proc_refresh_insts, { process_refresh_trigger(process_refresh_trigger()+1) })
-  observeEvent(input$proc_refresh_logs, { process_refresh_trigger(process_refresh_trigger()+1) })
-  observeEvent(input$proc_ft_refresh, { process_refresh_trigger(process_refresh_trigger()+1) })
+  observeEvent(input$appr_refresh_my, { appr_trigger(appr_trigger()+1) })
+  observeEvent(input$appr_refresh_tpl, { appr_trigger(appr_trigger()+1) })
 
-  ##################
-  # 表单模板管理
-  ##################
-
-  # 模板列表
-  output$proc_ft_list <- DT::renderDT({
-    process_refresh_trigger()
-    templates <- form_template_list(category=input$proc_ft_category)
-    if (nrow(templates)==0) return(DT::datatable(data.frame(信息="暂无表单模板"),options=list(dom='t')))
-    display <- data.frame(
-      ID=templates$id, 名称=templates$name, 描述=templates$description%||%"", 分类=templates$category,
-      创建时间=templates$created_at,
-      操作=sprintf('
-        <button class="btn btn-info btn-xs proc-ft-edit-btn" data-id="%s">编辑</button>
-        <button class="btn btn-success btn-xs proc-ft-json-btn" data-id="%s">生成JSON</button>
-        <button class="btn btn-danger btn-xs proc-ft-del-btn" data-id="%s">删除</button>',
-        templates$id, templates$id, templates$id),
-      stringsAsFactors=FALSE)
-    DT::datatable(display,escape=FALSE,options=list(pageLength=10,dom='rtip',scrollX=TRUE,
-      columnDefs=list(list(targets=4,orderable=FALSE))),rownames=FALSE,class='cell-border stripe hover')
+  # 创建示例模板
+  observeEvent(input$appr_create_demo, {
+    result <- appr_create_demo_tpl(created_by=current_user_id())
+    if (result$success) {
+      appr_trigger(appr_trigger()+1)
+      showNotification(sprintf("已创建「%s」，请发布后使用",result$message),type="message",duration=5)
+    } else showNotification(result$message,type="error")
   })
 
   # 新建模板
-  observeEvent(input$proc_ft_create, {
-    showModal(modalDialog(title="新建表单模板",
-      textInput("proc_ft_new_name","模板名称"),
-      textInput("proc_ft_new_desc","描述"),
-      selectInput("proc_ft_new_cat","分类",choices=c("通用"="general","审批"="approval","工单"="work_order","巡检"="inspection"),selected="general"),
-      footer=tagList(modalButton("取消"),actionButton("proc_ft_save","创建",class="btn-primary")),easyClose=TRUE))
+  observeEvent(input$appr_new_tpl, {
+    showModal(modalDialog(title="新建审批模板",size="l",
+      textInput("appr_new_name","模板名称"),
+      textInput("appr_new_desc","描述"),
+      selectInput("appr_new_cat","分类",
+        choices=c("通用"="general","请假"="leave","报销"="expense","加班"="overtime","出差"="travel","审批"="approval")),
+      h5("表单字段配置"),
+      p(style="font-size:12px;color:#666;","每行一个字段: key|标签|类型(text/textarea/select/number/date)"),
+      textAreaInput("appr_new_fields","",rows=4,value="reason|审批事由|text\ndetail|详细说明|textarea"),
+      h5("审批人配置"),
+      p(style="font-size:12px;color:#666;","每行一个步骤: 步骤名|审批人ID(逗号分隔)"),
+      textAreaInput("appr_new_approvers","",rows=3,value="直属上级|1\n负责人审批|1"),
+      h5("抄送人配置"),
+      p(style="font-size:12px;color:#666;","每行: 用户ID|用户名"),
+      textAreaInput("appr_new_cc","",rows=2,value="1|管理员"),
+      footer=tagList(modalButton("取消"),actionButton("appr_save_tpl","创建",class="btn-primary")),easyClose=TRUE))
   })
 
-  observeEvent(input$proc_ft_save, {
-    req(input$proc_ft_new_name)
-    result <- form_template_create(name=input$proc_ft_new_name,description=input$proc_ft_new_desc%||%"",
-      category=input$proc_ft_new_cat,created_by=if(!is.null(rv$current_user))rv$current_user$id[1]else NULL)
-    removeModal()
-    if (result$success) {
-      process_refresh_trigger(process_refresh_trigger()+1)
-      # 自动打开编辑区
-      showNotification(sprintf("%s，请在编辑区添加字段",result$message),type="message",duration=5)
-      selected_ft_id(result$id)
-    } else showNotification(result$message,type="error")
-  })
-
-  # 当前编辑的模板
-  selected_ft_id <- reactiveVal(NULL)
-
-  # 编辑模板
-  observeEvent(input$proc_ft_edit_click, {
-    selected_ft_id(as.integer(input$proc_ft_edit_click))
-  })
-
-  # 渲染编辑区
-  output$proc_ft_editor <- renderUI({
-    tid <- selected_ft_id()
-    if (is.null(tid)) return(div(style="text-align:center;color:#95a5a6;padding:20px;","点击列表中的「编辑」按钮编辑模板字段"))
-    tpl <- form_template_get(tid)
-    if (is.null(tpl)||nrow(tpl)==0) return(p("模板不存在"))
-    fields <- form_template_get_fields(tid)
-    tagList(
-      h4(icon("edit"),sprintf("编辑模板: %s",tpl$name[1])),
-      fluidRow(
-        column(4,
-          p(style="font-size:12px;color:#666;",tpl$description[1]%||%""),
-          selectInput("proc_ft_field_type","字段类型",width="100%",
-            choices=c("单行文本"="text","多行文本"="textarea","下拉选择"="select","数字"="number","日期"="date","复选框"="checkbox")),
-          textInput("proc_ft_field_key","字段标识(key)",width="100%",placeholder="如: result"),
-          textInput("proc_ft_field_label","字段标签(label)",width="100%",placeholder="如: 审批意见"),
-          textInput("proc_ft_field_options","选项(逗号分隔,select用)",width="100%",placeholder="同意,驳回"),
-          checkboxInput("proc_ft_field_required","必填",value=FALSE),
-          actionButton("proc_ft_add_field","添加字段",class="btn-success btn-sm",icon=icon("plus"))
-        ),
-        column(8,
-          h5("已配置的字段",style="margin-top:0;"),
-          if (nrow(fields)==0) {
-            p(style="color:#95a5a6;","暂无字段，请在左侧添加")
-          } else {
-            lapply(1:nrow(fields), function(i) {
-              f <- fields[i, ]
-              opts <- ""
-              if (!is.na(f$field_options) && nchar(f$field_options)>0) {
-                opts <- tryCatch(paste(jsonlite::fromJSON(f$field_options),collapse=", "),error=function(e)"")
-              }
-              div(style="border:1px solid #eee;border-radius:4px;padding:8px;margin-bottom:6px;background:#fafafa;",
-                div(style="display:flex;justify-content:space-between;align-items:center;",
-                  span(style="font-weight:bold;",sprintf("%s (%s)",f$field_label,f$field_type)),
-                  actionLink(paste0("proc_ft_rm_",f$id),"移除",style="color:#d9534f;font-size:12px;")),
-                div(style="font-size:12px;color:#666;margin-top:3px;",
-                  sprintf("key: %s | 必填: %s", f$field_key, ifelse(f$required,"是","否")),
-                  if (nchar(opts)>0) sprintf(" | 选项: %s", opts) else "")
-              )
-            })
-          },
-          hr(),
-          div(style="text-align:right;",
-            actionButton("proc_ft_gen_json","生成 JSON",class="btn-success btn-sm",icon=icon("code")),
-            actionButton("proc_ft_close_editor","关闭编辑",class="btn-default btn-sm"))
-        )
-      )
-    )
-  })
-
-  # 添加字段
-  observeEvent(input$proc_ft_add_field, {
-    tid <- selected_ft_id()
-    req(tid, input$proc_ft_field_key, input$proc_ft_field_label)
-    options <- NULL
-    if (input$proc_ft_field_options!="") {
-      options <- trimws(strsplit(input$proc_ft_field_options,",")[[1]])
+  observeEvent(input$appr_save_tpl, {
+    req(input$appr_new_name)
+    lines <- strsplit(input$appr_new_fields,"\n")[[1]]
+    fields <- list()
+    for (line in lines) {
+      parts <- trimws(strsplit(line,"\\|")[[1]])
+      if (length(parts)>=2) fields[[length(fields)+1]] <- list(key=parts[1],label=parts[2],
+        type=ifelse(length(parts)>=3,parts[3],"text"),required=TRUE)
     }
-    result <- form_template_add_field(template_id=tid, field_key=input$proc_ft_field_key,
-      field_label=input$proc_ft_field_label, field_type=input$proc_ft_field_type,
-      field_options=options, required=isTRUE(input$proc_ft_field_required))
-    if (result$success) {
-      showNotification(result$message,type="message")
-      # 清空输入
-      shiny::updateTextInput(session,"proc_ft_field_key",value="")
-      shiny::updateTextInput(session,"proc_ft_field_label",value="")
-      shiny::updateTextInput(session,"proc_ft_field_options",value="")
-      shiny::updateCheckboxInput(session,"proc_ft_field_required",value=FALSE)
-    } else showNotification(result$message,type="error")
-  })
-
-  # 生成 JSON（复制到剪贴板 + 预览）
-  observeEvent(input$proc_ft_gen_json, {
-    tid <- selected_ft_id()
-    req(tid)
-    json <- form_template_to_json(tid)
-    if (json=="") { showNotification("模板没有字段",type="warning"); return() }
-    showModal(modalDialog(title="表单模板 JSON",
-      p("将此 JSON 粘贴到流程定义的 task 节点中的 form.fields:"),
-      textAreaInput("proc_ft_json_out","",value=json,rows=10),
-      tags$script(HTML(sprintf("
-        $('#proc_ft_json_out').on('click',function(){ this.select(); document.execCommand('copy');
-          Shiny.setInputValue('proc_ft_copied',{time:Date.now()},{priority:'event'}); });"))),
-      footer=tagList(
-        actionButton("proc_ft_use_json","应用到流程定义",class="btn-success btn-sm",icon=icon("arrow-right")),
-        modalButton("关闭")),size="l",easyClose=TRUE))
-  })
-
-  # 应用 JSON 到流程定义
-  observeEvent(input$proc_ft_use_json, {
-    tid <- selected_ft_id()
-    req(tid)
-    removeModal()
-    showModal(modalDialog(title="应用到流程定义",
-      p("请选择要应用此表单模板的流程定义:"),
-      selectInput("proc_ft_apply_def","流程定义",choices=NULL),
-      p(style="font-size:12px;color:#7f8c8d;","将在选择的流程定义的第一个 task 节点中添加此表单字段"),
-      footer=tagList(modalButton("取消"),actionButton("proc_ft_apply_confirm","应用",class="btn-primary")),easyClose=TRUE))
-    # 加载流程定义列表
-    updateSelectInput(session,"proc_ft_apply_def",choices=stats::setNames(
-      process_def_list()$id, process_def_list()$name))
-  })
-
-  # 确认应用到流程定义
-  observeEvent(input$proc_ft_apply_confirm, {
-    req(input$proc_ft_apply_def, selected_ft_id())
-    def_id <- as.integer(input$proc_ft_apply_def)
-    tid <- selected_ft_id()
-    json <- form_template_to_json(tid)
-    def <- tryCatch(jsonlite::fromJSON(process_def_get(def_id)$definition[1],simplifyVector=FALSE),error=function(e)NULL)
-    if (is.null(def)||is.null(def$nodes)) { showNotification("流程定义解析失败",type="error"); return() }
-    # 找到第一个 task 节点，添加 form 字段
-    applied <- FALSE
-    for (i in seq_along(def$nodes)) {
-      if (!is.null(def$nodes[[i]]$type) && def$nodes[[i]]$type=="task") {
-        fields <- tryCatch(jsonlite::fromJSON(json,simplifyVector=FALSE),error=function(e)NULL)
-        if (!is.null(fields) && !is.null(fields$fields)) {
-          def$nodes[[i]]$form <- fields
-          applied <- TRUE
-        }
-        break
+    alines <- strsplit(input$appr_new_approvers,"\n")[[1]]
+    approvers <- list()
+    for (line in alines) {
+      parts <- trimws(strsplit(line,"\\|")[[1]])
+      if (length(parts)>=2) {
+        ids <- as.integer(trimws(strsplit(parts[2],",")[[1]]))
+        con <- db_connect()
+        names <- tryCatch({
+          n <- dbGetQuery(con,sprintf("SELECT display_name,username FROM users WHERE id IN (%s)",paste(ids,collapse=",")))
+          if (nrow(n)>0) ifelse(is.na(n$display_name)%||%n$display_name=="", n$username, n$display_name) else as.character(ids)
+        }, finally={ db_disconnect(con) })
+        approvers[[length(approvers)+1]] <- list(step_name=parts[1],operator_type="fixed",
+          approver_ids=as.list(ids), approver_names=as.list(names))
       }
     }
-    if (!applied) { showNotification("没有找到 task 节点或字段为空",type="warning"); return() }
-    new_def_json <- jsonlite::toJSON(def, auto_unbox=TRUE, pretty=TRUE)
-    # 更新流程定义
-    con <- db_connect()
-    tryCatch({
-      dbExecute(con, sprintf("UPDATE process_definitions SET definition='%s',updated_at=datetime('now','localtime') WHERE id=%d",
-        gsub("'","''",new_def_json),def_id))
-    }, finally={ db_disconnect(con) })
-    removeModal()
-    process_refresh_trigger(process_refresh_trigger()+1)
-    showNotification("表单字段已应用到流程定义中，请重新发布后生效",type="message",duration=8)
-  })
-
-  # 删除模板
-  observeEvent(input$proc_ft_del_click, {
-    result <- form_template_delete(as.integer(input$proc_ft_del_click))
-    process_refresh_trigger(process_refresh_trigger()+1)
-    if (result$success) {
-      selected_ft_id(NULL)
-      showNotification(result$message,type="message")
-    } else showNotification(result$message,type="error")
-  })
-
-  # 移除字段（通过JS传递的字段ID）
-  observeEvent(input$proc_ft_rm_field, {
-    result <- form_template_remove_field(as.integer(input$proc_ft_rm_field))
-    if (result$success) showNotification("字段已移除",type="message") else showNotification(result$message,type="error")
-  })
-
-  # 关闭编辑区
-  observeEvent(input$proc_ft_close_editor, {
-    selected_ft_id(NULL)
-  })
-
-  # 生成 JSON 按钮（从列表直接）
-  observeEvent(input$proc_ft_json_click, {
-    tid <- as.integer(input$proc_ft_json_click)
-    selected_ft_id(tid)
-    json <- form_template_to_json(tid)
-    if (json=="") { showNotification("模板没有字段",type="warning"); return() }
-    showModal(modalDialog(title="表单模板 JSON",
-      textAreaInput("proc_ft_json_out2","",value=json,rows=8),
-      footer=modalButton("关闭"),size="m",easyClose=TRUE))
-  })
-
-  # JS 事件代理（表单模板按钮）
-  # 已通过下面的 renderUI 渲染
-
-  # ===== 一键体验（三种类型） =====
-  observeEvent(input$proc_demo_simple, { launch_demo("simple") })
-  observeEvent(input$proc_demo_condition, { launch_demo("condition") })
-  observeEvent(input$proc_demo_auto, { launch_demo("auto") })
-
-  launch_demo <- function(demo_type) {
-    user_id <- if(!is.null(rv$current_user)&&nrow(rv$current_user)>0) rv$current_user$id[1] else NULL
-    result <- process_create_and_start(demo_type=demo_type, started_by=user_id)
-    process_refresh_trigger(process_refresh_trigger()+1)
-    if (result$success) {
-      labels <- c("simple"="简单审批","condition"="条件分支审批","auto"="自动工单流程")
-      next_node <- ""
-      if (!is.null(result$advance$next_node_label)) next_node <- result$advance$next_node_label
-      showModal(modalDialog(
-        title=sprintf("已创建：%s", labels[[demo_type]]),
-        p(sprintf("定义: %s | 实例: %s", result$def_no, result$instance_no)),
-        hr(),
-        if (next_node!="") p(sprintf("当前已推进到「%s」节点", next_node)),
-        p("请在「我的待办」中处理"),
-        footer=modalButton("知道了"), easyClose=TRUE))
-    } else {
-      showNotification(result$message, type="error")
-    }
-  }
-
-  # ===== 定义构建辅助（高级设置底部使用） =====
-  observeEvent(input$proc_build_json, {
-    nodes <- list()
-    for (i in 1:6) {
-      type <- input[[paste0("proc_bn_type",i)]]
-      if (is.null(type)||type=="") next
-      label <- input[[paste0("proc_bn_label",i)]]%||%type
-      node <- list(id=paste0("node",i), type=type, label=label)
-      timeout <- input[[paste0("proc_bn_timeout",i)]]
-      if (!is.null(timeout)&&timeout>0) node$timeout_minutes <- as.integer(timeout)
-      nodes[[length(nodes)+1]] <- node
-    }
-    if (length(nodes)<2) {
-      showNotification("至少需要2个节点（开始和结束）",type="warning"); return()
-    }
-    json <- process_build_definition(nodes)
-    built_json(json)
-    showModal(modalDialog(
-      title="生成的流程定义 JSON",
-      textAreaInput("proc_built_json_show","",value=json,rows=15),
-      footer=tagList(
-        actionButton("proc_use_built_json","使用此 JSON 创建定义（自动打开新建弹窗）",class="btn-success",icon=icon("check")),
-        modalButton("关闭")
-      ), size="l", easyClose=TRUE
-    ))
-  })
-
-  observeEvent(input$proc_use_built_json, {
-    built_json(input$proc_built_json_show)
-    removeModal()
-    # 自动打开新建弹窗，选中"自定义"模板并填入JSON
-    showModal(build_create_modal(template="custom"))
-  })
-
-  # ===== 新建流程（模板化，普通用户友好） =====
-
-  # 模板定义：用 R list + toJSON，彻底避免引号问题
-  .tpl_simple <- function() {
-    jsonlite::toJSON(list(
-      nodes=list(
-        list(id="start", type="start", label="开始"),
-        list(id="approve", type="task", label="审批确认", timeout_minutes=1440L),
-        list(id="end", type="end", label="结束")
-      ),
-      transitions=list(
-        list(from="start", to="approve", condition=""),
-        list(from="approve", to="end", condition="")
-      )
-    ), auto_unbox=TRUE, pretty=TRUE)
-  }
-  .tpl_condition <- function() {
-    jsonlite::toJSON(list(
-      nodes=list(
-        list(id="start", type="start", label="开始"),
-        list(id="approve", type="task", label="审批确认", timeout_minutes=1440L,
-          form=list(fields=list(
-            list(key="result", label="审批意见", type="select", options=list("同意","驳回"), required=TRUE),
-            list(key="remark", label="备注", type="textarea")
-          ))),
-        list(id="condition", type="condition", label="审批判断"),
-        list(id="notify", type="auto", label="发送通知"),
-        list(id="reject_end", type="end", label="已驳回"),
-        list(id="end", type="end", label="结束")
-      ),
-      transitions=list(
-        list(from="start", to="approve", condition=""),
-        list(from="approve", to="condition", condition=""),
-        list(from="condition", to="notify", condition="result=='同意'"),
-        list(from="condition", to="reject_end", condition="result=='驳回'"),
-        list(from="notify", to="end", condition="")
-      )
-    ), auto_unbox=TRUE, pretty=TRUE)
-  }
-  .tpl_auto <- function() {
-    jsonlite::toJSON(list(
-      nodes=list(
-        list(id="start", type="start", label="开始"),
-        list(id="auto_create", type="auto", label="自动创建工单",
-          action=list(module="work_order", method="create",
-            args=list(title="流程自动创建的工单", description="由流程引擎自动触发创建", category="故障", priority="normal"))),
-        list(id="approve", type="task", label="审批工单", timeout_minutes=1440L),
-        list(id="end", type="end", label="结束")
-      ),
-      transitions=list(
-        list(from="start", to="auto_create", condition=""),
-        list(from="auto_create", to="approve", condition=""),
-        list(from="approve", to="end", condition="")
-      )
-    ), auto_unbox=TRUE, pretty=TRUE)
-  }
-
-  build_create_modal <- function(template="simple") {
-    tpl <- list(
-      simple=list(name="简单审批", desc="创建后→审批确认→自动完成", category="approval", json=.tpl_simple()),
-      condition=list(name="条件审批", desc="审批→同意(通过)/驳回(结束)", category="approval", json=.tpl_condition()),
-      auto=list(name="自动工单", desc="启动后自动创建工单→审批→完成", category="work_order", json=.tpl_auto()),
-      custom=list(name="自定义", desc="高级用户自行编辑JSON", category="general",
-        json=if(is.null(built_json())||nchar(built_json())<20).tpl_simple()else built_json())
-    )
-    sel <- tpl[[template]]%||%tpl$simple
-
-    modalDialog(title="新建流程",
-      textInput("proc_new_def_name","流程名称",value=sel$name),
-      textInput("proc_new_def_desc","描述",value=sel$desc),
-      fluidRow(
-        column(6, selectInput("proc_new_def_category","分类",
-          choices=c("通用"="general","故障"="fault","变更"="change","审批"="approval","工单"="work_order"),
-          selected=sel$category)),
-        column(6, selectInput("proc_template_select","流程模板",
-          choices=c("简单审批"="simple","条件审批"="condition","自动工单"="auto","自定义(JSON)"="custom"),
-          selected=template))
-      ),
-      fluidRow(id="proc_json_editor_row", column(12,
-        textAreaInput("proc_new_def_json","流程定义 (JSON)",rows=8,value=sel$json)
-      )),
-      tags$script(HTML("
-        if($('#proc_template_select').val()=='custom'){ $('#proc_json_editor_row').show(); }
-        else { $('#proc_json_editor_row').hide(); }
-      ")),
-      size="l",
-      footer=tagList(
-        modalButton("取消"),
-        actionButton("proc_save_new_def","创建并发布",class="btn-primary",icon=icon("rocket"))
-      ), easyClose=TRUE
-    )
-  }
-
-  observeEvent(input$proc_create_def, {
-    showModal(build_create_modal(template="simple"))
-  })
-
-  # 模板切换时更新表单
-  observeEvent(input$proc_template_select, {
-    template <- input$proc_template_select
-    if (template=="custom") return()  # 自定义模式保留当前值
-    vals <- switch(template,
-      simple = list(name="简单审批", desc="创建后→审批确认→自动完成", category="approval", json=.tpl_simple()),
-      condition = list(name="条件审批", desc="审批→同意(通过)/驳回(结束)", category="approval", json=.tpl_condition()),
-      auto = list(name="自动工单", desc="启动后自动创建工单→审批→完成", category="work_order", json=.tpl_auto())
-    )
-    if (!is.null(vals)) {
-      shiny::updateTextInput(session, "proc_new_def_name", value=vals$name)
-      shiny::updateTextInput(session, "proc_new_def_desc", value=vals$desc)
-      shiny::updateSelectInput(session, "proc_new_def_category", selected=vals$category)
-      shiny::updateTextAreaInput(session, "proc_new_def_json", value=vals$json)
-    }
-  })
-
-  observeEvent(input$proc_save_new_def, {
-    req(input$proc_new_def_name)
-    result <- process_def_create(name=input$proc_new_def_name,description=input$proc_new_def_desc%||%"",
-      category=input$proc_new_def_category,definition=input$proc_new_def_json,
-      created_by=if(!is.null(rv$current_user))rv$current_user$id[1]else NULL)
-    removeModal()
-    if (result$success) {
-      # 自动发布
-      publish <- process_def_publish(result$id, change_log="从模板创建后自动发布")
-      process_refresh_trigger(process_refresh_trigger()+1)
-      if (publish$success) {
-        showNotification(sprintf("%s 已创建并发布，可以启动了",result$message),type="message",duration=8)
-      } else {
-        showNotification(sprintf("%s（发布失败:%s）",result$message,publish$message),type="warning",duration=8)
+    clines <- strsplit(input$appr_new_cc,"\n")[[1]]
+    cc_list <- list(user_ids=list(), user_names=list())
+    for (line in clines) {
+      parts <- trimws(strsplit(line,"\\|")[[1]])
+      if (length(parts)>=1 && nchar(parts[1])>0) {
+        cc_list$user_ids[[length(cc_list$user_ids)+1]] <- as.integer(parts[1])
+        cc_list$user_names[[length(cc_list$user_names)+1]] <- ifelse(length(parts)>=2,parts[2],parts[1])
       }
-    } else showNotification(result$message,type="error")
-  })
-
-  # ===== 发布 =====
-  observeEvent(input$process_publish_click, {
-    result <- process_def_publish(input$process_publish_click,change_log="手动发布")
-    if (result$success) { process_refresh_trigger(process_refresh_trigger()+1); showNotification(result$message,type="message",duration=5)
-    } else showNotification(result$message,type="error")
-  })
-
-  # ===== 启动 =====
-  proc_starting_def <- reactiveVal(NULL)
-
-  observeEvent(input$process_start_click, {
-    def_id <- as.integer(input$process_start_click)
-    proc_starting_def(def_id)
-    def <- process_def_get(def_id)
-    if (is.null(def)) { showNotification("流程定义不存在",type="error"); return() }
-    showModal(modalDialog(title=sprintf("启动流程: %s",def$name[1]),
-      textInput("proc_start_title","实例标题",value=def$name[1]),
-      textAreaInput("proc_start_context","上下文 (JSON)",rows=4,value='{"title":"示例","priority":"normal"}'),
-      footer=tagList(modalButton("取消"),actionButton("proc_confirm_start","启动",class="btn-success"))))
-  })
-
-  observeEvent(input$proc_confirm_start, {
-    def_id <- proc_starting_def()
-    req(def_id)
-    context <- tryCatch(jsonlite::fromJSON(input$proc_start_context,simplifyVector=FALSE),error=function(e)list(title=input$proc_start_title,priority="normal"))
-    result <- process_instance_start(def_id=def_id, title=input$proc_start_title, context_data=context,
-      started_by=if(!is.null(rv$current_user))rv$current_user$id[1]else NULL)
+    }
+    result <- appr_tpl_create(name=input$appr_new_name,description=input$appr_new_desc%||%"",
+      category=input$appr_new_cat,
+      form_fields=jsonlite::toJSON(fields,auto_unbox=TRUE,pretty=TRUE),
+      approver_config=jsonlite::toJSON(approvers,auto_unbox=TRUE,pretty=TRUE),
+      cc_config=if(length(cc_list$user_ids)>0) jsonlite::toJSON(list(cc_list),auto_unbox=TRUE,pretty=TRUE) else "[]",
+      created_by=current_user_id())
     removeModal()
-    if (result$success) {
-      process_refresh_trigger(process_refresh_trigger()+1)
-      advance <- process_advance(result$id)
-      process_refresh_trigger(process_refresh_trigger()+1)
-      if (advance$success) {
-        if (isTRUE(advance$completed)) showNotification(sprintf("%s → 已完成",result$message),type="success",duration=5)
-        else { showNotification(sprintf("%s，当前在「%s」",result$message,advance$next_node_label),type="message",duration=8)
-          if (advance$next_node_type=="task") showNotification("请在「我的待办」中处理",type="warning",duration=8) }
-      } else showNotification(sprintf("%s（推进:%s）",result$message,advance$message),type="warning",duration=8)
+    if (result$success) { appr_trigger(appr_trigger()+1); showNotification(result$message,type="message",duration=5)
     } else showNotification(result$message,type="error")
   })
 
-  # ===== 版本历史 =====
-  output$proc_version_table <- DT::renderDT({
-    req(input$proc_log_inst_select); process_refresh_trigger()
-    inst <- process_instance_get(as.integer(input$proc_log_inst_select))
-    if (is.null(inst)) return(DT::datatable(data.frame(信息="请先选择实例"),options=list(dom='t')))
-    versions <- process_def_get_versions(inst$def_id[1])
-    if (nrow(versions)==0) return(DT::datatable(data.frame(信息="无版本历史"),options=list(dom='t')))
-    display <- data.frame(版本=sprintf("v%d",versions$version),变更说明=versions$change_log%||%"",发布时间=versions$published_at,stringsAsFactors=FALSE)
-    DT::datatable(display,options=list(pageLength=10,dom='rtip',scrollX=TRUE),rownames=FALSE,class='cell-border stripe hover')
+  observeEvent(input$appr_publish_click, {
+    result <- appr_tpl_publish(as.integer(input$appr_publish_click))
+    appr_trigger(appr_trigger()+1)
+    showNotification(result$message,type=ifelse(result$success,"message","error"))
   })
 
-  # ===== 暂停/恢复/终止 =====
-  observeEvent(input$proc_inst_term_click, {
-    result <- process_instance_terminate(as.integer(input$proc_inst_term_click))
-    process_refresh_trigger(process_refresh_trigger()+1)
-    showNotification(result$message, type=ifelse(result$success,"message","error"))
+  observeEvent(input$appr_del_tpl_click, {
+    appr_tpl_delete(as.integer(input$appr_del_tpl_click))
+    appr_trigger(appr_trigger()+1)
+    showNotification("已删除",type="message")
   })
 
-  observeEvent(input$proc_inst_suspend_click, {
-    result <- process_instance_suspend(as.integer(input$proc_inst_suspend_click))
-    process_refresh_trigger(process_refresh_trigger()+1)
-    showNotification(result$message, type=ifelse(result$success,"message","error"))
-  })
-
-  observeEvent(input$proc_inst_resume_click, {
-    result <- process_instance_resume(as.integer(input$proc_inst_resume_click))
-    process_refresh_trigger(process_refresh_trigger()+1)
-    showNotification(result$message, type=ifelse(result$success,"message","error"))
-  })
-
-  # ===== 日志 =====
-  observeEvent(input$process_inst_log_click, {
-    inst_id <- as.integer(input$process_inst_log_click)
-    instance <- process_instance_get(inst_id)
-    if (is.null(instance)) { showNotification("实例不存在",type="error"); return() }
-    logs <- process_get_logs(inst_id); events <- process_get_events(inst_id)
-    nodes <- process_get_active_nodes(inst_id)
-    log_text <- paste(
-      sprintf("=== %s ===\n状态:%s | 当前节点:%s\n",instance$instance_no[1],instance$status[1],instance$current_node[1]%||%"-"),
-      "--- 节点 ---\n",paste(capture.output(if(nrow(nodes)>0)print(nodes[,c("node_id","node_name","node_type","status","entered_at","completed_at")])else "无"),collapse="\n"),
-      "\n--- 事件 ---\n",paste(capture.output(if(nrow(events)>0)print(events[,c("event_type","status","message","created_at")])else "无"),collapse="\n"),
-      "\n--- 日志 ---\n",paste(capture.output(if(nrow(logs)>0)print(logs[,c("log_level","log_type","message","created_at")])else "无"),collapse="\n"),sep="")
-    showModal(modalDialog(title=sprintf("日志: %s",instance$instance_no[1]),size="l",
-      pre(log_text,style="font-size:12px;max-height:500px;overflow:auto;background:#f5f5f5;padding:10px;"),footer=modalButton("关闭"),easyClose=TRUE))
-  })
-
-  # ===== 待办处理（带表单） =====
-  observeEvent(input$process_todo_click, {
-    click_data <- input$process_todo_click
-    instance_id <- as.integer(click_data$instance_id)
-    node_inst_id <- as.integer(click_data$node_id)
-    instance <- process_instance_get(instance_id)
-    if (is.null(instance)) { showNotification("实例不存在",type="error"); return() }
-    definition <- tryCatch(jsonlite::fromJSON(instance$definition[1],simplifyVector=FALSE),error=function(e)NULL)
-    current_node_id <- instance$current_node[1]
-    # 查找节点定义中的表单
-    node_def <- NULL; form_fields <- NULL
-    if (!is.null(definition$nodes)) {
-      for (n in definition$nodes) { if (!is.null(n$id)&&n$id==current_node_id) { node_def<-n; break } }
+  # 发起审批
+  observeEvent(input$appr_start_click, {
+    tid <- as.integer(input$appr_start_click)
+    tpl <- appr_tpl_get(tid)
+    if (is.null(tpl)||tpl$status[1]!="published") { showNotification("模板未发布",type="warning"); return() }
+    fields <- tryCatch(jsonlite::fromJSON(tpl$form_fields[1],simplifyVector=FALSE),error=function(e)list())
+    modal_body <- tagList(
+      h4(sprintf("发起审批: %s",tpl$name[1])),
+      p(tpl$description[1]%||%"",style="color:#7f8c8d;font-size:12px;"),
+      hr(),
+      textInput("appr_start_title","审批标题",value=tpl$name[1]))
+    for (f in fields) {
+      fid <- paste0("appr_f_",f$key)
+      label <- f$label%||%f$key
+      if (f$type=="textarea") modal_body <- tagList(modal_body, textAreaInput(fid,label,rows=3,placeholder=f$placeholder%||%""))
+      else if (f$type=="select") modal_body <- tagList(modal_body, selectInput(fid,label,choices=unlist(f$options%||%list())))
+      else modal_body <- tagList(modal_body, textInput(fid,label,placeholder=f$placeholder%||%""))
     }
-    if (!is.null(node_def)&&!is.null(node_def$form)&&!is.null(node_def$form$fields)) {
-      form_fields <- node_def$form$fields
-    }
-    current_todo_details(list(instance_id=instance_id, node_inst_id=node_inst_id, node_def=node_def, form_fields=form_fields))
-    # 有表单 -> 弹窗渲染
-    if (!is.null(form_fields)) {
-      modal_body <- tagList(
-        h4(sprintf("处理: %s", node_def$label%||%current_node_id)),
-        p(sprintf("流程实例: %s", instance$instance_no[1])),
-        hr()
-      )
-      for (f in form_fields) {
-        fid <- paste0("proc_form_", f$key)
-        label <- f$label%||%f$key
-        if (f$type=="select") {
-          choices <- f$options; names(choices) <- choices
-          modal_body <- tagList(modal_body, selectInput(fid, label, choices=choices))
-        } else if (f$type=="textarea") {
-          modal_body <- tagList(modal_body, textAreaInput(fid, label, rows=3))
-        } else {
-          modal_body <- tagList(modal_body, textInput(fid, label))
-        }
-      }
-      showModal(modalDialog(title=sprintf("处理节点: %s", node_def$label%||%current_node_id),
-        modal_body, footer=tagList(modalButton("取消"),actionButton("proc_submit_form","提交",class="btn-success")),
-        easyClose=TRUE))
-    } else {
-      # 无表单 -> 直接完成
-      process_complete_todo(instance_id, node_inst_id, list(result="approved"))
-    }
+    showModal(modalDialog(title=sprintf("发起审批: %s",tpl$name[1]),modal_body,
+      footer=tagList(modalButton("取消"),actionButton("appr_confirm_start","提交审批",class="btn-primary")),size="m",easyClose=TRUE))
   })
 
-  # 表单提交
-  observeEvent(input$proc_submit_form, {
-    info <- current_todo_details()
-    if (is.null(info)) { showNotification("信息丢失",type="error"); return() }
+  observeEvent(input$appr_confirm_start, {
+    req(input$appr_start_click, input$appr_start_title)
+    tid <- as.integer(input$appr_start_click)
+    tpl <- appr_tpl_get(tid)
+    if (is.null(tpl)) { showNotification("模板不存在",type="error"); return() }
+    fields <- tryCatch(jsonlite::fromJSON(tpl$form_fields[1],simplifyVector=FALSE),error=function(e)list())
     form_data <- list()
-    if (!is.null(info$form_fields)) {
-      for (f in info$form_fields) {
-        val <- input[[paste0("proc_form_",f$key)]]
-        if (!is.null(val)) form_data[[f$key]] <- val
-      }
-    }
+    for (f in fields) form_data[[f$key]] <- input[[paste0("appr_f_",f$key)]]
+    result <- appr_inst_create(template_id=tid,title=input$appr_start_title,form_data=form_data,applicant_id=current_user_id())
     removeModal()
-    process_complete_todo(info$instance_id, info$node_inst_id, form_data)
+    if (result$success) { appr_trigger(appr_trigger()+1)
+      showNotification(sprintf("已提交，编号: %s",result$instance_no),type="message",duration=8)
+    } else showNotification(result$message,type="error")
   })
 
-  # 执行待办完成
-  process_complete_todo <- function(instance_id, node_inst_id, form_data) {
-    con <- db_connect()
-    tryCatch({
-      remark <- if (!is.null(form_data$remark)) form_data$remark else "已处理"
-      result_val <- if (!is.null(form_data$result)) form_data$result else "approved"
-      dbExecute(con, sprintf("UPDATE process_nodes SET status='completed',result='%s',completed_at=datetime('now','localtime'),remark='%s' WHERE id=%d",
-        gsub("'","''",result_val),gsub("'","''",remark),node_inst_id))
-    }, finally={ db_disconnect(con) })
-    process_log_write(instance_id,as.character(node_inst_id),"info","task_complete",
-      sprintf("用户处理待办: result=%s, remark=%s", result_val, remark))
-    process_event_record("node_complete",instance_id,as.character(node_inst_id),source="user",status="success",
-      message=sprintf("待办处理: %s",result_val))
-    # 更新上下文
-    inst <- process_instance_get(instance_id)
+  # 详情弹窗（判断是实例还是模板）
+  observeEvent(input$appr_detail_click, {
+    id <- as.integer(input$appr_detail_click)
+    inst <- appr_inst_get(id)
     if (!is.null(inst)) {
-      ctx <- tryCatch(jsonlite::fromJSON(inst$context_data[1],simplifyVector=FALSE),error=function(e)list())
-      ctx$result <- result_val; ctx$remark <- remark
-      process_context_save(instance_id, ctx, changed_by=as.character(node_inst_id), reason=sprintf("节点处理: %s",result_val))
+      records <- appr_records_get(id)
+      steps <- appr_steps_get(id)
+      form_data <- tryCatch(jsonlite::fromJSON(inst$form_data[1],simplifyVector=FALSE),error=function(e)list())
+      status_label <- c("pending"="审批中","approved"="已通过","rejected"="已驳回","withdrawn"="已撤销")[inst$status[1]]%||%inst$status[1]
+      form_html <- ""
+      if (is.list(form_data)) for (nm in names(form_data)) form_html <- paste0(form_html,sprintf("<p><strong>%s:</strong> %s</p>",nm,form_data[[nm]]%||%""))
+      record_html <- ""
+      if (nrow(records)>0) for (i in 1:nrow(records)) {
+        r <- records[i,]
+        act <- c("submit"="提交","approve"="通过","reject"="驳回","withdraw"="撤销","urge"="催办")[r$action]%||%r$action
+        col <- switch(r$action,approve="#27ae60",reject="#e74c3c",withdraw="#95a5a6",urge="#f39c12","#333")
+        record_html <- paste0(record_html,sprintf("<p style='margin:2px 0;'><span style='color:%s;font-weight:bold;'>[%s]</span> %s: %s <span style='color:#999;font-size:11px;'>%s</span></p>",
+          col,act,r$operator_name%||%"系统",r$comment%||%"",r$created_at%||%""))
+      }
+      step_html <- ""
+      if (nrow(steps)>0) for (i in 1:nrow(steps)) {
+        s <- steps[i,]
+        icons <- c("pending"="○","active"="●","approved"="✓","rejected"="✗","skipped"="-")
+        cols <- c("pending"="#ccc","active"="#f39c12","approved"="#27ae60","rejected"="#e74c3c","skipped"="#ddd")
+        op_ids <- tryCatch(jsonlite::fromJSON(s$operator_ids),error=function(e)c())
+        op_nms <- tryCatch(jsonlite::fromJSON(s$approver_names),error=function(e)c())
+        op_str <- if (length(op_nms)>0) paste(op_nms,collapse=",") else paste(op_ids,collapse=",")
+        step_html <- paste0(step_html,sprintf("<p style='margin:3px 0;'><span style='color:%s;font-size:18px;margin-right:8px;'>%s</span> 第%d步: %s</p>",
+          cols[s$status]%||%"#ccc",icons[s$status]%||%"?",i,op_str))
+      }
+      uid <- current_user_id()
+      can_approve <- FALSE
+      active_step <- steps[steps$status=="active",]
+      if (nrow(active_step)>0 && inst$status[1]=="pending") {
+        ops <- tryCatch(jsonlite::fromJSON(active_step$operator_ids[1]),error=function(e)c())
+        if (uid %in% ops) can_approve <- TRUE
+      }
+      showModal(modalDialog(title=sprintf("审批详情: %s",inst$instance_no[1]),size="l",
+        tagList(
+          div(style="background:#f8f9fa;padding:12px;border-radius:4px;margin-bottom:10px;",
+            h5(inst$title[1],style="margin:0 0 5px;"),
+            p(sprintf("模板: %s | 状态: %s",inst$template_name[1],status_label),style="margin:0;font-size:12px;color:#666;"),
+            p(sprintf("申请人: %s | 提交时间: %s",inst$display_name%||%inst$username,inst$started_at),style="margin:0;font-size:12px;color:#666;")),
+          h5("表单内容"),div(HTML(form_html)),
+          h5("审批进度"),div(HTML(step_html)),
+          if (nchar(record_html)>0) tagList(h5("审批记录"),div(HTML(record_html))),
+          if (can_approve) tagList(hr(),textAreaInput("appr_comment","审批意见",rows=2,placeholder="选填"),
+            div(style="text-align:right;",
+              actionButton("appr_do_approve","通过",class="btn-success",icon=icon("check"),style="margin-right:8px;"),
+              actionButton("appr_do_reject","驳回",class="btn-danger",icon=icon("times"))))
+        ),footer=modalButton("关闭"),easyClose=TRUE))
+    } else {
+      # 编辑模板
+      tpl <- appr_tpl_get(id)
+      if (is.null(tpl)) return()
+      fields <- tryCatch(jsonlite::fromJSON(tpl$form_fields[1],simplifyVector=FALSE),error=function(e)list())
+      fstr <- paste(sapply(fields,function(f) paste(f$key,f$label,f$type%||%"text",sep="|")),collapse="\n")
+      apprs <- tryCatch(jsonlite::fromJSON(tpl$approver_config[1],simplifyVector=FALSE),error=function(e)list())
+      astr <- paste(sapply(apprs,function(a) paste(a$step_name%||%"",paste(unlist(a$approver_ids),collapse=","),sep="|")),collapse="\n")
+      cc <- tryCatch(jsonlite::fromJSON(tpl$cc_config[1],simplifyVector=FALSE),error=function(e)list())
+      cstr <- ""
+      if (length(cc)>0 && !is.null(cc[[1]]$user_ids)) {
+        cstr <- paste(sapply(seq_along(cc[[1]]$user_ids),function(i){
+          uid_val <- cc[[1]]$user_ids[[i]]
+          uname <- if(length(cc[[1]]$user_names)>=i) cc[[1]]$user_names[[i]] else ""
+          paste(uid_val,uname,sep="|")
+        }),collapse="\n")
+      }
+      showModal(modalDialog(title=sprintf("编辑模板: %s",tpl$name[1]),size="l",
+        textInput("appr_edit_name","模板名称",value=tpl$name[1]),
+        textInput("appr_edit_desc","描述",value=tpl$description[1]%||%""),
+        selectInput("appr_edit_cat","分类",choices=c("通用"="general","请假"="leave","报销"="expense","加班"="overtime","出差"="travel","审批"="approval"),selected=tpl$category[1]%||%"general"),
+        h5("表单字段"),textAreaInput("appr_edit_fields","",rows=4,value=fstr),
+        h5("审批人配置"),textAreaInput("appr_edit_approvers","",rows=3,value=astr),
+        h5("抄送人配置"),textAreaInput("appr_edit_cc","",rows=2,value=cstr),
+        footer=tagList(modalButton("取消"),actionButton("appr_save_edit","保存",class="btn-primary")),easyClose=TRUE))
     }
-    advance <- process_advance(instance_id)
-    process_refresh_trigger(process_refresh_trigger()+1)
-    if (advance$success) {
-      if (isTRUE(advance$completed)) showNotification("流程已完成！",type="message",duration=5)
-      else showNotification(sprintf("已处理，%s",advance$message),type="message",duration=5)
-    } else showNotification(sprintf("处理完成:%s",advance$message),type="warning",duration=8)
-  }
+  })
+
+  observeEvent(input$appr_save_edit, {
+    req(input$appr_detail_click)
+    tpl <- appr_tpl_get(as.integer(input$appr_detail_click))
+    if (is.null(tpl)) return()
+    id <- tpl$id[1]
+    lines <- strsplit(input$appr_edit_fields,"\n")[[1]]
+    fields <- list()
+    for (line in lines) { parts <- trimws(strsplit(line,"\\|")[[1]]); if (length(parts)>=2) fields[[length(fields)+1]] <- list(key=parts[1],label=parts[2],type=ifelse(length(parts)>=3,parts[3],"text"),required=TRUE) }
+    alines <- strsplit(input$appr_edit_approvers,"\n")[[1]]
+    approvers <- list()
+    for (line in alines) {
+      parts <- trimws(strsplit(line,"\\|")[[1]]); if (length(parts)>=2) {
+        ids <- as.integer(trimws(strsplit(parts[2],",")[[1]]))
+        con <- db_connect()
+        names <- tryCatch({ n <- dbGetQuery(con,sprintf("SELECT display_name,username FROM users WHERE id IN (%s)",paste(ids,collapse=",")))
+          if (nrow(n)>0) ifelse(is.na(n$display_name)%||%n$display_name=="", n$username, n$display_name) else as.character(ids)
+        }, finally={ db_disconnect(con) })
+        approvers[[length(approvers)+1]] <- list(step_name=parts[1],operator_type="fixed",approver_ids=as.list(ids),approver_names=as.list(names))
+      }
+    }
+    clines <- strsplit(input$appr_edit_cc,"\n")[[1]]
+    cc_list <- list(user_ids=list(),user_names=list())
+    for (line in clines) {
+      parts <- trimws(strsplit(line,"\\|")[[1]]); if (length(parts)>=1 && nchar(parts[1])>0) {
+        cc_list$user_ids[[length(cc_list$user_ids)+1]] <- as.integer(parts[1])
+        cc_list$user_names[[length(cc_list$user_names)+1]] <- ifelse(length(parts)>=2,parts[2],parts[1])
+      }
+    }
+    result <- appr_tpl_update(id=id,name=input$appr_edit_name,description=input$appr_edit_desc%||%"",category=input$appr_edit_cat,
+      form_fields=jsonlite::toJSON(fields,auto_unbox=TRUE,pretty=TRUE),
+      approver_config=jsonlite::toJSON(approvers,auto_unbox=TRUE,pretty=TRUE),
+      cc_config=if(length(cc_list$user_ids)>0) jsonlite::toJSON(list(cc_list),auto_unbox=TRUE,pretty=TRUE) else "[]")
+    removeModal()
+    if (result$success) { appr_trigger(appr_trigger()+1); showNotification("保存成功",type="message")
+    } else showNotification(result$message,type="error")
+  })
+
+  observeEvent(input$appr_do_approve, {
+    id <- isolate(input$appr_detail_click)
+    inst <- appr_inst_get(as.integer(id))
+    if (is.null(inst)) return()
+    steps <- appr_steps_get(as.integer(id))
+    active_step <- steps[steps$status=="active",]
+    if (nrow(active_step)==0) { showNotification("没有活跃的审批步骤",type="warning"); return() }
+    result <- appr_approve(instance_id=as.integer(id),step_id=active_step$id[1],
+      operator_id=current_user_id(),operator_name=current_user_name(),comment=input$appr_comment%||%"")
+    removeModal(); appr_trigger(appr_trigger()+1)
+    showNotification(result$message,type=ifelse(result$success,"message","error"))
+  })
+
+  observeEvent(input$appr_do_reject, {
+    id <- isolate(input$appr_detail_click)
+    inst <- appr_inst_get(as.integer(id))
+    if (is.null(inst)) return()
+    steps <- appr_steps_get(as.integer(id))
+    active_step <- steps[steps$status=="active",]
+    if (nrow(active_step)==0) { showNotification("没有活跃的审批步骤",type="warning"); return() }
+    result <- appr_reject(instance_id=as.integer(id),step_id=active_step$id[1],
+      operator_id=current_user_id(),operator_name=current_user_name(),comment=input$appr_comment%||%"")
+    removeModal(); appr_trigger(appr_trigger()+1)
+    showNotification(result$message,type=ifelse(result$success,"message","error"))
+  })
+
+  observeEvent(input$appr_withdraw_click, {
+    result <- appr_withdraw(as.integer(input$appr_withdraw_click),current_user_id())
+    appr_trigger(appr_trigger()+1)
+    showNotification(result$message,type=ifelse(result$success,"message","error"))
+  })
+
+  observeEvent(input$appr_urge_click, {
+    result <- appr_urge(as.integer(input$appr_urge_click),current_user_id())
+    showNotification(result$message,type="message")
+  })
 }

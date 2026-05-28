@@ -144,8 +144,10 @@ performance_server <- function(input, output, session, rv) {
     }
     if (nrow(sources)==0) return(DT::datatable(data.frame(信息="所有工作项已匹配"),options=list(dom='t')))
 
+    source_nos <- if ("source_no"%in%names(sources)) sources$source_no%||%"" else ""
     display <- data.frame(
       来源=sources$source_type,
+      单号=source_nos,
       标题=substr(sources$source_title%||%"",1,50),
       员工=sources$employee_name%||%sources$username,
       操作=sprintf('<button class="btn btn-success btn-xs perf-match-btn" data-emp="%s" data-stype="%s" data-sid="%s" data-stitle="%s">匹配</button>',
@@ -153,7 +155,8 @@ performance_server <- function(input, output, session, rv) {
         gsub('"',"&quot;",substr(gsub("'","",sources$source_title%||%""),1,30))),
       stringsAsFactors=FALSE)
     DT::datatable(display,escape=FALSE,options=list(pageLength=20,dom='rtip',scrollX=TRUE,
-      columnDefs=list(list(targets=3,orderable=FALSE))),rownames=FALSE,class='cell-border stripe hover')
+      columnDefs=list(list(targets=4,orderable=FALSE),
+        list(targets=1,width='140px'))),rownames=FALSE,class='cell-border stripe hover')
   })
 
   # 匹配弹窗
@@ -196,23 +199,28 @@ performance_server <- function(input, output, session, rv) {
     } else showNotification(result$message,type="error")
   })
 
-  # ========== 已匹配清单 ==========
+  # ========== 已匹配清单（含得分） ==========
   output$perf_matched_table <- DT::renderDT({
     perf_refresh()
     sheet <- current_sheet()
     if (is.null(sheet)) return(DT::datatable(data.frame(信息="暂无数据"),options=list(dom='t')))
     items <- perf_work_items_by_sheet(sheet$id[1])
     if (nrow(items)==0) return(DT::datatable(data.frame(信息="暂无匹配记录"),options=list(dom='t')))
+    # 计算每项得分
+    scores <- mapply(function(code, lvl) perf_item_score(code, lvl),
+      items$indicator_code, items$deduction_level)
     display <- data.frame(
       员工=items$employee_name,
       指标=items$indicator_name,
+      得分=scores,
       来源=items$source_type,
       标题=items$source_title%||%"",
       扣分等级=ifelse(is.na(items$deduction_level)%||%items$deduction_level==0,"-",sprintf("%d级",items$deduction_level)),
       操作=sprintf('<button class="btn btn-danger btn-xs perf-unmatch-btn" data-id="%s">移除</button>', items$id),
       stringsAsFactors=FALSE)
     DT::datatable(display,escape=FALSE,options=list(pageLength=20,dom='rtip',scrollX=TRUE,
-      columnDefs=list(list(targets=5,orderable=FALSE))),rownames=FALSE,class='cell-border stripe hover')
+      columnDefs=list(list(targets=6,orderable=FALSE),
+        list(targets=2,className='dt-center'))),rownames=FALSE,class='cell-border stripe hover')
   })
 
   # 移除匹配

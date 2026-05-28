@@ -106,6 +106,22 @@ perf_work_items_by_sheet <- function(sheet_id) {
 }
 
 ##################
+# 单项得分计算
+##################
+perf_item_score <- function(indicator_code, deduction_level=0) {
+  ind <- perf_indicator_get(indicator_code)
+  if (is.null(ind)) return(0)
+  if (ind$scoring=="deduct") {
+    for (dl in ind$deduct_levels) {
+      if (dl$level==deduction_level) return(-dl$points)
+    }
+    return(0)
+  } else {
+    return(ind$unit_score%||%5)
+  }
+}
+
+##################
 # 从各模块加载本月工作清单
 ##################
 perf_load_work_sources <- function(year_month) {
@@ -119,7 +135,8 @@ perf_load_work_sources <- function(year_month) {
     # 1. 工单：本月创建的、有处理人的
     work_orders <- tryCatch(
       dbGetQuery(con, sprintf(
-        "SELECT '工单' as source_type,wo.id as source_id,wo.title as source_title,wo.assigned_to as employee_id,
+        "SELECT '工单' as source_type,wo.id as source_id,wo.title as source_title,
+                wo.order_no as source_no,wo.assigned_to as employee_id,
                 u.display_name,u.username
          FROM work_orders wo LEFT JOIN users u ON wo.assigned_to=u.id
          WHERE wo.assigned_to IS NOT NULL
@@ -131,7 +148,8 @@ perf_load_work_sources <- function(year_month) {
     # 2. 项目任务：本月创建的、有分配人的
     tasks <- tryCatch(
       dbGetQuery(con, sprintf(
-        "SELECT '项目任务' as source_type,pt.id as source_id,pt.name as source_title,pt.assigned_to as employee_id,
+        "SELECT '项目任务' as source_type,pt.id as source_id,pt.name as source_title,
+                pt.task_no as source_no,pt.assigned_to as employee_id,
                 u.display_name,u.username
          FROM project_tasks pt LEFT JOIN users u ON pt.assigned_to=u.id
          WHERE pt.assigned_to IS NOT NULL
@@ -143,14 +161,15 @@ perf_load_work_sources <- function(year_month) {
     # 3. 巡检任务：本月已执行的
     insp <- tryCatch(
       dbGetQuery(con, sprintf(
-        "SELECT '巡检' as source_type,it.id as source_id,ip.name as source_title,it.inspector as employee_id,
+        "SELECT '巡检' as source_type,it.id as source_id,ip.name as source_title,
+                it.task_no as source_no,it.inspector as employee_id,
                 u.display_name,u.username
          FROM inspection_tasks it
          JOIN inspection_plans ip ON it.plan_id=ip.id
          LEFT JOIN users u ON it.inspector=u.id
          WHERE it.inspector IS NOT NULL AND it.status='completed'
-           AND it.executed_at >= '%s' AND it.executed_at < '%s'
-         ORDER BY it.executed_at DESC", start_date, next_ym)),
+           AND it.updated_at >= '%s' AND it.updated_at < '%s'
+         ORDER BY it.updated_at DESC", start_date, next_ym)),
       error=function(e) data.frame())
     if (nrow(insp)>0) insp$employee_name <- ifelse(is.na(insp$display_name)%||%insp$display_name=="", insp$username, insp$display_name)
     
@@ -227,7 +246,7 @@ perf_active_employees <- function(year_month) {
       SELECT DISTINCT u.id,u.display_name,u.username FROM users u WHERE u.active=1 AND (
         EXISTS(SELECT 1 FROM work_orders wo WHERE wo.assigned_to=u.id AND wo.created_at>='%s' AND wo.created_at<'%s')
         OR EXISTS(SELECT 1 FROM project_tasks pt WHERE pt.assigned_to=u.id AND pt.created_at>='%s' AND pt.created_at<'%s')
-        OR EXISTS(SELECT 1 FROM inspection_tasks it WHERE it.inspector=u.id AND it.executed_at>='%s' AND it.executed_at<'%s')
+        OR EXISTS(SELECT 1 FROM inspection_tasks it WHERE it.inspector=u.id AND it.updated_at>='%s' AND it.updated_at<'%s')
       ) ORDER BY u.display_name", start_date, next_ym, start_date, next_ym, start_date, next_ym))
     if (nrow(users)>0) {
       users$employee_name <- ifelse(is.na(users$display_name)%||%users$display_name=="", users$username, users$display_name)
