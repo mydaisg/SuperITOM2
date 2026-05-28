@@ -18,6 +18,8 @@ source("Script/main_ui.r")          # 主界面定义
 source("Script/github_autosubmit.r") # GitHub自动提交功能
 source("Script/std_computer.r")        # 标准化模块
 source("Script/data_center_server.r")   # 数据中心模块（数据归集）
+source("Script/sysmon_management.r")   # 性能监控数据层
+source("Script/sysmon_server.r")       # 性能监控服务端
 source("Script/process_engine.r")       # 流程引擎核心
 source("Script/process_server.r")       # 流程模块服务端
 source("Script/performance_management.r") # 绩效数据层
@@ -1868,6 +1870,9 @@ server <- function(input, output, session) {
 
   # 绩效模块逻辑
   performance_server(input, output, session, rv)
+
+  # 性能监控模块逻辑
+  sysmon_server(input, output, session, rv)
 
   # 流程超时检测已移除（新审批模块为同步流转）
 

@@ -20,6 +20,9 @@ source("Script/std_computer.r")
 # 加载测试模块（网络巡检）
 source("Script/network_test.r")
 
+# 加载性能监控模块
+source("Script/sysmon_ui.r")
+
 # 加载项目管理模块UI
 source("Script/project_ui.r")
 
@@ -58,6 +61,7 @@ main_ui <- function() {
         '/work_order': '工单',
         '/std': '标准化',
         '/network_test': '测试',
+        '/monitor': '性能',
         '/daily_report': '日报',
         '/collector': '收集器',
         '/data': '数据',
@@ -592,6 +596,13 @@ main_ui <- function() {
       "测试",
       icon = icon("network-wired"),
       network_test_ui()
+    ),
+
+    # 性能监控标签页
+    tabPanel(
+      "性能",
+      icon = icon("heartbeat"),
+      sysmon_ui()
     ),
 
     # 日报标签页
