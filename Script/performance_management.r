@@ -41,8 +41,14 @@ perf_sheet_create <- function(year_month) {
 
 perf_sheet_list <- function() {
   con <- db_connect()
-  tryCatch({ dbGetQuery(con, "SELECT * FROM performance_sheets ORDER BY year_month DESC") },
-  finally={ db_disconnect(con) })
+  tryCatch({
+    dbGetQuery(con, "SELECT * FROM performance_sheets ORDER BY year_month DESC")
+  }, error = function(e) {
+    message("[perf] 获取绩效表列表失败: ", e$message)
+    data.frame()
+  }, finally = {
+    db_disconnect(con)
+  })
 }
 
 perf_sheet_get <- function(sheet_id) {

@@ -24,6 +24,8 @@ source("Script/sysmon_management.r")   # 性能监控数据层
 source("Script/sysmon_server.r")       # 性能监控服务端
 source("Script/performance_management.r") # 绩效数据层
 source("Script/performance_server.r")   # 绩效模块服务端
+source("Script/note_management.r")   # 记事模块数据层
+source("Script/note_server.r")       # 记事模块服务端
 
 # 定义server函数
 # 这是Shiny应用的服务器逻辑核心
@@ -48,22 +50,23 @@ server <- function(input, output, session) {
     current_user = NULL # 当前用户信息，默认为空
   )
   
-  # 动态生成UI内容
-  # renderUI函数用于根据应用状态动态生成UI组件
-  # 这是ui.R中三行代码就能运行的核心原理：
-  # 1. ui.R只提供了基础框架（fluidPage包含uiOutput）
-  # 2. 实际UI内容由server端的renderUI动态生成
-  # 3. 根据登录状态切换不同的界面
+  # OLD 架构：renderUI 直接返回 login_ui() 或 main_ui()
   output$app_ui <- renderUI({
     if (!rv$logged_in) {
-      # 未登录时显示登录界面
       login_ui()
     } else {
-      # 登录后显示主应用界面
+      message("[RENDER] 调用 main_ui()")
       main_ui()
     }
   })
-  
+
+  # 模块数据刷新辅助函数
+  refresh_all_modules <- function() {
+    rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+    rv$proj_data_refresh <- if(is.null(rv$proj_data_refresh)) 1 else rv$proj_data_refresh + 1
+    rv$inspection_refresh_trigger <- if(is.null(rv$inspection_refresh_trigger)) 1 else rv$inspection_refresh_trigger + 1
+  }
+
   # 控制admin菜单显示/隐藏
   observe({
     req(rv$logged_in)
@@ -71,33 +74,23 @@ server <- function(input, output, session) {
     session$sendCustomMessage(type = "toggleAdminMenu", message = list(show = is_admin))
   })
 
-  # 处理登录按钮点击事件
-  # observeEvent函数用于响应用户操作
+  # OLD 登录模式：直接设置 rv$logged_in，renderUI 自动切换到 main_ui()
   observeEvent(input$login_btn, {
-    # req函数确保输入值存在，防止空值导致错误
     req(input$login_username, input$login_password)
-    
-    # 调用auth_login函数进行身份验证
     result <- auth_login(input$login_username, input$login_password)
-    
     if (result$success) {
-      # 登录成功，更新登录状态和用户信息
       rv$logged_in <- TRUE
       rv$current_user <- result$user
-      # 将用户ID保存到浏览器localStorage，刷新后可自动恢复
       session$sendCustomMessage(type = "saveLoginState", message = list(user_id = result$user$id[1]))
-      # 显示欢迎通知
       showNotification(sprintf("欢迎回来，%s！", result$user$username[1]), type = "message")
     } else {
-      # 登录失败，显示错误通知
       showNotification(result$message, type = "error")
     }
   })
 
-  # 页面刷新后自动恢复登录状态
+  # OLD 自动登录：设置状态，renderUI 自动渲染 main_ui()
   observeEvent(input$auto_login_user_id, {
     req(input$auto_login_user_id)
-    # 避免重复恢复（如果已经登录则跳过）
     if (rv$logged_in) return()
     result <- auth_login_by_id(input$auto_login_user_id)
     if (result$success) {
@@ -105,7 +98,6 @@ server <- function(input, output, session) {
       rv$current_user <- result$user
       showNotification(sprintf("欢迎回来，%s！", result$user$username[1]), type = "message")
     } else {
-      # 自动登录失败（用户可能被删除或禁用），清除localStorage
       session$sendCustomMessage(type = "clearLoginState", message = list())
     }
   })
@@ -182,35 +174,39 @@ server <- function(input, output, session) {
   
   # 工单统计输出（使用触发器确保自动刷新）
   output$wo_stat_total <- renderText({
-    rv$work_order_refresh_trigger
+    rv$logged_in; rv$work_order_refresh_trigger
     stats <- work_order_get_stats()
+    message("[OUT] wo_stat_total called, logged_in=", rv$logged_in, 
+            " trigger=", rv$work_order_refresh_trigger, " total=", stats$total[1])
     as.character(stats$total[1])
   })
   output$wo_stat_pending <- renderText({
-    rv$work_order_refresh_trigger
+    rv$logged_in; rv$work_order_refresh_trigger
     stats <- work_order_get_stats()
     as.character(stats$pending[1])
   })
   output$wo_stat_assigned <- renderText({
-    rv$work_order_refresh_trigger
+    rv$logged_in; rv$work_order_refresh_trigger
     stats <- work_order_get_stats()
     as.character(stats$assigned[1])
   })
   output$wo_stat_processing <- renderText({
-    rv$work_order_refresh_trigger
+    rv$logged_in; rv$work_order_refresh_trigger
     stats <- work_order_get_stats()
     as.character(stats$processing[1])
   })
   output$wo_stat_completed <- renderText({
-    rv$work_order_refresh_trigger
+    rv$logged_in; rv$work_order_refresh_trigger
     stats <- work_order_get_stats()
     as.character(stats$completed[1])
   })
   output$wo_stat_closed <- renderText({
-    rv$work_order_refresh_trigger
+    rv$logged_in; rv$work_order_refresh_trigger
     stats <- work_order_get_stats()
     as.character(stats$closed[1])
   })
+  # ★ 去掉 suspendWhenHidden=FALSE，让输出在 display:none 时挂起
+  # showMainArea 后才恢复 → 首次评估即 logged_in=TRUE → 数据正常
   
   # 工单状态筛选动态UI（无标签）
   output$work_order_status_filter_ui <- renderUI({
@@ -1835,6 +1831,8 @@ server <- function(input, output, session) {
     })
     do.call(tagList, items)
   })
+  
+  # ★ suspendWhenHidden 使用默认 TRUE：display:none 时挂起，显示时恢复并重新评估
 
   # 项目管理模块逻辑
   project_server(input, output, session, rv)
@@ -1865,14 +1863,14 @@ server <- function(input, output, session) {
   # 巡检模块逻辑
   inspection_server(input, output, session, rv)
 
-  # 流程模块逻辑
-  process_server(input, output, session, rv)
+  # ★ 临时禁用新模块，排查是否新模块导致数据不渲染
+  message("[MODULE-SKIP] process_server, performance_server, sysmon_server 已禁用")
+  # process_server(input, output, session, rv)
+  # performance_server(input, output, session, rv)
+  # sysmon_server(input, output, session, rv)
 
-  # 绩效模块逻辑
-  performance_server(input, output, session, rv)
-
-  # 性能监控模块逻辑
-  sysmon_server(input, output, session, rv)
+  # 记事模块逻辑
+  note_server(input, output, session, rv)
 
   # 流程超时检测已移除（新审批模块为同步流转）
 

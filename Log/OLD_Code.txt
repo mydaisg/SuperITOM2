@@ -1,0 +1,2899 @@
+# 加载功能模块脚本
+# 这些脚本包含了系统的核心功能实现
+source("Script/auth.r")           # 身份验证模块（登录/注销）
+source("Script/data_management.r")  # 数据管理模块
+source("Script/model_training.r")   # 模型训练模块
+source("Script/visualization.r")    # 数据可视化模块
+source("Script/user_management.r")   # 用户管理模块
+source("Script/system_settings.r")  # 系统设置模块
+source("Script/work_order.r")       # 工单管理模块
+source("Script/project_management.r") # 项目管理模块（数据层）
+source("Script/project_server.r")     # 项目管理模块（服务端逻辑）
+source("Script/information_collector.r")  # 信息收集器模块
+source("Script/inspection_patrol.r")    # 巡检管理模块（旧版兼容）
+source("Script/inspection_management.r") # 巡检管理模块（数据层）
+source("Script/inspection_server.r")    # 巡检管理模块（服务端）
+source("Script/login_ui.r")         # 登录界面定义
+source("Script/main_ui.r")          # 主界面定义
+source("Script/github_autosubmit.r") # GitHub自动提交功能
+source("Script/std_computer.r")        # 标准化模块
+source("Script/data_center_server.r")   # 数据中心模块（数据归集）
+source("Script/process_engine.r")       # 流程引擎核心
+source("Script/process_server.r")       # 流程模块服务端
+source("Script/performance_management.r") # 绩效数据层
+source("Script/performance_server.r")   # 绩效模块服务端
+
+# 定义server函数
+# 这是Shiny应用的服务器逻辑核心
+# 参数说明：
+# - input: 接收来自UI的用户输入
+# - output: 向UI发送输出内容
+# - session: 管理用户会话
+server <- function(input, output, session) {
+  
+  # 初始化工单配置选项（确保如果已有 config_options 表但没有工单配置时能正确初始化）
+  tryCatch({
+    init_work_order_config_options()
+  }, error = function(e) {
+    warning("初始化工单配置选项失败: ", e$message)
+  })
+  
+  # 创建响应式值对象，用于管理应用状态
+  # reactiveValues是Shiny的核心功能，用于存储和管理响应式状态
+  # 当这些值发生变化时，依赖它们的UI和计算会自动更新
+  rv <- reactiveValues(
+    logged_in = FALSE,  # 登录状态，默认为未登录
+    current_user = NULL # 当前用户信息，默认为空
+  )
+  
+  # 动态生成UI内容
+  # renderUI函数用于根据应用状态动态生成UI组件
+  # 这是ui.R中三行代码就能运行的核心原理：
+  # 1. ui.R只提供了基础框架（fluidPage包含uiOutput）
+  # 2. 实际UI内容由server端的renderUI动态生成
+  # 3. 根据登录状态切换不同的界面
+  output$app_ui <- renderUI({
+    if (!rv$logged_in) {
+      # 未登录时显示登录界面
+      login_ui()
+    } else {
+      # 登录后显示主应用界面
+      main_ui()
+    }
+  })
+  
+  # 控制admin菜单显示/隐藏
+  observe({
+    req(rv$logged_in)
+    is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+    session$sendCustomMessage(type = "toggleAdminMenu", message = list(show = is_admin))
+  })
+
+  # 处理登录按钮点击事件
+  # observeEvent函数用于响应用户操作
+  observeEvent(input$login_btn, {
+    # req函数确保输入值存在，防止空值导致错误
+    req(input$login_username, input$login_password)
+    
+    # 调用auth_login函数进行身份验证
+    result <- auth_login(input$login_username, input$login_password)
+    
+    if (result$success) {
+      # 登录成功，更新登录状态和用户信息
+      rv$logged_in <- TRUE
+      rv$current_user <- result$user
+      # 将用户ID保存到浏览器localStorage，刷新后可自动恢复
+      session$sendCustomMessage(type = "saveLoginState", message = list(user_id = result$user$id[1]))
+      # 显示欢迎通知
+      showNotification(sprintf("欢迎回来，%s！", result$user$username[1]), type = "message")
+    } else {
+      # 登录失败，显示错误通知
+      showNotification(result$message, type = "error")
+    }
+  })
+
+  # 页面刷新后自动恢复登录状态
+  observeEvent(input$auto_login_user_id, {
+    req(input$auto_login_user_id)
+    # 避免重复恢复（如果已经登录则跳过）
+    if (rv$logged_in) return()
+    result <- auth_login_by_id(input$auto_login_user_id)
+    if (result$success) {
+      rv$logged_in <- TRUE
+      rv$current_user <- result$user
+      showNotification(sprintf("欢迎回来，%s！", result$user$username[1]), type = "message")
+    } else {
+      # 自动登录失败（用户可能被删除或禁用），清除localStorage
+      session$sendCustomMessage(type = "clearLoginState", message = list())
+    }
+  })
+
+  # 处理退出登录按钮点击事件
+  observeEvent(input$logout, {
+    # 调用auth_logout函数处理注销逻辑
+    result <- auth_logout()
+    # 清除浏览器localStorage中的登录状态
+    session$sendCustomMessage(type = "clearLoginState", message = list())
+    # 重置登录状态和用户信息
+    rv$logged_in <- FALSE
+    rv$current_user <- NULL
+    # 显示注销成功通知
+    showNotification(result$message, type = "message")
+    # 延迟后重新加载页面，确保回到登录界面
+    Sys.sleep(0.5)
+    session$reload()
+  })
+  
+  # 处理数据刷新按钮点击事件
+  observeEvent(input$refresh_data, {
+    # 检查登录状态
+    req(rv$logged_in)
+    # 更新数据表格输出
+    output$data_table <- renderDT({
+      DT::datatable(
+        data_get_all(),  # 获取所有数据
+        options = list(pageLength = 10, scrollX = TRUE),  # 表格选项
+        editable = TRUE,  # 允许编辑
+        rownames = FALSE  # 不显示行名
+      )
+    })
+  })
+  
+  # 处理添加数据按钮点击事件
+  observeEvent(input$add_data, {
+    # 检查登录状态
+    req(rv$logged_in)
+    # 确保必要输入存在
+    req(input$data_name, input$data_type, input$data_value)
+    # 调用data_add函数添加数据
+    result <- data_add(input$data_name, input$data_type, input$data_value)
+    # 显示操作结果通知
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    # 刷新数据表格
+    output$data_table <- renderDT({
+      DT::datatable(
+        data_get_all(),
+        options = list(pageLength = 10, scrollX = TRUE),
+        editable = TRUE,
+        rownames = FALSE
+      )
+    })
+  })
+  
+  # 初始渲染数据表格
+  # 当应用启动或页面加载时，自动渲染数据表格
+  output$data_table <- renderDT({
+    DT::datatable(
+      data_get_all(),
+      options = list(pageLength = 10, scrollX = TRUE),
+      editable = TRUE,
+      rownames = FALSE
+    )
+  })
+  
+  # ========== 工单模块 ==========
+  # 创建响应式值存储选中的工单ID和工单详情
+  rv$selected_work_order_id <- NULL
+  rv$selected_work_order_detail <- NULL
+  # 工单数据刷新触发器
+  rv$work_order_refresh_trigger <- 0
+  
+  # 工单统计输出（使用触发器确保自动刷新）
+  output$wo_stat_total <- renderText({
+    rv$work_order_refresh_trigger
+    stats <- work_order_get_stats()
+    as.character(stats$total[1])
+  })
+  output$wo_stat_pending <- renderText({
+    rv$work_order_refresh_trigger
+    stats <- work_order_get_stats()
+    as.character(stats$pending[1])
+  })
+  output$wo_stat_assigned <- renderText({
+    rv$work_order_refresh_trigger
+    stats <- work_order_get_stats()
+    as.character(stats$assigned[1])
+  })
+  output$wo_stat_processing <- renderText({
+    rv$work_order_refresh_trigger
+    stats <- work_order_get_stats()
+    as.character(stats$processing[1])
+  })
+  output$wo_stat_completed <- renderText({
+    rv$work_order_refresh_trigger
+    stats <- work_order_get_stats()
+    as.character(stats$completed[1])
+  })
+  output$wo_stat_closed <- renderText({
+    rv$work_order_refresh_trigger
+    stats <- work_order_get_stats()
+    as.character(stats$closed[1])
+  })
+  
+  # 工单状态筛选动态UI（无标签）
+  output$work_order_status_filter_ui <- renderUI({
+    choices <- work_order_status_choices(include_all = TRUE)
+    if (length(choices) == 0) {
+      choices <- c("全部工单" = "all", "待处理" = "pending", "已派发" = "assigned",
+                   "处理中" = "processing", "已完成" = "completed", "已关闭" = "closed")
+    }
+    selectInput("work_order_status_filter", NULL, choices = choices, selected = "all")
+  })
+  
+  # 工单优先级动态UI（从配置读取）
+  output$work_order_priority_ui <- renderUI({
+    choices <- config_option_choices("work_order_priority")
+    if (length(choices) == 0) {
+      choices <- c("低" = "低", "中" = "中", "高" = "高", "紧急" = "紧急")
+    }
+    selected <- config_option_default("work_order_priority")
+    if (is.null(selected) || selected == "") selected <- "中"
+    selectInput("work_order_priority", "优先级", choices = choices, selected = selected)
+  })
+  
+  # 工单分类动态UI（从配置读取）
+  output$work_order_category_ui <- renderUI({
+    choices <- config_option_choices("work_order_category")
+    if (length(choices) == 0) {
+      choices <- c("一般" = "一般", "硬件故障" = "硬件故障", "软件故障" = "软件故障", 
+                    "网络问题" = "网络问题", "系统维护" = "系统维护", "账号权限" = "账号权限", "其他" = "其他")
+    }
+    selected <- config_option_default("work_order_category")
+    if (is.null(selected) || selected == "") selected <- "一般"
+    selectInput("work_order_category", "分类", choices = choices, selected = selected)
+  })
+  
+  # 编辑工单时的优先级和分类UI（从配置读取）
+  output$edit_work_order_priority_ui <- renderUI({
+    choices <- config_option_choices("work_order_priority")
+    if (length(choices) == 0) {
+      choices <- c("低" = "低", "中" = "中", "高" = "高", "紧急" = "紧急")
+    }
+    selectInput("edit_work_order_priority", "优先级", choices = choices)
+  })
+  
+  output$edit_work_order_category_ui <- renderUI({
+    choices <- config_option_choices("work_order_category")
+    if (length(choices) == 0) {
+      choices <- c("一般" = "一般", "硬件故障" = "硬件故障", "软件故障" = "软件故障", 
+                    "网络问题" = "网络问题", "系统维护" = "系统维护", "账号权限" = "账号权限", "其他" = "其他")
+    }
+    selectInput("edit_work_order_category", "分类", choices = choices)
+  })
+  
+  # 渲染工单表格（使用触发器确保自动刷新）
+  output$work_order_table <- renderDT({
+    req(rv$logged_in)
+    rv$work_order_refresh_trigger
+    all_orders <- work_order_get_all(input$work_order_status_filter)
+
+    # 服务器端搜索过滤
+    search_term <- input$work_order_search
+    if (!is.null(search_term) && nchar(trimws(search_term)) > 0) {
+      search_term <- toupper(trimws(search_term))
+      # 在工单号、标题、描述、分类、处理人中搜索
+      all_orders <- all_orders[grepl(search_term, toupper(all_orders$order_no)) |
+                               grepl(search_term, toupper(all_orders$title)) |
+                               grepl(search_term, toupper(all_orders$description)) |
+                               grepl(search_term, toupper(all_orders$category)) |
+                               grepl(search_term, toupper(all_orders$current_handler)), ]
+    }
+
+      # 列顺序：工单号、标题、描述、分类、优先级、处理人、状态、请求用户、创建人、时间
+      if (nrow(all_orders) > 0) {
+        # 工单号链接
+        order_nos <- ifelse(is.na(all_orders$order_no),
+                           paste0("ITS", format(as.Date(all_orders$created_at), "%Y%m%d"), sprintf("%03d", all_orders$id)),
+                           all_orders$order_no)
+        order_nos <- sprintf('<a href="#" class="wo-view-link" data-id="%s" style="font-weight:bold;color:#337ab7;">%s</a>', all_orders$id, order_nos)
+
+        # 选择并重命名列（去掉操作列）
+        display_data <- data.frame(
+          工单号 = order_nos,
+        标题 = all_orders$title,
+        描述 = all_orders$description,
+        分类 = ifelse(is.na(all_orders$category), "未分类", all_orders$category),
+        优先级 = all_orders$priority,
+        处理人 = ifelse(is.na(all_orders$current_handler), "未分配", all_orders$current_handler),
+        状态 = all_orders$status,
+        请求用户 = ifelse(is.na(all_orders$request_user_name), "—", all_orders$request_user_name),
+        创建人 = ifelse(is.na(all_orders$creator_name), "未知", all_orders$creator_name),
+        时间 = all_orders$created_at,
+        stringsAsFactors = FALSE
+      )
+      
+      # 使用配置的函数获取状态颜色和标签
+      display_data$状态 <- sapply(display_data$状态, function(s) {
+        color <- work_order_status_color(s)
+        label <- work_order_status_label(s)
+        sprintf('<span style="background-color:%s; color:white; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;">%s</span>',
+                color, label)
+      })
+      
+      # 使用配置的函数获取优先级颜色
+      display_data$优先级 <- sapply(display_data$优先级, function(p) {
+        color <- config_option_color("work_order_priority", p)
+        sprintf('<span style="background-color:%s; color:white; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;">%s</span>',
+                color, p)
+      })
+    } else {
+      display_data <- data.frame(
+        工单号 = character(),
+        标题 = character(),
+        描述 = character(),
+        分类 = character(),
+        优先级 = character(),
+        处理人 = character(),
+        状态 = character(),
+        请求用户 = character(),
+        创建人 = character(),
+        时间 = character(),
+        stringsAsFactors = FALSE
+      )
+    }
+    
+    DT::datatable(
+      display_data,
+      escape = FALSE,  # 允许HTML按钮
+      options = list(
+        pageLength = 50,  # 默认显示50行
+        paging = TRUE,
+        searching = FALSE,  # 禁用DT内置搜索，使用自定义搜索框
+        ordering = TRUE,
+        info = FALSE,  # 隐藏底部信息
+        lengthChange = FALSE,  # 隐藏每页显示数选择器
+        dom = 't<"float-left"p>',  # 分页器在底部左侧
+        columnDefs = list(
+          # 工单号列（可点击链接）
+          list(targets = 0, width = '100px', className = 'dt-center'),
+          # 标题列
+          list(targets = 1, width = '120px', className = 'dt-left'),
+          # 描述列：限制宽度
+          list(targets = 2, width = '150px', className = 'dt-left'),
+          # 分类列
+          list(targets = 3, width = '70px', className = 'dt-center'),
+          # 优先级列
+          list(targets = 4, width = '55px', className = 'dt-center'),
+          # 处理人列
+          list(targets = 5, width = '70px', className = 'dt-center'),
+          # 状态列
+          list(targets = 6, width = '70px', className = 'dt-center'),
+          # 请求用户列
+          list(targets = 7, width = '70px', className = 'dt-center'),
+          # 创建人列
+          list(targets = 8, width = '70px', className = 'dt-center'),
+          # 时间列
+          list(targets = 9, width = '120px', className = 'dt-center')
+        ),
+        rowCallback = JS(
+          "function(row, data, index) {
+            // 设置行高，确保一行最多跨三行
+            $('td', row).css({
+              'max-height': '60px',
+              'overflow': 'hidden',
+              'text-overflow': 'ellipsis',
+              'white-space': 'nowrap'
+            });
+            // 描述列允许换行但限制行数
+            $('td:eq(2)', row).css({
+              'white-space': 'normal',
+              'line-height': '1.4em',
+              'max-height': '4.2em'
+            });
+          }"
+        )
+      ),
+      callback = JS(
+        "table.on('click', 'a.wo-view-link', function(e) {
+          e.preventDefault();
+          var woId = $(this).data('id');
+          Shiny.setInputValue('work_order_view_click', woId);
+        });"
+      ),
+      rownames = FALSE,
+      selection = list(mode = 'single', target = 'row'),
+      class = 'cell-border stripe hover'
+    )
+  })
+  
+  # 处理工单表格行选择事件（用于派发和处理页面）
+  observeEvent(input$work_order_table_rows_selected, {
+    req(rv$logged_in)
+    selected_rows <- input$work_order_table_rows_selected
+    if (length(selected_rows) > 0) {
+      all_orders <- work_order_get_all(input$work_order_status_filter)
+      if (nrow(all_orders) >= selected_rows) {
+        rv$selected_work_order_id <- all_orders$id[selected_rows]
+        rv$selected_work_order_detail <- all_orders[selected_rows, ]
+      }
+    } else {
+      rv$selected_work_order_id <- NULL
+      rv$selected_work_order_detail <- NULL
+    }
+  })
+  
+  # 处理"查看"按钮点击事件，显示完整工单信息弹窗
+  observeEvent(input$work_order_view_click, {
+    req(rv$logged_in)
+    wo_id <- input$work_order_view_click
+    req(wo_id)
+    
+    # 通过工单ID获取完整详情
+    wo_detail <- work_order_get_by_id(wo_id)
+    
+    if (nrow(wo_detail) > 0) {
+      wo <- wo_detail[1, ]
+      
+      # 获取历史评论
+      comments <- work_order_get_comments(wo_id)
+      
+      # 构建评论 HTML（包含添加评论输入框）
+      comments_html <- "<div style='margin-top: 15px;'><div style='font-weight: bold; color: #333; margin-bottom: 10px; font-size: 15px;'>💬 评论</div>"
+      # 添加评论输入区域
+      comments_html <- paste0(comments_html, '
+        <div style="background: #fff; padding: 12px; border-radius: 6px; border: 1px solid #ddd; margin-bottom: 12px;">
+          <textarea id="work_order_comment_input" placeholder="输入评论内容..." style="width: 100%; min-height: 60px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; resize: vertical;"></textarea>
+          <button class="btn btn-primary btn-sm" style="margin-top: 8px;" onclick="Shiny.setInputValue(\'add_work_order_comment\', $(this).closest(\'.modal\').find(\'textarea\').val(), {priority: \'event\'});">添加评论</button>
+        </div>
+      ')
+      # 历史评论
+      if (nrow(comments) > 0) {
+        for (i in 1:nrow(comments)) {
+          creator <- ifelse(is.na(comments$creator_name[i]), "未知用户", comments$creator_name[i])
+          comment_text <- ifelse(is.na(comments$comment[i]), "", comments$comment[i])
+          created_at <- ifelse(is.na(comments$created_at[i]), "", comments$created_at[i])
+          comments_html <- paste0(comments_html, sprintf('
+            <div style="background: #fff8e7; padding: 10px 12px; margin-bottom: 8px; border-radius: 6px; border-left: 4px solid #f0ad4e;">
+              <div style="font-size: 12px; color: #666; margin-bottom: 6px;">
+                <span style="font-weight: bold; color: #337ab7;">%s</span>
+                <span style="margin-left: 10px;">%s</span>
+              </div>
+              <div style="font-size: 13px; line-height: 1.6; white-space: pre-wrap;">%s</div>
+            </div>', creator, created_at, comment_text))
+        }
+      } else {
+        comments_html <- paste0(comments_html, "<div style='color: #999; font-style: italic; padding: 10px;'>暂无评论</div>")
+      }
+      comments_html <- paste0(comments_html, "</div>")
+      
+      # 状态中文映射
+      status_cn <- switch(wo$status,
+        "pending" = "待处理",
+        "assigned" = "已派发",
+        "processing" = "处理中",
+        "completed" = "已完成",
+        "closed" = "已关闭",
+        wo$status
+      )
+      
+      # 优先级颜色映射
+      priority_color <- switch(wo$priority,
+        "紧急" = "#d9534f",
+        "高" = "#f0ad4e",
+        "中" = "#5bc0de",
+        "低" = "#5cb85c",
+        "#999"
+      )
+      
+      # 状态颜色映射
+      status_color <- switch(wo$status,
+        "pending" = "#f0ad4e",
+        "assigned" = "#5bc0de",
+        "processing" = "#337ab7",
+        "completed" = "#5cb85c",
+        "closed" = "#777",
+        "#999"
+      )
+      
+      # 构建弹窗内容
+      modal_content <- HTML(sprintf('
+        <div style="padding: 10px; max-height: 70vh; overflow-y: auto;">
+          <div style="background: #f5f5f5; padding: 14px; border-radius: 6px; margin-bottom: 15px;">
+            <table style="width: 100%%; font-size: 14px;">
+              <tr>
+                <td style="width: 110px; font-weight: bold; color: #666;">工单号：</td>
+                <td style="font-weight: bold; color: #337ab7; font-size: 15px;">%s</td>
+                <td style="width: 110px; font-weight: bold; color: #666;">标题：</td>
+                <td style="font-weight: bold;">%s</td>
+              </tr>
+              <tr><td colspan="4" style="height: 8px;"></td></tr>
+              <tr>
+                <td style="font-weight: bold; color: #666;">优先级：</td>
+                <td><span style="background: %s; color: white; padding: 3px 10px; border-radius: 4px; font-size: 13px;">%s</span></td>
+                <td style="font-weight: bold; color: #666;">状态：</td>
+                <td><span style="background: %s; color: white; padding: 3px 10px; border-radius: 4px; font-size: 13px;">%s</span></td>
+              </tr>
+              <tr><td colspan="4" style="height: 8px;"></td></tr>
+              <tr>
+                <td style="font-weight: bold; color: #666;">分类：</td>
+                <td>%s</td>
+                <td style="font-weight: bold; color: #666;">创建人：</td>
+                <td>%s</td>
+              </tr>
+              <tr><td colspan="4" style="height: 8px;"></td></tr>
+              <tr>
+                <td style="font-weight: bold; color: #666;">处理人：</td>
+                <td>%s</td>
+                <td style="font-weight: bold; color: #666;">请求用户：</td>
+                <td>%s</td>
+              </tr>
+              <tr><td colspan="4" style="height: 8px;"></td></tr>
+              <tr>
+                <td style="font-weight: bold; color: #666;">创建时间：</td>
+                <td>%s</td>
+                <td style="font-weight: bold; color: #666;">指派时间：</td>
+                <td>%s</td>
+              </tr>
+              <tr><td colspan="4" style="height: 8px;"></td></tr>
+              <tr>
+                <td style="font-weight: bold; color: #666;">处理时间：</td>
+                <td>%s</td>
+                <td style="font-weight: bold; color: #666;">完成时间：</td>
+                <td>%s</td>
+              </tr>
+            </table>
+          </div>
+          
+          <div style="margin-bottom: 15px;">
+            <div style="font-weight: bold; color: #333; margin-bottom: 8px; font-size: 15px;">📋 工单描述</div>
+            <div style="background: #fafafa; padding: 14px; border-radius: 6px; border-left: 4px solid #337ab7; min-height: 50px; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; line-height: 1.7;">%s</div>
+          </div>
+          
+          <div style="margin-bottom: 15px;">
+            <div style="font-weight: bold; color: #333; margin-bottom: 8px; font-size: 15px;">✅ 解决方案/关闭原因</div>
+            <div style="background: #f0f9e8; padding: 14px; border-radius: 6px; border-left: 4px solid #5cb85c; min-height: 50px; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; line-height: 1.7;">%s</div>
+          </div>
+          
+          %s
+        </div>
+      ',
+      ifelse(is.na(wo$order_no), sprintf("ITS%s%03d", format(as.Date(wo$created_at), "%Y%m%d"), wo$id), wo$order_no),
+      wo$title,
+      priority_color,
+      wo$priority,
+      status_color,
+      status_cn,
+      ifelse(is.na(wo$category), "未分类", wo$category),
+      ifelse(is.na(wo$creator_name), "未知", wo$creator_name),
+      ifelse(is.na(wo$handler_name), ifelse(is.na(wo$assignee_name), "未分配", wo$assignee_name), wo$handler_name),
+      ifelse(is.na(wo$request_user_name), "—", wo$request_user_name),
+      wo$created_at,
+      ifelse(is.na(wo$assigned_at), "未指派", wo$assigned_at),
+      ifelse(is.na(wo$handled_at), "未开始", wo$handled_at),
+      ifelse(is.na(wo$completed_at), "未完成", wo$completed_at),
+      ifelse(is.na(wo$description), "无描述", wo$description),
+      ifelse(is.na(wo$resolution), "暂无", wo$resolution),
+      comments_html
+      ))
+      
+      # 根据状态决定显示哪些操作按钮
+      can_assign <- wo$status %in% c("pending")
+      can_start <- wo$status %in% c("pending", "assigned")
+      can_complete <- wo$status %in% c("processing")
+      can_close <- wo$status %in% c("completed")
+      
+      # 检查是否为Admin
+      is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+      
+      # 构建操作按钮HTML
+      action_buttons <- ""
+      if (can_assign || can_start || can_complete || can_close || is_admin) {
+        action_buttons <- '<div style="margin-bottom: 10px; padding: 10px; background: #f0f7ff; border-radius: 6px;">'
+        # Admin专属修改和删除按钮
+        if (is_admin) {
+          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-warning btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_edit\', %d, {priority: \'event\'});">修改</button>', wo_id))
+          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-danger btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'delete_work_order_btn\', %d, {priority: \'event\'});">删除</button>', wo_id))
+        }
+        if (can_assign) {
+          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-primary btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_assign\', %d, {priority: \'event\'});">派发</button>', wo_id))
+        }
+        if (can_start) {
+          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-info btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_start\', %d, {priority: \'event\'});">开始处理</button>', wo_id))
+        }
+        if (can_complete) {
+          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-success btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_complete\', %d, {priority: \'event\'});">完成</button>', wo_id))
+        }
+        if (can_close) {
+          action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-warning btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_close\', %d, {priority: \'event\'});">关闭</button>', wo_id))
+        }
+        action_buttons <- paste0(action_buttons, '</div>')
+      }
+      
+      showModal(modalDialog(
+        title = paste0("工单详情 - ", ifelse(is.na(wo$order_no), sprintf("ITS%s%03d", format(as.Date(wo$created_at), "%Y%m%d"), wo$id), wo$order_no)),
+        HTML(modal_content),
+        footer = tagList(
+          HTML(action_buttons),
+          modalButton("关闭")
+        ),
+        size = "l",
+        easyClose = TRUE
+      ))
+    }
+  })
+  
+  # 处理弹窗内派发按钮点击事件
+  observeEvent(input$modal_work_order_assign, {
+    req(rv$logged_in)
+    wo_id <- input$modal_work_order_assign
+    req(wo_id)
+    
+    # 获取工单详情
+    wo_detail <- work_order_get_by_id(wo_id)
+    if (nrow(wo_detail) > 0) {
+      rv$selected_work_order_id <- wo_id
+      rv$selected_work_order_detail <- wo_detail
+      
+      # 获取可派发用户列表
+      users <- work_order_get_assignable_users()
+      if (nrow(users) > 0) {
+        choices <- setNames(users$id, sprintf("%s (%s)", users$username, users$role))
+        
+        # 关闭详情弹窗
+        removeModal()
+        
+        # 显示派发选择弹窗
+        showModal(modalDialog(
+          title = "派发工单",
+          wellPanel(
+            h4("选择处理人"),
+            selectInput("modal_assignee_select", "处理人", choices = choices),
+            actionButton("modal_confirm_assign", "确认派发", class = "btn-primary")
+          ),
+          footer = modalButton("取消"),
+          easyClose = TRUE
+        ))
+      }
+    }
+  })
+  
+  # 处理弹窗内开始处理按钮点击事件
+  observeEvent(input$modal_work_order_start, {
+    req(rv$logged_in)
+    wo_id <- input$modal_work_order_start
+    req(wo_id)
+    
+    result <- work_order_start_handle(wo_id, rv$current_user)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    
+    if (result$success) {
+      removeModal()
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+    }
+  })
+  
+  # 处理弹窗内完成工单按钮点击事件
+  observeEvent(input$modal_work_order_complete, {
+    req(rv$logged_in)
+    wo_id <- input$modal_work_order_complete
+    req(wo_id)
+    
+    removeModal()
+    
+    showModal(modalDialog(
+      title = "完成工单",
+      wellPanel(
+        h4("输入解决方案/处理结果"),
+        textAreaInput("modal_resolution_input", "", rows = 4),
+        actionButton("modal_confirm_complete", "确认完成", class = "btn-success")
+      ),
+      footer = modalButton("取消"),
+      easyClose = TRUE
+    ))
+    
+    # 临时保存工单ID用于完成
+    rv$temp_complete_wo_id <- wo_id
+  })
+  
+  # 处理弹窗内关闭工单按钮点击事件
+  observeEvent(input$modal_work_order_close, {
+    req(rv$logged_in)
+    wo_id <- input$modal_work_order_close
+    req(wo_id)
+    
+    removeModal()
+    
+    showModal(modalDialog(
+      title = "关闭工单",
+      wellPanel(
+        h4("选择关闭原因"),
+        selectInput("modal_close_reason_input", "", 
+                   choices = c("请选择关闭原因" = "", "已处理和交付" = "已处理和交付", "无法处理关闭" = "无法处理关闭")),
+        actionButton("modal_confirm_close", "确认关闭", class = "btn-warning")
+      ),
+      footer = modalButton("取消"),
+      easyClose = TRUE
+    ))
+    
+    rv$temp_close_wo_id <- wo_id
+  })
+  
+  # 处理弹窗内确认派发
+  observeEvent(input$modal_confirm_assign, {
+    req(rv$logged_in)
+    req(input$modal_assignee_select)
+    req(rv$selected_work_order_id)
+    
+    result <- work_order_assign(rv$selected_work_order_id, input$modal_assignee_select, rv$current_user)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    
+    if (result$success) {
+      removeModal()
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+      rv$selected_work_order_id <- NULL
+      rv$selected_work_order_detail <- NULL
+    }
+  })
+  
+  # 处理弹窗内确认完成
+  observeEvent(input$modal_confirm_complete, {
+    req(rv$logged_in)
+    req(input$modal_resolution_input)
+    req(rv$temp_complete_wo_id)
+    
+    result <- work_order_complete(rv$temp_complete_wo_id, input$modal_resolution_input, rv$current_user)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    
+    if (result$success) {
+      removeModal()
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+      rv$temp_complete_wo_id <- NULL
+    }
+  })
+  
+  # 处理弹窗内确认关闭
+  observeEvent(input$modal_confirm_close, {
+    req(rv$logged_in)
+    req(input$modal_close_reason_input)
+    req(input$modal_close_reason_input != "")
+    req(rv$temp_close_wo_id)
+    
+    result <- work_order_close(rv$temp_close_wo_id, input$modal_close_reason_input, rv$current_user)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    
+    if (result$success) {
+      removeModal()
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+      rv$temp_close_wo_id <- NULL
+    }
+  })
+  
+  # 是否有选中工单
+  output$work_order_selected <- reactive({
+    return(!is.null(rv$selected_work_order_id))
+  })
+  outputOptions(output, "work_order_selected", suspendWhenHidden = FALSE)
+  
+  # 是否可以开始处理（状态为 pending 或 assigned）
+  output$work_order_can_start <- reactive({
+    if (is.null(rv$selected_work_order_detail)) return(FALSE)
+    return(rv$selected_work_order_detail$status[1] %in% c("pending", "assigned"))
+  })
+  outputOptions(output, "work_order_can_start", suspendWhenHidden = FALSE)
+  
+  # 是否可以完成（状态为 processing）
+  output$work_order_can_complete <- reactive({
+    if (is.null(rv$selected_work_order_detail)) return(FALSE)
+    return(rv$selected_work_order_detail$status[1] == "processing")
+  })
+  outputOptions(output, "work_order_can_complete", suspendWhenHidden = FALSE)
+
+  # 是否可以关闭（状态不为 closed）
+  output$work_order_can_close <- reactive({
+    if (is.null(rv$selected_work_order_detail)) return(FALSE)
+    return(rv$selected_work_order_detail$status[1] != "closed")
+  })
+  outputOptions(output, "work_order_can_close", suspendWhenHidden = FALSE)
+
+  # 是否可以编辑（选中工单即可编辑基本信息）
+  output$work_order_can_edit <- reactive({
+    return(!is.null(rv$selected_work_order_id))
+  })
+  outputOptions(output, "work_order_can_edit", suspendWhenHidden = FALSE)
+
+  # 是否处于编辑模式
+  rv$work_order_edit_mode <- FALSE
+  output$work_order_edit_mode <- reactive({
+    return(rv$work_order_edit_mode)
+  })
+  outputOptions(output, "work_order_edit_mode", suspendWhenHidden = FALSE)
+
+  # 显示选中工单信息（派发页面）
+  output$selected_work_order_info <- renderPrint({
+    req(rv$selected_work_order_detail)
+    wo <- rv$selected_work_order_detail
+    cat(sprintf("工单ID: %d\n", wo$id[1]))
+    cat(sprintf("标题: %s\n", wo$title[1]))
+    cat(sprintf("优先级: %s\n", wo$priority[1]))
+    cat(sprintf("当前状态: %s\n", wo$status[1]))
+    cat(sprintf("请求用户: %s\n", ifelse(is.na(wo$request_user_name[1]) || wo$request_user_name[1] == "", "—", wo$request_user_name[1])))
+    cat(sprintf("创建人: %s\n", ifelse(is.na(wo$creator_name[1]), "未知", wo$creator_name[1])))
+    if (!is.na(wo$assignee_name[1])) {
+      cat(sprintf("当前处理人: %s\n", wo$assignee_name[1]))
+    }
+  })
+
+  # 显示选中工单信息（处理页面）
+  output$selected_work_order_info2 <- renderPrint({
+    req(rv$selected_work_order_detail)
+    wo <- rv$selected_work_order_detail
+    cat(sprintf("工单ID: %d\n", wo$id[1]))
+    cat(sprintf("标题: %s\n", wo$title[1]))
+    cat(sprintf("描述: %s\n", wo$description[1]))
+    cat(sprintf("优先级: %s\n", wo$priority[1]))
+    cat(sprintf("分类: %s\n", ifelse(is.na(wo$category[1]), "未分类", wo$category[1])))
+    cat(sprintf("当前状态: %s\n", wo$status[1]))
+    cat(sprintf("请求用户: %s\n", ifelse(is.na(wo$request_user_name[1]) || wo$request_user_name[1] == "", "—", wo$request_user_name[1])))
+    cat(sprintf("创建人: %s\n", ifelse(is.na(wo$creator_name[1]), "未知", wo$creator_name[1])))
+    if (!is.na(wo$assignee_name[1])) {
+      cat(sprintf("指派给: %s\n", wo$assignee_name[1]))
+    }
+    if (!is.na(wo$handler_name[1])) {
+      cat(sprintf("处理人: %s\n", wo$handler_name[1]))
+    }
+  })
+  
+  # 加载可派发用户列表
+  observe({
+    req(rv$logged_in)
+    users <- work_order_get_assignable_users()
+    if (nrow(users) > 0) {
+      choices <- setNames(users$id, sprintf("%s (%s)", users$username, users$role))
+      updateSelectInput(session, "work_order_assignee", choices = choices)
+    }
+  })
+  
+  # 处理创建工单按钮点击事件
+  observeEvent(input$add_work_order, {
+    req(rv$logged_in)
+    req(input$work_order_title, input$work_order_description, input$work_order_priority)
+
+    result <- work_order_add(
+      input$work_order_title,
+      input$work_order_description,
+      input$work_order_priority,
+      input$work_order_category,
+      "",
+      input$work_order_request_user,
+      rv$current_user
+    )
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+
+    # 清空输入
+    updateTextInput(session, "work_order_title", value = "")
+    updateTextAreaInput(session, "work_order_description", value = "")
+    updateTextInput(session, "work_order_request_user", value = "")
+    updateSelectInput(session, "work_order_priority", selected = "中")
+    updateSelectInput(session, "work_order_category", selected = "一般")
+
+    # 触发刷新
+    rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+  })
+
+  # 处理快速工单按钮点击事件
+  observeEvent(input$create_quick_work_order, {
+    req(rv$logged_in)
+    req(input$quick_work_order_text)
+
+    text <- trimws(input$quick_work_order_text)
+    if (text == "") {
+      showNotification("请输入工单内容", type = "warning")
+      return()
+    }
+
+    # 解析文本
+    parsed <- work_order_parse_quick_text(text)
+
+    if (!parsed$success) {
+      showNotification(parsed$message, type = "error")
+      return()
+    }
+
+    # 生成工单标题：从内容中提取前20个字符作为标题
+    title_content <- gsub("[\\n\\r]", " ", parsed$description)  # 替换换行符为空格
+    if (nchar(title_content) > 20) {
+      title_content <- substr(title_content, 1, 20)
+    }
+    title <- paste0(parsed$category, " - ", title_content)
+
+    # 创建工单
+    result <- work_order_add(
+      title = title,
+      description = parsed$description,
+      priority = "中",
+      category = parsed$category,
+      subcategory = "",
+      request_user = parsed$request_user,
+      current_user = rv$current_user
+    )
+
+    if (result$success) {
+      # 如果指定了分派人，查找用户ID并派发
+      if (!is.null(parsed$assignee_name) && parsed$assignee_name != "") {
+        assignee_id <- work_order_find_user_by_name(parsed$assignee_name)
+        if (!is.null(assignee_id)) {
+          # 获取刚创建的工单ID
+          con <- db_connect()
+          tryCatch({
+            # 查找最新创建的工单（按创建时间倒序）
+            latest_order <- dbGetQuery(con, "SELECT id FROM work_orders ORDER BY created_at DESC LIMIT 1")
+            if (nrow(latest_order) > 0) {
+              assign_result <- work_order_assign(latest_order$id[1], assignee_id, rv$current_user)
+              if (assign_result$success) {
+                showNotification(paste0("工单创建成功并已派发给：", parsed$assignee_name), type = "message")
+              } else {
+                showNotification(paste0("工单创建成功，但派发失败：", assign_result$message), type = "warning")
+              }
+            }
+          }, error = function(e) {
+            showNotification(paste0("工单创建成功，但派发失败：", e$message), type = "warning")
+          }, finally = {
+            db_disconnect(con)
+          })
+        } else {
+          showNotification(paste0("工单创建成功，但未找到分派人：", parsed$assignee_name), type = "warning")
+        }
+      } else {
+        showNotification("工单创建成功", type = "message")
+      }
+
+      # 清空输入
+      updateTextAreaInput(session, "quick_work_order_text", value = "")
+
+      # 触发刷新
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+    } else {
+      showNotification(result$message, type = "error")
+    }
+  })
+  
+  # 处理快速创建按钮点击事件 - 滚动到快速工单区域并聚焦文本框
+  observeEvent(input$show_quick_work_order, {
+    runjs('
+      // 滚动到快速工单区域
+      var quickPanel = document.querySelector(".well-panel h4");
+      if (quickPanel && quickPanel.innerText.indexOf("快速工单") !== -1) {
+        quickPanel.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      // 聚焦到文本框
+      setTimeout(function() {
+        var textarea = document.querySelector("#quick_work_order_text");
+        if (textarea) textarea.focus();
+      }, 300);
+    ')
+  })
+  
+  # 处理刷新工单按钮点击事件
+  observeEvent(input$refresh_work_orders, {
+    req(rv$logged_in)
+    rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+  })
+  
+  # 处理新建工单按钮点击事件 - 显示弹窗
+  observeEvent(input$show_create_work_order, {
+    req(rv$logged_in)
+    
+    # 获取优先级和分类选项
+    priority_choices <- config_option_choices("work_order_priority")
+    if (length(priority_choices) == 0) {
+      priority_choices <- c("低" = "低", "中" = "中", "高" = "高", "紧急" = "紧急")
+    }
+    priority_default <- config_option_default("work_order_priority")
+    if (is.null(priority_default) || priority_default == "") priority_default <- "中"
+    
+    category_choices <- config_option_choices("work_order_category")
+    if (length(category_choices) == 0) {
+      category_choices <- c("一般" = "一般", "硬件故障" = "硬件故障", "软件故障" = "软件故障", 
+                            "网络问题" = "网络问题", "系统维护" = "系统维护", "账号权限" = "账号权限", "其他" = "其他")
+    }
+    category_default <- config_option_default("work_order_category")
+    if (is.null(category_default) || category_default == "") category_default <- "一般"
+    
+    showModal(modalDialog(
+      title = "新建工单",
+      wellPanel(
+        h4("工单信息"),
+        textInput("modal_wo_title", "标题", placeholder = "请输入工单标题"),
+        textAreaInput("modal_wo_description", "描述", rows = 4, placeholder = "请输入工单描述"),
+        textInput("modal_wo_request_user", "请求用户", placeholder = "请输入请求用户（工单来源者）"),
+        selectInput("modal_wo_priority", "优先级", choices = priority_choices, selected = priority_default),
+        selectInput("modal_wo_category", "分类", choices = category_choices, selected = category_default),
+        actionButton("modal_confirm_create_wo", "创建工单", class = "btn-primary")
+      ),
+      footer = modalButton("取消"),
+      easyClose = TRUE
+    ))
+  })
+
+  # 处理弹窗内确认创建工单
+  observeEvent(input$modal_confirm_create_wo, {
+    req(rv$logged_in)
+    req(input$modal_wo_title, input$modal_wo_description)
+
+    result <- work_order_add(
+      input$modal_wo_title,
+      input$modal_wo_description,
+      input$modal_wo_priority,
+      input$modal_wo_category,
+      "",
+      input$modal_wo_request_user,
+      rv$current_user
+    )
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    
+    if (result$success) {
+      removeModal()
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+    }
+  })
+  
+  # 处理弹窗内修改工单按钮点击事件（Admin专属）
+  observeEvent(input$modal_work_order_edit, {
+    req(rv$logged_in)
+    wo_id <- input$modal_work_order_edit
+    req(wo_id)
+    
+    # 检查是否为Admin
+    is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+    if (!is_admin) {
+      showNotification("只有Admin才能修改工单", type = "error")
+      return()
+    }
+    
+    # 获取工单详情
+    wo_detail <- work_order_get_by_id(wo_id)
+    if (nrow(wo_detail) > 0) {
+      rv$selected_work_order_id <- wo_id
+      rv$selected_work_order_detail <- wo_detail
+      
+      # 获取优先级和分类选项
+      priority_choices <- config_option_choices("work_order_priority")
+      if (length(priority_choices) == 0) {
+        priority_choices <- c("低" = "低", "中" = "中", "高" = "高", "紧急" = "紧急")
+      }
+      
+      category_choices <- config_option_choices("work_order_category")
+      if (length(category_choices) == 0) {
+        category_choices <- c("一般" = "一般", "硬件故障" = "硬件故障", "软件故障" = "软件故障", 
+                              "网络问题" = "网络问题", "系统维护" = "系统维护", "账号权限" = "账号权限", "其他" = "其他")
+      }
+      
+      wo <- wo_detail[1, ]
+      
+      # 获取状态选项
+      status_choices <- c("pending" = "待处理", "assigned" = "已派发", "processing" = "处理中", 
+                          "completed" = "已完成", "closed" = "已关闭")
+      
+      # 获取工程师列表
+      con <- db_connect()
+      engineers <- tryCatch({
+        dbGetQuery(con, "SELECT id, username FROM users 
+                      WHERE role IN ('it_desk', 'it_engineer', 'sys_engineer', 'admin') 
+                      AND active = 1 ORDER BY username")
+      }, error = function(e) data.frame(), finally = db_disconnect(con))
+      
+      engineer_choices <- c("未分配" = "unassigned")
+      if (nrow(engineers) > 0) {
+        engineer_choices <- c(engineer_choices, setNames(engineers$id, engineers$username))
+      }
+      
+      # 关闭详情弹窗
+      removeModal()
+      
+      # 显示修改弹窗
+      showModal(modalDialog(
+        title = paste0("修改工单 - ", ifelse(is.na(wo$order_no), sprintf("ITS%s%03d", format(as.Date(wo$created_at), "%Y%m%d"), wo$id), wo$order_no)),
+        wellPanel(
+          h4("修改工单信息"),
+          textInput("modal_edit_wo_order_no", "工单号", value = ifelse(is.na(wo$order_no), "", wo$order_no), placeholder = "ITSYYYYMMDDXXX"),
+          textInput("modal_edit_wo_title", "标题", value = wo$title),
+          textAreaInput("modal_edit_wo_description", "描述", rows = 4, value = wo$description),
+          textInput("modal_edit_wo_request_user", "请求用户", value = ifelse(is.na(wo$request_user), "", wo$request_user), placeholder = "请输入请求用户"),
+          selectInput("modal_edit_wo_priority", "优先级", choices = priority_choices, selected = wo$priority),
+          selectInput("modal_edit_wo_category", "分类", choices = category_choices, selected = ifelse(is.na(wo$category), "一般", wo$category)),
+          selectInput("modal_edit_wo_status", "状态", choices = status_choices, selected = wo$status),
+          selectInput("modal_edit_wo_assigned_to", "指派给", choices = engineer_choices,
+                      selected = ifelse(is.na(wo$assigned_to), "unassigned", wo$assigned_to)),
+          actionButton("modal_confirm_edit_wo", "保存修改", class = "btn-warning")
+        ),
+        footer = modalButton("取消"),
+        easyClose = TRUE
+      ))
+    }
+  })
+  
+  # 处理弹窗内确认修改工单
+  observeEvent(input$modal_confirm_edit_wo, {
+    req(rv$logged_in)
+    req(rv$selected_work_order_id)
+    req(input$modal_edit_wo_order_no, input$modal_edit_wo_title, input$modal_edit_wo_description)
+
+    result <- work_order_edit(
+      rv$selected_work_order_id,
+      input$modal_edit_wo_order_no,
+      input$modal_edit_wo_title,
+      input$modal_edit_wo_description,
+      input$modal_edit_wo_priority,
+      input$modal_edit_wo_category,
+      input$modal_edit_wo_status,
+      input$modal_edit_wo_assigned_to,
+      input$modal_edit_wo_request_user,
+      rv$current_user
+    )
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    
+    if (result$success) {
+      removeModal()
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+      rv$selected_work_order_id <- NULL
+      rv$selected_work_order_detail <- NULL
+    }
+  })
+  
+  # 处理派发工单按钮点击事件
+  observeEvent(input$assign_work_order, {
+    req(rv$logged_in)
+    req(rv$selected_work_order_id)
+    req(input$work_order_assignee)
+    
+    result <- work_order_assign(rv$selected_work_order_id, input$work_order_assignee, rv$current_user)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    
+    # 触发刷新
+    rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+    rv$selected_work_order_id <- NULL
+    rv$selected_work_order_detail <- NULL
+  })
+  
+  # 处理开始处理工单按钮点击事件
+  observeEvent(input$start_handle_work_order, {
+    req(rv$logged_in)
+    req(rv$selected_work_order_id)
+    
+    result <- work_order_start_handle(rv$selected_work_order_id, rv$current_user)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    
+    # 触发刷新并更新选中工单详情
+    rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+    rv$selected_work_order_detail <- work_order_get_by_id(rv$selected_work_order_id)
+  })
+  
+  # 处理完成工单按钮点击事件
+  observeEvent(input$complete_work_order, {
+    req(rv$logged_in)
+    req(rv$selected_work_order_id)
+    req(input$work_order_resolution)
+    
+    result <- work_order_complete(rv$selected_work_order_id, input$work_order_resolution, rv$current_user)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    
+    # 清空解决方案输入
+    updateTextAreaInput(session, "work_order_resolution", value = "")
+    
+    # 触发刷新
+    rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+    rv$selected_work_order_id <- NULL
+    rv$selected_work_order_detail <- NULL
+  })
+
+  # 处理关闭工单按钮点击事件
+  observeEvent(input$close_work_order, {
+    req(rv$logged_in)
+    req(rv$selected_work_order_id)
+
+    # 验证必须选择关闭原因
+    if (is.null(input$work_order_close_reason) || input$work_order_close_reason == "") {
+      showNotification("请选择关闭原因", type = "error")
+      return()
+    }
+
+    result <- work_order_close(rv$selected_work_order_id, input$work_order_close_reason, rv$current_user)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+
+    # 重置关闭原因选择
+    updateSelectInput(session, "work_order_close_reason", selected = "")
+
+    # 触发刷新
+    rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+    rv$selected_work_order_id <- NULL
+    rv$selected_work_order_detail <- NULL
+  })
+
+  # 处理编辑工单按钮点击事件
+  observeEvent(input$edit_work_order_btn, {
+    req(rv$logged_in)
+    req(rv$selected_work_order_detail)
+
+    wo <- rv$selected_work_order_detail
+    updateTextInput(session, "edit_work_order_title", value = wo$title[1])
+    updateTextAreaInput(session, "edit_work_order_description", value = wo$description[1])
+    updateSelectInput(session, "edit_work_order_priority", selected = wo$priority[1])
+    updateSelectInput(session, "edit_work_order_category", selected = ifelse(is.na(wo$category[1]), "一般", wo$category[1]))
+
+    rv$work_order_edit_mode <- TRUE
+  })
+
+  # 处理保存编辑按钮点击事件
+  observeEvent(input$save_edit_work_order, {
+    req(rv$logged_in)
+    req(rv$selected_work_order_id)
+    req(input$edit_work_order_title, input$edit_work_order_description)
+
+    result <- work_order_edit(
+      rv$selected_work_order_id,
+      input$edit_work_order_title,
+      input$edit_work_order_description,
+      input$edit_work_order_priority,
+      input$edit_work_order_category,
+      rv$current_user
+    )
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+
+    if (result$success) {
+      rv$work_order_edit_mode <- FALSE
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+      rv$selected_work_order_detail <- work_order_get_by_id(rv$selected_work_order_id)
+    }
+  })
+
+  # 处理取消编辑按钮点击事件
+  observeEvent(input$cancel_edit_work_order, {
+    rv$work_order_edit_mode <- FALSE
+  })
+
+  # 处理删除工单按钮点击事件
+  observeEvent(input$delete_work_order_btn, {
+    req(rv$logged_in)
+    req(rv$selected_work_order_id)
+
+    showModal(modalDialog(
+      title = "确认删除",
+      "确定要删除这个工单吗？此操作不可撤销。",
+      footer = tagList(
+        modalButton("取消"),
+        actionButton("confirm_delete_work_order", "确认删除", class = "btn-danger")
+      ),
+      easyClose = TRUE
+    ))
+  })
+
+  # 处理确认删除工单
+  observeEvent(input$confirm_delete_work_order, {
+    req(rv$logged_in)
+    req(rv$selected_work_order_id)
+
+    result <- work_order_delete(rv$selected_work_order_id, rv$current_user)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+
+    removeModal()
+    rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+    rv$selected_work_order_id <- NULL
+    rv$selected_work_order_detail <- NULL
+  })
+
+  # 处理添加评论按钮点击事件
+  observeEvent(input$add_work_order_comment, {
+    req(rv$logged_in)
+    req(rv$selected_work_order_id)
+    comment_text <- input$add_work_order_comment
+    req(comment_text)
+    comment_text <- trimws(comment_text)
+    req(nchar(comment_text) > 0)
+
+    result <- work_order_add_comment(rv$selected_work_order_id, comment_text, rv$current_user)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+
+    if (result$success) {
+      # 刷新评论列表
+      rv$work_order_comment_refresh <- ifelse(is.null(rv$work_order_comment_refresh), 0, rv$work_order_comment_refresh + 1)
+      # 重新加载工单详情以刷新评论显示
+      wo_detail <- work_order_get_by_id(rv$selected_work_order_id)
+      if (nrow(wo_detail) > 0) {
+        rv$selected_work_order_detail <- wo_detail
+      }
+    }
+  })
+
+  # 渲染工单评论列表
+  output$work_order_comments_ui <- renderUI({
+    req(rv$logged_in)
+    req(rv$selected_work_order_id)
+
+    # 触发刷新
+    rv$work_order_comment_refresh
+
+    comments <- work_order_get_comments(rv$selected_work_order_id)
+
+    if (nrow(comments) == 0) {
+      return(div(class = "text-muted", style = "padding: 10px;", "暂无评论"))
+    }
+
+    comment_list <- lapply(1:nrow(comments), function(i) {
+      div(
+        style = "background: #f9f9f9; padding: 8px 12px; margin-bottom: 6px; border-radius: 4px; border-left: 3px solid #5bc0de;",
+        div(
+          style = "font-size: 12px; color: #666; margin-bottom: 4px;",
+          span(style = "font-weight: bold;", ifelse(is.na(comments$creator_name[i]), "未知用户", comments$creator_name[i])),
+          span(style = "margin-left: 10px;", comments$created_at[i])
+        ),
+        div(
+          style = "font-size: 13px; line-height: 1.5;",
+          comments$comment[i]
+        )
+      )
+    })
+
+    do.call(tagList, comment_list)
+  })
+
+  # 初始渲染收集器表格
+  output$collector_table <- renderDT({
+    DT::datatable(
+      info_collector_get_all(),
+      options = list(pageLength = 10, scrollX = TRUE),
+      rownames = FALSE
+    )
+  })
+  
+  # 处理添加收集器按钮点击事件
+  observeEvent(input$add_collector, {
+    # 检查登录状态
+    req(rv$logged_in)
+    # 确保必要输入存在
+    req(input$collector_name, input$collector_type, input$collector_config)
+    # 调用info_collector_add函数添加收集器
+    result <- info_collector_add(input$collector_name, input$collector_type, input$collector_config, rv$current_user)
+    # 显示操作结果通知
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    # 刷新收集器表格
+    output$collector_table <- renderDT({
+      DT::datatable(
+        info_collector_get_all(),
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE
+      )
+    })
+  })
+  
+  # 处理刷新收集器按钮点击事件
+  observeEvent(input$refresh_collectors, {
+    # 检查登录状态
+    req(rv$logged_in)
+    # 刷新收集器表格
+    output$collector_table <- renderDT({
+      DT::datatable(
+        info_collector_get_all(),
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE
+      )
+    })
+  })
+  
+  # 处理模型刷新按钮点击事件
+  observeEvent(input$refresh_models, {
+    # 检查登录状态
+    req(rv$logged_in)
+    # 更新模型表格输出
+    output$model_table <- renderDT({
+      DT::datatable(
+        model_get_all(),  # 获取所有模型
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE
+      )
+    })
+  })
+  
+  # 处理模型训练按钮点击事件
+  observeEvent(input$train_model, {
+    # 检查登录状态
+    req(rv$logged_in)
+    # 确保必要输入存在
+    req(input$model_name, input$model_type)
+    
+    # 显示训练进度条
+    withProgress(message = "正在训练模型...", value = 0, {
+      # 调用model_train函数训练模型
+      result <- model_train(input$model_name, input$model_type, input$model_params)
+      # 更新进度条
+      incProgress(1)
+    })
+    
+    # 显示训练结果通知
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    
+    # 将训练好的模型添加到数据库
+    model_add(input$model_name, input$model_type, input$model_params, result$accuracy)
+    
+    # 显示训练结果详情
+    output$training_result <- renderPrint({
+      cat(sprintf("模型名称: %s\n", input$model_name))
+      cat(sprintf("模型类型: %s\n", input$model_type))
+      cat(sprintf("准确率: %.2f%%\n", result$accuracy * 100))
+    })
+    
+    # 刷新模型表格
+    output$model_table <- renderDT({
+      DT::datatable(
+        model_get_all(),
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE
+      )
+    })
+  })
+  
+  # 初始渲染模型表格
+  output$model_table <- renderDT({
+    DT::datatable(
+      model_get_all(),
+      options = list(pageLength = 10, scrollX = TRUE),
+      rownames = FALSE
+    )
+  })
+  
+  # 处理生成可视化按钮点击事件
+  observeEvent(input$generate_viz, {
+    # 检查登录状态
+    req(rv$logged_in)
+    # 更新可视化图表输出
+    output$viz_plot <- renderPlotly({
+      viz_generate(input$viz_type, input$viz_data)
+    })
+  })
+
+  # 初始渲染可视化图表
+  output$viz_plot <- renderPlotly({
+    viz_generate(input$viz_type, input$viz_data)
+  })
+
+  # 可视化页 - 流程监控指标
+  output$viz_mtr_complete_rate <- renderText({ "0%" })
+  output$viz_mtr_timeout_rate <- renderText({ "0%" })
+  output$viz_mtr_avg_duration <- renderText({ "0 分钟" })
+  output$viz_mtr_running <- renderText({ "0" })
+  output$viz_mtr_today <- renderText({ "暂无" })
+  
+  # 处理用户刷新按钮点击事件
+  observeEvent(input$refresh_users, {
+    # 检查登录状态和admin权限
+    req(rv$logged_in)
+    req(!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
+    # 更新用户表格输出
+    output$user_table <- renderDT({
+      DT::datatable(
+        user_get_all(),  # 获取所有用户
+        colnames = c("ID", "用户名", "显示名称", "角色", "状态", "创建时间", "更新时间"),
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE,
+        selection = list(mode = 'single', target = 'row', selected = integer(0))
+      )
+    })
+  })
+  
+  # 处理用户表格点击事件
+  observeEvent(input$user_table_rows_selected, {
+    # 检查登录状态
+    req(rv$logged_in)
+    # 获取选中的用户信息
+    selected_rows <- input$user_table_rows_selected
+    if (length(selected_rows) > 0) {
+      # 获取用户数据
+      users <- user_get_all()
+      selected_user <- users[selected_rows, ]
+      # 将用户信息填充到输入框中
+      updateTextInput(session, "selected_user_id", value = selected_user$id)
+      updateTextInput(session, "username", value = selected_user$username)
+      updateTextInput(session, "display_name", value = ifelse(is.na(selected_user$display_name), "", selected_user$display_name))
+      updateTextInput(session, "password", value = "")
+      updateSelectInput(session, "role", selected = selected_user$role)
+    }
+  })
+  
+  # 处理添加用户按钮点击事件
+  observeEvent(input$add_user, {
+    # 检查登录状态和admin权限
+    req(rv$logged_in)
+    req(!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
+    # 确保必要输入存在
+    req(input$username, input$password, input$role)
+    # 调用user_add函数添加用户，传递当前用户信息
+    result <- user_add(input$username, input$password, input$role, input$display_name, rv$current_user)
+    # 显示操作结果通知
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    # 刷新用户表格
+    output$user_table <- renderDT({
+      DT::datatable(
+        user_get_all(),
+        colnames = c("ID", "用户名", "显示名称", "角色", "状态", "创建时间", "更新时间"),
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE,
+        selection = list(mode = 'single', target = 'row', selected = integer(0))
+      )
+    })
+    # 清空输入框
+    updateTextInput(session, "selected_user_id", value = "")
+    updateTextInput(session, "username", value = "")
+    updateTextInput(session, "display_name", value = "")
+    updateTextInput(session, "password", value = "")
+    updateSelectInput(session, "role", selected = "user")
+  })
+  
+  # 处理修改账号按钮点击事件
+  observeEvent(input$update_user, {
+    # 检查登录状态和admin权限
+    req(rv$logged_in)
+    req(!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
+    # 确保必要输入存在
+    req(input$selected_user_id, input$username, input$role)
+    # 调用user_update函数更新用户信息，传递当前用户信息和密码
+    result <- user_update(input$selected_user_id, input$username, input$role, input$password, input$display_name, rv$current_user)
+    # 显示操作结果通知
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    # 刷新用户表格
+    output$user_table <- renderDT({
+      DT::datatable(
+        user_get_all(),
+        colnames = c("ID", "用户名", "显示名称", "角色", "状态", "创建时间", "更新时间"),
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE,
+        selection = list(mode = 'single', target = 'row', selected = integer(0))
+      )
+    })
+    # 清空输入框
+    updateTextInput(session, "selected_user_id", value = "")
+    updateTextInput(session, "username", value = "")
+    updateTextInput(session, "display_name", value = "")
+    updateTextInput(session, "password", value = "")
+    updateSelectInput(session, "role", selected = "user")
+  })
+  
+  # 处理禁用/启用用户按钮点击事件
+  observeEvent(input$toggle_active_user, {
+    # 检查登录状态和admin权限
+    req(rv$logged_in)
+    req(!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
+    # 确保必要输入存在
+    req(input$selected_user_id)
+    # 调用user_toggle_active函数切换用户状态，传递当前用户信息
+    result <- user_toggle_active(input$selected_user_id, rv$current_user)
+    # 显示操作结果通知
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    # 刷新用户表格
+    output$user_table <- renderDT({
+      DT::datatable(
+        user_get_all(),
+        colnames = c("ID", "用户名", "显示名称", "角色", "状态", "创建时间", "更新时间"),
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE,
+        selection = list(mode = 'single', target = 'row', selected = integer(0))
+      )
+    })
+    # 清空输入框
+    updateTextInput(session, "selected_user_id", value = "")
+    updateTextInput(session, "username", value = "")
+    updateTextInput(session, "display_name", value = "")
+    updateTextInput(session, "password", value = "")
+    updateSelectInput(session, "role", selected = "user")
+  })
+  
+  # 初始渲染用户表格
+  output$user_table <- renderDT({
+    DT::datatable(
+      user_get_all(),
+      colnames = c("ID", "用户名", "显示名称", "角色", "状态", "创建时间", "更新时间"),
+      options = list(pageLength = 10, scrollX = TRUE),
+      rownames = FALSE,
+      selection = list(mode = 'single', target = 'row', selected = integer(0))
+    )
+  })
+  
+  # 处理配置刷新按钮点击事件
+  observeEvent(input$refresh_config, {
+    # 检查登录状态和admin权限
+    req(rv$logged_in)
+    req(!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
+    # 更新配置表格输出
+    output$config_table <- renderDT({
+      DT::datatable(
+        config_get_all(),  # 获取所有配置
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE
+      )
+    })
+  })
+
+  # 初始化字体大小输入框的值
+  observe({
+    req(rv$logged_in)
+    is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+    if (is_admin) {
+      tfs <- config_get_value("table_font_size", "13")
+      ifs <- config_get_value("input_font_size", "13")
+      updateNumericInput(session, "cfg_table_font_size", value = as.integer(tfs))
+      updateNumericInput(session, "cfg_input_font_size", value = as.integer(ifs))
+    }
+  })
+
+  # 保存字体大小配置
+  observeEvent(input$save_font_config, {
+    req(rv$logged_in)
+    req(!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
+    req(input$cfg_table_font_size, input$cfg_input_font_size)
+
+    con <- db_connect()
+    tryCatch({
+      # 更新或插入 table_font_size
+      existing <- dbGetQuery(con, "SELECT id FROM system_config WHERE config_key = 'table_font_size'")
+      if (nrow(existing) > 0) {
+        dbExecute(con, sprintf("UPDATE system_config SET config_value = '%s', updated_at = CURRENT_TIMESTAMP WHERE config_key = 'table_font_size'",
+          as.character(input$cfg_table_font_size)))
+      } else {
+        dbExecute(con, sprintf("INSERT INTO system_config (config_key, config_value, description) VALUES ('table_font_size', '%s', '列表表格字体大小(px)')",
+          as.character(input$cfg_table_font_size)))
+      }
+      # 更新或插入 input_font_size
+      existing2 <- dbGetQuery(con, "SELECT id FROM system_config WHERE config_key = 'input_font_size'")
+      if (nrow(existing2) > 0) {
+        dbExecute(con, sprintf("UPDATE system_config SET config_value = '%s', updated_at = CURRENT_TIMESTAMP WHERE config_key = 'input_font_size'",
+          as.character(input$cfg_input_font_size)))
+      } else {
+        dbExecute(con, sprintf("INSERT INTO system_config (config_key, config_value, description) VALUES ('input_font_size', '%s', '输入框和选择框字体大小(px)')",
+          as.character(input$cfg_input_font_size)))
+      }
+      showNotification("字体大小设置已保存，刷新页面后生效", type = "message")
+    }, error = function(e) {
+      showNotification(paste("保存失败:", e$message), type = "error")
+    }, finally = { db_disconnect(con) })
+  })
+  
+  # 处理添加配置按钮点击事件
+  observeEvent(input$add_config, {
+    # 检查登录状态和admin权限
+    req(rv$logged_in)
+    req(!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
+    # 确保必要输入存在
+    req(input$config_key, input$config_value)
+    # 调用config_add函数添加配置
+    result <- config_add(input$config_key, input$config_value, input$config_desc)
+    # 显示操作结果通知
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+    # 刷新配置表格
+    output$config_table <- renderDT({
+      DT::datatable(
+        config_get_all(),
+        options = list(pageLength = 10, scrollX = TRUE),
+        rownames = FALSE
+      )
+    })
+  })
+  
+  # 初始渲染配置表格
+  output$config_table <- renderDT({
+    DT::datatable(
+      config_get_all(),
+      options = list(pageLength = 10, scrollX = TRUE),
+      rownames = FALSE
+    )
+  })
+  
+  # 处理GitHub自动提交按钮点击事件
+  observeEvent(input$github_autosubmit, {
+    # 检查登录状态和admin权限
+    req(rv$logged_in)
+    req(!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
+    # 确保提交信息存在
+    req(input$commit_message)
+    # 调用github_autosubmit函数执行提交操作
+    output$github_output <- renderPrint({
+      github_autosubmit(input$commit_message)
+    })
+    # 显示操作结果通知
+    showNotification("代码已提交到 GitHub", type = "message")
+  })
+  
+  # 处理查看Git状态按钮点击事件
+  observeEvent(input$github_check_status, {
+    # 检查登录状态和admin权限
+    req(rv$logged_in)
+    req(!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
+    # 调用github_check_status函数查看Git状态
+    output$github_output <- renderPrint({
+      github_check_status()
+    })
+  })
+  
+  # 处理拉取GitHub代码按钮点击事件
+  observeEvent(input$github_pull, {
+    # 检查登录状态和admin权限
+    req(rv$logged_in)
+    req(!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
+    # 调用github_pull函数拉取代码
+    output$github_output <- renderPrint({
+      github_pull()
+    })
+    # 显示操作结果通知
+    showNotification("代码已从 GitHub 拉取", type = "message")
+  })
+  
+  # ========== 首页模块 ==========
+  # 我的项目（排除已完成/已关闭）
+  output$home_my_projects <- renderUI({
+    req(rv$logged_in, rv$current_user)
+    uid <- rv$current_user$id[1]
+    con <- db_connect()
+    projects <- tryCatch({
+      dbGetQuery(con, sprintf(
+        "SELECT id, project_no, name, status, priority, start_date, end_date
+         FROM projects
+         WHERE created_by = %d AND status NOT IN ('completed', 'closed')
+         ORDER BY updated_at DESC LIMIT 10", uid))
+    }, error = function(e) data.frame(), finally = db_disconnect(con))
+
+    if (nrow(projects) == 0) {
+      return(div(style = "color:#999; padding:10px;", "暂无进行中的项目"))
+    }
+
+    items <- lapply(1:nrow(projects), function(i) {
+      p <- projects[i, ]
+      status_cn <- switch(as.character(p$status),
+        "planning" = "规划中", "active" = "进行中", "suspended" = "已暂停", p$status)
+      status_color <- switch(as.character(p$status),
+        "planning" = "#5bc0de", "active" = "#337ab7", "suspended" = "#f0ad4e", "#999")
+      # 转义单引号避免JS错误
+      escaped_name <- gsub("'", "\\\\'", as.character(p$name))
+      div(style = "padding:8px 12px; margin-bottom:6px; background:#f9f9f9; border-radius:4px; font-size:13px;",
+        span(style = sprintf("display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;color:white;background:%s;margin-right:8px;", status_color), status_cn),
+        tags$a(href = "#", class = "proj-enter-btn", `data-id` = p$id, `data-name` = p$name, style = "color:#337ab7;text-decoration:none;cursor:pointer;", 
+               tags$b(p$name)),
+        span(style = "color:#999;margin-left:10px;font-size:12px;", sprintf("[%s]", p$project_no))
+      )
+    })
+    do.call(tagList, items)
+  })
+
+  # 我的工单（排除已完成/已关闭）
+  output$home_my_work_orders <- renderUI({
+    req(rv$logged_in, rv$current_user)
+    uid <- rv$current_user$id[1]
+    con <- db_connect()
+    orders <- tryCatch({
+      dbGetQuery(con, sprintf(
+        "SELECT wo.id, wo.order_no, wo.title, wo.status, wo.priority, wo.category
+         FROM work_orders wo
+         WHERE (wo.assigned_to = %d OR wo.handled_by = %d OR wo.created_by = %d)
+           AND wo.status NOT IN ('completed', 'closed')
+         ORDER BY wo.updated_at DESC LIMIT 10", uid, uid, uid))
+    }, error = function(e) data.frame(), finally = db_disconnect(con))
+
+    if (nrow(orders) == 0) {
+      return(div(style = "color:#999; padding:10px;", "暂无待处理的工单"))
+    }
+
+    items <- lapply(1:nrow(orders), function(i) {
+      w <- orders[i, ]
+      status_cn <- switch(as.character(w$status),
+        "pending" = "待处理", "assigned" = "已派发", "processing" = "处理中", w$status)
+      status_color <- switch(as.character(w$status),
+        "pending" = "#f0ad4e", "assigned" = "#5bc0de", "processing" = "#337ab7", "#999")
+      # 处理工单号显示
+      order_no_val <- ifelse(is.na(w$order_no) || is.null(w$order_no) || nchar(trimws(as.character(w$order_no))) == 0,
+                             sprintf("ITS%s%03d", format(as.Date(w$created_at), "%Y%m%d"), w$id),
+                             w$order_no)
+      div(style = "padding:8px 12px; margin-bottom:6px; background:#f9f9f9; border-radius:4px; font-size:13px;",
+        span(style = sprintf("display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;color:white;background:%s;margin-right:8px;", status_color), status_cn),
+        tags$a(href = "#", style = "color:#5bc0de;text-decoration:none;cursor:pointer;", 
+               onclick = sprintf("Shiny.setInputValue('work_order_view_click', %d, {priority: 'event'});",
+                                 w$id),
+               tags$b(order_no_val)),
+        span(style = "margin-left:8px;", w$title),
+        span(style = "color:#999;margin-left:8px;font-size:12px;", sprintf("[%s]", ifelse(is.na(w$category), "", w$category)))
+      )
+    })
+    do.call(tagList, items)
+  })
+
+  # 我的任务（排除已完成）
+  output$home_my_tasks <- renderUI({
+    req(rv$logged_in, rv$current_user)
+    uid <- rv$current_user$id[1]
+    con <- db_connect()
+    tasks <- tryCatch({
+      dbGetQuery(con, sprintf(
+        "SELECT t.id, t.task_no, t.name, t.status, t.priority, t.importance,
+                p.name as project_name
+         FROM project_tasks t
+         LEFT JOIN projects p ON t.project_id = p.id
+         WHERE t.assigned_to = %d AND t.status NOT IN ('completed')
+         ORDER BY COALESCE(t.importance, 0) DESC, t.updated_at DESC LIMIT 15", uid))
+    }, error = function(e) data.frame(), finally = db_disconnect(con))
+
+    if (nrow(tasks) == 0) {
+      return(div(style = "color:#999; padding:10px;", "暂无待处理的任务"))
+    }
+
+    items <- lapply(1:nrow(tasks), function(i) {
+      tk <- tasks[i, ]
+      status_cn <- switch(as.character(tk$status),
+        "pending" = "待处理", "in_progress" = "进行中", "blocked" = "已阻塞", tk$status)
+      status_color <- switch(as.character(tk$status),
+        "pending" = "#f0ad4e", "in_progress" = "#337ab7", "blocked" = "#d9534f", "#999")
+      importance_flags <- if (!is.na(tk$importance) && tk$importance > 0) {
+        paste(rep("\U0001F6A9", tk$importance), collapse = "")
+      } else ""
+      task_no <- ifelse(is.na(tk$task_no), "-", tk$task_no)
+      div(style = "padding:8px 12px; margin-bottom:6px; background:#f9f9f9; border-radius:4px; font-size:13px;",
+        span(style = sprintf("display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;color:white;background:%s;margin-right:8px;", status_color), status_cn),
+        if (importance_flags != "") span(style = "margin-right:6px;", importance_flags),
+        tags$a(href = "#", style = "color:#5cb85c;text-decoration:none;cursor:pointer;", 
+               onclick = sprintf("Shiny.setInputValue('task_view_click', %d, {priority: 'event'});",
+                                 tk$id),
+               tags$b(task_no)),
+        span(style = "margin-left:8px;", tk$name),
+        span(style = "color:#999;margin-left:8px;font-size:12px;", sprintf("[%s]", ifelse(is.na(tk$project_name), "", tk$project_name)))
+      )
+    })
+    do.call(tagList, items)
+  })
+
+  # 项目管理模块逻辑
+  project_server(input, output, session, rv)
+
+  # 首页项目点击监听（直接监听，保证首页项目点击能正常工作）
+  observeEvent(input$proj_enter_click, {
+    req(rv$logged_in)
+    req(input$proj_enter_click$id)
+    rv$proj_nav_project_id <- input$proj_enter_click$id
+    rv$proj_nav_project_name <- input$proj_enter_click$name
+    rv$proj_nav_level <- "phases"
+    # 切换到项目管理tab
+    updateTabsetPanel(session, "main_tabs", selected = "项目")
+  })
+
+  # 日报模块逻辑
+  daily_report_server(input, output, session, rv)
+
+  # 标准化模块逻辑
+  std_server(input, output, session)
+
+  # 测试模块逻辑（网络巡检）
+  network_test_server(input, output, session)
+
+  # 数据中心模块逻辑（数据归集）
+  data_center_server("data_center", rv)
+
+  # 巡检模块逻辑
+  inspection_server(input, output, session, rv)
+
+  # 流程模块逻辑
+  process_server(input, output, session, rv)
+
+  # 绩效模块逻辑
+  performance_server(input, output, session, rv)
+
+  # 流程超时检测已移除（新审批模块为同步流转）
+
+}
+
+# 总结：
+# 1. ui.R三行代码能运行的原理：
+#    - 采用了"动态UI"设计模式
+#    - ui.R只提供基础框架（fluidPage + uiOutput）
+#    - 实际UI内容由server端的renderUI根据状态动态生成
+#    - 这种设计使得UI结构更灵活，可根据应用状态实时调整
+#
+# 2. runApp.R如何识别server.R和ui.R：
+#    - 这是Shiny框架的"约定优于配置"设计原则
+#    - runApp()函数会在当前工作目录自动查找：
+#      - ui.R文件：应包含一个名为ui的对象
+#      - server.R文件：应包含一个名为server的函数
+#    - 找到后自动将它们组合成完整的应用
+#    - 这种约定简化了应用启动流程，无需手动加载和组合文件
+
+
+
+
+ui <- fluidPage(
+  # 页面刷新后自动恢复登录状态的JS（放在ui.R确保始终加载）
+  tags$head(
+    tags$script(HTML("
+      $(document).on('shiny:connected', function(event) {
+        var savedUserId = localStorage.getItem('itom2_user_id');
+        if (savedUserId) {
+          Shiny.setInputValue('auto_login_user_id', savedUserId, {priority: 'event'});
+        }
+      });
+      Shiny.addCustomMessageHandler('saveLoginState', function(message) {
+        if (message.user_id) {
+          localStorage.setItem('itom2_user_id', message.user_id);
+        }
+      });
+      Shiny.addCustomMessageHandler('clearLoginState', function(message) {
+        localStorage.removeItem('itom2_user_id');
+      });
+    "))
+  ),
+  uiOutput("app_ui")
+)
+
+
+
+
+# 全局声明Shiny UI函数以消除lint警告
+if (getRversion() >= "2.15.1") {
+  utils::globalVariables(c("tagList", "div", "h2", "textInput", "passwordInput", "actionButton", "p"))
+}
+
+login_ui <- function() {
+  tagList(
+    tags$script(HTML("
+      $(document).on('keypress', '#login_username, #login_password', function(e) {
+        if (e.which == 13) {
+          e.preventDefault();
+          $('#login_btn').click();
+        }
+      });
+    ")),
+    div(
+      class = "login-container",
+      style = "display: flex; justify-content: center; align-items: center; height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);",
+      div(
+        class = "login-box",
+        style = "background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 400px;",
+        h2("Super ITOM 2 登录", style = "text-align: center; color: #667eea; margin-bottom: 30px;"),
+        textInput("login_username", "用户名", placeholder = "请输入用户名"),
+        passwordInput("login_password", "密码", placeholder = "请输入密码"),
+        br(), br(),
+        actionButton("login_btn", "登录", class = "btn-primary btn-block", style = "width: 100%;"),
+        br(), br(),
+#        p("默认管理员账号: admin / ****** ", style = "text-align: center; color: #666; font-size: 12px;")
+      )
+    )
+  )
+}
+
+# 定义主应用界面函数
+# 当用户登录成功后，server.R会调用此函数生成主界面
+# 这是应用的核心界面结构定义
+
+# 全局声明Shiny UI函数以消除lint警告
+if (getRversion() >= "2.15.1") {
+  utils::globalVariables(c("navbarPage", "tabPanel", "fluidPage", "sidebarLayout", "sidebarPanel",
+                          "mainPanel", "textInput", "passwordInput", "selectInput", "actionButton",
+                          "DTOutput", "plotlyOutput", "verbatimTextOutput", "icon", "tagList",
+                          "tags", "div", "h2", "h3", "h4", "p", "ul", "li", "titlePanel",
+                          "fluidRow", "column", "hidden", "textAreaInput"))
+}
+
+# 显式声明passwordInput函数
+passwordInput <- shiny::passwordInput
+
+# 加载标准化模块
+source("Script/std_computer.r")
+
+# 加载测试模块（网络巡检）
+source("Script/network_test.r")
+
+# 加载项目管理模块UI
+source("Script/project_ui.r")
+
+# 加载日报模块
+source("Script/daily_report.r")
+
+# 加载数据中心模块（数据归集）
+source("Script/data_center_ui.r")
+
+# 加载流程模块
+source("Script/process_ui.r")
+
+# 加载绩效模块
+source("Script/performance_ui.r")
+
+main_ui <- function() {
+  # 读取字体大小配置
+  table_font_size <- config_get_value("table_font_size", "13")
+  input_font_size <- config_get_value("input_font_size", "13")
+
+  # 创建导航栏页面
+  # navbarPage是Shiny中创建带有标签页的导航栏界面的函数
+  navbarPage(
+    id = "main_tabs",  # 用于 updateTabsetPanel 切换标签
+    title = "SuperITOM2",  # 应用标题
+    theme = shinytheme("cosmo"),  # 使用cosmo主题，使界面更美观
+    collapsible = TRUE,  # 移动端导航栏可折叠
+    
+    # URL路由同步脚本 - 放在header中避免导航容器警告
+    header = tags$script(HTML("
+      // 路由表：URL路径 -> 标签文本
+      var routeMap = {
+        '/home': '首页',
+        '/project': '项目',
+        '/inspection': '巡检',
+        '/work_order': '工单',
+        '/std': '标准化',
+        '/network_test': '测试',
+        '/daily_report': '日报',
+        '/collector': '收集器',
+        '/data': '数据',
+        '/process': '流程',
+        '/model': '模型',
+        '/visualization': '可视化',
+        '/admin': '管理'
+      };
+      
+      // 查找包含指定文本的导航链接
+      function findNavLink(text) {
+        var $links = $('.navbar-nav li a, .navbar-nav a, ul.nav a, .nav-tabs a');
+        for (var i = 0; i < $links.length; i++) {
+          var $link = $links.eq(i);
+          var linkText = $link.text().trim();
+          // 排除图标（只保留文字部分）
+          linkText = linkText.replace(/\\s*<[^>]*>\\s*/g, '').trim();
+          if (linkText === text || linkText.indexOf(text) >= 0) {
+            return $link;
+          }
+        }
+        return null;
+      }
+      
+      // 从URL hash获取目标标签
+      function getTargetFromHash() {
+        var hash = window.location.hash.replace('#', '');
+        if (!hash) return '首页';
+        // 精确匹配
+        if (routeMap['/' + hash]) return routeMap['/' + hash];
+        if (routeMap[hash]) return routeMap[hash];
+        // 模糊匹配
+        for (var path in routeMap) {
+          if (hash.startsWith(path.replace('/', '')) || hash === path.slice(1)) {
+            return routeMap[path];
+          }
+        }
+        return '首页';
+      }
+      
+      // 切换到指定标签
+      function switchToTab(text) {
+        var $link = findNavLink(text);
+        if ($link && $link.length) {
+          $link[0].click();
+        }
+      }
+      
+      // 监听 Shiny 服务端发起的导航请求（穿透链接）
+      Shiny.addCustomMessageHandler('navigateToTab', function(tabName) {
+        switchToTab(tabName);
+      });
+      
+      // 点击导航链接时更新URL hash
+      $(document).on('click', '.navbar-nav li a, .navbar-nav > li > a', function(e) {
+        var $link = $(this);
+        var text = $link.text().trim().replace(/\\s*<[^>]*>\\s*/g, '').trim();
+        
+        // 遍历路由映射，找到匹配的标签
+        for (var path in routeMap) {
+          if (routeMap[path] === text) {
+            history.replaceState(null, '', '#' + path.replace('/', ''));
+            break;
+          }
+        }
+      });
+      
+      // 页面加载后根据URL切换标签
+      $(document).on('shiny:connected', function() {
+        var target = getTargetFromHash();
+        // 延迟等待DOM和Shiny完全加载
+        var attempts = 0;
+        var maxAttempts = 20;
+        var interval = setInterval(function() {
+          attempts++;
+          var $link = findNavLink(target);
+          if ($link && $link.length && !$link.closest('li').hasClass('active')) {
+            clearInterval(interval);
+            $link[0].click();
+          } else if (attempts >= maxAttempts) {
+            clearInterval(interval);
+          }
+        }, 300);
+      });
+      
+      // 监听浏览器前进/后退
+      window.addEventListener('hashchange', function() {
+        var target = getTargetFromHash();
+        switchToTab(target);
+      });
+    ")),
+    
+    # 首页标签页
+    tabPanel(
+      "首页",  # 标签页标题
+      icon = icon("home"),  # 标签页图标
+      fluidPage(
+        # 首页项目点击事件处理
+        tags$script(HTML("
+          $(document).on('click', '.proj-enter-btn', function(e) {
+            e.stopPropagation(); e.preventDefault();
+            var id = $(this).data('id');
+            var name = $(this).data('name');
+            Shiny.setInputValue('proj_enter_click', {id: String(id), name: name}, {priority:'event'});
+          });
+        ")),
+        titlePanel("欢迎使用 Super ITOM 2"),
+        br(),
+        fluidRow(
+          column(6,
+            div(style = "border:1px solid #ddd; border-radius:8px; padding:16px; margin-bottom:16px;",
+              h4(style = "margin-top:0; color:#337ab7; border-bottom:2px solid #337ab7; padding-bottom:8px;", "我的项目"),
+              uiOutput("home_my_projects")
+            )
+          ),
+          column(6,
+            div(style = "border:1px solid #ddd; border-radius:8px; padding:16px; margin-bottom:16px;",
+              h4(style = "margin-top:0; color:#5bc0de; border-bottom:2px solid #5bc0de; padding-bottom:8px;", "我的工单"),
+              uiOutput("home_my_work_orders")
+            )
+          )
+        ),
+        fluidRow(
+          column(12,
+            div(style = "border:1px solid #ddd; border-radius:8px; padding:16px;",
+              h4(style = "margin-top:0; color:#5cb85c; border-bottom:2px solid #5cb85c; padding-bottom:8px;", "我的任务"),
+              uiOutput("home_my_tasks")
+            )
+          )
+        )
+      )
+    ),
+    
+    # 项目管理标签页（放在工单前面）
+    tabPanel(
+      "项目",
+      icon = icon("project-diagram"),
+      project_ui()
+    ),
+
+    # 巡检标签页
+    tabPanel(
+      "巡检",
+      icon = icon("clipboard-check"),
+      fluidPage(
+        # 巡检统计数据
+        fluidRow(
+          column(12,
+            div(style = "margin-bottom: 10px;",
+              fluidRow(
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0;",
+                  div(style = "font-size: 11px; color: #666; font-weight: 500;", "巡检计划"),
+                  div(style = "font-size: 18px; font-weight: bold; color: #333;", textOutput("insp_stat_plans"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #5cb85c; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "进行中"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_active_plans"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #f0ad4e; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "待执行"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_pending_tasks"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #5bc0de; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "已完成"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_completed_tasks"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #d9534f; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "异常"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_abnormal_tasks"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #9370db; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "待整改"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_issues"))
+                ))
+              )
+            )
+          )
+        ),
+        # 巡检标签页内容
+        tabsetPanel(
+          # 我的任务
+          tabPanel("我的任务",
+            br(),
+            fluidRow(
+              column(3, selectInput("insp_my_status_filter", "任务状态", choices = NULL)),
+              column(2, div(style = "margin-top: 20px;", actionButton("insp_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+            ),
+            DTOutput("insp_my_task_table")
+          ),
+          # 巡检计划
+          tabPanel("巡检计划",
+            br(),
+            fluidRow(
+              column(2, selectInput("insp_plan_status_filter", "计划状态", choices = NULL)),
+              column(3, div(style = "margin-top: 20px;", actionButton("insp_create_plan", "创建计划", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;"))),
+              column(2, div(style = "margin-top: 20px;", actionButton("insp_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+            ),
+            DTOutput("inspection_plan_table"),
+            br(),
+            wellPanel(
+              h4("生成巡检任务"),
+              fluidRow(
+                column(3, selectInput("insp_task_inspector", "检查人", choices = NULL)),
+                column(3, dateInput("insp_task_date", "计划日期", value = Sys.Date(), format = "yyyy-mm-dd")),
+                column(3, div(style = "margin-top: 20px;", actionButton("insp_generate_tasks", "生成任务", class = "btn-success", style = "padding: 4px 10px; font-size: 12px;")))
+              )
+            ),
+            br(),
+            fluidRow(
+              column(12,
+                h4("该计划下的巡检任务"),
+                selectInput("insp_task_status_filter", "任务状态筛选", choices = NULL),
+                DTOutput("inspection_task_table")
+              )
+            )
+          ),
+          # 巡检记录
+          tabPanel("巡检记录",
+            br(),
+            fluidRow(
+              column(3, selectInput("insp_record_status_filter", "任务状态", choices = NULL)),
+              column(2, div(style = "margin-top: 20px;", actionButton("insp_record_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+            ),
+            DTOutput("insp_record_table")
+          ),
+          # 巡检异常
+          tabPanel("巡检异常",
+            br(),
+            fluidRow(
+              column(3, selectInput("insp_issue_status_filter", "异常状态", choices = NULL)),
+              column(2, div(style = "margin-top: 20px;", actionButton("insp_issue_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+            ),
+            DTOutput("insp_issue_table")
+          ),
+          # 已删除记录（Admin专属）
+          tabPanel("已删除记录",
+            br(),
+            # Admin 可见内容
+            conditionalPanel(
+              condition = "input.isAdminInspectionUser == true",
+              fluidRow(
+                column(12,
+                  div(style = "background: #fff3cd; padding: 10px; border-radius: 4px; margin-bottom: 15px;",
+                    strong("提示："), "此页面仅Admin可见，显示已删除的巡检计划和记录，可用于审计追溯。"
+                  )
+                )
+              ),
+              fluidRow(
+                column(6,
+                  wellPanel(
+                    h4("已删除的巡检计划", style = "color: #d9534f;"),
+                    DTOutput("insp_deleted_plans_table")
+                  )
+                ),
+                column(6,
+                  wellPanel(
+                    h4("已删除的巡检记录", style = "color: #d9534f;"),
+                    DTOutput("insp_deleted_records_table")
+                  )
+                )
+              )
+            ),
+            # 非Admin提示
+            conditionalPanel(
+              condition = "input.isAdminInspectionUser != true",
+              div(class = "alert alert-warning",
+                icon("exclamation-triangle"), " 您没有权限查看已删除记录"
+              )
+            )
+          )
+        )
+      )
+    ),
+
+    # 工单标签页
+    tabPanel(
+      "工单",
+      icon = icon("clipboard-list"),
+      fluidPage(
+        # 自定义导航栏选中态样式 + admin菜单控制 + 字体大小配置
+        tags$head(
+          tags$style(HTML(sprintf("
+            /* 全局列表字体大小配置 */
+            .dataTables_wrapper table.dataTable tbody td {
+              font-size: %spx !important;
+            }
+            .dataTables_wrapper table.dataTable thead th {
+              font-size: %spx !important;
+            }
+            /* 输入框和选择框字体大小配置 */
+            .form-control, .selectize-input, .selectize-dropdown {
+              font-size: %spx !important;
+            }
+            .navbar-default .navbar-nav > .active > a,
+            .navbar-default .navbar-nav > .active > a:hover,
+            .navbar-default .navbar-nav > .active > a:focus {
+              background-color: #337ab7 !important;
+              color: #fff !important;
+              font-weight: bold;
+              border: none;
+              box-shadow: 0 -3px 0 #1a5276 inset;
+            }
+            .navbar-default .navbar-nav > li > a:hover,
+            .navbar-default .navbar-nav > li > a:focus {
+              background-color: #d6e9f8 !important;
+            }
+            /* 默认隐藏管理菜单，JS根据角色控制显示 */
+            .admin-menu-item { display: none !important; }
+            body.admin-user .admin-menu-item { display: block !important; }
+          ", table_font_size, table_font_size, input_font_size))),
+          tags$script(HTML("
+            $(document).on('shiny:connected', function(event) {
+              // 给管理菜单添加标识class
+              $('.navbar-nav > li.dropdown').each(function() {
+                var link = $(this).find('a.dropdown-toggle');
+                if (link.length && link.text().indexOf('管理') >= 0) {
+                  $(this).addClass('admin-menu-item');
+                }
+              });
+              Shiny.addCustomMessageHandler('toggleAdminMenu', function(message) {
+                if (message.show) {
+                  $('body').addClass('admin-user');
+                } else {
+                  $('body').removeClass('admin-user');
+                }
+              });
+            });
+          "))
+        ),
+        # 工单统计数据（缩小一半，在一行显示）
+        fluidRow(
+          column(12,
+            div(style = "margin-bottom: 10px;",
+              fluidRow(
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0;",
+                  div(style = "font-size: 11px; color: #666; font-weight: 500;", "总工单"),
+                  div(style = "font-size: 18px; font-weight: bold; color: #333;", textOutput("wo_stat_total"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #f0ad4e; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "待处理"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("wo_stat_pending"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #5bc0de; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "已派发"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("wo_stat_assigned"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #337ab7; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "处理中"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("wo_stat_processing"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #5cb85c; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "已完成"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("wo_stat_completed"))
+                )),
+                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #777; color: white;",
+                  div(style = "font-size: 11px; font-weight: 500;", "已关闭"),
+                  div(style = "font-size: 18px; font-weight: bold;", textOutput("wo_stat_closed"))
+                ))
+              )
+            )
+          )
+        ),
+        # 工单列表（占满宽度）
+        fluidRow(
+          column(12,
+            tabsetPanel(
+              tabPanel("工单列表",
+                br(),
+                fluidRow(
+                  column(2, uiOutput("work_order_status_filter_ui")),
+                  column(3, textInput("work_order_search", NULL, placeholder = "搜索工单...")),
+                  column(2, div(style = "margin-top: 20px;", actionButton("show_create_work_order", "新建工单", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;"))),
+                  column(2, div(style = "margin-top: 20px;", actionButton("show_quick_work_order", "快速创建", class = "btn-success", style = "padding: 4px 10px; font-size: 12px;"))),
+                  column(1, div(style = "margin-top: 20px;", actionButton("refresh_work_orders", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+                ),
+                DTOutput("work_order_table")
+              ),
+              tabPanel("工单派发",
+                br(),
+                conditionalPanel(
+                  condition = "output.work_order_selected",
+                  wellPanel(
+                    h4("选中工单信息"),
+                    verbatimTextOutput("selected_work_order_info"),
+                    hr(),
+                    h4("派发操作"),
+                    selectInput("work_order_assignee", "选择处理人", choices = NULL),
+                    actionButton("assign_work_order", "派发工单", class = "btn-primary")
+                  )
+                ),
+                conditionalPanel(
+                  condition = "!output.work_order_selected",
+                  div(class = "alert alert-info", HTML("请先在<b>工单列表</b>中点击选择一行"))
+                )
+              ),
+              tabPanel("工单处理",
+                br(),
+                conditionalPanel(
+                  condition = "output.work_order_selected",
+                  wellPanel(
+                    h4("选中工单信息"),
+                    verbatimTextOutput("selected_work_order_info2"),
+                    hr(),
+                    h4("处理操作"),
+                    conditionalPanel(
+                      condition = "output.work_order_can_edit",
+                      actionButton("edit_work_order_btn", "编辑工单", class = "btn-info btn-block"),
+                      br()
+                    ),
+                    conditionalPanel(
+                      condition = "output.work_order_can_start",
+                      actionButton("start_handle_work_order", "开始处理", class = "btn-primary btn-block"),
+                      br()
+                    ),
+                    conditionalPanel(
+                      condition = "output.work_order_can_complete",
+                      textAreaInput("work_order_resolution", "解决方案/处理结果", rows = 4),
+                      actionButton("complete_work_order", "完成工单", class = "btn-success btn-block"),
+                      br()
+                    ),
+                    conditionalPanel(
+                      condition = "output.work_order_can_close",
+                      selectInput("work_order_close_reason", "关闭原因（必选）",
+                                 choices = c("请选择关闭原因" = "", "已处理和交付" = "已处理和交付", "无法处理关闭" = "无法处理关闭")),
+                      actionButton("close_work_order", "关闭工单", class = "btn-warning btn-block"),
+                      br()
+                    ),
+                    actionButton("delete_work_order_btn", "删除工单", class = "btn-danger btn-block")
+                  )
+                ),
+                conditionalPanel(
+                  condition = "!output.work_order_selected",
+                  div(class = "alert alert-info", HTML("请先在<b>工单列表</b>中点击选择一行"))
+                ),
+                br(),
+                # 评论区域
+                conditionalPanel(
+                  condition = "output.work_order_selected",
+                  wellPanel(
+                    h4("工单评论/备注"),
+                    textAreaInput("work_order_comment", "添加评论", rows = 2),
+                    actionButton("add_work_order_comment", "发表评论", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;"),
+                    hr(),
+                    h5("历史评论"),
+                    uiOutput("work_order_comments_ui")
+                  )
+                )
+              )
+            )
+          )
+        ),
+
+        hr(),
+
+        # 编辑工单区域（默认隐藏，点击编辑后显示）
+        conditionalPanel(
+          condition = "output.work_order_edit_mode",
+          fluidRow(
+            column(12,
+              wellPanel(
+                h4("编辑工单"),
+                fluidRow(
+                  column(4, textInput("edit_work_order_title", "工单标题")),
+                  column(2, uiOutput("edit_work_order_priority_ui")),
+                  column(3, uiOutput("edit_work_order_category_ui")),
+                  column(3, div(style = "margin-top: 20px;",
+                    actionButton("save_edit_work_order", "保存修改", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px; margin-right: 5px;"),
+                    actionButton("cancel_edit_work_order", "取消", class = "btn-default", style = "padding: 4px 10px; font-size: 12px;")
+                  ))
+                ),
+                fluidRow(
+                  column(12, textAreaInput("edit_work_order_description", "工单描述", rows = 2))
+                )
+              )
+            )
+          )
+        ),
+
+        # 第四行：创建工单（放在最下面）
+        fluidRow(
+          column(12,
+            wellPanel(
+              h4("创建新工单"),
+              fluidRow(
+                column(4, textInput("work_order_title", "工单标题")),
+                column(2, uiOutput("work_order_priority_ui")),
+                column(2, textInput("work_order_request_user", "请求用户")),
+                column(2, uiOutput("work_order_category_ui")),
+                column(2, div(style = "margin-top: 20px;", actionButton("add_work_order", "创建工单", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;")))
+              ),
+              fluidRow(
+                column(12, textAreaInput("work_order_description", "工单描述", rows = 2))
+              )
+            )
+          )
+        ),
+
+        # 快速工单（粘贴格式化工单文本）
+        fluidRow(
+          column(12,
+            wellPanel(
+              h4("快速工单"),
+              p("粘贴以下格式的文本，自动解析并创建工单：", style = "color: #666; font-size: 12px;"),
+              pre('IT服务请求 20260512 1110：
+用户：谢芳材-供应链中心-副总经理
+内容：两栋楼的"监控角度需要修正"...
+@韩荣昌-IT部-IT工程师(Sky)', style = "font-size: 11px; background: #f5f5f5; padding: 8px;"),
+              fluidRow(
+                column(10, textAreaInput("quick_work_order_text", "粘贴格式化工单", rows = 4, placeholder = "请粘贴格式化工单内容...")),
+                column(2,
+                  div(style = "margin-top: 50px;",
+                    actionButton("create_quick_work_order", "快速创建", class = "btn-success", style = "padding: 8px 16px; font-size: 14px;")
+                  ),
+                  uiOutput("quick_work_order_preview")
+                )
+              )
+            )
+          )
+        )
+      )
+    ),
+
+    # 标准化标签页
+    tabPanel(
+      "标准化",
+      icon = icon("cogs"),  # 齿轮图标
+      std_ui()
+    ),
+    
+    # 测试标签页（网络巡检）
+    tabPanel(
+      "测试",
+      icon = icon("network-wired"),
+      network_test_ui()
+    ),
+
+    # 日报标签页
+    tabPanel(
+      "日报",
+      icon = icon("calendar-day"),
+      daily_report_ui()
+    ),
+
+    # 收集器标签页
+    tabPanel(
+      "收集器",
+      icon = icon("download"),  # 收集器图标
+      fluidPage(
+        titlePanel("信息收集器"),
+        sidebarLayout(
+          sidebarPanel(
+            textInput("collector_name", "收集器名称"),
+            selectInput("collector_type", "收集器类型", choices = c("系统信息", "网络信息", "应用信息", "数据库信息")),
+            textAreaInput("collector_config", "收集器配置"),
+            actionButton("add_collector", "添加收集器", class = "btn-primary"),
+            br(), br(),
+            actionButton("refresh_collectors", "刷新收集器", class = "btn-info")
+          ),
+          mainPanel(
+            DTOutput("collector_table")
+          )
+        )
+      )
+    ),
+    
+    # 数据中心标签页（数据归集）
+    tabPanel(
+      "数据",
+      icon = icon("database"),
+      data_center_ui()
+    ),
+
+    # 流程引擎标签页
+    tabPanel(
+      "流程",
+      icon = icon("project-diagram"),
+      process_ui()
+    ),
+
+    # 绩效管理标签页
+    tabPanel(
+      "绩效",
+      icon = icon("chart-bar"),
+      performance_ui()
+    ),
+
+    # 模型训练标签页
+    tabPanel(
+      "模型",
+      icon = icon("cogs"),  # 齿轮图标
+      fluidPage(
+        titlePanel("模型"),
+        sidebarLayout(
+          sidebarPanel(
+            textInput("model_name", "模型名称"),
+            selectInput("model_type", "模型类型", choices = c("线性回归", "决策树", "随机森林", "神经网络", "SVM")),
+            textAreaInput("model_params", "模型参数"),
+            actionButton("train_model", "训练模型", class = "btn-primary"),
+            br(), br(),
+            actionButton("refresh_models", "刷新模型", class = "btn-info")
+          ),
+          mainPanel(
+            h4("模型列表"),
+            DTOutput("model_table"),  # 模型表格
+            br(),
+            h4("训练结果"),
+            verbatimTextOutput("training_result")  # 训练结果文本输出
+          )
+        )
+      )
+    ),
+    
+    # 数据可视化标签页（含流程监控）
+    tabPanel(
+      "可视化",
+      icon = icon("chart-line"),
+      fluidPage(
+        # 流程监控指标卡片
+        fluidRow(
+          column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#e8f5e9;",
+            h3(textOutput("viz_mtr_complete_rate"),style="margin:0;color:#2e7d32;font-size:24px;"),
+            p("流程完成率",style="margin:3px 0 0;font-size:12px;"))),
+          column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#fff3e0;",
+            h3(textOutput("viz_mtr_timeout_rate"),style="margin:0;color:#e65100;font-size:24px;"),
+            p("超时率",style="margin:3px 0 0;font-size:12px;"))),
+          column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#e3f2fd;",
+            h3(textOutput("viz_mtr_avg_duration"),style="margin:0;color:#1565c0;font-size:24px;"),
+            p("平均耗时",style="margin:3px 0 0;font-size:12px;"))),
+          column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#f3e5f5;",
+            h3(textOutput("viz_mtr_running"),style="margin:0;color:#7b1fa2;font-size:24px;"),
+            p("运行中流程",style="margin:3px 0 0;font-size:12px;")))
+        ),
+        fluidRow(
+          column(6, div(class="well well-sm",style="padding:8px;margin-bottom:10px;",
+            h5("今日活动",style="margin:0 0 5px;color:#555;font-size:13px;"),
+            span(textOutput("viz_mtr_today"),style="color:#337ab7;font-size:16px;font-weight:bold;"))),
+          column(6, div(class="well well-sm",style="padding:8px;margin-bottom:10px;",
+            h5("流程引擎",style="margin:0 0 5px;color:#555;font-size:13px;"),
+            span("前往 流程模块 创建和管理流程", style="font-size:13px;color:#666;")))
+        ),
+        hr(),
+        titlePanel("数据可视化"),
+        sidebarLayout(
+          sidebarPanel(
+            selectInput("viz_type", "图表类型", choices = c("折线图", "柱状图", "散点图", "饼图", "热力图")),
+            selectInput("viz_data", "数据源", choices = c("ITOM数据", "模型数据", "流程监控")),
+            actionButton("generate_viz", "生成图表", class = "btn-primary")
+          ),
+          mainPanel(
+            plotlyOutput("viz_plot")
+          )
+        )
+      )
+    ),
+    
+    # 管理菜单（admin专用，JS控制显示/隐藏）
+    navbarMenu(
+      "管理",
+      icon = icon("tools"),
+      tabPanel(
+        "用户管理",
+        icon = icon("users"),
+        fluidPage(
+          titlePanel("用户管理"),
+          sidebarLayout(
+            sidebarPanel(
+              tags$div(textInput("selected_user_id", "", value = ""), style = "display: none;"),
+              textInput("username", "用户名"),
+              textInput("display_name", "显示名称"),
+              passwordInput("password", "密码"),
+              selectInput("role", "角色", choices = c("user", "admin")),
+              actionButton("add_user", "添加用户", class = "btn-primary"),
+              br(), br(),
+              actionButton("update_user", "修改账号", class = "btn-warning"),
+              br(), br(),
+              actionButton("toggle_active_user", "禁用/启用用户", class = "btn-danger"),
+              br(), br(),
+              actionButton("refresh_users", "刷新用户", class = "btn-info")
+            ),
+            mainPanel(
+              DTOutput("user_table")
+            )
+          )
+        )
+      ),
+      tabPanel(
+        "系统设置",
+        icon = icon("cogs"),
+        fluidPage(
+          titlePanel("系统设置"),
+          # 字体大小快捷配置区域
+          wellPanel(
+            h4("界面字体大小"),
+            p(style = "color:#666; font-size:12px;", "调整列表表格和输入框的字体大小（保存后刷新页面生效）"),
+            fluidRow(
+              column(3, numericInput("cfg_table_font_size", "列表表格字体(px)", value = 13, min = 10, max = 20, step = 1)),
+              column(3, numericInput("cfg_input_font_size", "输入框/选择框字体(px)", value = 13, min = 10, max = 20, step = 1)),
+              column(3, div(style = "margin-top:25px;",
+                actionButton("save_font_config", "保存字体设置", class = "btn-primary btn-sm", icon = icon("save"))))
+            )
+          ),
+          hr(),
+          # 通用配置管理
+          sidebarLayout(
+            sidebarPanel(
+              textInput("config_key", "配置键"),
+              textInput("config_value", "配置值"),
+              textInput("config_desc", "描述"),
+              actionButton("add_config", "添加配置", class = "btn-primary"),
+              br(), br(),
+              actionButton("refresh_config", "刷新配置", class = "btn-info")
+            ),
+            mainPanel(
+              DTOutput("config_table")
+            )
+          )
+        )
+      ),
+      tabPanel(
+        "选项配置",
+        icon = icon("sliders-h"),
+        fluidPage(
+          titlePanel("选项配置管理"),
+          p("管理项目状态、优先级等下拉选项。修改后立即生效，所有界面自动使用最新配置。"),
+          fluidRow(
+            column(3, selectInput("co_category", "配置类别",
+              choices = c(
+                "项目管理" = list("项目状态"="project_status", "项目优先级"="project_priority",
+                                  "阶段状态"="phase_status", "工作包状态"="wp_status",
+                                  "任务状态"="task_status", "任务优先级"="task_priority"),
+                "工单管理" = list("工单状态"="work_order_status", "工单优先级"="work_order_priority",
+                                  "工单分类"="work_order_category")
+              ))),
+            column(2, actionButton("co_refresh", "刷新列表", class = "btn-info btn-sm", style = "margin-top:24px;"))
+          ),
+          DTOutput("co_option_table"),
+          hr(),
+          wellPanel(
+            h4("添加/编辑选项"),
+            fluidRow(
+              column(2, textInput("co_value", "选项值")),
+              column(2, textInput("co_label", "显示名称")),
+              column(2, textInput("co_color", "颜色(HEX)", placeholder = "#337ab7")),
+              column(1, numericInput("co_sort", "排序", value = 0, min = 0)),
+              column(2, selectInput("co_default", "默认", choices = c("否"="0", "是"="1"))),
+              column(1, div(style = "margin-top:20px;",
+                actionButton("co_add", "添加", class = "btn-primary btn-sm"))),
+              column(2, div(style = "margin-top:20px;",
+                actionButton("co_save_edit", "保存修改", class = "btn-warning btn-sm")))
+            )
+          )
+        )
+      ),
+      tabPanel(
+        "GitHub",
+        icon = icon("github"),
+        fluidPage(
+          titlePanel("GitHub 自动提交"),
+          br(),
+          sidebarLayout(
+            sidebarPanel(
+              h4("Git 操作"),
+              br(),
+              textInput("commit_message", "提交信息", value = "Commit from ITOM2"),
+              br(), br(),
+              actionButton("github_autosubmit", "提交所有更改", icon = icon("upload"), class = "btn-primary"),
+              br(), br(),
+              actionButton("github_check_status", "查看 Git 状态", icon = icon("info-circle"), class = "btn-info"),
+              br(), br(),
+              actionButton("github_pull", "拉取最新代码", icon = icon("download"), class = "btn-warning")
+            ),
+            mainPanel(
+              h4("Git 状态"),
+              verbatimTextOutput("git_status"),
+              br(),
+              h4("提交结果"),
+              verbatimTextOutput("git_result")
+            )
+          )
+        )
+      )
+    ),
+
+    # 添加退出登录标签页
+    tabPanel(
+      "退出",
+      icon = icon("sign-out-alt"),
+      fluidPage(
+        # titlePanel("退出登录"),
+        fluidRow(
+          column(12,
+            div(
+              style = "text-align: center; margin-top: 50px;",
+              h3("您确定要退出登录吗？"),
+              br(),
+              actionButton("logout", "确认退出", class = "btn-danger")
+            )
+          )
+        )
+      )
+    )
+  )
+}
+
+# 定义admin专用标签页
+admin_tabs_ui <- function() {
+  tagList(
+    # 用户管理标签页
+    tabPanel(
+      "用户管理",
+      icon = icon("users"),
+      fluidPage(
+        titlePanel("用户管理"),
+        sidebarLayout(
+          sidebarPanel(
+            tags$div(textInput("selected_user_id", "", value = ""), style = "display: none;"),
+            textInput("username", "用户名"),
+            passwordInput("password", "密码"),
+            selectInput("role", "角色", choices = c("user", "admin")),
+            actionButton("add_user", "添加用户", class = "btn-primary"),
+            br(), br(),
+            actionButton("update_user", "修改账号", class = "btn-warning"),
+            br(), br(),
+            actionButton("toggle_active_user", "禁用/启用用户", class = "btn-danger"),
+            br(), br(),
+            actionButton("refresh_users", "刷新用户", class = "btn-info")
+          ),
+          mainPanel(
+            DTOutput("user_table")
+          )
+        )
+      )
+    ),
+    
+    # 系统设置标签页
+    tabPanel(
+      "系统设置",
+      icon = icon("cogs"),
+      fluidPage(
+        titlePanel("系统设置"),
+        sidebarLayout(
+          sidebarPanel(
+            textInput("config_key", "配置键"),
+            textInput("config_value", "配置值"),
+            textInput("config_desc", "描述"),
+            actionButton("add_config", "添加配置", class = "btn-primary"),
+            br(), br(),
+            actionButton("refresh_config", "刷新配置", class = "btn-info")
+          ),
+          mainPanel(
+            DTOutput("config_table")
+          )
+        )
+      )
+    ),
+    
+    # GitHub自动提交标签页
+    tabPanel(
+      "GitHub",
+      icon = icon("github"),
+      fluidPage(
+        titlePanel("GitHub 自动提交"),
+        br(),
+        sidebarLayout(
+          sidebarPanel(
+            h4("Git 操作"),
+            br(),
+            textInput("commit_message", "提交信息", value = "Commit from ITOM2"),
+            br(), br(),
+            actionButton("github_autosubmit", "提交所有更改", icon = icon("upload"), class = "btn-primary"),
+            br(), br(),
+            actionButton("github_check_status", "查看 Git 状态", icon = icon("info-circle"), class = "btn-info"),
+            br(), br(),
+            actionButton("github_pull", "拉取最新代码", icon = icon("download"), class = "btn-warning")
+          ),
+          mainPanel(
+            h4("Git 状态"),
+            verbatimTextOutput("git_status"),
+            br(),
+            h4("提交结果"),
+            verbatimTextOutput("git_result")
+          )
+        )
+      )
+    )
+  )
+}

@@ -12,19 +12,23 @@ sysmon_server <- function(input, output, session, rv) {
 
   # 初始化：获取本机IP，自动添加本机监控
   observe({
-    local_ip <<- sysmon_get_local_ip()
-    local_subnet <<- sysmon_get_subnet(local_ip)
-    hosts <- sysmon_host_list()
-    if (!(local_ip %in% hosts$ip)) {
-      hostname <- Sys.info()["nodename"]
-      result <- sysmon_host_add(hostname=hostname, ip=local_ip, os_type="windows", remark="本机")
-      if (result$success) {
-        check <- sysmon_ping_check(local_ip)
-        sysmon_check_log(result$id, "ping", ifelse(check$success,"success","fail"), check$ms, check$detail)
-        sysmon_host_update_status(result$id, ifelse(check$success,"online","offline"), check$ms)
-        sysmon_trigger(sysmon_trigger()+1)
+    tryCatch({
+      local_ip <<- sysmon_get_local_ip()
+      local_subnet <<- sysmon_get_subnet(local_ip)
+      hosts <- sysmon_host_list()
+      if (!(local_ip %in% hosts$ip)) {
+        hostname <- Sys.info()["nodename"]
+        result <- sysmon_host_add(hostname=hostname, ip=local_ip, os_type="windows", remark="本机")
+        if (result$success) {
+          check <- sysmon_ping_check(local_ip)
+          sysmon_check_log(result$id, "ping", ifelse(check$success,"success","fail"), check$ms, check$detail)
+          sysmon_host_update_status(result$id, ifelse(check$success,"online","offline"), check$ms)
+          sysmon_trigger(sysmon_trigger()+1)
+        }
       }
-    }
+    }, error = function(e) {
+      message("[sysmon] 初始化失败: ", e$message)
+    })
   })
 
   # 统计卡片
@@ -233,6 +237,7 @@ sysmon_server <- function(input, output, session, rv) {
 
   # ========== 自动检测（每3分钟） ==========
   observe({
+    req(rv$logged_in)  # 登录后才开始检测，避免启动时锁库
     invalidateLater(180000, session)
     hosts <- sysmon_host_list()
     if (nrow(hosts) == 0) return()

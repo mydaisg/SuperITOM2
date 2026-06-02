@@ -1,5 +1,7 @@
+# OLD 架构恢复 + 系统设置预加载
+source("Script/system_settings.r")
+
 ui <- fluidPage(
-  # 页面刷新后自动恢复登录状态的JS（放在ui.R确保始终加载）
   tags$head(
     tags$script(HTML("
       $(document).on('shiny:connected', function(event) {
@@ -8,12 +10,10 @@ ui <- fluidPage(
           Shiny.setInputValue('auto_login_user_id', savedUserId, {priority: 'event'});
         }
       });
-      Shiny.addCustomMessageHandler('saveLoginState', function(message) {
-        if (message.user_id) {
-          localStorage.setItem('itom2_user_id', message.user_id);
-        }
+      Shiny.addCustomMessageHandler('saveLoginState', function(m) {
+        if (m.user_id) localStorage.setItem('itom2_user_id', m.user_id);
       });
-      Shiny.addCustomMessageHandler('clearLoginState', function(message) {
+      Shiny.addCustomMessageHandler('clearLoginState', function(m) {
         localStorage.removeItem('itom2_user_id');
       });
     "))

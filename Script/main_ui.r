@@ -38,6 +38,9 @@ source("Script/process_ui.r")
 # 加载绩效模块
 source("Script/performance_ui.r")
 
+# 加载记事模块
+source("Script/note_ui.r")
+
 main_ui <- function() {
   # 读取字体大小配置
   table_font_size <- config_get_value("table_font_size", "13")
@@ -59,6 +62,7 @@ main_ui <- function() {
         '/project': '项目',
         '/inspection': '巡检',
         '/work_order': '工单',
+        '/note': '记事',
         '/std': '标准化',
         '/network_test': '测试',
         '/monitor': '性能',
@@ -582,6 +586,13 @@ main_ui <- function() {
           )
         )
       )
+    ),
+
+    # 记事标签页
+    tabPanel(
+      "记事",
+      icon = icon("sticky-note"),
+      note_ui()
     ),
 
     # 标准化标签页

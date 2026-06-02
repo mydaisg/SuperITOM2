@@ -5,6 +5,7 @@ if (getRversion() >= "2.15.1") {
 }
 
 login_ui <- function() {
+  # ★ 半透明遮罩：background 不透明度 0.85，防止 Shiny 判定底层输出为不可见
   tagList(
     tags$script(HTML("
       $(document).on('keypress', '#login_username, #login_password', function(e) {
@@ -15,18 +16,17 @@ login_ui <- function() {
       });
     ")),
     div(
-      class = "login-container",
-      style = "display: flex; justify-content: center; align-items: center; height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);",
+      style = "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 10000;
+               display: flex; justify-content: center; align-items: center;
+               background: rgba(102, 126, 234, 0.85);",
       div(
-        class = "login-box",
-        style = "background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 400px;",
+        style = "background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); width: 400px;",
         h2("Super ITOM 2 登录", style = "text-align: center; color: #667eea; margin-bottom: 30px;"),
         textInput("login_username", "用户名", placeholder = "请输入用户名"),
         passwordInput("login_password", "密码", placeholder = "请输入密码"),
         br(), br(),
         actionButton("login_btn", "登录", class = "btn-primary btn-block", style = "width: 100%;"),
-        br(), br(),
-#        p("默认管理员账号: admin / ****** ", style = "text-align: center; color: #666; font-size: 12px;")
+        br(), br()
       )
     )
   )

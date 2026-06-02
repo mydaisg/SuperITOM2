@@ -15,6 +15,8 @@ db_path <- get_db_path()
 
 db_connect <- function() {
   con <- dbConnect(RSQLite::SQLite(), db_path)
+  # 等待最多5秒（而不是立即失败），解决并发写入时的 database is locked 错误
+  dbExecute(con, "PRAGMA busy_timeout = 5000")
   # 设置为本地时区，避免 CURRENT_TIMESTAMP 返回 UTC 时间
   dbExecute(con, "PRAGMA localtime = 1")
   return(con)

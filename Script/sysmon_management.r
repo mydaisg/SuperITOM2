@@ -5,8 +5,18 @@
 ##################
 sysmon_host_list <- function() {
   con <- db_connect()
-  tryCatch({ dbGetQuery(con, "SELECT * FROM sysmon_hosts WHERE is_active=1 ORDER BY hostname") },
-  finally={ db_disconnect(con) })
+  tryCatch({
+    dbGetQuery(con, "SELECT * FROM sysmon_hosts WHERE is_active=1 ORDER BY hostname")
+  }, error = function(e) {
+    message("[sysmon] 获取主机列表失败: ", e$message)
+    data.frame(hostname=character(), ip=character(), os_type=character(),
+               status=character(), response_time_ms=integer(), last_check=character(),
+               last_online=character(), port=integer(), credential_id=integer(),
+               remark=character(), is_active=integer(),
+               stringsAsFactors=FALSE)
+  }, finally = {
+    db_disconnect(con)
+  })
 }
 
 sysmon_host_get <- function(id) {
