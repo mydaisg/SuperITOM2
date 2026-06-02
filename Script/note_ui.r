@@ -36,10 +36,39 @@ note_ui <- function() {
         if (msg.mode === 'edit') {
           $('#note_content_ro').hide(); $('#note_content_ed').show();
           $('#note_toggle_edit').hide(); $('#note_cancel_edit').show(); $('#note_do_save').show();
+          $('.comment-actions').show();
         } else {
           $('#note_content_ro').show(); $('#note_content_ed').hide();
           $('#note_toggle_edit').show(); $('#note_cancel_edit').hide(); $('#note_do_save').hide();
+          $('.comment-actions').hide();
         }
+      });
+      // 评论编辑：显示编辑区
+      $(document).on('click','.comment-edit-btn',function(e){
+        e.stopPropagation();
+        var $item = $(this).closest('.comment-item');
+        $item.find('.comment-text').hide();
+        $item.find('.comment-edit-area').show();
+      });
+      // 评论取消编辑
+      $(document).on('click','.comment-cancel-btn',function(e){
+        e.stopPropagation();
+        var $item = $(this).closest('.comment-item');
+        $item.find('.comment-text').show();
+        $item.find('.comment-edit-area').hide();
+      });
+      // 评论保存
+      $(document).on('click','.comment-save-btn',function(e){
+        e.stopPropagation();
+        var id = $(this).data('id');
+        var text = $(this).closest('.comment-item').find('.comment-edit-input').val();
+        Shiny.setInputValue('note_comment_edit', id+':'+text, {priority:'event'});
+      });
+      // 评论删除
+      $(document).on('click','.comment-del-btn',function(e){
+        e.stopPropagation();
+        if (!confirm('删除此评论？')) return;
+        Shiny.setInputValue('note_comment_delete', $(this).data('id'), {priority:'event'});
       });
     ")),
     tags$style(HTML("

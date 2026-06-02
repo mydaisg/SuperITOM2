@@ -1,4 +1,4 @@
-# 记事模块 - 服务端 (v2: Trello 看板)
+# 记事模块 - 服务端 v4 (编号 + footer按钮 + 评论编辑/删除)
 
 note_server <- function(input, output, session, rv) {
   
@@ -18,54 +18,47 @@ note_server <- function(input, output, session, rv) {
       if (nrow(subset) > 0) {
         for (i in 1:nrow(subset)) {
           r <- subset[i, ]
-          # 重要性小旗
           flags <- sapply(1:5, function(f) {
             cls <- if (f <= (r$importance %||% 0)) "note-flag active" else "note-flag"
             sprintf('<a class="%s" data-id="%d">🚩</a>', cls, r$id)
-          }) |> paste(collapse="")
+          }) |> paste(collapse = "")
           
-          # 时间信息
           created <- if (!is.na(r$created_at) && nchar(r$created_at) > 10) substr(r$created_at, 1, 16) else r$created_at
           reminder <- if (!is.na(r$reminder_at) && nchar(r$reminder_at) > 10) substr(r$reminder_at, 1, 16) else ""
           due <- if (!is.na(r$due_at) && nchar(r$due_at) > 10) substr(r$due_at, 1, 16) else ""
+          note_no <- r$note_no[1] %||% ""
           
-          # 是否逾期
           due_cls <- ""
           if (!is.na(r$due_at) && r$due_at != "") {
             due_dt <- tryCatch(as.POSIXct(r$due_at), error = function(e) NULL)
             if (!is.null(due_dt) && due_dt < Sys.time()) due_cls <- "note-due-overdue"
           }
           
-          # 内容预览（去掉首行标题）
           body <- r$content %||% ""
-          lines <- strsplit(body, "\n")[[1]]
-          if (length(lines) > 1) {
-            body <- paste(lines[-1], collapse = "\n")
-          } else {
-            body <- ""
-          }
-          if (nchar(body) > 120) body <- paste0(substr(body, 1, 120), "...")
+          body_lines <- strsplit(body, "\n")[[1]]
+          if (length(body_lines) > 1) body <- paste(body_lines[-1], collapse = "\n") else body <- ""
+          if (nchar(body) > 100) body <- paste0(substr(body, 1, 100), "...")
           
-          # 最后一条评论
           last_comment <- note_comment_get_last(r$id)
           comment_html <- ""
           if (!is.null(last_comment) && nrow(last_comment) > 0) {
-            ct <- last_comment$content[1]
-            cn <- last_comment$creator_name[1] %||% "匿名"
-            if (nchar(ct) > 60) ct <- paste0(substr(ct, 1, 60), "...")
-            comment_html <- tags$div(style="font-size:11px; color:#5e6c84; margin-top:6px; padding:4px 6px; background:#f4f5f7; border-radius:3px;",
-              tags$span(style="color:#999;", cn, ": "), tags$span(ct))
+            ct <- last_comment$content[1]; cn <- last_comment$creator_name[1] %||% "匿名"
+            if (isTRUE(nchar(ct) > 50)) ct <- paste0(substr(ct, 1, 50), "...")
+            comment_html <- as.character(tags$div(style="font-size:11px; color:#5e6c84; margin-top:6px; padding:4px 6px; background:#f4f5f7; border-radius:3px;",
+              tags$span(style="color:#999;", cn, ": "), tags$span(ct)))
           }
           
           cards[[i]] <- tags$div(class = "note-card", `data-id` = r$id,
-            tags$div(class = "note-title", HTML(flags), " ", r$title),
-            if (nchar(body) > 0) tags$div(class = "note-body", body) else "",
+            tags$div(class = "note-title",
+              if (isTRUE(note_no != "")) tags$span(style="color:#337ab7;font-size:11px;margin-right:6px;", note_no),
+              HTML(flags), " ", r$title),
+            if (isTRUE(nchar(body) > 0)) tags$div(class = "note-body", body) else "",
             tags$div(class = "note-meta",
               tags$span(icon("clock"), created),
-              if (reminder != "") tags$span(icon("bell"), reminder),
-              if (due != "") tags$span(class = due_cls, icon("calendar-check"), due)
+              if (isTRUE(reminder != "")) tags$span(icon("bell"), reminder),
+              if (isTRUE(due != "")) tags$span(class = due_cls, icon("calendar-check"), due)
             ),
-            comment_html,
+            HTML(comment_html),
             tags$div(class = "note-actions",
               tags$button(class = "btn btn-success btn-xs note-wo-btn", `data-id` = r$id, "📋转工单"),
               tags$button(class = "btn btn-warning btn-xs note-report-btn", `data-id` = r$id, "📅日报"),
@@ -94,13 +87,13 @@ note_server <- function(input, output, session, rv) {
   })
   
   ##################
-  # 初始化时间默认值（从 system_config 读取）
+  # 初始化时间默认值
   ##################
   observe({
     req(rv$logged_in)
-    updateNumericInput(session, "note_reminder_hours", 
+    updateNumericInput(session, "note_reminder_hours",
       value = as.numeric(config_get_value("note_reminder_hours", "3")))
-    updateNumericInput(session, "note_due_hour", 
+    updateNumericInput(session, "note_due_hour",
       value = as.integer(config_get_value("note_due_hour", "18")))
   })
 
@@ -118,19 +111,9 @@ note_server <- function(input, output, session, rv) {
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "error"))
   })
-  
-  ##################
-  # 移动状态（弹窗中用，卡片按钮已移除）
-  ##################
-  observeEvent(input$note_move_click, {
-    req(rv$logged_in)
-    result <- note_patch(as.integer(input$note_move_click$id), status = input$note_move_click$to)
-    note_trigger(note_trigger() + 1)
-    showNotification(result$message, type = "message", duration = 2)
-  })
 
   ##################
-  # 编辑弹窗 v3：默认只读 + 修改按钮切换 + ID/状态/小旗 + 彩虹评论
+  # 编辑弹窗 v4：评论不关 + footer按钮 + 编号 + 评论编辑/删除
   ##################
   observeEvent(input$note_edit_click, {
     req(rv$logged_in)
@@ -138,25 +121,14 @@ note_server <- function(input, output, session, rv) {
     if (is.null(note) || nrow(note) == 0) return()
     rv$note_edit_id <- note$id[1]
     
+    note_no <- note$note_no[1] %||% sprintf("NTE%s%03d", format(Sys.Date(),"%Y%m%d"), note$id[1])
     rem_val <- note$reminder_at[1] %||% ""
     due_val <- note$due_at[1] %||% ""
     if (nchar(rem_val) > 16) rem_val <- substr(rem_val, 1, 16)
     if (nchar(due_val) > 16) due_val <- substr(due_val, 1, 16)
+    st <- note$status[1]; imp <- note$importance[1] %||% 0
     
-    # 状态按钮
-    st <- note$status[1]
-    status_btns <- ""
-    if (st == "pending") {
-      status_btns <- sprintf('<button class="btn btn-info btn-sm note-move-btn" data-id="%d" data-to="in_progress">▶ 开始处理</button>', note$id[1])
-    } else if (st == "in_progress") {
-      status_btns <- sprintf('<button class="btn btn-success btn-sm note-move-btn" data-id="%d" data-to="completed">✓ 标记完成</button>
-                              <button class="btn btn-warning btn-sm note-move-btn" data-id="%d" data-to="pending">◀ 退回待处理</button>', note$id[1], note$id[1])
-    } else {
-      status_btns <- sprintf('<button class="btn btn-warning btn-sm note-move-btn" data-id="%d" data-to="pending">◀ 重新打开</button>', note$id[1])
-    }
-    
-    # 重要性小旗（可加减）
-    imp <- note$importance[1] %||% 0
+    # 小旗（可点选）
     flags_html <- ""
     for (fi in 1:5) {
       flags_html <- paste0(flags_html,
@@ -164,8 +136,19 @@ note_server <- function(input, output, session, rv) {
           note$id[1], fi, if(fi <= imp) "🚩" else "🏳"))
     }
     
-    # 彩虹色评论
-    rainbow_colors <- c("#5bc0de","#f0ad4e","#5cb85c","#d9534f","#9370db","#337ab7","#f7a8b8","#a8d8ea")
+    # 状态按钮 HTML（放 footer）
+    status_btns <- ""
+    if (st == "pending") {
+      status_btns <- sprintf('<button class="btn btn-info btn-sm note-move-btn" data-id="%d" data-to="in_progress" style="margin-right:4px;">▶ 开始处理</button>', note$id[1])
+    } else if (st == "in_progress") {
+      status_btns <- sprintf('<button class="btn btn-success btn-sm note-move-btn" data-id="%d" data-to="completed" style="margin-right:4px;">✓ 完成</button>
+                              <button class="btn btn-warning btn-sm note-move-btn" data-id="%d" data-to="pending" style="margin-right:4px;">◀ 退回</button>', note$id[1], note$id[1])
+    } else {
+      status_btns <- sprintf('<button class="btn btn-warning btn-sm note-move-btn" data-id="%d" data-to="pending" style="margin-right:4px;">◀ 重新打开</button>', note$id[1])
+    }
+    
+    # 彩虹评论（每条带编辑/删除按钮，默认隐藏，修改模式显示）
+    rainbow_colors <- c("#e74c3c","#e67e22","#f1c40f","#2ecc71","#1abc9c","#3498db","#9b59b6","#e91e63")
     comments <- note_comment_get_all(note$id[1])
     comment_html <- ""
     if (!is.null(comments) && nrow(comments) > 0) {
@@ -175,35 +158,52 @@ note_server <- function(input, output, session, rv) {
         ca <- if (!is.na(c$created_at) && nchar(c$created_at) > 10) substr(c$created_at, 1, 16) else c$created_at
         clr <- rainbow_colors[((ci - 1) %% length(rainbow_colors)) + 1]
         comment_html <- paste0(comment_html, sprintf(
-          '<div style="background:#fafafa; padding:8px 12px; margin-bottom:6px; border-radius:6px; border-left:4px solid %s;">
-            <div style="font-size:11px; color:#999; margin-bottom:4px;">
-              <span style="font-weight:bold; color:%s;">%s</span>
-              <span style="margin-left:8px;">%s</span>
+          '<div class="comment-item" id="comment-%d" style="background:#fafafa; padding:8px 12px; margin-bottom:6px; border-radius:6px; border-left:4px solid %s;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:11px; color:#999; margin-bottom:4px;">
+                  <span style="font-weight:bold; color:%s;">%s</span>
+                  <span style="margin-left:8px;">%s</span>
+                </div>
+                <div class="comment-text" style="font-size:13px; line-height:1.5; white-space:pre-wrap; word-break:break-word;">%s</div>
+                <div class="comment-edit-area" style="display:none; margin-top:4px;">
+                  <textarea class="form-control comment-edit-input" style="font-size:13px;" rows="2">%s</textarea>
+                  <button class="btn btn-xs btn-primary comment-save-btn" style="margin-top:4px;" data-id="%d">保存</button>
+                  <button class="btn btn-xs btn-default comment-cancel-btn" style="margin-top:4px;">取消</button>
+                </div>
+              </div>
+              <div class="comment-actions" style="display:none; margin-left:8px; white-space:nowrap; flex-shrink:0;">
+                <button class="btn btn-xs btn-info comment-edit-btn" data-id="%d">✏</button>
+                <button class="btn btn-xs btn-danger comment-del-btn" data-id="%d">🗑</button>
+              </div>
             </div>
-            <div style="font-size:13px; line-height:1.5; white-space:pre-wrap;">%s</div>
-          </div>', clr, clr, cn, ca, c$content))
+          </div>', c$id, clr, clr, cn, ca, c$content, c$content, c$id, c$id, c$id))
       }
     }
     
     modal_body <- tagList(
-      # ID + 状态 + 小旗
+      # 编号 + 小旗
       tags$div(style="background:#f5f5f5; padding:10px; border-radius:6px; margin-bottom:10px;",
         tags$div(style="display:flex; justify-content:space-between; align-items:center;",
-          tags$span(style="font-size:12px; color:#999;", sprintf("ID: %d | 状态: %s | 创建: %s", note$id[1], st, substr(note$created_at[1] %||% "", 1, 16))),
+          tags$div(
+            tags$b(style="color:#337ab7; font-size:15px;", note_no),
+            tags$span(style="font-size:12px; color:#999; margin-left:10px;",
+              sprintf("状态: %s | 创建: %s", st, substr(note$created_at[1] %||% "", 1, 16)))
+          ),
           HTML(flags_html)
-        ),
-        tags$div(style="margin-top:6px;", HTML(status_btns))
+        )
       ),
       
-      # 内容区（只读）
+      # 内容只读
       tags$div(id = "note_content_ro",
-        tags$div(style="font-size:16px; font-weight:bold; margin-bottom:8px;", note$title[1]),
-        tags$div(style="font-size:13px; color:#333; white-space:pre-wrap; line-height:1.6; max-height:200px; overflow-y:auto;", note$content[1] %||% ""),
-        tags$div(style="font-size:12px; color:#999; margin-top:6px;", 
-                 sprintf("⏰ 提醒: %s  |  📅 到期: %s", rem_val, due_val))
+        tags$div(style="font-size:15px; font-weight:bold; margin-bottom:6px;", note$title[1]),
+        tags$div(style="font-size:13px; color:#333; white-space:pre-wrap; line-height:1.6; max-height:150px; overflow-y:auto;",
+          note$content[1] %||% ""),
+        tags$div(style="font-size:12px; color:#999; margin-top:6px;",
+          sprintf("⏰ 提醒: %s  |  📅 到期: %s", rem_val, due_val))
       ),
       
-      # 编辑区（初始隐藏）
+      # 内容编辑（初始隐藏）
       tags$div(id = "note_content_ed", style="display:none;",
         textAreaInput("note_edit_content_m", "内容（首行为标题）", rows = 4, value = note$content[1] %||% ""),
         fluidRow(
@@ -212,45 +212,49 @@ note_server <- function(input, output, session, rv) {
         )
       ),
       
-      # 修改/保存切换按钮
-      tags$div(style="margin-top:10px;",
-        actionButton("note_toggle_edit", "✏ 修改", class = "btn-warning btn-sm", icon = icon("edit")),
-        actionButton("note_cancel_edit", "取消修改", class = "btn-default btn-sm", style = "display:none;"),
-        actionButton("note_do_save", "💾 保存", class = "btn-primary btn-sm", style = "display:none;")
-      ),
-      
       tags$hr(),
       
-      # 评论历史
+      # 评论
+      tags$h5("💬 评论"),
       if (nchar(comment_html) > 0) tags$div(
-        style = "max-height:200px; overflow-y:auto; margin-bottom:8px;",
-        tags$h5("💬 评论"),
+        style = "max-height:250px; overflow-y:auto; margin-bottom:8px;",
         HTML(comment_html)
-      ) else tags$p(style="color:#999; font-size:12px;", "💬 暂无评论"),
+      ) else tags$p(style="color:#999; font-size:12px;", "暂无评论"),
       
-      # 评论输入（最底部）
+      # 评论输入 + 按钮
       textAreaInput("note_comment_new_m", NULL, rows = 2, placeholder = "添加评论..."),
-      actionButton("note_add_comment_m", "发表评论", class = "btn-info btn-sm")
+      div(style="text-align:right; margin-top:4px; margin-bottom:8px;",
+        actionButton("note_add_comment_m", "发表评论", class = "btn-info btn-sm", icon = icon("comment")))
     )
     
     showModal(modalDialog(
-      title = tags$span("记事详情 #", note$id[1]),
+      title = tags$span(icon("sticky-note"), " ", note_no, " — ", note$title[1]),
       size = "l",
       modal_body,
-      footer = modalButton("关闭"),
+      footer = tagList(
+        HTML(status_btns),
+        actionButton("note_toggle_edit", "✏ 修改", class = "btn-warning btn-sm", style = "margin-right:4px;"),
+        actionButton("note_cancel_edit", "取消修改", class = "btn-default btn-sm", style = "display:none; margin-right:4px;"),
+        actionButton("note_do_save", "💾 保存", class = "btn-primary btn-sm", style = "display:none; margin-right:4px;"),
+        modalButton("关闭")
+      ),
       easyClose = TRUE
     ))
   })
-  
-  # 切换编辑模式（用 sendCustomMessage 替代 runjs，不依赖 shinyjs）
+
+  ##################
+  # 切换编辑模式：显示编辑区 + 显示评论编辑按钮
+  ##################
   observeEvent(input$note_toggle_edit, {
     session$sendCustomMessage(type = "noteEditMode", message = list(mode = "edit"))
   })
   observeEvent(input$note_cancel_edit, {
     session$sendCustomMessage(type = "noteEditMode", message = list(mode = "view"))
   })
-  
+
+  ##################
   # 保存修改
+  ##################
   observeEvent(input$note_do_save, {
     req(rv$logged_in, rv$note_edit_id, input$note_edit_content_m)
     lines <- strsplit(trimws(input$note_edit_content_m), "\n")[[1]]
@@ -263,8 +267,20 @@ note_server <- function(input, output, session, rv) {
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "error"))
   })
-  
-  # 小旗设置（弹窗中用）
+
+  ##################
+  # 状态移动（无论是否编辑模式都可用）
+  ##################
+  observeEvent(input$note_move_click, {
+    req(rv$logged_in)
+    result <- note_patch(as.integer(input$note_move_click$id), status = input$note_move_click$to)
+    note_trigger(note_trigger() + 1)
+    showNotification(result$message, type = "message", duration = 2)
+  })
+
+  ##################
+  # 卡片小旗（循环递增）
+  ##################
   observeEvent(input$note_flag_click, {
     req(rv$logged_in)
     id <- as.integer(input$note_flag_click)
@@ -275,9 +291,10 @@ note_server <- function(input, output, session, rv) {
     result <- note_patch(id, importance = imp)
     note_trigger(note_trigger() + 1)
   })
-  
-  # 弹窗内小旗（可加减，通过 action 参数）
-  # 点击卡片上的 🚩/🏳 循环递增；弹窗内的 🚩/🏳 直接设置
+
+  ##################
+  # 弹窗内小旗（直接设置）
+  ##################
   observeEvent(input$note_flag_set, {
     req(rv$logged_in)
     parts <- strsplit(as.character(input$note_flag_set), ":")[[1]]
@@ -285,8 +302,10 @@ note_server <- function(input, output, session, rv) {
     result <- note_patch(id, importance = val)
     note_trigger(note_trigger() + 1)
   })
-  
-  # 弹窗内评论
+
+  ##################
+  # 添加评论（不关弹窗）
+  ##################
   observeEvent(input$note_add_comment_m, {
     req(rv$logged_in, rv$note_edit_id, input$note_comment_new_m)
     if (trimws(input$note_comment_new_m) == "") return()
@@ -294,13 +313,29 @@ note_server <- function(input, output, session, rv) {
     note_comment_add(rv$note_edit_id, input$note_comment_new_m, uid)
     updateTextAreaInput(session, "note_comment_new_m", value = "")
     note_trigger(note_trigger() + 1)
-    # 关弹窗提示，卡片已刷新（显示最后评论）
-    removeModal()
-    showNotification("评论已添加", type = "message", duration = 2)
+    showNotification("评论已添加", type = "message", duration = 1.5)
   })
-  
+
   ##################
-  # 转工单
+  # 评论编辑/删除（JS 触发）
+  ##################
+  observeEvent(input$note_comment_edit, {
+    req(rv$logged_in)
+    parts <- strsplit(as.character(input$note_comment_edit), ":")[[1]]
+    result <- note_comment_update(as.integer(parts[1]), parts[2])
+    note_trigger(note_trigger() + 1)
+    showNotification(result$message, type = "message", duration = 1.5)
+  })
+
+  observeEvent(input$note_comment_delete, {
+    req(rv$logged_in)
+    result <- note_comment_delete(as.integer(input$note_comment_delete))
+    note_trigger(note_trigger() + 1)
+    showNotification(result$message, type = "message", duration = 1.5)
+  })
+
+  ##################
+  # 转工单 / 记日报 / 删除
   ##################
   observeEvent(input$note_to_wo_click, {
     req(rv$logged_in)
@@ -308,20 +343,12 @@ note_server <- function(input, output, session, rv) {
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "error"))
   })
-  
-  ##################
-  # 记日报
-  ##################
   observeEvent(input$note_report_click, {
     req(rv$logged_in)
     result <- note_patch(as.integer(input$note_report_click), reported_to_daily = 1)
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = "message", duration = 2)
   })
-  
-  ##################
-  # 删除
-  ##################
   observeEvent(input$note_del_click, {
     req(rv$logged_in)
     result <- note_delete(as.integer(input$note_del_click))

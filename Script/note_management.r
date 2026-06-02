@@ -1,5 +1,22 @@
-# 记事模块 - 数据层 (v2: Trello看板风格)
-# 单文本框输入，首行自动提取为标题
+# 记事模块 - 数据层 (v3: 编号 + 评论管理)
+# NTE+YYYYMMDD+3位流水，评论可编辑删除
+
+##################
+# 编号生成 NTE+YYYYMMDD+3位流水
+##################
+note_generate_number <- function() {
+  con <- db_connect()
+  tryCatch({
+    today <- format(Sys.Date(), "%Y%m%d")
+    prefix <- paste0("NTE", today)
+    existing <- dbGetQuery(con, sprintf("SELECT note_no FROM notes WHERE note_no LIKE '%s%%' ORDER BY note_no DESC LIMIT 1", prefix))
+    if (nrow(existing) > 0 && !is.na(existing$note_no[1])) {
+      last_seq <- as.integer(substr(existing$note_no[1], nchar(prefix)+1, nchar(prefix)+3))
+      seq <- if (is.na(last_seq)) 1 else last_seq + 1
+    } else { seq <- 1 }
+    sprintf("%s%03d", prefix, seq)
+  }, finally = { db_disconnect(con) })
+}
 
 ##################
 # 获取所有记事
@@ -41,13 +58,14 @@ note_add <- function(text, created_by = NULL, reminder_hours = NULL, due_hour = 
   
   con <- db_connect()
   tryCatch({
+    note_no <- note_generate_number()
     query <- sprintf(
-      "INSERT INTO notes (title, content, reminder_at, due_at, created_by) VALUES ('%s','%s','%s','%s',%s)",
-      gsub("'","''",title), gsub("'","''",content), reminder_at, due_at,
+      "INSERT INTO notes (note_no, title, content, reminder_at, due_at, created_by) VALUES ('%s','%s','%s','%s','%s',%s)",
+      note_no, gsub("'","''",title), gsub("'","''",content), reminder_at, due_at,
       ifelse(is.null(created_by),"NULL",as.character(created_by)))
     dbExecute(con, query)
     id <- dbGetQuery(con, "SELECT last_insert_rowid() as id")$id[1]
-    list(success = TRUE, id = id, title = title, message = "已添加")
+    list(success = TRUE, id = id, note_no = note_no, title = title, message = paste("已添加", note_no))
   }, error = function(e) list(success = FALSE, message = paste("添加失败:", e$message)),
   finally = { db_disconnect(con) })
 }
@@ -159,6 +177,25 @@ note_comment_get_all <- function(note_id) {
       "SELECT c.*, u.username as creator_name FROM note_comments c LEFT JOIN users u ON c.created_by = u.id WHERE c.note_id = %d ORDER BY c.created_at ASC",
       as.integer(note_id)))
   }, finally = { db_disconnect(con) })
+}
+
+note_comment_update <- function(comment_id, content) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("UPDATE note_comments SET content='%s' WHERE id=%d",
+      gsub("'","''",content), as.integer(comment_id)))
+    list(success = TRUE, message = "评论已更新")
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+
+note_comment_delete <- function(comment_id) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("DELETE FROM note_comments WHERE id=%d", as.integer(comment_id)))
+    list(success = TRUE, message = "评论已删除")
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
 }
 
 ##################
