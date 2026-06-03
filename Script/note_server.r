@@ -58,12 +58,7 @@ note_server <- function(input, output, session, rv) {
               if (isTRUE(reminder != "")) tags$span(icon("bell"), reminder),
               if (isTRUE(due != "")) tags$span(class = due_cls, icon("calendar-check"), due)
             ),
-            HTML(comment_html),
-            tags$div(class = "note-actions",
-              tags$button(class = "btn btn-success btn-xs note-wo-btn", `data-id` = r$id, "📋转工单"),
-              tags$button(class = "btn btn-warning btn-xs note-report-btn", `data-id` = r$id, "📅日报"),
-              tags$button(class = "btn btn-danger btn-xs note-del-btn", `data-id` = r$id, "🗑删除")
-            )
+            HTML(comment_html)
           )
         }
       }
@@ -236,6 +231,9 @@ note_server <- function(input, output, session, rv) {
         actionButton("note_toggle_edit", "✏ 修改", class = "btn-warning btn-sm", style = "margin-right:4px;"),
         actionButton("note_cancel_edit", "取消修改", class = "btn-default btn-sm", style = "display:none; margin-right:4px;"),
         actionButton("note_do_save", "💾 保存", class = "btn-primary btn-sm", style = "display:none; margin-right:4px;"),
+        tags$button(class = "btn btn-info btn-sm note-wo-btn", `data-id` = note$id[1], style = "margin-right:4px;", "📋转工单"),
+        tags$button(class = "btn btn-warning btn-sm note-report-btn", `data-id` = note$id[1], style = "margin-right:4px;", "📅日报"),
+        tags$button(class = "btn btn-danger btn-sm note-del-btn", `data-id` = note$id[1], style = "margin-right:4px;", "🗑删除"),
         modalButton("关闭")
       ),
       easyClose = TRUE
@@ -340,6 +338,7 @@ note_server <- function(input, output, session, rv) {
   observeEvent(input$note_to_wo_click, {
     req(rv$logged_in)
     result <- note_convert_to_work_order(as.integer(input$note_to_wo_click), rv$current_user)
+    removeModal()
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "error"))
   })
@@ -352,6 +351,7 @@ note_server <- function(input, output, session, rv) {
   observeEvent(input$note_del_click, {
     req(rv$logged_in)
     result <- note_delete(as.integer(input$note_del_click))
+    removeModal()
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "error"))
   })
