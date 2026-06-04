@@ -41,6 +41,9 @@ source("Script/performance_ui.r")
 # 加载记事模块
 source("Script/note_ui.r")
 
+# 加载岗职模块
+source("Script/duty_matrix_ui.r")
+
 main_ui <- function() {
   # 读取字体大小配置
   table_font_size <- config_get_value("table_font_size", "13")
@@ -70,6 +73,7 @@ main_ui <- function() {
         '/collector': '收集器',
         '/data': '数据',
         '/process': '流程',
+        '/duty': '岗职',
         '/model': '模型',
         '/visualization': '可视化',
         '/admin': '管理'
@@ -657,6 +661,13 @@ main_ui <- function() {
       "流程",
       icon = icon("project-diagram"),
       process_ui()
+    ),
+
+    # 岗职矩阵标签页
+    tabPanel(
+      "岗职",
+      icon = icon("sitemap"),
+      duty_matrix_ui()
     ),
 
     # 绩效管理标签页

@@ -26,6 +26,8 @@ source("Script/performance_management.r") # 绩效数据层
 source("Script/performance_server.r")   # 绩效模块服务端
 source("Script/note_management.r")   # 记事模块数据层
 source("Script/note_server.r")       # 记事模块服务端
+source("Script/duty_matrix_management.r") # 岗职模块数据层
+source("Script/duty_matrix_server.r")     # 岗职模块服务端
 
 # 定义server函数
 # 这是Shiny应用的服务器逻辑核心
@@ -1871,6 +1873,9 @@ server <- function(input, output, session) {
 
   # 记事模块逻辑
   note_server(input, output, session, rv)
+
+  # 岗职模块逻辑
+  duty_matrix_server(input, output, session, rv)
 
   # 流程超时检测已移除（新审批模块为同步流转）
 

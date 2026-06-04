@@ -7,15 +7,6 @@ note_ui <- function() {
         if ($(e.target).closest('button,a,.note-flag').length) return;
         Shiny.setInputValue('note_edit_click',$(this).data('id'),{priority:'event'});
       });
-      $(document).on('click','.note-flag',function(e){
-        e.stopPropagation();
-        Shiny.setInputValue('note_flag_click',$(this).data('id'),{priority:'event'});
-      });
-      $(document).on('click','.note-flag-btn',function(e){
-        e.stopPropagation();
-        var id=$(this).data('id'), v=$(this).data('val');
-        Shiny.setInputValue('note_flag_set',id+':'+v,{priority:'event'});
-      });
       $(document).on('click','.note-move-btn',function(e){
         e.stopPropagation();
         Shiny.setInputValue('note_move_click',{id:$(this).data('id'),to:$(this).data('to')},{priority:'event'});
@@ -90,6 +81,10 @@ note_ui <- function() {
       .note-card .note-actions button { font-size:10px; padding:2px 6px; }
       .note-flag { color:#ccc; font-size:16px; cursor:pointer; text-decoration:none; margin-right:2px; }
       .note-flag.active { color:#d9534f; }
+      .note-importance { color:#d9534f; font-size:14px; cursor:pointer; user-select:none; }
+      .note-importance:hover { opacity:0.7; }
+      .note-importance-empty { color:#ccc; font-size:14px; cursor:pointer; user-select:none; }
+      .note-importance-empty:hover { color:#d9534f; }
       .note-due-overdue { color:#d9534f; font-weight:bold; }
     ")),
     fluidPage(

@@ -2,6 +2,9 @@
 
 note_server <- function(input, output, session, rv) {
   
+  # 补充旧数据缺失的 note_no
+  tryCatch({ note_fill_missing_no() }, error = function(e) message("[NOTE-INIT] 补充编号失败: ", e$message))
+  
   note_trigger <- reactiveVal(0)
   
   ##################
@@ -18,10 +21,13 @@ note_server <- function(input, output, session, rv) {
       if (nrow(subset) > 0) {
         for (i in 1:nrow(subset)) {
           r <- subset[i, ]
-          flags <- sapply(1:5, function(f) {
-            cls <- if (f <= (r$importance %||% 0)) "note-flag active" else "note-flag"
-            sprintf('<a class="%s" data-id="%d">🚩</a>', cls, r$id)
-          }) |> paste(collapse = "")
+          imp_card <- r$importance %||% 0
+          if (imp_card > 0) {
+            flags <- sprintf('<span class="note-importance" onclick="Shiny.setInputValue(\'note_flag_click\', %d, {priority:\'event\'}); event.stopPropagation();" title="点击切换重要性 (当前: %d)">%s</span>',
+              r$id, imp_card, paste(rep("🚩", imp_card), collapse = ""))
+          } else {
+            flags <- sprintf('<span class="note-importance-empty" onclick="Shiny.setInputValue(\'note_flag_click\', %d, {priority:\'event\'}); event.stopPropagation();" title="点击添加重要性">🏳</span>', r$id)
+          }
           
           created <- if (!is.na(r$created_at) && nchar(r$created_at) > 10) substr(r$created_at, 1, 16) else r$created_at
           reminder <- if (!is.na(r$reminder_at) && nchar(r$reminder_at) > 10) substr(r$reminder_at, 1, 16) else ""
@@ -123,12 +129,12 @@ note_server <- function(input, output, session, rv) {
     if (nchar(due_val) > 16) due_val <- substr(due_val, 1, 16)
     st <- note$status[1]; imp <- note$importance[1] %||% 0
     
-    # 小旗（可点选）
-    flags_html <- ""
-    for (fi in 1:5) {
-      flags_html <- paste0(flags_html,
-        sprintf('<a class="note-flag-btn" style="font-size:20px;cursor:pointer;text-decoration:none;margin-right:2px;" data-id="%d" data-val="%d">%s</a>',
-          note$id[1], fi, if(fi <= imp) "🚩" else "🏳"))
+    # 小旗：项目风格，直接点击切换
+    if (imp > 0) {
+      flags_html <- sprintf('<span class="note-importance" style="font-size:18px;cursor:pointer;" onclick="Shiny.setInputValue(\'note_flag_click\', %d, {priority:\'event\'}); event.stopPropagation();" title="点击切换 (当前: %d)">%s</span>',
+        note$id[1], imp, paste(rep("🚩", imp), collapse = ""))
+    } else {
+      flags_html <- sprintf('<span class="note-importance-empty" style="font-size:18px;cursor:pointer;" onclick="Shiny.setInputValue(\'note_flag_click\', %d, {priority:\'event\'}); event.stopPropagation();" title="点击添加重要性">🏳</span>', note$id[1])
     }
     
     # 状态按钮 HTML（放 footer）
@@ -200,6 +206,10 @@ note_server <- function(input, output, session, rv) {
       
       # 内容编辑（初始隐藏）
       tags$div(id = "note_content_ed", style="display:none;",
+        fluidRow(
+          column(6, textInput("note_edit_no_m", "编号", value = note_no)),
+          column(6, textInput("note_edit_created_m", "创建时间", value = substr(note$created_at[1] %||% format(Sys.time(),"%Y-%m-%d %H:%M"), 1, 16)))
+        ),
         textAreaInput("note_edit_content_m", "内容（首行为标题）", rows = 4, value = note$content[1] %||% ""),
         fluidRow(
           column(6, textInput("note_edit_reminder_m", "⏰ 提醒时间", placeholder = "YYYY-MM-DD HH:MM", value = rem_val)),
@@ -259,6 +269,8 @@ note_server <- function(input, output, session, rv) {
     title <- if (length(lines) > 0) lines[1] else "未命名"
     result <- note_update(rv$note_edit_id,
       title = title, content = input$note_edit_content_m,
+      note_no = if (trimws(input$note_edit_no_m) != "") input$note_edit_no_m else NULL,
+      created_at = if (trimws(input$note_edit_created_m) != "") input$note_edit_created_m else NULL,
       reminder_at = if (trimws(input$note_edit_reminder_m) != "") input$note_edit_reminder_m else NULL,
       due_at = if (trimws(input$note_edit_due_m) != "") input$note_edit_due_m else NULL)
     removeModal()

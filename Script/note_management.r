@@ -71,9 +71,26 @@ note_add <- function(text, created_by = NULL, reminder_hours = NULL, due_hour = 
 }
 
 ##################
+# 补充旧数据缺失的 note_no
+##################
+note_fill_missing_no <- function() {
+  con <- db_connect()
+  tryCatch({
+    orphans <- dbGetQuery(con, "SELECT id FROM notes WHERE note_no IS NULL OR note_no = ''")
+    if (nrow(orphans) > 0) {
+      for (oid in orphans$id) {
+        new_no <- note_generate_number()
+        dbExecute(con, sprintf("UPDATE notes SET note_no = '%s' WHERE id = %d", new_no, oid))
+        message("[NOTE-INIT] 补充旧数据 note_no: id=", oid, " -> ", new_no)
+      }
+    }
+  }, finally = { db_disconnect(con) })
+}
+
+##################
 # 更新记事（编辑弹窗用）
 ##################
-note_update <- function(id, title = NULL, content = NULL, reminder_at = NULL, due_at = NULL) {
+note_update <- function(id, title = NULL, content = NULL, reminder_at = NULL, due_at = NULL, note_no = NULL, created_at = NULL) {
   con <- db_connect()
   tryCatch({
     sets <- "updated_at = datetime('now','localtime')"
@@ -81,6 +98,8 @@ note_update <- function(id, title = NULL, content = NULL, reminder_at = NULL, du
     if (!is.null(content))     sets <- paste0(sets, sprintf(", content='%s'", gsub("'","''",content)))
     if (!is.null(reminder_at)) sets <- paste0(sets, sprintf(", reminder_at='%s'", reminder_at))
     if (!is.null(due_at))      sets <- paste0(sets, sprintf(", due_at='%s'", due_at))
+    if (!is.null(note_no))     sets <- paste0(sets, sprintf(", note_no='%s'", gsub("'","''",note_no)))
+    if (!is.null(created_at))  sets <- paste0(sets, sprintf(", created_at='%s'", created_at))
     dbExecute(con, sprintf("UPDATE notes SET %s WHERE id = %d", sets, as.integer(id)))
     list(success = TRUE, message = "已更新")
   }, error = function(e) list(success = FALSE, message = paste("更新失败:", e$message)),
