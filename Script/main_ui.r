@@ -656,12 +656,12 @@ main_ui <- function() {
       data_center_ui()
     ),
 
-    # 流程引擎标签页
-    tabPanel(
-      "流程",
-      icon = icon("project-diagram"),
-      process_ui()
-    ),
+    # 流程引擎标签页（暂停排查）
+    # tabPanel(
+    #   "流程",
+    #   icon = icon("project-diagram"),
+    #   process_ui()
+    # ),
 
     # 岗职矩阵标签页
     tabPanel(

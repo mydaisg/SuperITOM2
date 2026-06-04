@@ -1865,11 +1865,14 @@ server <- function(input, output, session) {
   # 巡检模块逻辑
   inspection_server(input, output, session, rv)
 
-  # ★ 临时禁用新模块，排查是否新模块导致数据不渲染
-  message("[MODULE-SKIP] process_server, performance_server, sysmon_server 已禁用")
+  # 性能监控模块逻辑
+  sysmon_server(input, output, session, rv)
+
+  # 流程模块逻辑（暂停排查）
   # process_server(input, output, session, rv)
-  # performance_server(input, output, session, rv)
-  # sysmon_server(input, output, session, rv)
+
+  # 绩效模块逻辑
+  performance_server(input, output, session, rv)
 
   # 记事模块逻辑
   note_server(input, output, session, rv)

@@ -184,79 +184,187 @@ perf_load_work_sources <- function(year_month) {
 }
 
 ##################
-# 计分计算
+# 计分计算（employees=NULL 时自动从 items 提取全部员工）
 ##################
-perf_calculate <- function(sheet_id) {
+perf_calculate <- function(sheet_id, employees = NULL) {
   items <- perf_work_items_by_sheet(sheet_id)
-  if (nrow(items)==0) return(data.frame())
-  # 按员工分组
-  employees <- unique(items[,c("employee_id","employee_name")])
-  employees <- employees[order(employees$employee_name), ]
-  result <- list()
-  row_idx <- 1
+  # 确定显示哪些员工
+  if (!is.null(employees) && nrow(employees) > 0) {
+    emp_list <- employees
+  } else if (nrow(items) > 0) {
+    emp_list <- unique(items[, c("employee_id", "employee_name")])
+  } else {
+    return(list(matrix = data.frame(), summary = data.frame()))
+  }
+  emp_list <- emp_list[order(emp_list$employee_name), ]
+
+  # ---- 矩阵表：每指标每员工计数 + 横向合计 ----
+  result <- list(); row_idx <- 1
   for (ind in PERF_INDICATORS) {
-    # 该指标下所有匹配项
-    ind_items <- items[items$indicator_code==ind$code, ]
-    row <- list(indicator=sprintf("%s-%s",ind$code,ind$name), category=ind$category, code=ind$code)
-    for (ei in 1:nrow(employees)) {
-      emp_id <- employees$employee_id[ei]
-      emp_name <- employees$employee_name[ei]
-      emp_items <- ind_items[ind_items$employee_id==emp_id, ]
-      row[[emp_name]] <- nrow(emp_items)
+    ind_items <- if (nrow(items) > 0) items[items$indicator_code == ind$code, ] else items
+    row <- list(indicator = sprintf("%s-%s", ind$code, ind$name), category = ind$category, code = ind$code)
+    for (ei in seq_len(nrow(emp_list))) {
+      emp_id <- emp_list$employee_id[ei]
+      emp_name <- emp_list$employee_name[ei]
+      eitems <- if (nrow(ind_items) > 0) ind_items[ind_items$employee_id == emp_id, ] else data.frame()
+      row[[emp_name]] <- as.integer(nrow(eitems))
     }
     result[[row_idx]] <- row
     row_idx <- row_idx + 1
   }
+
   # 总分行
-  score_row <- list(indicator="总分", category="", code="")
-  for (ei in 1:nrow(employees)) {
-    emp_id <- employees$employee_id[ei]
-    emp_name <- employees$employee_name[ei]
-    emp_items <- items[items$employee_id==emp_id, ]
+  score_row <- list(indicator = "总分", category = "", code = "")
+  for (ei in seq_len(nrow(emp_list))) {
+    emp_id <- emp_list$employee_id[ei]
+    emp_name <- emp_list$employee_name[ei]
+    emp_items <- if (nrow(items) > 0) items[items$employee_id == emp_id, ] else data.frame()
     total <- 0
-    # 按指标统计
     for (ind in PERF_INDICATORS) {
-      ind_items <- emp_items[emp_items$indicator_code==ind$code, ]
+      ind_items <- if (nrow(emp_items) > 0) emp_items[emp_items$indicator_code == ind$code, ] else data.frame()
       count <- nrow(ind_items)
-      if (ind$scoring=="deduct") {
-        if (count>0) {
-          # 累加扣分值
+      if (ind$scoring == "deduct") {
+        if (count > 0) {
           deduct_sum <- sum(sapply(ind_items$deduction_level, function(lvl) {
-            for (dl in ind$deduct_levels) { if (dl$level==lvl) return(dl$points) }
+            for (dl in ind$deduct_levels) if (dl$level == lvl) return(dl$points)
             0
           }))
           total <- total + max(0, ind$max_score - deduct_sum)
+        } else {
+          total <- total + ind$max_score  # 无投诉=满分
         }
-      } else if (ind$scoring=="add") {
-        score <- min(count * ind$unit_score, ind$max_count * ind$unit_score)
-        total <- total + score
+      } else {
+        total <- total + min(count * ind$unit_score, ind$max_count * ind$unit_score)
       }
     }
     score_row[[emp_name]] <- total
   }
   result[[row_idx]] <- score_row
-  do.call(rbind, lapply(result, function(r) as.data.frame(r, stringsAsFactors=FALSE)))
+
+  matrix_df <- do.call(rbind, lapply(result, function(r) as.data.frame(r, stringsAsFactors = FALSE)))
+
+  # ---- 按人头分ABC类统计 ----
+  summary_rows <- list()
+  for (ei in seq_len(nrow(emp_list))) {
+    emp_id <- emp_list$employee_id[ei]
+    emp_name <- emp_list$employee_name[ei]
+    emp_items <- if (nrow(items) > 0) items[items$employee_id == emp_id, ] else data.frame()
+
+    get_cat_score <- function(cat) {
+      total <- 0
+      for (ind in PERF_INDICATORS) {
+        if (ind$category != cat) next
+        ind_items <- if (nrow(emp_items) > 0) emp_items[emp_items$indicator_code == ind$code, ] else data.frame()
+        count <- nrow(ind_items)
+        if (ind$scoring == "deduct") {
+          if (count > 0) {
+            deduct_sum <- sum(sapply(ind_items$deduction_level, function(lvl) {
+              for (dl in ind$deduct_levels) if (dl$level == lvl) return(dl$points)
+              0
+            }))
+            total <- total + max(0, ind$max_score - deduct_sum)
+          } else {
+            total <- total + ind$max_score  # 无投诉=满分
+          }
+        } else {
+          total <- total + min(count * ind$unit_score, ind$max_count * ind$unit_score)
+        }
+      }
+      total
+    }
+
+    a_score <- get_cat_score("A")  # 扣分类，满分90(30*3)
+    b_score <- get_cat_score("B")  # 加分类，满分40(8*5)
+    c_score <- get_cat_score("C")  # 加分类，满分30(5*6)
+    total_score <- a_score + b_score + c_score
+
+    summary_rows[[ei]] <- data.frame(
+      员工 = emp_name,
+      A类扣分 = a_score,
+      A类满分 = 90,
+      B类加分 = b_score,
+      B类满分 = 40,
+      C类加分 = c_score,
+      C类满分 = 30,
+      总分 = total_score,
+      stringsAsFactors = FALSE, check.names = FALSE)
+  }
+  summary_df <- do.call(rbind, summary_rows)
+  if (nrow(summary_df) == 0) summary_df <- data.frame(信息 = "暂无数据", stringsAsFactors = FALSE)
+
+  list(matrix = matrix_df, summary = summary_df)
 }
 
 ##################
-# 活跃员工列表（有本月工作记录的）
+# 绩效表内员工（手动添加，独立管理）
 ##################
-perf_active_employees <- function(year_month) {
-  ym_parts <- as.integer(strsplit(year_month,"-")[[1]])
-  if (ym_parts[2]==12) { next_ym <- sprintf("%d-01",ym_parts[1]+1) } else { next_ym <- sprintf("%d-%02d-01",ym_parts[1],ym_parts[2]+1) }
-  start_date <- paste0(year_month,"-01")
+perf_sheet_employee_add <- function(sheet_id, employee_ids) {
   con <- db_connect()
   tryCatch({
-    # 从工单/任务/巡检中找到本月有活动的用户
+    added <- 0
+    for (eid in employee_ids) {
+      dbExecute(con, sprintf("INSERT OR IGNORE INTO performance_sheet_employees (sheet_id, employee_id) VALUES (%d, %d)",
+        as.integer(sheet_id), as.integer(eid)))
+      added <- added + 1
+    }
+    list(success = TRUE, message = sprintf("已添加 %d 位员工", added), count = added)
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+
+perf_sheet_employee_list <- function(sheet_id) {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, sprintf(
+      "SELECT pse.*, u.display_name, u.username
+       FROM performance_sheet_employees pse
+       LEFT JOIN users u ON pse.employee_id = u.id
+       WHERE pse.sheet_id = %d ORDER BY u.display_name", as.integer(sheet_id)))
+  }, error = function(e) data.frame(),
+  finally = { db_disconnect(con) })
+}
+
+perf_sheet_employee_remove <- function(id) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("DELETE FROM performance_sheet_employees WHERE id = %d", as.integer(id)))
+    list(success = TRUE, message = "已移除")
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+
+##################
+# 活跃员工列表（优先从绩效表内员工读取，否则回退到全量活跃用户）
+##################
+perf_active_employees <- function(year_month) {
+  con <- db_connect()
+  tryCatch({
+    sheet <- dbGetQuery(con, sprintf("SELECT id FROM performance_sheets WHERE year_month='%s'", year_month))
+    if (nrow(sheet) > 0) {
+      # 从表内员工读取
+      users <- dbGetQuery(con, sprintf(
+        "SELECT DISTINCT u.id, u.display_name, u.username
+         FROM performance_sheet_employees pse
+         JOIN users u ON pse.employee_id = u.id
+         WHERE pse.sheet_id = %d ORDER BY u.display_name", sheet$id[1]))
+      if (nrow(users) > 0) {
+        users$employee_name <- ifelse(is.na(users$display_name) | users$display_name == "", users$username, users$display_name)
+        return(users)
+      }
+    }
+    # 兜底：无表内员工时从工单/任务/巡检获取活跃用户
+    ym_parts <- as.integer(strsplit(year_month, "-")[[1]])
+    if (ym_parts[2] == 12) { next_ym <- sprintf("%d-01", ym_parts[1] + 1) } else { next_ym <- sprintf("%d-%02d-01", ym_parts[1], ym_parts[2] + 1) }
+    start_date <- paste0(year_month, "-01")
     users <- dbGetQuery(con, sprintf("
       SELECT DISTINCT u.id,u.display_name,u.username FROM users u WHERE u.active=1 AND (
         EXISTS(SELECT 1 FROM work_orders wo WHERE wo.assigned_to=u.id AND wo.created_at>='%s' AND wo.created_at<'%s')
         OR EXISTS(SELECT 1 FROM project_tasks pt WHERE pt.assigned_to=u.id AND pt.created_at>='%s' AND pt.created_at<'%s')
         OR EXISTS(SELECT 1 FROM inspection_tasks it WHERE it.inspector=u.id AND it.updated_at>='%s' AND it.updated_at<'%s')
       ) ORDER BY u.display_name", start_date, next_ym, start_date, next_ym, start_date, next_ym))
-    if (nrow(users)>0) {
-      users$employee_name <- ifelse(is.na(users$display_name)%||%users$display_name=="", users$username, users$display_name)
+    if (nrow(users) > 0) {
+      users$employee_name <- ifelse(is.na(users$display_name) | users$display_name == "", users$username, users$display_name)
     }
     users
-  }, finally={ db_disconnect(con) })
+  }, finally = { db_disconnect(con) })
 }

@@ -10,7 +10,7 @@ process_ui <- function() {
       $(document).on('click','.appr-withdraw-btn',function(e){e.preventDefault();if(confirm('确定撤销此审批？'))Shiny.setInputValue('appr_withdraw_click',$(this).data('id'),{priority:'event'});});
       $(document).on('click','.appr-urge-btn',function(e){e.preventDefault();Shiny.setInputValue('appr_urge_click',$(this).data('id'),{priority:'event'});});
     ")),
-    fluidPage(
+    div(
       div(style="text-align:center;margin:8px 0;",
         h2(icon("clipboard-check")," 审批"),
         p(style="color:#7f8c8d;font-size:12px;","模板化审批 · 逐级流转 · 全程留痕")),
