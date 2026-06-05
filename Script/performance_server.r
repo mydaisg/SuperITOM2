@@ -108,14 +108,14 @@ performance_server <- function(input, output, session, rv) {
 
     tagList(
       tags$hr(),
-      h4(icon("table"), " 绩效矩阵（指标 × 员工）", style = "margin-bottom:10px;"),
+      h4(icon("table"), " 部门绩效汇总表", style = "margin-bottom:10px;"),
       uiOutput("perf_matrix_wrapper"),
       tags$hr(),
-      h4(icon("chart-pie"), " 按人头分类统计", style = "margin-bottom:10px;"),
-      DT::DTOutput("perf_summary_table"),
-      tags$hr(),
-      h4(icon("check-circle"), " 已匹配到指标的工作项", style = "margin-bottom:10px;"),
+      h4(icon("check-circle"), " 工作项清单", style = "margin-bottom:10px;"),
       DT::DTOutput("perf_matched_table"),
+      tags$hr(),
+      h4(icon("chart-pie"), " 按员工分类统计", style = "margin-bottom:10px;"),
+      DT::DTOutput("perf_summary_table"),
       tags$hr(),
       h4(icon("list"), " 工作清单（本月工单/项目任务/巡检）", style = "margin-bottom:10px;"),
       fluidRow(
@@ -157,25 +157,29 @@ performance_server <- function(input, output, session, rv) {
     matrix_data <- calc$matrix
     if (nrow(matrix_data) == 0) return(DT::datatable(data.frame(信息 = "暂无匹配数据"), options = list(dom = 't')))
 
-    cols <- names(matrix_data)
-    emp_cols <- setdiff(cols, c("indicator", "category", "code"))
-    # 构建显示数据框（类别·指标 中文列头）
-    display <- data.frame(
-      类别 = matrix_data$category,
-      指标 = matrix_data$indicator,
-      stringsAsFactors = FALSE, check.names = FALSE)
-    for (ec in emp_cols) display[[ec]] <- matrix_data[[ec]]
-
-    col_defs <- list(
-      list(targets = 0, width = "45px"),
-      list(targets = 1, width = "130px")
-    )
-
-    DT::datatable(display, escape = FALSE, rownames = FALSE,
-      options = list(pageLength = 50, dom = 't', scrollX = TRUE,
-        columnDefs = col_defs, autoWidth = TRUE)) %>%
+    DT::datatable(matrix_data, escape = FALSE, rownames = FALSE,
+      colnames = c("类别" = "category", "指标" = "indicator"),
+      options = list(
+        pageLength = 50, dom = 't', scrollX = TRUE,
+        columnDefs = list(list(targets = 2, visible = FALSE)),  # 隐藏 code
+        rowCallback = DT::JS("function(row, data) {
+          var ind = data[1];  // 指标列
+          var fullMap = {'A类得分':30, 'B类得分':40, 'C类得分':30};
+          if (fullMap.hasOwnProperty(ind)) {
+            var full = fullMap[ind];
+            $('td', row).each(function() {
+              var v = parseInt($(this).text());
+              if (!isNaN(v)) {
+                if (v === full) { $(this).css({'background-color':'#d4edda','color':'#155724'}); }
+                else if (v === 0) { $(this).css({'background-color':'#e0e0e0','color':'#999'}); }
+                else { $(this).css({'background-color':'#f8d7da','color':'#721c24'}); }
+              }
+            });
+          }
+        }")
+      )) %>%
       DT::formatStyle(columns = "指标", valueColumns = "指标",
-        backgroundColor = DT::styleEqual("总分", "#fff3cd"))
+        fontWeight = DT::styleEqual("总分", "bold"))
   })
 
   # 人头ABC分类统计表
@@ -187,16 +191,14 @@ performance_server <- function(input, output, session, rv) {
     summary_data <- calc$summary
     if (nrow(summary_data) == 0 || "信息" %in% names(summary_data)) return(NULL)
 
-    DT::datatable(summary_data, escape = FALSE, rownames = FALSE,
+      DT::datatable(summary_data, escape = FALSE, rownames = FALSE,
       options = list(pageLength = 20, dom = 't', columnDefs = list(
-        list(targets = c(1,3,5,7), className = "dt-center")  # 数值列居中
+        list(targets = c(1,2,3,4), className = "dt-center")
       ))) %>%
-      # B类：满分40绿色，否则红色
-      DT::formatStyle("B类加分", "B类满分",
+      DT::formatStyle("B类得分（40分）",
         backgroundColor = DT::styleInterval(39, c("#f8d7da", "#d4edda")),
         color = DT::styleInterval(39, c("#721c24", "#155724"))) %>%
-      # C类：满分30绿色，否则红色
-      DT::formatStyle("C类加分", "C类满分",
+      DT::formatStyle("C类得分（30分）",
         backgroundColor = DT::styleInterval(29, c("#f8d7da", "#d4edda")),
         color = DT::styleInterval(29, c("#721c24", "#155724"))) %>%
       DT::formatStyle("总分", fontWeight = "bold", backgroundColor = "#fff3cd")
@@ -241,26 +243,48 @@ performance_server <- function(input, output, session, rv) {
   })
 
   ##################
-  # 已匹配表格
+  # 工作项清单
   ##################
   output$perf_matched_table <- DT::renderDT({
     req(rv$logged_in); perf_refresh()
     sheet <- current_sheet()
     if (is.null(sheet)) return(DT::datatable(data.frame(信息 = "暂无数据"), options = list(dom = 't')))
     items <- tryCatch(perf_work_items_by_sheet(sheet$id[1]), error = function(e) data.frame())
-    if (nrow(items) == 0) return(DT::datatable(data.frame(信息 = "暂无匹配记录"), options = list(dom = 't')))
+    if (nrow(items) == 0) return(DT::datatable(data.frame(信息 = "暂无工作项"), options = list(dom = 't')))
     scores <- if (nrow(items) > 0) {
       mapply(function(code, lvl) perf_item_score(code, lvl), items$indicator_code, items$deduction_level)
     } else numeric(0)
+    # B/C类 扣分等级显示"无"
+    ded_level <- ifelse(is.na(items$deduction_level) | items$deduction_level == 0,
+      ifelse(grepl("^[BC]", items$indicator_code), "无", "-"),
+      sprintf("%d级", items$deduction_level))
     display <- data.frame(
-      员工 = items$employee_name, 指标 = items$indicator_name, 得分 = scores,
-      来源 = items$source_type, 标题 = items$source_title %||% "",
-      扣分等级 = ifelse(is.na(items$deduction_level) | items$deduction_level == 0, "-", sprintf("%d级", items$deduction_level)),
-      操作 = sprintf('<button class="btn btn-danger btn-xs perf-unmatch-btn" data-id="%s">移除</button>', items$id),
-      stringsAsFactors = FALSE)
+      指标 = items$indicator_name,
+      工作项 = items$source_title %||% "",
+      员工 = items$employee_name,
+      得分 = scores,
+      来源 = items$source_type,
+      扣分等级 = ded_level,
+      操作 = paste0(
+        sprintf('<button class="btn btn-info btn-xs perf-edit-btn" data-id="%s" data-icode="%s" data-iname="%s" data-ititle="%s" data-ilevel="%s">编辑</button> ',
+          items$id, items$indicator_code, items$indicator_name,
+          gsub("'", "&#39;", items$source_title %||% ""),
+          items$deduction_level %||% 0),
+        sprintf('<button class="btn btn-danger btn-xs perf-unmatch-btn" data-id="%s">移除</button>', items$id)
+      ),
+      stringsAsFactors = FALSE, check.names = FALSE)
     DT::datatable(display, escape = FALSE, rownames = FALSE,
-      options = list(pageLength = 20, dom = 'rtip', scrollX = TRUE,
-        columnDefs = list(list(targets = 6, orderable = FALSE))),
+      options = list(pageLength = -1, dom = 't', scrollY = FALSE,
+        columnDefs = list(list(targets = 6, orderable = FALSE)),
+        rowCallback = DT::JS("function(row, data) {
+          var colors = ['#FFB3BA','#BAFFC9','#BAE1FF','#FFFFBA','#FFDFBA','#E6E6FA','#FFD1DC','#B0E0E6','#98FB98','#F0E68C','#FFA07A','#DDA0DD','#87CEEB','#90EE90','#FFE4B5','#FFB6C1'];
+          if (data[1] !== '') {
+            var hash = 0, s = data[1];
+            for (var i = 0; i < s.length; i++) hash = ((hash << 5) - hash) + s.charCodeAt(i);
+            $('td:eq(1)', row).css('background-color', colors[Math.abs(hash) % colors.length]);
+          }
+        }")
+      ),
       class = 'cell-border stripe hover')
   })
 
@@ -460,6 +484,45 @@ performance_server <- function(input, output, session, rv) {
     if (result$success) {
       perf_refresh(perf_refresh() + 1)
       showNotification("已匹配到指标", type = "message")
+    } else showNotification(result$message, type = "error")
+  })
+
+  # 编辑工作项 → 弹窗
+  observeEvent(input$perf_edit_click, {
+    req(rv$logged_in)
+    data <- input$perf_edit_click
+    inds <- perf_indicators()
+    ind_choices <- list()
+    for (ind in inds) ind_choices[[sprintf("%s-%s", ind$code, ind$name)]] <- ind$code
+    showModal(modalDialog(
+      title = sprintf("编辑工作项 #%s", data$id), size = "m",
+      selectInput("perf_edit_indicator", "指标", choices = ind_choices, selected = data$icode),
+      textInput("perf_edit_title", "标题", value = data$ititle),
+      conditionalPanel(
+        condition = "input.perf_edit_indicator.startsWith('A')",
+        selectInput("perf_edit_level", "扣分等级",
+          choices = c("请选择" = "0", "1级" = "1", "2级" = "2", "3级" = "3"),
+          selected = data$ilevel)
+      ),
+      footer = tagList(modalButton("取消"), actionButton("perf_confirm_edit", "保存", class = "btn-primary")),
+      easyClose = TRUE
+    ))
+    rv$perf_edit_id <- as.integer(data$id)
+  })
+
+  # 确认编辑
+  observeEvent(input$perf_confirm_edit, {
+    req(rv$logged_in, input$perf_edit_indicator, rv$perf_edit_id)
+    level <- if (startsWith(input$perf_edit_indicator, "A")) as.integer(input$perf_edit_level %||% 0) else 0
+    result <- perf_work_item_update(
+      item_id = rv$perf_edit_id,
+      indicator_code = input$perf_edit_indicator,
+      deduction_level = level,
+      source_title = input$perf_edit_title %||% "")
+    removeModal()
+    if (result$success) {
+      perf_refresh(perf_refresh() + 1)
+      showNotification("已更新", type = "message")
     } else showNotification(result$message, type = "error")
   })
 

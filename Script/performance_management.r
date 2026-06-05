@@ -92,6 +92,21 @@ perf_work_item_remove <- function(item_id) {
   }, finally={ db_disconnect(con) })
 }
 
+perf_work_item_update <- function(item_id, indicator_code = NULL, deduction_level = NULL, source_title = NULL) {
+  con <- db_connect()
+  tryCatch({
+    sets <- c()
+    if (!is.null(indicator_code)) sets <- c(sets, sprintf("indicator_code='%s'", indicator_code))
+    if (!is.null(deduction_level)) sets <- c(sets, sprintf("deduction_level=%d", as.integer(deduction_level)))
+    if (!is.null(source_title)) sets <- c(sets, sprintf("source_title='%s'", gsub("'","''", source_title)))
+    if (length(sets) == 0) return(list(success = FALSE, message = "无变更"))
+    dbExecute(con, sprintf("UPDATE performance_work_items SET %s WHERE id=%d",
+      paste(sets, collapse = ", "), as.integer(item_id)))
+    list(success = TRUE, message = "已更新")
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+
 perf_work_items_by_sheet <- function(sheet_id) {
   con <- db_connect()
   tryCatch({
@@ -198,95 +213,97 @@ perf_calculate <- function(sheet_id, employees = NULL) {
   }
   emp_list <- emp_list[order(emp_list$employee_name), ]
 
-  # ---- 矩阵表：每指标每员工计数 + 横向合计 ----
-  result <- list(); row_idx <- 1
-  for (ind in PERF_INDICATORS) {
-    ind_items <- if (nrow(items) > 0) items[items$indicator_code == ind$code, ] else items
-    row <- list(indicator = sprintf("%s-%s", ind$code, ind$name), category = ind$category, code = ind$code)
-    for (ei in seq_len(nrow(emp_list))) {
-      emp_id <- emp_list$employee_id[ei]
-      emp_name <- emp_list$employee_name[ei]
-      eitems <- if (nrow(ind_items) > 0) ind_items[ind_items$employee_id == emp_id, ] else data.frame()
-      row[[emp_name]] <- as.integer(nrow(eitems))
+  # ---- 矩阵表：每指标每员工计数+计分 ----
+  calc_score <- function(emp_id) {  # 返回 c(A,B,C,总分,indicator_scores)
+    emp_items <- if (nrow(items) > 0) items[items$employee_id == emp_id, ] else data.frame()
+    scores <- c(A = 0, B = 0, C = 0)
+    a_deduct <- 0
+    ind_scores <- numeric(length(PERF_INDICATORS))
+    names(ind_scores) <- sapply(PERF_INDICATORS, `[[`, "code")
+    for (i in seq_along(PERF_INDICATORS)) {
+      ind <- PERF_INDICATORS[[i]]
+      ind_it <- if (nrow(emp_items) > 0) emp_items[emp_items$indicator_code == ind$code, ] else data.frame()
+      count <- nrow(ind_it)
+      if (ind$scoring == "deduct") {
+        if (count > 0) {
+          ds <- sum(sapply(ind_it$deduction_level, function(l) {
+            for (dl in ind$deduct_levels) if (dl$level == l) return(dl$points)
+            0
+          }))
+          a_deduct <- a_deduct + ds
+          ind_scores[i] <- -ds
+        }
+      } else {
+        sc <- min(count * ind$unit_score, ind$max_count * ind$unit_score)
+        scores[ind$category] <- scores[ind$category] + sc
+        ind_scores[i] <- sc
+      }
     }
-    result[[row_idx]] <- row
-    row_idx <- row_idx + 1
+    scores["A"] <- max(0, 30 - a_deduct)
+    c(scores, 总分 = sum(scores), ind_scores)
+  }
+
+  result <- list(); row_idx <- 1
+  for (i in seq_along(PERF_INDICATORS)) {
+    ind <- PERF_INDICATORS[[i]]
+    ind_items <- if (nrow(items) > 0) items[items$indicator_code == ind$code, ] else items
+    row <- list(category = ind$category, indicator = sprintf("%s-%s", ind$code, ind$name), code = ind$code)
+    col_score <- 0
+    for (ei in seq_len(nrow(emp_list))) {
+      eid <- emp_list$employee_id[ei]; nm <- emp_list$employee_name[ei]
+      eitems <- if (nrow(ind_items) > 0) ind_items[ind_items$employee_id == eid, ] else data.frame()
+      cnt <- as.integer(nrow(eitems))
+      row[[nm]] <- cnt
+      # 计每指标每人得分
+      if (ind$scoring == "add") {
+        col_score <- col_score + min(cnt * ind$unit_score, ind$max_count * ind$unit_score)
+      } else if (cnt > 0) {
+        ds <- sum(sapply(eitems$deduction_level, function(l) {
+          for (dl in ind$deduct_levels) if (dl$level == l) return(dl$points)
+          0
+        }))
+        col_score <- col_score - ds
+      }
+    }
+    row[["计分"]] <- col_score
+    result[[row_idx]] <- row; row_idx <- row_idx + 1
+  }
+
+  # A/B/C 分类得分行
+  for (cn in c("A", "B", "C")) {
+    r <- list(category = "", indicator = sprintf("%s类得分", cn), code = "")
+    col_sum <- 0
+    for (ei in seq_len(nrow(emp_list))) {
+      nm <- emp_list$employee_name[ei]; sc <- calc_score(emp_list$employee_id[ei])
+      v <- sc[cn]; r[[nm]] <- v; col_sum <- col_sum + v
+    }
+    r[["计分"]] <- col_sum
+    result[[row_idx]] <- r; row_idx <- row_idx + 1
   }
 
   # 总分行
-  score_row <- list(indicator = "总分", category = "", code = "")
+  score_row <- list(category = "", indicator = "总分", code = "")
+  total_sum <- 0
   for (ei in seq_len(nrow(emp_list))) {
-    emp_id <- emp_list$employee_id[ei]
-    emp_name <- emp_list$employee_name[ei]
-    emp_items <- if (nrow(items) > 0) items[items$employee_id == emp_id, ] else data.frame()
-    total <- 0
-    for (ind in PERF_INDICATORS) {
-      ind_items <- if (nrow(emp_items) > 0) emp_items[emp_items$indicator_code == ind$code, ] else data.frame()
-      count <- nrow(ind_items)
-      if (ind$scoring == "deduct") {
-        if (count > 0) {
-          deduct_sum <- sum(sapply(ind_items$deduction_level, function(lvl) {
-            for (dl in ind$deduct_levels) if (dl$level == lvl) return(dl$points)
-            0
-          }))
-          total <- total + max(0, ind$max_score - deduct_sum)
-        } else {
-          total <- total + ind$max_score  # 无投诉=满分
-        }
-      } else {
-        total <- total + min(count * ind$unit_score, ind$max_count * ind$unit_score)
-      }
-    }
-    score_row[[emp_name]] <- total
+    nm <- emp_list$employee_name[ei]; sc <- calc_score(emp_list$employee_id[ei])
+    v <- sc["总分"]; score_row[[nm]] <- v; total_sum <- total_sum + v
   }
+  score_row[["计分"]] <- total_sum
   result[[row_idx]] <- score_row
 
   matrix_df <- do.call(rbind, lapply(result, function(r) as.data.frame(r, stringsAsFactors = FALSE)))
 
-  # ---- 按人头分ABC类统计 ----
+  # ---- 按人头分ABC类统计（复用 calc_score）----
   summary_rows <- list()
   for (ei in seq_len(nrow(emp_list))) {
-    emp_id <- emp_list$employee_id[ei]
     emp_name <- emp_list$employee_name[ei]
-    emp_items <- if (nrow(items) > 0) items[items$employee_id == emp_id, ] else data.frame()
-
-    get_cat_score <- function(cat) {
-      total <- 0
-      for (ind in PERF_INDICATORS) {
-        if (ind$category != cat) next
-        ind_items <- if (nrow(emp_items) > 0) emp_items[emp_items$indicator_code == ind$code, ] else data.frame()
-        count <- nrow(ind_items)
-        if (ind$scoring == "deduct") {
-          if (count > 0) {
-            deduct_sum <- sum(sapply(ind_items$deduction_level, function(lvl) {
-              for (dl in ind$deduct_levels) if (dl$level == lvl) return(dl$points)
-              0
-            }))
-            total <- total + max(0, ind$max_score - deduct_sum)
-          } else {
-            total <- total + ind$max_score  # 无投诉=满分
-          }
-        } else {
-          total <- total + min(count * ind$unit_score, ind$max_count * ind$unit_score)
-        }
-      }
-      total
-    }
-
-    a_score <- get_cat_score("A")  # 扣分类，满分90(30*3)
-    b_score <- get_cat_score("B")  # 加分类，满分40(8*5)
-    c_score <- get_cat_score("C")  # 加分类，满分30(5*6)
-    total_score <- a_score + b_score + c_score
-
+    sc <- calc_score(emp_list$employee_id[ei])
     summary_rows[[ei]] <- data.frame(
       员工 = emp_name,
-      A类扣分 = a_score,
-      A类满分 = 90,
-      B类加分 = b_score,
-      B类满分 = 40,
-      C类加分 = c_score,
-      C类满分 = 30,
-      总分 = total_score,
+      "A类得分（30分）" = sc["A"],
+      "B类得分（40分）" = sc["B"],
+      "C类得分（30分）" = sc["C"],
+      "总分" = sc["总分"],
       stringsAsFactors = FALSE, check.names = FALSE)
   }
   summary_df <- do.call(rbind, summary_rows)

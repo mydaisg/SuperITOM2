@@ -18,6 +18,16 @@ performance_ui <- function() {
           Shiny.setInputValue('perf_unmatch_click',$(this).data('id'),{priority:'event'});
         }
       });
+      $(document).on('click','.perf-edit-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('perf_edit_click',{
+          id: $(this).data('id'),
+          icode: $(this).data('icode'),
+          iname: $(this).data('iname'),
+          ititle: $(this).data('ititle'),
+          ilevel: $(this).data('ilevel')
+        },{priority:'event'});
+      });
     ")),
     # ★ header 先渲染（创建 perf_month 选择器），不依赖 perf_month
     uiOutput("perf_header"),
