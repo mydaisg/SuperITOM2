@@ -24,7 +24,7 @@ note_generate_number <- function() {
 note_get_all <- function() {
   con <- db_connect()
   tryCatch({
-    dbGetQuery(con, "SELECT n.*, u.username as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id ORDER BY n.importance DESC, n.updated_at DESC")
+    dbGetQuery(con, "SELECT n.*, u.username as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id ORDER BY n.updated_at DESC")
   }, error = function(e) data.frame(), finally = { db_disconnect(con) })
 }
 
@@ -174,8 +174,31 @@ note_comment_add <- function(note_id, content, created_by = NULL) {
       "INSERT INTO note_comments (note_id, content, created_by) VALUES (%d,'%s',%s)",
       as.integer(note_id), gsub("'","''",content),
       ifelse(is.null(created_by),"NULL",as.character(created_by))))
-    list(success = TRUE, message = "评论已添加")
+    id <- dbGetQuery(con, "SELECT last_insert_rowid() as id")$id[1]
+    # 获取刚创建的评论完整信息
+    r <- dbGetQuery(con, sprintf(
+      "SELECT c.*, u.username as creator_name FROM note_comments c LEFT JOIN users u ON c.created_by = u.id WHERE c.id = %d", id))
+    list(success = TRUE, message = "评论已添加", id = id,
+      created_at = if (nrow(r) > 0) r$created_at[1] else format(Sys.time(), "%Y-%m-%d %H:%M"),
+      creator_name = if (nrow(r) > 0) r$creator_name[1] %||% "匿名" else "匿名")
   }, error = function(e) list(success = FALSE, message = paste("评论失败:", e$message)),
+  finally = { db_disconnect(con) })
+}
+
+##################
+# 评论状态标记（默认NULL，可标记为 completed 等）
+##################
+note_comment_mark_status <- function(comment_id, status) {
+  con <- db_connect()
+  tryCatch({
+    val <- if (is.null(status) || status == "") "NULL" else sprintf("'%s'", status)
+    if (val == "NULL") {
+      dbExecute(con, sprintf("UPDATE note_comments SET status = NULL WHERE id = %d", as.integer(comment_id)))
+    } else {
+      dbExecute(con, sprintf("UPDATE note_comments SET status = '%s' WHERE id = %d", status, as.integer(comment_id)))
+    }
+    list(success = TRUE, message = paste("已标记为", status))
+  }, error = function(e) list(success = FALSE, message = paste("标记失败:", e$message)),
   finally = { db_disconnect(con) })
 }
 

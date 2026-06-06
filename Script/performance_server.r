@@ -161,18 +161,26 @@ performance_server <- function(input, output, session, rv) {
       colnames = c("类别" = "category", "指标" = "indicator"),
       options = list(
         pageLength = 50, dom = 't', scrollX = TRUE,
-        columnDefs = list(list(targets = 2, visible = FALSE)),  # 隐藏 code
+        columnDefs = list(
+          list(targets = 2, visible = FALSE),      # 隐藏 code
+          list(targets = "_all", className = "dt-center"),  # 全部居中
+          list(targets = 1, className = "dt-left")          # 指标列左对齐
+        ),
         rowCallback = DT::JS("function(row, data) {
-          var ind = data[1];  // 指标列
-          var fullMap = {'A类得分':30, 'B类得分':40, 'C类得分':30};
+          var ind = data[1];
+
+          var fullMap = {'A类得分（30分）':30, 'B类得分（40分）':40, 'C类得分（30分）':30};
           if (fullMap.hasOwnProperty(ind)) {
             var full = fullMap[ind];
-            $('td', row).each(function() {
+            $('td', row).each(function(i) {
               var v = parseInt($(this).text());
-              if (!isNaN(v)) {
-                if (v === full) { $(this).css({'background-color':'#d4edda','color':'#155724'}); }
-                else if (v === 0) { $(this).css({'background-color':'#e0e0e0','color':'#999'}); }
-                else { $(this).css({'background-color':'#f8d7da','color':'#721c24'}); }
+              if (!isNaN(v) && i > 1) {
+                var isLast = (i === $('td', row).length - 1);
+                if (!isLast) {
+                  if (v >= full) { $(this).css({'background-color':'#d4edda','color':'#155724'}); }
+                  else if (v === 0) { $(this).css({'background-color':'#e0e0e0','color':'#999'}); }
+                  else { $(this).css({'background-color':'#f8d7da','color':'#721c24'}); }
+                }
               }
             });
           }
@@ -193,7 +201,7 @@ performance_server <- function(input, output, session, rv) {
 
       DT::datatable(summary_data, escape = FALSE, rownames = FALSE,
       options = list(pageLength = 20, dom = 't', columnDefs = list(
-        list(targets = c(1,2,3,4), className = "dt-center")
+        list(targets = c(1,2,3,4,5), className = "dt-center")
       ))) %>%
       DT::formatStyle("B类得分（40分）",
         backgroundColor = DT::styleInterval(39, c("#f8d7da", "#d4edda")),
@@ -201,7 +209,8 @@ performance_server <- function(input, output, session, rv) {
       DT::formatStyle("C类得分（30分）",
         backgroundColor = DT::styleInterval(29, c("#f8d7da", "#d4edda")),
         color = DT::styleInterval(29, c("#721c24", "#155724"))) %>%
-      DT::formatStyle("总分", fontWeight = "bold", backgroundColor = "#fff3cd")
+      DT::formatStyle("总分", fontWeight = "bold", backgroundColor = "#fff3cd") %>%
+      DT::formatStyle("绩效总分", fontWeight = "bold", backgroundColor = "#fff3cd")
   })
 
   ##################

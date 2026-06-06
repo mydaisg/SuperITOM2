@@ -859,6 +859,19 @@ migrate_database <- function() {
       cat("数据库迁移完成：已创建 sysmon_checks 表及索引\n")
     }
 
+    # ===============================================
+    # 记事模块：note_comments 添加 status 字段
+    # ===============================================
+    comment_cols <- dbGetQuery(con, "PRAGMA table_info(note_comments)")
+    if (isTRUE("status" %in% comment_cols$name == FALSE)) {
+      tryCatch({
+        dbExecute(con, "ALTER TABLE note_comments ADD COLUMN status TEXT")
+        cat("数据库迁移完成：已添加 status 列到 note_comments 表\n")
+      }, error = function(e) {
+        cat("警告：添加 status 列失败:", e$message, "\n")
+      })
+    }
+
   }, error = function(e) {
     cat("数据库迁移失败:", e$message, "\n")
   }, finally = {

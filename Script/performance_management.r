@@ -240,7 +240,8 @@ perf_calculate <- function(sheet_id, employees = NULL) {
       }
     }
     scores["A"] <- max(0, 30 - a_deduct)
-    c(scores, 总分 = sum(scores), ind_scores)
+    total <- sum(scores)
+    c(scores, 总分 = total, 绩效总分 = min(total, 100), ind_scores)
   }
 
   result <- list(); row_idx <- 1
@@ -270,8 +271,9 @@ perf_calculate <- function(sheet_id, employees = NULL) {
   }
 
   # A/B/C 分类得分行
+  score_label <- c(A = "A类得分（30分）", B = "B类得分（40分）", C = "C类得分（30分）")
   for (cn in c("A", "B", "C")) {
-    r <- list(category = "", indicator = sprintf("%s类得分", cn), code = "")
+    r <- list(category = "", indicator = score_label[cn], code = "")
     col_sum <- 0
     for (ei in seq_len(nrow(emp_list))) {
       nm <- emp_list$employee_name[ei]; sc <- calc_score(emp_list$employee_id[ei])
@@ -289,7 +291,17 @@ perf_calculate <- function(sheet_id, employees = NULL) {
     v <- sc["总分"]; score_row[[nm]] <- v; total_sum <- total_sum + v
   }
   score_row[["计分"]] <- total_sum
-  result[[row_idx]] <- score_row
+  result[[row_idx]] <- score_row; row_idx <- row_idx + 1
+
+  # 绩效总分行（封顶100）
+  perf_row <- list(category = "", indicator = "绩效总分", code = "")
+  perf_sum <- 0
+  for (ei in seq_len(nrow(emp_list))) {
+    nm <- emp_list$employee_name[ei]; sc <- calc_score(emp_list$employee_id[ei])
+    v <- sc["绩效总分"]; perf_row[[nm]] <- v; perf_sum <- perf_sum + v
+  }
+  perf_row[["计分"]] <- perf_sum
+  result[[row_idx]] <- perf_row
 
   matrix_df <- do.call(rbind, lapply(result, function(r) as.data.frame(r, stringsAsFactors = FALSE)))
 
@@ -304,6 +316,7 @@ perf_calculate <- function(sheet_id, employees = NULL) {
       "B类得分（40分）" = sc["B"],
       "C类得分（30分）" = sc["C"],
       "总分" = sc["总分"],
+      "绩效总分" = sc["绩效总分"],
       stringsAsFactors = FALSE, check.names = FALSE)
   }
   summary_df <- do.call(rbind, summary_rows)

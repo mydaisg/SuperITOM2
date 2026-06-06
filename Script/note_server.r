@@ -43,13 +43,13 @@ note_server <- function(input, output, session, rv) {
           body <- r$content %||% ""
           body_lines <- strsplit(body, "\n")[[1]]
           if (length(body_lines) > 1) body <- paste(body_lines[-1], collapse = "\n") else body <- ""
-          if (nchar(body) > 100) body <- paste0(substr(body, 1, 100), "...")
+          if (nchar(body) > 400) body <- paste0(substr(body, 1, 400), "...")
           
           last_comment <- note_comment_get_last(r$id)
           comment_html <- ""
           if (!is.null(last_comment) && nrow(last_comment) > 0) {
             ct <- last_comment$content[1]; cn <- last_comment$creator_name[1] %||% "匿名"
-            if (isTRUE(nchar(ct) > 50)) ct <- paste0(substr(ct, 1, 50), "...")
+            if (isTRUE(nchar(ct) > 80)) ct <- paste0(substr(ct, 1, 80), "...")
             comment_html <- as.character(tags$div(style="font-size:11px; color:#5e6c84; margin-top:6px; padding:4px 6px; background:#f4f5f7; border-radius:3px;",
               tags$span(style="color:#999;", cn, ": "), tags$span(ct)))
           }
@@ -148,7 +148,7 @@ note_server <- function(input, output, session, rv) {
       status_btns <- sprintf('<button class="btn btn-warning btn-sm note-move-btn" data-id="%d" data-to="pending" style="margin-right:4px;">◀ 重新打开</button>', note$id[1])
     }
     
-    # 彩虹评论（每条带编辑/删除按钮，默认隐藏，修改模式显示）
+    # 彩虹评论（每条带状态徽章 + 编辑/删除/标记完成按钮）
     rainbow_colors <- c("#e74c3c","#e67e22","#f1c40f","#2ecc71","#1abc9c","#3498db","#9b59b6","#e91e63")
     comments <- note_comment_get_all(note$id[1])
     comment_html <- ""
@@ -158,12 +158,21 @@ note_server <- function(input, output, session, rv) {
         cn <- c$creator_name[1] %||% "匿名"
         ca <- if (!is.na(c$created_at) && nchar(c$created_at) > 10) substr(c$created_at, 1, 16) else c$created_at
         clr <- rainbow_colors[((ci - 1) %% length(rainbow_colors)) + 1]
+        cs <- if (is.na(c$status[1]) || is.null(c$status[1])) "" else c$status[1]
+        status_badge <- if (isTRUE(cs == "completed")) {
+          ' <span class="comment-status-badge" style="background:#5cb85c; color:white; font-size:10px; padding:1px 6px; border-radius:10px; margin-left:6px;">✅ 已完成</span>'
+        } else ""
+        mark_btn <- if (!isTRUE(cs == "completed")) {
+          sprintf('<button class="btn btn-xs btn-success comment-done-btn" data-id="%d">✅</button>', c$id)
+        } else {
+          sprintf('<button class="btn btn-xs btn-default comment-undone-btn" data-id="%d">🔄</button>', c$id)
+        }
         comment_html <- paste0(comment_html, sprintf(
           '<div class="comment-item" id="comment-%d" style="background:#fafafa; padding:8px 12px; margin-bottom:6px; border-radius:6px; border-left:4px solid %s;">
             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
               <div style="flex:1; min-width:0;">
                 <div style="font-size:11px; color:#999; margin-bottom:4px;">
-                  <span style="font-weight:bold; color:%s;">%s</span>
+                  <span style="font-weight:bold; color:%s;">%s</span>%s
                   <span style="margin-left:8px;">%s</span>
                 </div>
                 <div class="comment-text" style="font-size:13px; line-height:1.5; white-space:pre-wrap; word-break:break-word;">%s</div>
@@ -174,11 +183,12 @@ note_server <- function(input, output, session, rv) {
                 </div>
               </div>
               <div class="comment-actions" style="display:none; margin-left:8px; white-space:nowrap; flex-shrink:0;">
+                %s
                 <button class="btn btn-xs btn-info comment-edit-btn" data-id="%d">✏</button>
                 <button class="btn btn-xs btn-danger comment-del-btn" data-id="%d">🗑</button>
               </div>
             </div>
-          </div>', c$id, clr, clr, cn, ca, c$content, c$content, c$id, c$id, c$id))
+          </div>', c$id, clr, clr, cn, status_badge, ca, c$content, c$content, c$id, mark_btn, c$id, c$id))
       }
     }
     
@@ -222,9 +232,10 @@ note_server <- function(input, output, session, rv) {
       # 评论
       tags$h5("💬 评论"),
       if (nchar(comment_html) > 0) tags$div(
-        style = "max-height:250px; overflow-y:auto; margin-bottom:8px;",
+        class = "note-comment-list",
+        style = "max-height:500px; overflow-y:auto; margin-bottom:8px;",
         HTML(comment_html)
-      ) else tags$p(style="color:#999; font-size:12px;", "暂无评论"),
+      ) else tags$p(class = "note-no-comment", style = "color:#999; font-size:12px;", "暂无评论"),
       
       # 评论输入 + 按钮
       textAreaInput("note_comment_new_m", NULL, rows = 2, placeholder = "添加评论..."),
@@ -314,14 +325,42 @@ note_server <- function(input, output, session, rv) {
   })
 
   ##################
-  # 添加评论（不关弹窗）
+  # 添加评论（不关弹窗 — 用 JS 注入）
   ##################
   observeEvent(input$note_add_comment_m, {
     req(rv$logged_in, rv$note_edit_id, input$note_comment_new_m)
     if (trimws(input$note_comment_new_m) == "") return()
     uid <- if (!is.null(rv$current_user) && nrow(rv$current_user) > 0) rv$current_user$id[1] else NULL
-    note_comment_add(rv$note_edit_id, input$note_comment_new_m, uid)
+    result <- note_comment_add(rv$note_edit_id, input$note_comment_new_m, uid)
+    if (!result$success) {
+      showNotification(result$message, type = "error", duration = 2)
+      return()
+    }
     updateTextAreaInput(session, "note_comment_new_m", value = "")
+    # 构建新评论 HTML 并注入弹窗
+    new_comment_html <- sprintf(
+      '<div class="comment-item" id="comment-%d" style="background:#fafafa; padding:8px 12px; margin-bottom:6px; border-radius:6px; border-left:4px solid #3498db;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:11px; color:#999; margin-bottom:4px;">
+              <span style="font-weight:bold; color:#3498db;">%s</span>
+              <span style="margin-left:8px;">%s</span>
+            </div>
+            <div class="comment-text" style="font-size:13px; line-height:1.5; white-space:pre-wrap; word-break:break-word;">%s</div>
+          </div>
+          <div class="comment-actions" style="display:none; margin-left:8px; white-space:nowrap; flex-shrink:0;">
+            <button class="btn btn-xs btn-success comment-done-btn" data-id="%d">✅</button>
+            <button class="btn btn-xs btn-info comment-edit-btn" data-id="%d">✏</button>
+            <button class="btn btn-xs btn-danger comment-del-btn" data-id="%d">🗑</button>
+          </div>
+        </div>
+      </div>',
+      result$id,
+      result$creator_name,
+      substr(result$created_at, 1, 16),
+      gsub("'", "\\'", input$note_comment_new_m),
+      result$id, result$id, result$id)
+    session$sendCustomMessage(type = "noteInjectComment", message = list(html = new_comment_html, comment_id = result$id))
     note_trigger(note_trigger() + 1)
     showNotification("评论已添加", type = "message", duration = 1.5)
   })
@@ -332,16 +371,48 @@ note_server <- function(input, output, session, rv) {
   observeEvent(input$note_comment_edit, {
     req(rv$logged_in)
     parts <- strsplit(as.character(input$note_comment_edit), ":")[[1]]
-    result <- note_comment_update(as.integer(parts[1]), parts[2])
+    cid <- as.integer(parts[1])
+    result <- note_comment_update(cid, parts[2])
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = "message", duration = 1.5)
   })
 
   observeEvent(input$note_comment_delete, {
     req(rv$logged_in)
-    result <- note_comment_delete(as.integer(input$note_comment_delete))
+    cid <- as.integer(input$note_comment_delete)
+    result <- note_comment_delete(cid)
+    if (result$success) {
+      # 用 JS 从弹窗DOM中移除评论
+      session$sendCustomMessage(type = "noteRemoveComment", message = list(comment_id = cid))
+    }
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = "message", duration = 1.5)
+  })
+
+  ##################
+  # 评论标记已完成/取消
+  ##################
+  observeEvent(input$note_comment_done, {
+    req(rv$logged_in)
+    cid <- as.integer(input$note_comment_done)
+    result <- note_comment_mark_status(cid, "completed")
+    if (result$success) {
+      completed_at <- format(Sys.time(), "%Y-%m-%d %H:%M")
+      session$sendCustomMessage(type = "noteCommentMarkDone", message = list(comment_id = cid, status = "completed", completed_at = completed_at))
+    }
+    note_trigger(note_trigger() + 1)
+    showNotification(result$message, type = "message", duration = 1.5)
+  })
+
+  observeEvent(input$note_comment_undone, {
+    req(rv$logged_in)
+    cid <- as.integer(input$note_comment_undone)
+    result <- note_comment_mark_status(cid, "")
+    if (result$success) {
+      session$sendCustomMessage(type = "noteCommentMarkDone", message = list(comment_id = cid, status = "", completed_at = ""))
+    }
+    note_trigger(note_trigger() + 1)
+    showNotification("已取消完成标记", type = "message", duration = 1.5)
   })
 
   ##################
