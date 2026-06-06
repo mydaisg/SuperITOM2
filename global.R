@@ -860,7 +860,7 @@ migrate_database <- function() {
     }
 
     # ===============================================
-    # 记事模块：note_comments 添加 status 字段
+    # 记事模块：note_comments 添加 status / completed_at 字段
     # ===============================================
     comment_cols <- dbGetQuery(con, "PRAGMA table_info(note_comments)")
     if (isTRUE("status" %in% comment_cols$name == FALSE)) {
@@ -870,6 +870,60 @@ migrate_database <- function() {
       }, error = function(e) {
         cat("警告：添加 status 列失败:", e$message, "\n")
       })
+    }
+    if (isTRUE("completed_at" %in% comment_cols$name == FALSE)) {
+      tryCatch({
+        dbExecute(con, "ALTER TABLE note_comments ADD COLUMN completed_at TEXT")
+        cat("数据库迁移完成：已添加 completed_at 列到 note_comments 表\n")
+      }, error = function(e) {
+        cat("警告：添加 completed_at 列失败:", e$message, "\n")
+      })
+    }
+    if (isTRUE("parent_id" %in% comment_cols$name == FALSE)) {
+      tryCatch({
+        dbExecute(con, "ALTER TABLE note_comments ADD COLUMN parent_id INTEGER")
+        cat("数据库迁移完成：已添加 parent_id 列到 note_comments 表\n")
+      }, error = function(e) {
+        cat("警告：添加 parent_id 列失败:", e$message, "\n")
+      })
+    }
+    # notes 表置顶
+    note_cols <- dbGetQuery(con, "PRAGMA table_info(notes)")
+    if (isTRUE("pinned" %in% note_cols$name == FALSE)) {
+      tryCatch({
+        dbExecute(con, "ALTER TABLE notes ADD COLUMN pinned INTEGER DEFAULT 0")
+        cat("数据库迁移完成：已添加 pinned 列到 notes 表\n")
+      }, error = function(e) {
+        cat("警告：添加 pinned 列失败:", e$message, "\n")
+      })
+    }
+
+    # ===============================================
+    # 资产管理模块
+    # ===============================================
+    if (!"assets" %in% tables) {
+      dbExecute(con, "CREATE TABLE assets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        asset_no TEXT UNIQUE NOT NULL,
+        hostname TEXT NOT NULL,
+        ip_address TEXT,
+        os TEXT,
+        cpu TEXT,
+        ram TEXT,
+        disk TEXT,
+        manufacturer TEXT,
+        model TEXT,
+        serial_number TEXT,
+        location TEXT,
+        department TEXT,
+        status TEXT DEFAULT 'active',
+        notes TEXT,
+        last_seen TEXT,
+        created_by INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 assets 表\n")
     }
 
   }, error = function(e) {

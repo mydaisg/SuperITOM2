@@ -24,7 +24,7 @@ note_generate_number <- function() {
 note_get_all <- function() {
   con <- db_connect()
   tryCatch({
-    dbGetQuery(con, "SELECT n.*, u.username as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id ORDER BY n.updated_at DESC")
+    dbGetQuery(con, "SELECT n.*, u.username as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id ORDER BY n.pinned DESC, n.updated_at DESC")
   }, error = function(e) data.frame(), finally = { db_disconnect(con) })
 }
 
@@ -128,6 +128,29 @@ note_patch <- function(id, ...) {
 }
 
 ##################
+# 置顶切换（最多5条）
+##################
+note_toggle_pin <- function(id) {
+  con <- db_connect()
+  tryCatch({
+    note <- dbGetQuery(con, sprintf("SELECT pinned FROM notes WHERE id = %d", as.integer(id)))
+    if (nrow(note) == 0) return(list(success = FALSE, message = "记事不存在"))
+    pinned <- note$pinned[1] %||% 0
+    if (pinned == 0) {
+      # 检查已置顶数量
+      count <- dbGetQuery(con, "SELECT COUNT(*) as cnt FROM notes WHERE pinned = 1")$cnt[1]
+      if (count >= 5) return(list(success = FALSE, message = "最多置顶5条"))
+      dbExecute(con, sprintf("UPDATE notes SET pinned = 1 WHERE id = %d", as.integer(id)))
+      list(success = TRUE, message = "已置顶")
+    } else {
+      dbExecute(con, sprintf("UPDATE notes SET pinned = 0 WHERE id = %d", as.integer(id)))
+      list(success = TRUE, message = "已取消置顶")
+    }
+  }, error = function(e) list(success = FALSE, message = paste("操作失败:", e$message)),
+  finally = { db_disconnect(con) })
+}
+
+##################
 # 删除
 ##################
 note_delete <- function(id) {
@@ -167,20 +190,27 @@ note_convert_to_work_order <- function(note_id, current_user) {
 ##################
 # 评论相关
 ##################
-note_comment_add <- function(note_id, content, created_by = NULL) {
+note_comment_add <- function(note_id, content, created_by = NULL, parent_id = NULL) {
   con <- db_connect()
   tryCatch({
-    dbExecute(con, sprintf(
-      "INSERT INTO note_comments (note_id, content, created_by) VALUES (%d,'%s',%s)",
-      as.integer(note_id), gsub("'","''",content),
-      ifelse(is.null(created_by),"NULL",as.character(created_by))))
+    pid <- if (is.null(parent_id)) "NULL" else as.character(as.integer(parent_id))
+    query <- if (pid == "NULL") {
+      sprintf("INSERT INTO note_comments (note_id, content, created_by) VALUES (%d,'%s',%s)",
+        as.integer(note_id), gsub("'","''",content),
+        ifelse(is.null(created_by),"NULL",as.character(created_by)))
+    } else {
+      sprintf("INSERT INTO note_comments (note_id, content, created_by, parent_id) VALUES (%d,'%s',%s,%s)",
+        as.integer(note_id), gsub("'","''",content),
+        ifelse(is.null(created_by),"NULL",as.character(created_by)), pid)
+    }
+    dbExecute(con, query)
     id <- dbGetQuery(con, "SELECT last_insert_rowid() as id")$id[1]
-    # 获取刚创建的评论完整信息
     r <- dbGetQuery(con, sprintf(
       "SELECT c.*, u.username as creator_name FROM note_comments c LEFT JOIN users u ON c.created_by = u.id WHERE c.id = %d", id))
     list(success = TRUE, message = "评论已添加", id = id,
       created_at = if (nrow(r) > 0) r$created_at[1] else format(Sys.time(), "%Y-%m-%d %H:%M"),
-      creator_name = if (nrow(r) > 0) r$creator_name[1] %||% "匿名" else "匿名")
+      creator_name = if (nrow(r) > 0) r$creator_name[1] %||% "匿名" else "匿名",
+      parent_id = parent_id)
   }, error = function(e) list(success = FALSE, message = paste("评论失败:", e$message)),
   finally = { db_disconnect(con) })
 }
@@ -192,14 +222,25 @@ note_comment_mark_status <- function(comment_id, status) {
   con <- db_connect()
   tryCatch({
     val <- if (is.null(status) || status == "") "NULL" else sprintf("'%s'", status)
+    completed_val <- if (isTRUE(status == "completed")) sprintf("'%s'", format(Sys.time(), "%Y-%m-%d %H:%M")) else "NULL"
     if (val == "NULL") {
-      dbExecute(con, sprintf("UPDATE note_comments SET status = NULL WHERE id = %d", as.integer(comment_id)))
+      dbExecute(con, sprintf("UPDATE note_comments SET status = NULL, completed_at = NULL WHERE id = %d", as.integer(comment_id)))
     } else {
-      dbExecute(con, sprintf("UPDATE note_comments SET status = '%s' WHERE id = %d", status, as.integer(comment_id)))
+      dbExecute(con, sprintf("UPDATE note_comments SET status = '%s', completed_at = %s WHERE id = %d", status, completed_val, as.integer(comment_id)))
     }
     list(success = TRUE, message = paste("已标记为", status))
   }, error = function(e) list(success = FALSE, message = paste("标记失败:", e$message)),
   finally = { db_disconnect(con) })
+}
+
+note_comment_get_by_id <- function(comment_id) {
+  con <- db_connect()
+  tryCatch({
+    r <- dbGetQuery(con, sprintf(
+      "SELECT c.*, u.username as creator_name FROM note_comments c LEFT JOIN users u ON c.created_by = u.id WHERE c.id = %d",
+      as.integer(comment_id)))
+    if (nrow(r) == 0) NULL else r
+  }, finally = { db_disconnect(con) })
 }
 
 note_comment_get_last <- function(note_id) {

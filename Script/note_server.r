@@ -6,19 +6,30 @@ note_server <- function(input, output, session, rv) {
   tryCatch({ note_fill_missing_no() }, error = function(e) message("[NOTE-INIT] 补充编号失败: ", e$message))
   
   note_trigger <- reactiveVal(0)
+  note_pending_page <- reactiveVal(1)  # 待处理分页当前页码
   
   ##################
   # Trello 看板
   ##################
   output$note_board <- renderUI({
     note_trigger()
+    note_pending_page()
     req(rv$logged_in)
     items <- note_get_all()
     
-    build_col <- function(status, label, items) {
+    build_col <- function(status, label, items, page = NULL, page_size = NULL) {
       subset <- if (nrow(items) > 0) items[items$status == status, ] else items
       cards <- list()
       if (nrow(subset) > 0) {
+        # 分页：仅待处理列
+        if (!is.null(page) && !is.null(page_size)) {
+          total <- nrow(subset)
+          total_pages <- ceiling(total / page_size)
+          if (page > total_pages) page <- 1
+          start <- (page - 1) * page_size + 1
+          end <- min(page * page_size, total)
+          subset <- subset[start:end, ]
+        }
         for (i in 1:nrow(subset)) {
           r <- subset[i, ]
           imp_card <- r$importance %||% 0
@@ -54,8 +65,16 @@ note_server <- function(input, output, session, rv) {
               tags$span(style="color:#999;", cn, ": "), tags$span(ct)))
           }
           
-          cards[[i]] <- tags$div(class = "note-card", `data-id` = r$id,
+          pinned <- r$pinned[1] %||% 0
+          pin_html <- if (pinned > 0) {
+            sprintf('<span class="note-pin-icon pinned" onclick="Shiny.setInputValue(\'note_pin_click\',%d,{priority:\'event\'});event.stopPropagation();" title="已置顶，点击取消">📌</span>', r$id)
+          } else {
+            sprintf('<span class="note-pin-icon" onclick="Shiny.setInputValue(\'note_pin_click\',%d,{priority:\'event\'});event.stopPropagation();" title="点击置顶">📌</span>', r$id)
+          }
+          card_class <- if (pinned > 0) "note-card note-card-pinned" else "note-card"
+          cards[[i]] <- tags$div(class = card_class, `data-id` = r$id,
             tags$div(class = "note-title",
+              HTML(pin_html),
               if (isTRUE(note_no != "")) tags$span(style="color:#337ab7;font-size:11px;margin-right:6px;", note_no),
               HTML(flags), " ", r$title),
             if (isTRUE(nchar(body) > 0)) tags$div(class = "note-body", body) else "",
@@ -71,11 +90,66 @@ note_server <- function(input, output, session, rv) {
       do.call(tagList, cards)
     }
     
-    tags$div(class = "trello-board",
-      tags$div(class = "trello-col pending",
-        tags$h4(sprintf("📋 待处理 (%d)", sum(items$status == "pending", na.rm = TRUE))),
-        build_col("pending", "待处理", items)
+    # 待处理分页
+    pending_count <- sum(items$status == "pending", na.rm = TRUE)
+    PGSZ <- 10
+    total_pages <- ceiling(pending_count / PGSZ)
+    cp <- note_pending_page()
+    if (cp > total_pages || cp < 1) cp <- 1
+    
+    pending_bottom <- tagList(
+      # 分页控制
+      if (total_pages > 1) {
+        tags$div(style = "display:flex; justify-content:center; align-items:center; gap:6px; padding:6px 0;",
+          tags$button(class = "btn btn-xs btn-default note-page-btn", `data-page` = "prev",
+            onclick = "Shiny.setInputValue('note_pending_page_btn','prev',{priority:'event'})", "◀"),
+          tags$span(style = "font-size:12px; color:#666;", sprintf("%d / %d", cp, total_pages)),
+          tags$button(class = "btn btn-xs btn-default note-page-btn", `data-page` = "next",
+            onclick = "Shiny.setInputValue('note_pending_page_btn','next',{priority:'event'})", "▶")
+        )
+      } else "",
+      # 创建表单
+      tags$div(style = "background:white; border-radius:6px; padding:10px; margin-top:6px; box-shadow:0 1px 3px rgba(0,0,0,0.1);",
+        tags$div(style = "font-size:13px; font-weight:600; color:#337ab7; margin-bottom:6px;", icon("plus"), " 快速添加"),
+        textAreaInput("note_new_text", NULL, rows = 2,
+          placeholder = "输入内容，第一行自动作为标题…"),
+        fluidRow(
+          column(6, numericInput("note_reminder_hours", "⏰ 提醒(小时后)", value = 3, min = 0, max = 168, step = 1)),
+          column(6, numericInput("note_due_hour", "📅 到期(几点)", value = 18, min = 0, max = 23, step = 1))
+        ),
+        div(style = "text-align:right;",
+          actionButton("note_add", "添加", class = "btn-primary btn-sm", icon = icon("plus")))
+      )
+    )
+    
+    # 统计栏
+    stats_bar <- tags$div(style = "display:flex; gap:10px; margin-bottom:8px;",
+      tags$div(class = "well well-sm", style = "flex:1; text-align:center; padding:6px; margin:0; background:#fff3cd;",
+        tags$div(style = "font-size:20px; font-weight:bold; color:#856404;", nrow(items)),
+        tags$div(style = "font-size:11px; color:#856404;", "全部")
       ),
+      tags$div(class = "well well-sm", style = "flex:1; text-align:center; padding:6px; margin:0; background:#fff3cd;",
+        tags$div(style = "font-size:20px; font-weight:bold; color:#856404;", pending_count),
+        tags$div(style = "font-size:11px; color:#856404;", "待处理")
+      ),
+      tags$div(class = "well well-sm", style = "flex:1; text-align:center; padding:6px; margin:0; background:#d1ecf1;",
+        tags$div(style = "font-size:20px; font-weight:bold; color:#0c5460;", sum(items$status == "in_progress", na.rm = TRUE)),
+        tags$div(style = "font-size:11px; color:#0c5460;", "进行中")
+      ),
+      tags$div(class = "well well-sm", style = "flex:1; text-align:center; padding:6px; margin:0; background:#d4edda;",
+        tags$div(style = "font-size:20px; font-weight:bold; color:#155724;", sum(items$status == "completed", na.rm = TRUE)),
+        tags$div(style = "font-size:11px; color:#155724;", "已完成")
+      )
+    )
+    
+    tagList(
+      stats_bar,
+      tags$div(class = "trello-board",
+        tags$div(class = "trello-col pending",
+          tags$h4(sprintf("📋 待处理 (%d)", pending_count)),
+          build_col("pending", "待处理", items, page = cp, page_size = PGSZ),
+          pending_bottom
+        ),
       tags$div(class = "trello-col active",
         tags$h4(sprintf("🔄 进行中 (%d)", sum(items$status == "in_progress", na.rm = TRUE))),
         build_col("in_progress", "进行中", items)
@@ -85,6 +159,7 @@ note_server <- function(input, output, session, rv) {
         build_col("completed", "已完成", items)
       )
     )
+  )  # closes tagList(stats_bar, trello-board)
   })
   
   ##################
@@ -99,6 +174,29 @@ note_server <- function(input, output, session, rv) {
   })
 
   ##################
+  # 置顶切换
+  ##################
+  observeEvent(input$note_pin_click, {
+    req(rv$logged_in)
+    result <- note_toggle_pin(as.integer(input$note_pin_click))
+    note_trigger(note_trigger() + 1)
+    showNotification(result$message, type = ifelse(result$success, "message", "warning"), duration = 2)
+  })
+
+  ##################
+  # 待处理分页翻页
+  ##################
+  observeEvent(input$note_pending_page_btn, {
+    req(rv$logged_in)
+    cp <- note_pending_page()
+    if (input$note_pending_page_btn == "prev") {
+      note_pending_page(max(1, cp - 1))
+    } else if (input$note_pending_page_btn == "next") {
+      note_pending_page(cp + 1)
+    }
+  })
+
+  ##################
   # 添加记事
   ##################
   observeEvent(input$note_add, {
@@ -108,7 +206,10 @@ note_server <- function(input, output, session, rv) {
     result <- note_add(input$note_new_text, uid,
       reminder_hours = input$note_reminder_hours,
       due_hour = input$note_due_hour)
-    if (result$success) updateTextAreaInput(session, "note_new_text", value = "")
+    if (result$success) {
+      updateTextAreaInput(session, "note_new_text", value = "")
+      note_pending_page(1)  # 添加后跳到第一页看新卡片
+    }
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "error"))
   })
@@ -148,30 +249,58 @@ note_server <- function(input, output, session, rv) {
       status_btns <- sprintf('<button class="btn btn-warning btn-sm note-move-btn" data-id="%d" data-to="pending" style="margin-right:4px;">◀ 重新打开</button>', note$id[1])
     }
     
-    # 彩虹评论（每条带状态徽章 + 编辑/删除/标记完成按钮）
+    # 彩虹评论（嵌套 + 状态徽章 + 编辑/删除/标记/回复）
     rainbow_colors <- c("#e74c3c","#e67e22","#f1c40f","#2ecc71","#1abc9c","#3498db","#9b59b6","#e91e63")
     comments <- note_comment_get_all(note$id[1])
     comment_html <- ""
     if (!is.null(comments) && nrow(comments) > 0) {
-      for (ci in 1:nrow(comments)) {
-        c <- comments[ci, ]
+      # 分离顶层和子评论
+      tops <- comments[is.na(comments$parent_id) | comments$parent_id == 0, ]
+      children <- comments[!(is.na(comments$parent_id) | comments$parent_id == 0), ]
+      
+      render_one_comment <- function(c, children_df, level = 0, counter = 1) {
         cn <- c$creator_name[1] %||% "匿名"
         ca <- if (!is.na(c$created_at) && nchar(c$created_at) > 10) substr(c$created_at, 1, 16) else c$created_at
-        clr <- rainbow_colors[((ci - 1) %% length(rainbow_colors)) + 1]
+        clr <- rainbow_colors[((counter - 1) %% length(rainbow_colors)) + 1]
         cs <- if (is.na(c$status[1]) || is.null(c$status[1])) "" else c$status[1]
+        completed_at <- c$completed_at[1] %||% ""
         status_badge <- if (isTRUE(cs == "completed")) {
-          ' <span class="comment-status-badge" style="background:#5cb85c; color:white; font-size:10px; padding:1px 6px; border-radius:10px; margin-left:6px;">✅ 已完成</span>'
+          if (isTRUE(nchar(completed_at) > 10)) completed_at <- substr(completed_at, 1, 16)
+          if (isTRUE(completed_at != "")) {
+            sprintf(' <span class="comment-status-badge" style="background:#5cb85c; color:white; font-size:10px; padding:1px 6px; border-radius:10px; margin-left:6px;">✅ 已完成 %s</span>', completed_at)
+          } else {
+            ' <span class="comment-status-badge" style="background:#5cb85c; color:white; font-size:10px; padding:1px 6px; border-radius:10px; margin-left:6px;">✅ 已完成</span>'
+          }
         } else ""
         mark_btn <- if (!isTRUE(cs == "completed")) {
           sprintf('<button class="btn btn-xs btn-success comment-done-btn" data-id="%d">✅</button>', c$id)
         } else {
           sprintf('<button class="btn btn-xs btn-default comment-undone-btn" data-id="%d">🔄</button>', c$id)
         }
-        comment_html <- paste0(comment_html, sprintf(
-          '<div class="comment-item" id="comment-%d" style="background:#fafafa; padding:8px 12px; margin-bottom:6px; border-radius:6px; border-left:4px solid %s;">
+        reply_btn <- ''
+        if (level == 0) {
+          reply_btn <- sprintf('<button class="btn btn-xs btn-default comment-reply-btn" data-id="%d" data-name="%s">💬 回复</button>', c$id, cn)
+        }
+        indent <- if (level > 0) sprintf("margin-left:%dpx;", level * 24) else ""
+        
+        # 子评论
+        sub_html <- ""
+        if (!is.null(children_df) && nrow(children_df) > 0) {
+          subs <- children_df[children_df$parent_id == c$id, ]
+          if (nrow(subs) > 0) {
+            sub_parts <- c()
+            for (si in 1:nrow(subs)) {
+              sub_parts <- c(sub_parts, render_one_comment(subs[si, ], children_df, level + 1, counter + si))
+            }
+            sub_html <- paste(sub_parts, collapse = "")
+          }
+        }
+        
+        base <- sprintf(
+          '<div class="comment-item" id="comment-%d" style="background:#fafafa; padding:6px 10px; margin-bottom:4px; border-radius:6px; border-left:4px solid %s;%s">
             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
               <div style="flex:1; min-width:0;">
-                <div style="font-size:11px; color:#999; margin-bottom:4px;">
+                <div style="font-size:11px; color:#999; margin-bottom:3px;">
                   <span style="font-weight:bold; color:%s;">%s</span>%s
                   <span style="margin-left:8px;">%s</span>
                 </div>
@@ -181,15 +310,32 @@ note_server <- function(input, output, session, rv) {
                   <button class="btn btn-xs btn-primary comment-save-btn" style="margin-top:4px;" data-id="%d">保存</button>
                   <button class="btn btn-xs btn-default comment-cancel-btn" style="margin-top:4px;">取消</button>
                 </div>
+                %s
               </div>
               <div class="comment-actions" style="display:none; margin-left:8px; white-space:nowrap; flex-shrink:0;">
-                %s
+                %s%s
                 <button class="btn btn-xs btn-info comment-edit-btn" data-id="%d">✏</button>
                 <button class="btn btn-xs btn-danger comment-del-btn" data-id="%d">🗑</button>
               </div>
             </div>
-          </div>', c$id, clr, clr, cn, status_badge, ca, c$content, c$content, c$id, mark_btn, c$id, c$id))
+            %s
+          </div>',
+          c$id, clr, indent, clr, cn, status_badge, ca,
+          c$content, c$content, c$id,
+          sprintf('<div class="comment-reply-form" style="display:none; margin-top:6px;"><textarea class="form-control comment-reply-input" rows="2" placeholder="回复 %s ..." style="font-size:12px;"></textarea><button class="btn btn-xs btn-primary comment-reply-submit" data-id="%d" style="margin-top:3px;">回复</button><button class="btn btn-xs btn-default comment-reply-cancel" style="margin-top:3px;">取消</button></div>', cn, c$id),
+          mark_btn, reply_btn, c$id, c$id,
+          sub_html
+        )
+        base
       }
+      
+      parts <- c()
+      if (nrow(tops) > 0) {
+        for (ti in 1:nrow(tops)) {
+          parts <- c(parts, render_one_comment(tops[ti, ], children, 0, ti))
+        }
+      }
+      comment_html <- paste(parts, collapse = "")
     }
     
     modal_body <- tagList(
@@ -229,8 +375,16 @@ note_server <- function(input, output, session, rv) {
       
       tags$hr(),
       
-      # 评论
-      tags$h5("💬 评论"),
+      # 评论（带排序切换）
+      tags$div(style = "display:flex; justify-content:space-between; align-items:center;",
+        tags$h5("💬 评论", style = "margin:0;"),
+        if (nchar(comment_html) > 0) tags$button(
+          id = "note_comment_sort_btn",
+          class = "btn btn-xs btn-default",
+          onclick = "var $list=$('.note-comment-list');var $btn=$('#note_comment_sort_btn');if($btn.text().indexOf('最早')>=0){$list.append($list.children().get().reverse());$btn.html('🔽 最新在前');}else{$list.prepend($list.children().get().reverse());$btn.html('🔼 最早在前');}",
+          "🔼 最早在前"
+        ) else ""
+      ),
       if (nchar(comment_html) > 0) tags$div(
         class = "note-comment-list",
         style = "max-height:500px; overflow-y:auto; margin-bottom:8px;",
@@ -366,6 +520,25 @@ note_server <- function(input, output, session, rv) {
   })
 
   ##################
+  # 回复评论（子评论）
+  ##################
+  observeEvent(input$note_reply_submit, {
+    req(rv$logged_in, rv$note_edit_id)
+    data <- input$note_reply_submit
+    pid <- as.integer(data$id)
+    text <- trimws(data$text)
+    if (is.null(text) || text == "") return()
+    uid <- if (!is.null(rv$current_user) && nrow(rv$current_user) > 0) rv$current_user$id[1] else NULL
+    result <- note_comment_add(rv$note_edit_id, text, uid, parent_id = pid)
+    if (result$success) {
+      removeModal()
+      session$sendCustomMessage("noteReopenModal", list(note_id = rv$note_edit_id))
+    }
+    note_trigger(note_trigger() + 1)
+    showNotification(result$message, type = "message", duration = 1.5)
+  })
+
+  ##################
   # 评论编辑/删除（JS 触发）
   ##################
   observeEvent(input$note_comment_edit, {
@@ -397,8 +570,13 @@ note_server <- function(input, output, session, rv) {
     cid <- as.integer(input$note_comment_done)
     result <- note_comment_mark_status(cid, "completed")
     if (result$success) {
-      completed_at <- format(Sys.time(), "%Y-%m-%d %H:%M")
-      session$sendCustomMessage(type = "noteCommentMarkDone", message = list(comment_id = cid, status = "completed", completed_at = completed_at))
+      # 取写入的 completed_at 作为徽章显示时间
+      cmt <- note_comment_get_by_id(cid)
+      cat <- if (!is.null(cmt) && nrow(cmt) > 0) {
+        ca <- cmt$completed_at[1] %||% ""
+        if (isTRUE(nchar(ca) > 10)) substr(ca, 1, 16) else ca
+      } else ""
+      session$sendCustomMessage(type = "noteCommentMarkDone", message = list(comment_id = cid, status = "completed", completed_at = cat))
     }
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = "message", duration = 1.5)

@@ -103,6 +103,32 @@ note_ui <- function() {
         if (!confirm('删除此评论？')) return;
         Shiny.setInputValue('note_comment_delete', $(this).data('id'), {priority:'event'});
       });
+      // 回复按钮：显示/隐藏回复表单
+      $(document).on('click','.comment-reply-btn',function(e){
+        e.stopPropagation();
+        var $item = $(this).closest('.comment-item');
+        $item.find('.comment-reply-form').toggle();
+        $item.find('.comment-reply-input').focus();
+      });
+      // 回复取消
+      $(document).on('click','.comment-reply-cancel',function(e){
+        e.stopPropagation();
+        $(this).closest('.comment-reply-form').hide();
+      });
+      // 回复提交
+      $(document).on('click','.comment-reply-submit',function(e){
+        e.stopPropagation();
+        var id = $(this).data('id');
+        var text = $(this).closest('.comment-item').find('.comment-reply-input').val();
+        if (!text || text.trim() === '') return;
+        Shiny.setInputValue('note_reply_submit', {id: id, text: text}, {priority:'event'});
+      });
+      // 重新打开弹窗（回复后刷新嵌套结构）
+      Shiny.addCustomMessageHandler('noteReopenModal', function(msg) {
+        setTimeout(function() {
+          Shiny.setInputValue('note_edit_click', msg.note_id, {priority: 'event'});
+        }, 150);
+      });
     ")),
     tags$style(HTML("
       .trello-board { display:flex; gap:14px; overflow-x:auto; padding:10px 0; }
@@ -129,24 +155,13 @@ note_ui <- function() {
       .note-importance-empty:hover { color:#d9534f; }
       .note-due-overdue { color:#d9534f; font-weight:bold; }
       .comment-status-badge { font-size:10px; padding:1px 6px; border-radius:10px; margin-left:6px; white-space:nowrap; }
+      .note-pin-icon { font-size:14px; cursor:pointer; margin-right:4px; opacity:0.3; transition:opacity 0.2s; }
+      .note-pin-icon:hover { opacity:0.8; }
+      .note-pin-icon.pinned { opacity:1; }
+      .note-card-pinned { border:2px solid #ffd700; background:#fffdf0; }
     ")),
     fluidPage(
-      div(style="text-align:center;margin:8px 0 4px;",
-        h2(icon("sticky-note")," 记事"),
-        p(style="color:#7f8c8d;font-size:12px;","单框输入 · 首行为标题 · 拖拽式看板 · 红旗标记 · 时间提醒")),
-
-      # 快捷添加
-      wellPanel(
-        textAreaInput("note_new_text", NULL, rows = 3, 
-          placeholder = "输入内容，第一行自动作为标题…\n可换行写详细描述"),
-        fluidRow(
-          column(3, numericInput("note_reminder_hours", "⏰ 提醒(小时后)", value = 3, min = 0, max = 168, step = 1)),
-          column(3, numericInput("note_due_hour", "📅 到期(几点)", value = 18, min = 0, max = 23, step = 1)),
-          column(2, div(style="margin-top:20px;", actionButton("note_add","添加记事",class="btn-primary",icon=icon("plus"))))
-        )
-      ),
-
-      # 看板
+      # 看板（含统计栏 + 创建表单 + 待处理分页）
       uiOutput("note_board")
     )
   )

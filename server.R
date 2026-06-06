@@ -26,6 +26,8 @@ source("Script/performance_management.r") # 绩效数据层
 source("Script/performance_server.r")   # 绩效模块服务端
 source("Script/note_management.r")   # 记事模块数据层
 source("Script/note_server.r")       # 记事模块服务端
+source("Script/asset_management.r")  # 资产模块数据层
+source("Script/asset_server.r")      # 资产模块服务端
 source("Script/duty_matrix_management.r") # 岗职模块数据层
 source("Script/duty_matrix_server.r")     # 岗职模块服务端
 
@@ -1876,6 +1878,9 @@ server <- function(input, output, session) {
 
   # 记事模块逻辑
   note_server(input, output, session, rv)
+  
+  # 资产模块逻辑
+  asset_server(input, output, session, rv)
 
   # 岗职模块逻辑
   duty_matrix_server(input, output, session, rv)

@@ -41,6 +41,9 @@ source("Script/performance_ui.r")
 # 加载记事模块
 source("Script/note_ui.r")
 
+# 加载资产模块
+source("Script/asset_ui.r")
+
 # 加载岗职模块
 source("Script/duty_matrix_ui.r")
 
@@ -590,6 +593,13 @@ main_ui <- function() {
           )
         )
       )
+    ),
+
+    # 资产标签页
+    tabPanel(
+      "资产",
+      icon = icon("laptop"),
+      asset_ui()
     ),
 
     # 记事标签页
