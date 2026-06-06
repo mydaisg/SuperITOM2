@@ -6,7 +6,8 @@ note_server <- function(input, output, session, rv) {
   tryCatch({ note_fill_missing_no() }, error = function(e) message("[NOTE-INIT] 补充编号失败: ", e$message))
   
   note_trigger <- reactiveVal(0)
-  note_pending_page <- reactiveVal(1)  # 待处理分页当前页码
+  note_pending_page <- reactiveVal(1)
+  note_compact_mode <- reactiveVal(FALSE)  # 简约/详细切换
   
   ##################
   # Trello 看板
@@ -14,8 +15,10 @@ note_server <- function(input, output, session, rv) {
   output$note_board <- renderUI({
     note_trigger()
     note_pending_page()
+    note_compact_mode()
     req(rv$logged_in)
     items <- note_get_all()
+    compact <- note_compact_mode()
     
     build_col <- function(status, label, items, page = NULL, page_size = NULL) {
       subset <- if (nrow(items) > 0) items[items$status == status, ] else items
@@ -76,14 +79,14 @@ note_server <- function(input, output, session, rv) {
             tags$div(class = "note-title",
               HTML(pin_html),
               if (isTRUE(note_no != "")) tags$span(style="color:#337ab7;font-size:11px;margin-right:6px;", note_no),
-              HTML(flags), " ", r$title),
-            if (isTRUE(nchar(body) > 0)) tags$div(class = "note-body", body) else "",
-            tags$div(class = "note-meta",
+              r$title, " ", HTML(flags)),
+            if (!compact && isTRUE(nchar(body) > 0)) tags$div(class = "note-body", body) else "",
+            if (!compact) tags$div(class = "note-meta",
               tags$span(icon("clock"), created),
               if (isTRUE(reminder != "")) tags$span(icon("bell"), reminder),
               if (isTRUE(due != "")) tags$span(class = due_cls, icon("calendar-check"), due)
             ),
-            HTML(comment_html)
+            if (!compact) HTML(comment_html) else ""
           )
         }
       }
@@ -108,42 +111,49 @@ note_server <- function(input, output, session, rv) {
             onclick = "Shiny.setInputValue('note_pending_page_btn','next',{priority:'event'})", "▶")
         )
       } else "",
-      # 创建表单
-      tags$div(style = "background:white; border-radius:6px; padding:10px; margin-top:6px; box-shadow:0 1px 3px rgba(0,0,0,0.1);",
-        tags$div(style = "font-size:13px; font-weight:600; color:#337ab7; margin-bottom:6px;", icon("plus"), " 快速添加"),
+      # 创建表单（匹配新配色）
+      tags$div(style = "background:white; border-radius:10px; padding:12px; margin-top:6px; border:1px solid #e8ecf1;",
+        tags$div(style = "font-size:12px; font-weight:700; color:#6c3bbf; margin-bottom:6px;", "✦ 快速添加"),
         textAreaInput("note_new_text", NULL, rows = 2,
           placeholder = "输入内容，第一行自动作为标题…"),
         fluidRow(
           column(6, numericInput("note_reminder_hours", "⏰ 提醒(小时后)", value = 3, min = 0, max = 168, step = 1)),
           column(6, numericInput("note_due_hour", "📅 到期(几点)", value = 18, min = 0, max = 23, step = 1))
         ),
-        div(style = "text-align:right;",
-          actionButton("note_add", "添加", class = "btn-primary btn-sm", icon = icon("plus")))
+        div(style = "text-align:right; border-top:1px solid #f0f0f5; padding-top:8px; margin-top:4px;",
+          actionButton("note_add", "添加记事", class = "btn-primary btn-sm", icon = icon("plus")))
       )
     )
     
-    # 统计栏
-    stats_bar <- tags$div(style = "display:flex; gap:10px; margin-bottom:8px;",
-      tags$div(class = "well well-sm", style = "flex:1; text-align:center; padding:6px; margin:0; background:#fff3cd;",
-        tags$div(style = "font-size:20px; font-weight:bold; color:#856404;", nrow(items)),
-        tags$div(style = "font-size:11px; color:#856404;", "全部")
+    # 统计栏（统一白底+彩色数字）
+    stats_bar <- tags$div(style = "display:flex; gap:10px; margin-bottom:10px;",
+      tags$div(class = "note-stat-box", style = "flex:1;",
+        tags$div(class = "stat-num", style = "color:#4a5568;", nrow(items)),
+        tags$div(class = "stat-lbl", "全部")
       ),
-      tags$div(class = "well well-sm", style = "flex:1; text-align:center; padding:6px; margin:0; background:#fff3cd;",
-        tags$div(style = "font-size:20px; font-weight:bold; color:#856404;", pending_count),
-        tags$div(style = "font-size:11px; color:#856404;", "待处理")
+      tags$div(class = "note-stat-box", style = "flex:1;",
+        tags$div(class = "stat-num", style = "color:#6c3bbf;", pending_count),
+        tags$div(class = "stat-lbl", "待处理")
       ),
-      tags$div(class = "well well-sm", style = "flex:1; text-align:center; padding:6px; margin:0; background:#d1ecf1;",
-        tags$div(style = "font-size:20px; font-weight:bold; color:#0c5460;", sum(items$status == "in_progress", na.rm = TRUE)),
-        tags$div(style = "font-size:11px; color:#0c5460;", "进行中")
+      tags$div(class = "note-stat-box", style = "flex:1;",
+        tags$div(class = "stat-num", style = "color:#2563eb;", sum(items$status == "in_progress", na.rm = TRUE)),
+        tags$div(class = "stat-lbl", "进行中")
       ),
-      tags$div(class = "well well-sm", style = "flex:1; text-align:center; padding:6px; margin:0; background:#d4edda;",
-        tags$div(style = "font-size:20px; font-weight:bold; color:#155724;", sum(items$status == "completed", na.rm = TRUE)),
-        tags$div(style = "font-size:11px; color:#155724;", "已完成")
+      tags$div(class = "note-stat-box", style = "flex:1;",
+        tags$div(class = "stat-num", style = "color:#0d7d3a;", sum(items$status == "completed", na.rm = TRUE)),
+        tags$div(class = "stat-lbl", "已完成")
       )
     )
     
     tagList(
-      stats_bar,
+      fluidRow(
+        column(10, stats_bar),
+        column(2, div(style = "text-align:right; padding-top:4px;",
+          tags$button(class = "btn btn-sm btn-outline-secondary",
+            onclick = "Shiny.setInputValue('note_toggle_compact', Math.random(), {priority:'event'})",
+            if (compact) "📋 详细" else "📋 简约")
+        ))
+      ),
       tags$div(class = "trello-board",
         tags$div(class = "trello-col pending",
           tags$h4(sprintf("📋 待处理 (%d)", pending_count)),
@@ -181,6 +191,13 @@ note_server <- function(input, output, session, rv) {
     result <- note_toggle_pin(as.integer(input$note_pin_click))
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "warning"), duration = 2)
+  })
+
+  ##################
+  # 简约/详细切换
+  ##################
+  observeEvent(input$note_toggle_compact, {
+    note_compact_mode(!note_compact_mode())
   })
 
   ##################

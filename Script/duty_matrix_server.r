@@ -156,116 +156,251 @@ duty_matrix_server <- function(input, output, session, rv) {
   })
 
   ##################
-  # 清单表格（单击行弹出编辑弹窗）
+  # 卡片清单视图
   ##################
-  output$duty_position_table <- DT::renderDT({
-    duty_trigger()
-    DT::datatable(duty_position_get_all()[, c("id","name","description")],
-      colnames = c("ID","名称","描述"), options = list(pageLength=5, dom='tip'), rownames=FALSE,
-      selection='single')
-  })
-  output$duty_staff_table <- DT::renderDT({
-    duty_trigger()
-    DT::datatable(duty_staff_get_all()[, c("id","name","position_name","department","email","username")],
-      colnames = c("ID","姓名","岗位","部门","邮箱","关联用户"), options = list(pageLength=5, dom='tip'), rownames=FALSE,
-      selection='single')
-  })
-  output$duty_item_table <- DT::renderDT({
-    duty_trigger()
-    DT::datatable(duty_item_get_all()[, c("id","name","category","description")],
-      colnames = c("ID","名称","分类","描述"), options = list(pageLength=5, dom='tip'), rownames=FALSE,
-      selection='single')
-  })
-
-  ##################
-  # 单击编辑弹窗
-  ##################
-  observeEvent(input$duty_position_table_rows_selected, {
-    req(rv$logged_in, input$duty_position_table_rows_selected)
-    row <- duty_position_get_all()[input$duty_position_table_rows_selected, ]
-    rv$duty_edit_type <- "position"; rv$duty_edit_id <- row$id[1]
-    showModal(modalDialog(
-      title = sprintf("编辑岗位 #%d", row$id[1]), size = "s",
-      textInput("duty_edit_pos_name", "名称", value = row$name[1]),
-      textInput("duty_edit_pos_desc", "描述", value = row$description[1] %||% ""),
-      footer = tagList(
-        actionButton("duty_edit_save", "保存", class = "btn-primary"),
-        actionButton("duty_edit_delete", "删除", class = "btn-danger"),
-        modalButton("取消")
-      ), easyClose = TRUE
-    ))
-  })
-
-  observeEvent(input$duty_staff_table_rows_selected, {
-    req(rv$logged_in, input$duty_staff_table_rows_selected)
-    row <- duty_staff_get_all()[input$duty_staff_table_rows_selected, ]
-    rv$duty_edit_type <- "staff"; rv$duty_edit_id <- row$id[1]
-    pos <- duty_position_get_all()
-    pos_choices <- if (nrow(pos) > 0) stats::setNames(pos$id, pos$name) else c()
-    showModal(modalDialog(
-      title = sprintf("编辑人员 #%d — %s", row$id[1], row$name[1]), size = "s",
-      textInput("duty_edit_staff_name", "姓名", value = row$name[1]),
-      selectInput("duty_edit_staff_pos", "岗位", choices = c("(无)" = "", pos_choices), selected = row$position_id[1] %||% ""),
-      textInput("duty_edit_staff_dept", "部门", value = row$department[1] %||% ""),
-      textInput("duty_edit_staff_email", "邮箱", value = row$email[1] %||% ""),
-      footer = tagList(
-        actionButton("duty_edit_save", "保存", class = "btn-primary"),
-        actionButton("duty_edit_delete", "删除", class = "btn-danger"),
-        modalButton("取消")
-      ), easyClose = TRUE
-    ))
-  })
-
-  observeEvent(input$duty_item_table_rows_selected, {
-    req(rv$logged_in, input$duty_item_table_rows_selected)
-    row <- duty_item_get_all()[input$duty_item_table_rows_selected, ]
-    rv$duty_edit_type <- "item"; rv$duty_edit_id <- row$id[1]
-    showModal(modalDialog(
-      title = sprintf("编辑职责项 #%d — %s", row$id[1], row$name[1]), size = "s",
-      textInput("duty_edit_item_name", "名称", value = row$name[1]),
-      textInput("duty_edit_item_cat", "分类", value = row$category[1] %||% ""),
-      textInput("duty_edit_item_desc", "描述", value = row$description[1] %||% ""),
-      footer = tagList(
-        actionButton("duty_edit_save", "保存", class = "btn-primary"),
-        actionButton("duty_edit_delete", "删除", class = "btn-danger"),
-        modalButton("取消")
-      ), easyClose = TRUE
-    ))
-  })
-
-  # 保存编辑
-  observeEvent(input$duty_edit_save, {
-    req(rv$logged_in, rv$duty_edit_type, rv$duty_edit_id)
-    result <- switch(rv$duty_edit_type,
-      "position" = duty_position_update(rv$duty_edit_id,
-        name = input$duty_edit_pos_name,
-        description = if (isTRUE(nchar(trimws(input$duty_edit_pos_desc)) > 0)) input$duty_edit_pos_desc else NULL),
-      "staff" = duty_staff_update(rv$duty_edit_id,
-        name = input$duty_edit_staff_name,
-        position_id = if (!is.null(input$duty_edit_staff_pos) && input$duty_edit_staff_pos != "") as.integer(input$duty_edit_staff_pos) else NULL,
-        department = if (isTRUE(nchar(trimws(input$duty_edit_staff_dept)) > 0)) input$duty_edit_staff_dept else NULL,
-        email = if (isTRUE(nchar(trimws(input$duty_edit_staff_email)) > 0)) input$duty_edit_staff_email else NULL),
-      "item" = duty_item_update(rv$duty_edit_id,
-        name = input$duty_edit_item_name,
-        category = if (isTRUE(nchar(trimws(input$duty_edit_item_cat)) > 0)) input$duty_edit_item_cat else NULL,
-        description = if (isTRUE(nchar(trimws(input$duty_edit_item_desc)) > 0)) input$duty_edit_item_desc else NULL)
+  output$duty_position_cards <- renderUI({
+    duty_trigger(); req(rv$logged_in)
+    positions <- duty_position_get_all()
+    staff <- duty_staff_get_all()
+    if (nrow(positions) == 0) return(tags$p(style="color:#999; text-align:center; padding:10px;","暂无岗位"))
+    tagList(
+      tags$h5("岗位清单", style="margin-top:0;"),
+      tags$div(style="max-height:500px; overflow-y:auto;",
+        lapply(1:nrow(positions), function(i) {
+          p <- positions[i, ]
+          p_staff <- staff[staff$position_id == p$id, ]
+          staff_tags <- if (nrow(p_staff) > 0) {
+            lapply(1:nrow(p_staff), function(j) {
+              s <- p_staff[j, ]
+              tags$span(class = "tag", style = "background:#e8f4fd; color:#0c5460;",
+                s$name,
+                tags$span(style="cursor:pointer; margin-left:4px; color:#999;",
+                  `data-sid`=s$id, `data-pid`=p$id, class="duty-card-rm-staff", "×"))
+            })
+          } else list(tags$span(style="color:#ccc; font-size:11px;", "暂无人员"))
+          tags$div(class = "duty-card", style = "margin-bottom:6px;",
+            tags$div(class = "duty-card-head", onclick = sprintf("var d=document.getElementById('dpos-%d');d.style.display=d.style.display==='none'?'block':'none';", p$id),
+              style = "cursor:pointer; display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:#f8f4ff; border-radius:6px;",
+              tags$b(p$name, style="font-size:13px;"),
+              tags$span(style="font-size:10px; color:#999;", sprintf("%d人", nrow(p_staff)), " ▾")
+            ),
+            tags$div(id = sprintf("dpos-%d", p$id), style = "display:none; padding:8px 10px; border:1px solid #e8ecf1; border-top:none; border-radius:0 0 6px 6px;",
+              if (nchar(p$description[1] %||% "") > 0) tags$div(class="duty-card-fields", style="margin-bottom:6px;", p$description[1]),
+              do.call(tags$div, staff_tags),
+              tags$div(style = "margin-top:6px; display:flex; gap:4px;",
+                tags$button(class="btn btn-xs btn-info duty-card-add-staff", `data-pid`=p$id, "+人员"),
+                tags$button(class="btn btn-xs btn-warning duty-card-edit-btn", `data-type`="position", `data-id`=p$id, "✏"),
+                tags$button(class="btn btn-xs btn-danger duty-card-del-btn", `data-type`="position", `data-id`=p$id, "🗑")
+              )
+            )
+          )
+        })
+      )
     )
-    removeModal()
-    refresh()
-    showNotification(result$message, type = ifelse(result$success, "message", "error"))
   })
 
-  # 删除
-  observeEvent(input$duty_edit_delete, {
-    req(rv$logged_in, rv$duty_edit_type, rv$duty_edit_id)
-    result <- switch(rv$duty_edit_type,
-      "position" = duty_position_delete(rv$duty_edit_id),
-      "staff" = duty_staff_delete(rv$duty_edit_id),
-      "item" = duty_item_delete(rv$duty_edit_id)
+  output$duty_staff_cards <- renderUI({
+    duty_trigger(); req(rv$logged_in)
+    staff <- duty_staff_get_all()
+    matrix <- duty_matrix_get()
+    if (nrow(staff) == 0) return(tags$p(style="color:#999; text-align:center; padding:10px;","暂无人员"))
+    tagList(
+      tags$h5("人员清单", style="margin-top:0;"),
+      tags$div(style="max-height:500px; overflow-y:auto;",
+        lapply(1:nrow(staff), function(i) {
+          s <- staff[i, ]
+          duties <- matrix[matrix$staff_id == s$id, ]
+          duty_tags <- if (nrow(duties) > 0) {
+            lapply(1:nrow(duties), function(j) {
+              d <- duties[j, ]
+              lvl <- d$responsibility_level[1]
+              cls <- switch(lvl, "负责人"="owner","执行"="exec","知晓"="know","")
+              tags$span(class = paste("tag", cls),
+                d$duty_name, "(", lvl, ")",
+                tags$span(style="cursor:pointer; margin-left:2px;", `data-sid`=s$id, `data-pid`=d$position_id, `data-did`=d$duty_item_id, class="duty-card-rm-duty", "×"))
+            })
+          } else list(tags$span(style="color:#ccc; font-size:11px;", "暂无职责"))
+          tags$div(class = "duty-card", style = "margin-bottom:6px;",
+            tags$div(class = "duty-card-head", onclick = sprintf("var d=document.getElementById('dstf-%d');d.style.display=d.style.display==='none'?'block':'none';", s$id),
+              style = "cursor:pointer; display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:#f0f7ff; border-radius:6px;",
+              tags$b(s$name, style="font-size:13px;"),
+              tags$span(style="font-size:10px; color:#999;", s$position_name[1] %||% "未分配", " · ", sprintf("%d职责", nrow(duties)), " ▾")
+            ),
+            tags$div(id = sprintf("dstf-%d", s$id), style = "display:none; padding:8px 10px; border:1px solid #e8ecf1; border-top:none; border-radius:0 0 6px 6px;",
+              tags$div(class="duty-card-fields",
+                tags$div("岗位: ", s$position_name[1] %||% "未分配"),
+                if (nchar(s$department[1] %||% "") > 0) tags$div("部门: ", s$department[1]),
+                if (nchar(s$email[1] %||% "") > 0) tags$div("邮箱: ", s$email[1])
+              ),
+              do.call(tags$div, duty_tags),
+              tags$div(style = "margin-top:6px; display:flex; gap:4px;",
+                tags$button(class="btn btn-xs btn-info duty-card-add-duty", `data-sid`=s$id, "+职责"),
+                tags$button(class="btn btn-xs btn-warning duty-card-edit-btn", `data-type`="staff", `data-id`=s$id, "✏"),
+                tags$button(class="btn btn-xs btn-danger duty-card-del-btn", `data-type`="staff", `data-id`=s$id, "🗑")
+              )
+            )
+          )
+        })
+      )
     )
-    removeModal()
+  })
+
+  output$duty_item_cards <- renderUI({
+    duty_trigger(); req(rv$logged_in)
+    items <- duty_item_get_all()
+    if (nrow(items) == 0) return(tags$p(style="color:#999; text-align:center; padding:10px;","暂无职责项"))
+    matrix <- duty_matrix_get()
+    tagList(
+      tags$h5("职责项清单", style="margin-top:0;"),
+      tags$div(style="max-height:500px; overflow-y:auto;",
+        lapply(1:nrow(items), function(i) {
+          it <- items[i, ]
+          assigned <- matrix[matrix$duty_item_id == it$id, ]
+          assigned_tags <- if (nrow(assigned) > 0) {
+            lapply(1:nrow(assigned), function(j) {
+              a <- assigned[j, ]
+              lvl <- a$responsibility_level[1] %||% "—"
+              cls <- switch(lvl, "负责人"="owner","执行"="exec","知晓"="know","")
+              tags$span(class = paste("tag", cls),
+                a$staff_name, "(", lvl, ")",
+                tags$span(style="cursor:pointer; margin-left:2px;", `data-sid`=a$staff_id, `data-pid`=a$position_id, `data-did`=it$id, class="duty-card-rm-duty", "×"))
+            })
+          } else list(tags$span(style="color:#ccc; font-size:11px;", "未分配"))
+          tags$div(class = "duty-card", style = "margin-bottom:6px;",
+            tags$div(class = "duty-card-head", onclick = sprintf("var d=document.getElementById('ditem-%d');d.style.display=d.style.display==='none'?'block':'none';", it$id),
+              style = "cursor:pointer; display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:#f0faf5; border-radius:6px;",
+              tags$b(it$name, style="font-size:13px;"),
+              tags$span(style="font-size:10px; color:#999;", if(nchar(it$category[1]%||%"")>0) it$category[1] else "", " · ", sprintf("%d人", nrow(assigned)), " ▾")
+            ),
+            tags$div(id = sprintf("ditem-%d", it$id), style = "display:none; padding:8px 10px; border:1px solid #e8ecf1; border-top:none; border-radius:0 0 6px 6px;",
+              if (nchar(it$description[1] %||% "") > 0) tags$div(class="duty-card-fields", style="margin-bottom:6px;", it$description[1]),
+              tags$div(style="margin-top:4px;", do.call(tags$div, assigned_tags)),
+              tags$div(style = "margin-top:6px; display:flex; gap:4px;",
+                tags$button(class="btn btn-xs btn-warning duty-card-edit-btn", `data-type`="item", `data-id`=it$id, "✏"),
+                tags$button(class="btn btn-xs btn-danger duty-card-del-btn", `data-type`="item", `data-id`=it$id, "🗑")
+              )
+            )
+          )
+        })
+      )
+    )
+  })
+
+  ##################
+  # 卡片按钮：添加人员到岗位
+  ##################
+  observeEvent(input$duty_card_add_staff, {
+    req(rv$logged_in)
+    pid <- as.integer(input$duty_card_add_staff)
+    pos <- duty_position_get_all()[duty_position_get_all()$id == pid, ]
+    staff <- duty_staff_get_all()
+    choices <- if (nrow(staff) > 0) stats::setNames(staff$id, paste(staff$name, ifelse(is.na(staff$department) | staff$department=="","",staff$department), sep=ifelse(is.na(staff$department) | staff$department=="",""," / "))) else c()
+    showModal(modalDialog(
+      title = paste("添加人员到", pos$name[1] %||% ""),
+      selectInput("duty_card_add_staff_sel", "选择人员", choices = c("(选择)" = "", choices)),
+      footer = tagList(modalButton("取消"), actionButton("duty_card_add_staff_confirm","确定",class="btn-primary")),
+      size = "s", easyClose = TRUE
+    ))
+    rv$duty_card_pid <- pid
+  })
+  observeEvent(input$duty_card_add_staff_confirm, {
+    req(input$duty_card_add_staff_sel, rv$duty_card_pid)
+    sid <- as.integer(input$duty_card_add_staff_sel)
+    duty_staff_update(sid, position_id = rv$duty_card_pid)
+    removeModal(); refresh()
+  })
+
+  ##################
+  # 卡片按钮：添加职责到人员
+  ##################
+  observeEvent(input$duty_card_add_duty, {
+    req(rv$logged_in)
+    sid <- as.integer(input$duty_card_add_duty)
+    st <- duty_staff_get_all()[duty_staff_get_all()$id == sid, ]
+    if (is.na(st$position_id[1]) || st$position_id[1] == 0) {
+      showNotification("请先将该人员分配岗位", type="warning"); return()
+    }
+    items <- duty_item_get_all()
+    choices <- stats::setNames(items$id, items$name)
+    showModal(modalDialog(
+      title = paste("添加职责到", st$name[1]),
+      selectInput("duty_card_add_duty_item", "选择职责项", choices = c("(选择)" = "", choices)),
+      selectInput("duty_card_add_duty_level", "RBAC级别", choices = c("负责人","执行","知晓")),
+      footer = tagList(modalButton("取消"), actionButton("duty_card_add_duty_confirm","确定",class="btn-primary")),
+      size = "s", easyClose = TRUE
+    ))
+    rv$duty_card_sid <- sid; rv$duty_card_staff_pid <- st$position_id[1]
+  })
+  observeEvent(input$duty_card_add_duty_confirm, {
+    req(input$duty_card_add_duty_item, input$duty_card_add_duty_level, rv$duty_card_sid, rv$duty_card_staff_pid)
+    duty_matrix_set(rv$duty_card_sid, rv$duty_card_staff_pid,
+      as.integer(input$duty_card_add_duty_item), input$duty_card_add_duty_level)
+    removeModal(); refresh()
+  })
+
+  ##################
+  # 卡片按钮：从岗位移除人员 / 从人员移除职责
+  ##################
+  observeEvent(input$duty_card_rm_staff, {
+    req(rv$logged_in)
+    duty_staff_update(as.integer(input$duty_card_rm_staff$sid), position_id = NULL)
     refresh()
-    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+  })
+  observeEvent(input$duty_card_rm_duty, {
+    req(rv$logged_in)
+    duty_matrix_delete(
+      as.integer(input$duty_card_rm_duty$sid),
+      as.integer(input$duty_card_rm_duty$pid),
+      as.integer(input$duty_card_rm_duty$did))
+    refresh()
+  })
+
+  ##################
+  # 卡片按钮：编辑/删除
+  ##################
+  observeEvent(input$duty_card_edit, {
+    req(rv$logged_in)
+    tp <- input$duty_card_edit$type; eid <- as.integer(input$duty_card_edit$id)
+    if (tp == "position") {
+      row <- duty_position_get_all()[duty_position_get_all()$id == eid, ]
+      rv$duty_edit_type <- "position"; rv$duty_edit_id <- eid
+      showModal(modalDialog(title="编辑岗位", size="s",
+        textInput("duty_edit_pos_name","名称",value=row$name[1]),
+        textInput("duty_edit_pos_desc","描述",value=row$description[1] %||% ""),
+        footer=tagList(actionButton("duty_edit_save","保存",class="btn-primary"),
+          actionButton("duty_edit_delete","删除",class="btn-danger"), modalButton("取消")), easyClose=TRUE))
+    } else if (tp == "staff") {
+      row <- duty_staff_get_all()[duty_staff_get_all()$id == eid, ]
+      rv$duty_edit_type <- "staff"; rv$duty_edit_id <- eid
+      pos <- duty_position_get_all()
+      pos_choices <- if (nrow(pos) > 0) stats::setNames(pos$id, pos$name) else c()
+      showModal(modalDialog(title=paste("编辑人员", row$name[1]), size="s",
+        textInput("duty_edit_staff_name","姓名",value=row$name[1]),
+        selectInput("duty_edit_staff_pos","岗位", choices=c("(无)"="", pos_choices), selected=row$position_id[1] %||% ""),
+        textInput("duty_edit_staff_dept","部门",value=row$department[1] %||% ""),
+        textInput("duty_edit_staff_email","邮箱",value=row$email[1] %||% ""),
+        footer=tagList(actionButton("duty_edit_save","保存",class="btn-primary"),
+          actionButton("duty_edit_delete","删除",class="btn-danger"), modalButton("取消")), easyClose=TRUE))
+    } else if (tp == "item") {
+      row <- duty_item_get_all()[duty_item_get_all()$id == eid, ]
+      rv$duty_edit_type <- "item"; rv$duty_edit_id <- eid
+      showModal(modalDialog(title=paste("编辑职责", row$name[1]), size="s",
+        textInput("duty_edit_item_name","名称",value=row$name[1]),
+        textInput("duty_edit_item_cat","分类",value=row$category[1] %||% ""),
+        textInput("duty_edit_item_desc","描述",value=row$description[1] %||% ""),
+        footer=tagList(actionButton("duty_edit_save","保存",class="btn-primary"),
+          actionButton("duty_edit_delete","删除",class="btn-danger"), modalButton("取消")), easyClose=TRUE))
+    }
+  })
+
+  observeEvent(input$duty_card_del, {
+    req(rv$logged_in)
+    tp <- input$duty_card_del$type; did <- as.integer(input$duty_card_del$id)
+    result <- switch(tp,
+      "position" = duty_position_delete(did),
+      "staff" = duty_staff_delete(did),
+      "item" = duty_item_delete(did))
+    refresh(); showNotification(result$message, type=if(result$success)"message" else "error")
   })
 
   ##################

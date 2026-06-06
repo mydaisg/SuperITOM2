@@ -926,6 +926,19 @@ migrate_database <- function() {
       cat("数据库迁移完成：已创建 assets 表\n")
     }
 
+    # 绩效结果评定表
+    if (!"performance_results" %in% tables) {
+      dbExecute(con, "CREATE TABLE performance_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sheet_id INTEGER NOT NULL,
+        employee_id INTEGER NOT NULL,
+        result TEXT,
+        benchmark TEXT,
+        UNIQUE(sheet_id, employee_id)
+      )")
+      cat("数据库迁移完成：已创建 performance_results 表\n")
+    }
+
   }, error = function(e) {
     cat("数据库迁移失败:", e$message, "\n")
   }, finally = {

@@ -131,34 +131,43 @@ note_ui <- function() {
       });
     ")),
     tags$style(HTML("
-      .trello-board { display:flex; gap:14px; overflow-x:auto; padding:10px 0; }
-      .trello-col { flex:1; min-width:320px; background:#ebecf0; border-radius:8px; padding:12px; }
-      .trello-col h4 { margin:0 0 10px; font-size:14px; font-weight:600; padding:4px 8px; border-radius:4px; }
-      .trello-col.pending h4 { background:#fff3cd; color:#856404; }
-      .trello-col.active  h4 { background:#d1ecf1; color:#0c5460; }
-      .trello-col.done    h4 { background:#d4edda; color:#155724; }
-      .note-card { background:white; border-radius:8px; padding:14px; margin-bottom:10px;
-                   cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.12); 
-                   transition:box-shadow 0.15s; }
-      .note-card:hover { box-shadow:0 3px 10px rgba(0,0,0,0.25); }
-      .note-card .note-title { font-size:14px; font-weight:600; margin-bottom:8px; color:#172b4d; }
-      .note-card .note-body { font-size:13px; color:#5e6c84; max-height:400px; overflow-y:auto; 
-                               white-space:pre-wrap; line-height:1.5; }
-      .note-card .note-meta { font-size:11px; color:#999; margin-top:8px; display:flex; align-items:center; gap:8px; }
+      .trello-board { display:flex; gap:12px; overflow-x:auto; padding:6px 0; }
+      .trello-col { flex:1; min-width:320px; border-radius:10px; padding:10px; }
+      .trello-col.pending { background:#f8f4ff; }
+      .trello-col.active  { background:#f0f7ff; }
+      .trello-col.done    { background:#f0faf5; }
+      .trello-col h4 { margin:0 0 8px; font-size:13px; font-weight:700; padding:6px 10px; border-radius:6px;
+                        letter-spacing:0.5px; display:flex; align-items:center; gap:6px; }
+      .trello-col.pending h4 { background:#ede2ff; color:#6c3bbf; }
+      .trello-col.active  h4 { background:#d6ebff; color:#2563eb; }
+      .trello-col.done    h4 { background:#c7f0d8; color:#0d7d3a; }
+      .note-card { background:white; border-radius:10px; padding:12px 14px; margin-bottom:8px;
+                   cursor:pointer; border:1px solid #e8ecf1; 
+                   transition:all 0.15s ease; position:relative; }
+      .note-card:hover { border-color:#c8d4e0; box-shadow:0 2px 8px rgba(0,0,0,0.08); transform:translateY(-1px); }
+      .note-card .note-title { font-size:13px; font-weight:700; margin-bottom:6px; color:#1a2236;
+                                display:flex; align-items:center; gap:4px; }
+      .note-card .note-body { font-size:12px; color:#596780; max-height:400px; overflow-y:auto;
+                               white-space:pre-wrap; line-height:1.55; }
+      .note-card .note-meta { font-size:10px; color:#a0aec0; margin-top:6px; display:flex; align-items:center; gap:8px; }
       .note-card .note-actions { margin-top:6px; display:flex; gap:4px; }
       .note-card .note-actions button { font-size:10px; padding:2px 6px; }
-      .note-flag { color:#ccc; font-size:16px; cursor:pointer; text-decoration:none; margin-right:2px; }
-      .note-flag.active { color:#d9534f; }
-      .note-importance { color:#d9534f; font-size:14px; cursor:pointer; user-select:none; }
+      .note-flag { color:#cbd5e0; font-size:16px; cursor:pointer; text-decoration:none; margin-right:2px; }
+      .note-flag.active { color:#e53e3e; }
+      .note-importance { color:#e53e3e; font-size:14px; cursor:pointer; user-select:none; }
       .note-importance:hover { opacity:0.7; }
-      .note-importance-empty { color:#ccc; font-size:14px; cursor:pointer; user-select:none; }
-      .note-importance-empty:hover { color:#d9534f; }
-      .note-due-overdue { color:#d9534f; font-weight:bold; }
+      .note-importance-empty { color:#cbd5e0; font-size:14px; cursor:pointer; user-select:none; }
+      .note-importance-empty:hover { color:#e53e3e; }
+      .note-due-overdue { color:#e53e3e; font-weight:bold; }
       .comment-status-badge { font-size:10px; padding:1px 6px; border-radius:10px; margin-left:6px; white-space:nowrap; }
-      .note-pin-icon { font-size:14px; cursor:pointer; margin-right:4px; opacity:0.3; transition:opacity 0.2s; }
-      .note-pin-icon:hover { opacity:0.8; }
+      .note-pin-icon { font-size:14px; cursor:pointer; margin-right:4px; opacity:0.25; transition:opacity 0.2s; }
+      .note-pin-icon:hover { opacity:0.7; }
       .note-pin-icon.pinned { opacity:1; }
-      .note-card-pinned { border:2px solid #ffd700; background:#fffdf0; }
+      .note-card-pinned { border-color:#f0c929; background:#fffef5; }
+      .note-stat-box { text-align:center; border-radius:8px; padding:8px 6px; background:white; border:1px solid #e8ecf1; }
+      .note-stat-box:hover { box-shadow:0 1px 4px rgba(0,0,0,0.06); }
+      .note-stat-box .stat-num { font-size:22px; font-weight:800; line-height:1.2; }
+      .note-stat-box .stat-lbl { font-size:10px; color:#8899aa; margin-top:2px; }
     ")),
     fluidPage(
       # 看板（含统计栏 + 创建表单 + 待处理分页）

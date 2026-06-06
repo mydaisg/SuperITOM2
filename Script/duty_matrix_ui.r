@@ -1,4 +1,4 @@
-# 岗职模块 UI - 岗位职责矩阵
+# 岗职模块 UI - 岗位职责矩阵 + 卡片清单
 
 duty_matrix_ui <- function() {
   tagList(
@@ -11,16 +11,32 @@ duty_matrix_ui <- function() {
           did: $(this).data('did')
         }, {priority:'event'});
       });
-      $(document).on('click','.duty-edit-btn',function(e){
+      // 卡片按钮
+      $(document).on('click','.duty-card-add-staff',function(e){
         e.stopPropagation();
-        var t=$(this).data('table'), id=$(this).data('id'), row=$(this).data('row');
-        Shiny.setInputValue('duty_edit_click',{table:t,id:id,row:row},{priority:'event'});
+        Shiny.setInputValue('duty_card_add_staff',$(this).data('pid'),{priority:'event'});
       });
-      $(document).on('click','.duty-del-btn',function(e){
+      $(document).on('click','.duty-card-add-duty',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('duty_card_add_duty',$(this).data('sid'),{priority:'event'});
+      });
+      $(document).on('click','.duty-card-edit-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('duty_card_edit',{type:$(this).data('type'),id:$(this).data('id')},{priority:'event'});
+      });
+      $(document).on('click','.duty-card-del-btn',function(e){
         e.stopPropagation();
         if(!confirm('确定删除？')) return;
-        var t=$(this).data('table'), id=$(this).data('id');
-        Shiny.setInputValue('duty_del_click',{table:t,id:id},{priority:'event'});
+        Shiny.setInputValue('duty_card_del',{type:$(this).data('type'),id:$(this).data('id')},{priority:'event'});
+      });
+      $(document).on('click','.duty-card-rm-staff',function(e){
+        e.stopPropagation();
+        if(!confirm('从岗位移除该人员？')) return;
+        Shiny.setInputValue('duty_card_rm_staff',{sid:$(this).data('sid'),pid:$(this).data('pid')},{priority:'event'});
+      });
+      $(document).on('click','.duty-card-rm-duty',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('duty_card_rm_duty',{sid:$(this).data('sid'),pid:$(this).data('pid'),did:$(this).data('did')},{priority:'event'});
       });
     ")),
     tags$style(HTML("
@@ -33,65 +49,58 @@ duty_matrix_ui <- function() {
       .duty-cell.know  { background:#fff3cd; color:#856404; }
       .duty-cell.empty { background:#f8f9fa; color:#ccc; }
       .duty-cell.empty:hover { color:#999; }
+      .duty-card { background:white; border-radius:8px; padding:12px; margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,0.12); }
+      .duty-card h5 { margin:0 0 8px; display:flex; justify-content:space-between; align-items:center; }
+      .duty-card .card-actions { display:flex; gap:4px; }
+      .duty-card .tag { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; margin:2px 2px 2px 0; }
+      .duty-card .tag.owner { background:#d4edda; color:#155724; }
+      .duty-card .tag.exec { background:#d1ecf1; color:#0c5460; }
+      .duty-card .tag.know { background:#fff3cd; color:#856404; }
+      .duty-card-fields { font-size:12px; color:#666; }
     ")),
     fluidPage(
       div(style="text-align:center;margin:8px 0 4px;",
         h2(icon("sitemap")," 岗职矩阵"),
         p(style="color:#7f8c8d;font-size:12px;","岗位职责矩阵 | 人员×职责项 | RBAC级别")
-
       ),
       hr(),
       h4(icon("table")," 岗位职责矩阵", style="margin-bottom:10px;"),
       div(style="overflow-x:auto;", uiOutput("duty_matrix_view")),
       hr(),
-      h4(icon("list")," 岗位 · 人员 · 职责项清单"),
-      fluidRow(
-        column(4,
-          wellPanel(
-            h5("岗位清单"), DTOutput("duty_position_table")
-          )
-        ),
-        column(4,
-          wellPanel(
-            h5("人员清单"), DTOutput("duty_staff_table")
-          )
-        ),
-        column(4,
-          wellPanel(
-            h5("职责项清单"), DTOutput("duty_item_table")
+      # 卡片清单区
+      h4(icon("id-card")," 岗位 · 人员 · 职责项", style="margin-bottom:10px;"),
+      # 创建区（紧凑内联）
+      wellPanel(
+        h5(icon("plus-circle")," 快速创建"),
+        fluidRow(
+          column(4,
+            tags$div(style="display:flex; gap:4px;",
+              textInput("duty_new_position_name", NULL, placeholder = "岗位名称"),
+              actionButton("duty_add_position", NULL, icon=icon("plus"), class="btn-primary btn-sm", style="margin-top:22px;")
+            )
+          ),
+          column(4,
+            tags$div(style="display:flex; gap:4px;",
+              textInput("duty_new_staff_name", NULL, placeholder = "人员姓名"),
+              selectInput("duty_new_staff_position", NULL, choices = c("(无)" = ""), width="120px"),
+              actionButton("duty_add_staff", NULL, icon=icon("plus"), class="btn-primary btn-sm", style="margin-top:22px;")
+            )
+          ),
+          column(4,
+            tags$div(style="display:flex; gap:4px;",
+              textInput("duty_new_item_name", NULL, placeholder = "职责名称"),
+              textInput("duty_new_item_cat", NULL, placeholder = "分类", width="100px"),
+              actionButton("duty_add_item", NULL, icon=icon("plus"), class="btn-primary btn-sm", style="margin-top:22px;")
+            )
           )
         )
       ),
-      # 创建区
-      wellPanel(
-        h4(icon("plus-circle")," 创建"),
-        tabsetPanel(
-          tabPanel("岗位",
-            fluidRow(
-              column(4, textInput("duty_new_position_name","岗位名称")),
-              column(6, textInput("duty_new_position_desc","描述")),
-              column(2, div(style="margin-top:20px;",actionButton("duty_add_position","添加岗位",class="btn-primary btn-sm")))
-            )
-          ),
-          tabPanel("人员",
-            fluidRow(
-              column(3, textInput("duty_new_staff_name","姓名")),
-              column(3, selectInput("duty_new_staff_position","所属岗位", choices = c("(无)" = ""))),
-              column(2, textInput("duty_new_staff_dept","部门")),
-              column(2, textInput("duty_new_staff_email","邮箱")),
-              column(2, div(style="margin-top:20px;",actionButton("duty_add_staff","添加人员",class="btn-primary btn-sm")))
-            )
-          ),
-          tabPanel("职责项",
-            fluidRow(
-              column(3, textInput("duty_new_item_name","职责名称")),
-              column(3, textInput("duty_new_item_cat","分类")),
-              column(4, textInput("duty_new_item_desc","描述")),
-              column(2, div(style="margin-top:20px;",actionButton("duty_add_item","添加职责",class="btn-primary btn-sm")))
-            )
-          )
-        )
+      fluidRow(
+        column(4, uiOutput("duty_position_cards")),
+        column(4, uiOutput("duty_staff_cards")),
+        column(4, uiOutput("duty_item_cards"))
       )
     )
   )
 }
+

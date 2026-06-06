@@ -64,7 +64,9 @@ performance_server <- function(input, output, session, rv) {
         column(2, div(style = "margin-top:25px;",
           actionButton("perf_refresh_btn", "刷新", class = "btn-info btn-sm"))),
         column(2, div(style = "margin-top:25px;",
-          actionButton("perf_manual_add", "手工添加", class = "btn-success btn-sm", icon = icon("plus"))))
+          actionButton("perf_manual_add", "手工添加", class = "btn-success btn-sm", icon = icon("plus")))),
+        column(2, div(style = "margin-top:25px;",
+          actionButton("perf_rate", "结果评定", class = "btn-warning btn-sm", icon = icon("clipboard-check"))))
       ),
       # 已添加员工标签行
       div(style = "margin:10px 0 5px;",
@@ -163,8 +165,7 @@ performance_server <- function(input, output, session, rv) {
         pageLength = 50, dom = 't', scrollX = TRUE,
         columnDefs = list(
           list(targets = 2, visible = FALSE),      # 隐藏 code
-          list(targets = "_all", className = "dt-center"),  # 全部居中
-          list(targets = 1, className = "dt-left")          # 指标列左对齐
+          list(targets = "_all", className = "dt-center")   # 全部居中
         ),
         rowCallback = DT::JS("function(row, data) {
           var ind = data[1];
@@ -173,7 +174,7 @@ performance_server <- function(input, output, session, rv) {
           if (fullMap.hasOwnProperty(ind)) {
             var full = fullMap[ind];
             $('td', row).each(function(i) {
-              var v = parseInt($(this).text());
+              var v = parseFloat($(this).text());
               if (!isNaN(v) && i > 1) {
                 var isLast = (i === $('td', row).length - 1);
                 if (!isLast) {
@@ -183,6 +184,23 @@ performance_server <- function(input, output, session, rv) {
                 }
               }
             });
+          }
+          // 总分/绩效得分行：加粗
+          if (ind === '总分' || ind.indexOf('绩效得分') >= 0) {
+            $('td', row).css({'background-color':'#f0f4f8','font-weight':'bold'});
+          }
+          // 人工填写行：浅灰背景
+          if (ind === '绩效结果' || ind === '标杆' || ind === '签字确认') {
+            $('td', row).css('background-color','#fafafa');
+          }
+          // 对齐：指标列（第2列，索引1）
+          var summaryRows = ['A类得分（30分）','B类得分（40分）','C类得分（30分）','总分','绩效得分（10分）','绩效结果','标杆','签字确认'];
+          if (summaryRows.indexOf(ind) >= 0) {
+            // 汇总行：居右
+            $('td:eq(1)', row).css('text-align', 'right');
+          } else {
+            // 指标行：居左
+            $('td:eq(1)', row).css('text-align', 'left');
           }
         }")
       )) %>%
@@ -201,16 +219,9 @@ performance_server <- function(input, output, session, rv) {
 
       DT::datatable(summary_data, escape = FALSE, rownames = FALSE,
       options = list(pageLength = 20, dom = 't', columnDefs = list(
-        list(targets = c(1,2,3,4,5), className = "dt-center")
+        list(targets = c(1,2,3,4,5,6,7,8), className = "dt-center")
       ))) %>%
-      DT::formatStyle("B类得分（40分）",
-        backgroundColor = DT::styleInterval(39, c("#f8d7da", "#d4edda")),
-        color = DT::styleInterval(39, c("#721c24", "#155724"))) %>%
-      DT::formatStyle("C类得分（30分）",
-        backgroundColor = DT::styleInterval(29, c("#f8d7da", "#d4edda")),
-        color = DT::styleInterval(29, c("#721c24", "#155724"))) %>%
-      DT::formatStyle("总分", fontWeight = "bold", backgroundColor = "#fff3cd") %>%
-      DT::formatStyle("绩效总分", fontWeight = "bold", backgroundColor = "#fff3cd")
+      DT::formatStyle("绩效得分（10分）", fontWeight = "bold", backgroundColor = "#fff3cd")
   })
 
   ##################
@@ -540,5 +551,83 @@ performance_server <- function(input, output, session, rv) {
     perf_work_item_remove(as.integer(input$perf_unmatch_click))
     perf_refresh(perf_refresh() + 1)
     showNotification("已移除", type = "message")
+  })
+
+  ##################
+  # 结果评定
+  ##################
+  observeEvent(input$perf_rate, {
+    req(rv$logged_in)
+    sheet <- current_sheet(); req(sheet)
+    emps <- perf_sheet_employee_list(sheet$id[1])
+    if (nrow(emps) == 0) { showNotification("请先添加员工", type="warning"); return() }
+    ratings <- tryCatch(perf_result_get(sheet$id[1]), error=function(e) data.frame())
+    emp_labels <- sapply(seq_len(nrow(emps)), function(i) {
+      nm <- ifelse(is.na(emps$display_name[i])|emps$display_name[i]=="", emps$username[i], emps$display_name[i])
+      nm
+    })
+    showModal(modalDialog(
+      title = "绩效结果评定", size = "m",
+      tags$table(class = "table table-condensed", style = "width:100%;",
+        tags$thead(tags$tr(tags$th("员工"),tags$th("绩效结果"),tags$th("标杆"))),
+        tags$tbody(
+          lapply(seq_len(nrow(emps)), function(i) {
+            e <- emps[i, ]; nm <- emp_labels[i]
+            r <- if (nrow(ratings)>0) ratings[ratings$employee_id==e$employee_id,] else data.frame()
+            prev_res <- if(nrow(r)>0) r$result[1]%||%"" else ""
+            prev_bm  <- if(nrow(r)>0) r$benchmark[1]%||%"" else ""
+            tags$tr(
+              tags$td(nm, style="width:30%; font-weight:600;"),
+              tags$td(style="width:35%;",
+                tags$select(class="form-control input-sm perf-rate-result",
+                  `data-eid` = as.character(e$employee_id),
+                  tags$option(value="", selected=if(prev_res=="")NA else NULL, "—"),
+                  tags$option(value="优秀", selected=if(prev_res=="优秀")NA else NULL, "优秀"),
+                  tags$option(value="合格", selected=if(prev_res=="合格")NA else NULL, "合格"),
+                  tags$option(value="不合格", selected=if(prev_res=="不合格")NA else NULL, "不合格"))),
+              tags$td(style="width:35%;",
+                tags$select(class="form-control input-sm perf-rate-benchmark",
+                  `data-eid` = as.character(e$employee_id),
+                  tags$option(value="", selected=if(prev_bm=="")NA else NULL, "—"),
+                  tags$option(value="突出贡献", selected=if(prev_bm=="突出贡献")NA else NULL, "突出贡献")))
+            )
+          })
+        )
+      ),
+      footer = tagList(
+        modalButton("取消"),
+        tags$button(class = "btn btn-warning", onclick = "
+          var data = [];
+          $('.perf-rate-result').each(function(){
+            data.push({eid:$(this).data('eid'), type:'result', val:$(this).val()});
+          });
+          $('.perf-rate-benchmark').each(function(){
+            data.push({eid:$(this).data('eid'), type:'benchmark', val:$(this).val()});
+          });
+          Shiny.setInputValue('perf_rate_data', JSON.stringify(data), {priority:'event'});
+        ", "保存")
+      ), easyClose = TRUE
+    ))
+  })
+
+  observeEvent(input$perf_rate_data, {
+    req(rv$logged_in)
+    sheet <- current_sheet(); req(sheet)
+    data <- jsonlite::fromJSON(input$perf_rate_data)
+    saved <- 0
+    # 聚合: eid -> {result, benchmark}
+    by_eid <- split(data, data$eid)
+    for (eid in names(by_eid)) {
+      entries <- by_eid[[eid]]
+      res <- entries$val[entries$type == "result"]
+      bm  <- entries$val[entries$type == "benchmark"]
+      perf_result_set(sheet$id[1], as.integer(eid),
+        result = if(length(res)>0 && res!="") res else NULL,
+        benchmark = if(length(bm)>0 && bm!="") bm else NULL)
+      saved <- saved + 1
+    }
+    removeModal()
+    perf_refresh(perf_refresh() + 1)
+    showNotification(sprintf("已保存 %d 位员工的评定结果", saved), type = "message")
   })
 }

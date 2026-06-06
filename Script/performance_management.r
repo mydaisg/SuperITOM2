@@ -241,7 +241,8 @@ perf_calculate <- function(sheet_id, employees = NULL) {
     }
     scores["A"] <- max(0, 30 - a_deduct)
     total <- sum(scores)
-    c(scores, 总分 = total, 绩效总分 = min(total, 100), ind_scores)
+    perf_10 <- round(min(total, 100) / 10, 1)
+    c(scores, 总分 = total, 绩效得分 = perf_10, ind_scores)
   }
 
   result <- list(); row_idx <- 1
@@ -293,15 +294,42 @@ perf_calculate <- function(sheet_id, employees = NULL) {
   score_row[["计分"]] <- total_sum
   result[[row_idx]] <- score_row; row_idx <- row_idx + 1
 
-  # 绩效总分行（封顶100）
-  perf_row <- list(category = "", indicator = "绩效总分", code = "")
+  # 绩效得分行（10分制）
+  perf_row <- list(category = "", indicator = "绩效得分（10分）", code = "")
   perf_sum <- 0
   for (ei in seq_len(nrow(emp_list))) {
     nm <- emp_list$employee_name[ei]; sc <- calc_score(emp_list$employee_id[ei])
-    v <- sc["绩效总分"]; perf_row[[nm]] <- v; perf_sum <- perf_sum + v
+    v <- sc["绩效得分"]; perf_row[[nm]] <- v; perf_sum <- perf_sum + v
   }
   perf_row[["计分"]] <- perf_sum
-  result[[row_idx]] <- perf_row
+  result[[row_idx]] <- perf_row; row_idx <- row_idx + 1
+
+  # 绩效结果行（从评定表读取）
+  ratings <- tryCatch(perf_result_get(sheet_id), error=function(e) data.frame())
+  result_row <- list(category = "", indicator = "绩效结果", code = "")
+  for (ei in seq_len(nrow(emp_list))) {
+    eid <- emp_list$employee_id[ei]; nm <- emp_list$employee_name[ei]
+    r <- if (nrow(ratings) > 0) ratings[ratings$employee_id == eid, ] else data.frame()
+    result_row[[nm]] <- if (nrow(r) > 0) r$result[1] %||% "" else ""
+  }
+  result_row[["计分"]] <- ""
+  result[[row_idx]] <- result_row; row_idx <- row_idx + 1
+
+  # 标杆行（从评定表读取）
+  benchmark_row <- list(category = "", indicator = "标杆", code = "")
+  for (ei in seq_len(nrow(emp_list))) {
+    eid <- emp_list$employee_id[ei]; nm <- emp_list$employee_name[ei]
+    r <- if (nrow(ratings) > 0) ratings[ratings$employee_id == eid, ] else data.frame()
+    benchmark_row[[nm]] <- if (nrow(r) > 0) r$benchmark[1] %||% "" else ""
+  }
+  benchmark_row[["计分"]] <- ""
+  result[[row_idx]] <- benchmark_row; row_idx <- row_idx + 1
+
+  # 签字确认行（留空）
+  sign_row <- list(category = "", indicator = "签字确认", code = "")
+  for (ei in seq_len(nrow(emp_list))) sign_row[[emp_list$employee_name[ei]]] <- ""
+  sign_row[["计分"]] <- ""
+  result[[row_idx]] <- sign_row
 
   matrix_df <- do.call(rbind, lapply(result, function(r) as.data.frame(r, stringsAsFactors = FALSE)))
 
@@ -316,7 +344,10 @@ perf_calculate <- function(sheet_id, employees = NULL) {
       "B类得分（40分）" = sc["B"],
       "C类得分（30分）" = sc["C"],
       "总分" = sc["总分"],
-      "绩效总分" = sc["绩效总分"],
+      "绩效得分（10分）" = sc["绩效得分"],
+      "绩效结果" = "",
+      "标杆" = "",
+      "签字确认" = "",
       stringsAsFactors = FALSE, check.names = FALSE)
   }
   summary_df <- do.call(rbind, summary_rows)
@@ -397,4 +428,27 @@ perf_active_employees <- function(year_month) {
     }
     users
   }, finally = { db_disconnect(con) })
+}
+
+##################
+# 结果评定
+##################
+perf_result_get <- function(sheet_id) {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, sprintf("SELECT * FROM performance_results WHERE sheet_id=%d", as.integer(sheet_id)))
+  }, finally = { db_disconnect(con) })
+}
+
+perf_result_set <- function(sheet_id, employee_id, result = NULL, benchmark = NULL) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf(
+      "INSERT OR REPLACE INTO performance_results (sheet_id, employee_id, result, benchmark) VALUES (%d,%d,%s,%s)",
+      as.integer(sheet_id), as.integer(employee_id),
+      ifelse(is.null(result)||result=="","NULL",sprintf("'%s'",result)),
+      ifelse(is.null(benchmark)||benchmark=="","NULL",sprintf("'%s'",benchmark))))
+    list(success=TRUE, message="已保存")
+  }, error=function(e) list(success=FALSE, message=e$message),
+  finally={ db_disconnect(con) })
 }
