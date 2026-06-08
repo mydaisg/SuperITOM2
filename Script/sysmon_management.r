@@ -85,15 +85,13 @@ sysmon_check_history <- function(host_id, limit=20) {
 ##################
 # 连通性检测
 ##################
-sysmon_ping_check <- function(ip) {
+sysmon_ping_check <- function(ip, count = 1) {
   start <- Sys.time()
   result <- tryCatch({
-    # 用 system2 替代 system，避免 ignore.stderr 在 Windows 上的不可靠行为
-    out <- system2("ping", c("-n", "1", "-w", "3000", ip), stdout=TRUE, stderr=TRUE)
+    out <- suppressWarnings(system2("ping", c("-n", as.character(count), "-w", "3000", ip), stdout=TRUE, stderr=TRUE))
     out <- iconv(out, from="GBK", to="UTF-8", sub="")
     elapsed <- as.integer(as.numeric(difftime(Sys.time(), start, units="secs")) * 1000)
     output_text <- paste(out, collapse=" ")
-    # 成功：匹配英文/中文的 Ping 成功标识
     if (grepl("TTL=|Reply from|来自|回复|bytes=|time[<=>]|time=", output_text, ignore.case=TRUE)) {
       list(success=TRUE, ms=elapsed, detail="Ping OK")
     } else if (grepl("无法访问|超时|timed out|unreachable|could not find|找不到主机|请求超时", output_text, ignore.case=TRUE)) {
@@ -103,6 +101,23 @@ sysmon_ping_check <- function(ip) {
     }
   }, error=function(e) list(success=FALSE, ms=0, detail=paste("Ping失败:", e$message)))
   result
+}
+
+##################
+# 智能检测：1包→失败则连续3次×4包（无阻塞，只记一次记录）
+##################
+sysmon_smart_check <- function(ip) {
+  check1 <- sysmon_ping_check(ip, count = 1)
+  if (check1$success) {
+    return(list(success = TRUE, ms = check1$ms, detail = "1包通过"))
+  }
+  for (retry in 1:3) {
+    check_n <- sysmon_ping_check(ip, count = 4)
+    if (check_n$success) {
+      return(list(success = TRUE, ms = check_n$ms, detail = sprintf("重试%d次(%d包)通过", retry, 4)))
+    }
+  }
+  list(success = FALSE, ms = 0, detail = "4次检测均失败")
 }
 
 sysmon_port_check <- function(ip, port) {

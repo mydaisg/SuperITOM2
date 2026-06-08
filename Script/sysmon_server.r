@@ -104,27 +104,48 @@ sysmon_server <- function(input, output, session, rv) {
     host_id <- as.integer(input$sysmon_check)
     host <- sysmon_host_get(host_id)
     if (is.null(host)) return()
-    check <- sysmon_ping_check(host$ip[1])
+    check <- sysmon_smart_check(host$ip[1])
     status <- ifelse(check$success,"online","offline")
     sysmon_check_log(host_id,"ping",ifelse(check$success,"success","fail"),check$ms,check$detail)
     sysmon_host_update_status(host_id,status,check$ms)
     sysmon_trigger(sysmon_trigger()+1)
-    showNotification(sprintf("%s: %s",host$hostname[1],status),type=ifelse(check$success,"message","warning"))
+    showNotification(sprintf("%s: %s — %s",host$hostname[1],ifelse(check$success,"在线","离线"),check$detail),
+      type=ifelse(check$success,"message","warning"))
   })
 
   observeEvent(input$sysmon_check_all_btn, {
     req(rv$logged_in)
     hosts <- sysmon_host_list()
     if (nrow(hosts)==0) { showNotification("无主机可检测",type="warning"); return() }
+    online_cnt <- 0; offline_cnt <- 0
     for (i in seq_len(nrow(hosts))) {
       h <- hosts[i,]
-      check <- sysmon_ping_check(h$ip)
+      check <- sysmon_smart_check(h$ip)
       status <- ifelse(check$success,"online","offline")
+      if (check$success) online_cnt <- online_cnt + 1 else offline_cnt <- offline_cnt + 1
       sysmon_check_log(h$id,"ping",ifelse(check$success,"success","fail"),check$ms,check$detail)
       sysmon_host_update_status(h$id,status,check$ms)
     }
     sysmon_trigger(sysmon_trigger()+1)
-    showNotification(sprintf("检测完成: %d 台",nrow(hosts)),type="message")
+    showNotification(sprintf("检测完成: %d在线 %d离线",online_cnt,offline_cnt),type="message")
+  })
+
+  # 自动定时检测（isolate 防止死循环）
+  sysmon_timer_skip <- TRUE
+  observe({
+    req(rv$logged_in)
+    invalidateLater(300000)
+    if (sysmon_timer_skip) { sysmon_timer_skip <<- FALSE; return() }
+    hosts <- tryCatch(sysmon_host_list(), error=function(e) data.frame())
+    if (nrow(hosts) == 0) return()
+    for (i in seq_len(nrow(hosts))) {
+      h <- hosts[i,]
+      check <- sysmon_smart_check(h$ip)
+      status <- ifelse(check$success,"online","offline")
+      sysmon_check_log(h$id,"ping",ifelse(check$success,"success","fail"),check$ms,check$detail)
+      sysmon_host_update_status(h$id,status,check$ms)
+    }
+    isolate(sysmon_trigger(sysmon_trigger() + 1))
   })
 
   observeEvent(input$sysmon_history, {
@@ -132,11 +153,22 @@ sysmon_server <- function(input, output, session, rv) {
     host <- sysmon_host_get(as.integer(input$sysmon_history))
     if (is.null(host)) return()
     logs <- sysmon_check_history(as.integer(input$sysmon_history), 50)
-    log_text <- if (nrow(logs)>0) {
-      paste(apply(logs,1,function(r) sprintf("[%s] %s: %s (%dms)",r["checked_at"],r["check_type"],r["status"],as.integer(r["response_time_ms"]))),collapse="\n")
-    } else "暂无记录"
-    showModal(modalDialog(title=sprintf("历史: %s",host$hostname[1]),
-      tags$pre(log_text,style="font-size:12px;max-height:400px;overflow:auto;"),
+    if (nrow(logs)>0) {
+      log_html <- paste(apply(logs,1,function(r) {
+        st <- r["status"]; detail <- r["detail"] %||% ""
+        clr <- if(st=="success") "#27ae60" else "#e74c3c"
+        sprintf('<div style="padding:2px 0; border-bottom:1px solid #f0f0f0;">
+          <span style="color:#999;font-size:10px;">%s</span>
+          <span style="color:%s;font-weight:bold;margin-left:6px;">●</span>
+          <span style="margin-left:4px;">%s (%dms)</span>
+          <span style="color:#888;font-size:10px;margin-left:6px;">%s</span></div>',
+          substr(r["checked_at"],1,16), clr, r["status"], as.integer(r["response_time_ms"]), detail)
+      }),collapse="\n")
+    } else {
+      log_html <- '<p style="color:#999;">暂无记录</p>'
+    }
+    showModal(modalDialog(title=sprintf("历史: %s — %s",host$hostname[1],host$ip[1]),
+      tags$div(HTML(log_html),style="font-size:12px;max-height:400px;overflow:auto;"),
       footer=modalButton("关闭"),easyClose=TRUE))
   })
 

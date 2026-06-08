@@ -140,7 +140,7 @@ note_toggle_pin <- function(id) {
       # 检查已置顶数量
       count <- dbGetQuery(con, "SELECT COUNT(*) as cnt FROM notes WHERE pinned = 1")$cnt[1]
       if (count >= 5) return(list(success = FALSE, message = "最多置顶5条"))
-      dbExecute(con, sprintf("UPDATE notes SET pinned = 1 WHERE id = %d", as.integer(id)))
+      dbExecute(con, sprintf("UPDATE notes SET pinned = 1, updated_at = datetime('now','localtime') WHERE id = %d", as.integer(id)))
       list(success = TRUE, message = "已置顶")
     } else {
       dbExecute(con, sprintf("UPDATE notes SET pinned = 0 WHERE id = %d", as.integer(id)))
@@ -204,6 +204,8 @@ note_comment_add <- function(note_id, content, created_by = NULL, parent_id = NU
         ifelse(is.null(created_by),"NULL",as.character(created_by)), pid)
     }
     dbExecute(con, query)
+    # 同步更新记事的 updated_at
+    dbExecute(con, sprintf("UPDATE notes SET updated_at = datetime('now','localtime') WHERE id = %d", as.integer(note_id)))
     id <- dbGetQuery(con, "SELECT last_insert_rowid() as id")$id[1]
     r <- dbGetQuery(con, sprintf(
       "SELECT c.*, u.username as creator_name FROM note_comments c LEFT JOIN users u ON c.created_by = u.id WHERE c.id = %d", id))
@@ -228,6 +230,9 @@ note_comment_mark_status <- function(comment_id, status) {
     } else {
       dbExecute(con, sprintf("UPDATE note_comments SET status = '%s', completed_at = %s WHERE id = %d", status, completed_val, as.integer(comment_id)))
     }
+    # 同步更新记事的 updated_at
+    note_id <- dbGetQuery(con, sprintf("SELECT note_id FROM note_comments WHERE id = %d", as.integer(comment_id)))$note_id[1]
+    if (!is.na(note_id)) dbExecute(con, sprintf("UPDATE notes SET updated_at = datetime('now','localtime') WHERE id = %d", note_id))
     list(success = TRUE, message = paste("已标记为", status))
   }, error = function(e) list(success = FALSE, message = paste("标记失败:", e$message)),
   finally = { db_disconnect(con) })
@@ -267,6 +272,8 @@ note_comment_update <- function(comment_id, content) {
   tryCatch({
     dbExecute(con, sprintf("UPDATE note_comments SET content='%s' WHERE id=%d",
       gsub("'","''",content), as.integer(comment_id)))
+    note_id <- dbGetQuery(con, sprintf("SELECT note_id FROM note_comments WHERE id = %d", as.integer(comment_id)))$note_id[1]
+    if (!is.na(note_id)) dbExecute(con, sprintf("UPDATE notes SET updated_at = datetime('now','localtime') WHERE id = %d", note_id))
     list(success = TRUE, message = "评论已更新")
   }, error = function(e) list(success = FALSE, message = e$message),
   finally = { db_disconnect(con) })
@@ -275,7 +282,9 @@ note_comment_update <- function(comment_id, content) {
 note_comment_delete <- function(comment_id) {
   con <- db_connect()
   tryCatch({
+    note_id <- dbGetQuery(con, sprintf("SELECT note_id FROM note_comments WHERE id = %d", as.integer(comment_id)))$note_id[1]
     dbExecute(con, sprintf("DELETE FROM note_comments WHERE id=%d", as.integer(comment_id)))
+    if (!is.na(note_id)) dbExecute(con, sprintf("UPDATE notes SET updated_at = datetime('now','localtime') WHERE id = %d", note_id))
     list(success = TRUE, message = "评论已删除")
   }, error = function(e) list(success = FALSE, message = e$message),
   finally = { db_disconnect(con) })

@@ -333,11 +333,12 @@ perf_calculate <- function(sheet_id, employees = NULL) {
 
   matrix_df <- do.call(rbind, lapply(result, function(r) as.data.frame(r, stringsAsFactors = FALSE)))
 
-  # ---- 按人头分ABC类统计（复用 calc_score）----
+  # ---- 按人头分ABC类统计（复用 calc_score + 读取评定结果）----
   summary_rows <- list()
   for (ei in seq_len(nrow(emp_list))) {
-    emp_name <- emp_list$employee_name[ei]
-    sc <- calc_score(emp_list$employee_id[ei])
+    emp_name <- emp_list$employee_name[ei]; emp_id <- emp_list$employee_id[ei]
+    sc <- calc_score(emp_id)
+    r <- if (nrow(ratings) > 0) ratings[ratings$employee_id == emp_id, ] else data.frame()
     summary_rows[[ei]] <- data.frame(
       员工 = emp_name,
       "A类得分（30分）" = sc["A"],
@@ -345,8 +346,8 @@ perf_calculate <- function(sheet_id, employees = NULL) {
       "C类得分（30分）" = sc["C"],
       "总分" = sc["总分"],
       "绩效得分（10分）" = sc["绩效得分"],
-      "绩效结果" = "",
-      "标杆" = "",
+      "绩效结果" = if (nrow(r) > 0) r$result[1] %||% "" else "",
+      "标杆" = if (nrow(r) > 0) r$benchmark[1] %||% "" else "",
       "签字确认" = "",
       stringsAsFactors = FALSE, check.names = FALSE)
   }
