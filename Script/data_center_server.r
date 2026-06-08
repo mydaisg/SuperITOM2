@@ -223,5 +223,73 @@ data_center_server <- function(id, rv) {
     navigate_to_tab("日报")
   })
   
+  ##################
+  # 新增模块统计
+  ##################
+  
+  # 资产统计
+  output$ast_total <- renderText({
+    items <- tryCatch(asset_get_all(), error=function(e) data.frame())
+    as.character(nrow(items))
+  })
+  output$ast_active <- renderText({
+    items <- tryCatch(asset_get_all(), error=function(e) data.frame())
+    as.character(sum(items$status == "active", na.rm=TRUE))
+  })
+  output$ast_maint <- renderText({
+    items <- tryCatch(asset_get_all(), error=function(e) data.frame())
+    as.character(sum(items$status == "maintenance", na.rm=TRUE))
+  })
+  
+  # 记事统计
+  output$note_total <- renderText({
+    items <- tryCatch(note_get_all(), error=function(e) data.frame())
+    as.character(nrow(items))
+  })
+  output$note_pending <- renderText({
+    items <- tryCatch(note_get_all(), error=function(e) data.frame())
+    as.character(sum(items$status == "pending", na.rm=TRUE))
+  })
+  output$note_progress <- renderText({
+    items <- tryCatch(note_get_all(), error=function(e) data.frame())
+    as.character(sum(items$status == "in_progress", na.rm=TRUE))
+  })
+  
+  # 岗职统计
+  output$duty_pos <- renderText({
+    items <- tryCatch(duty_position_get_all(), error=function(e) data.frame())
+    as.character(nrow(items))
+  })
+  output$duty_staff <- renderText({
+    items <- tryCatch(duty_staff_get_all(), error=function(e) data.frame())
+    as.character(nrow(items))
+  })
+  output$duty_items <- renderText({
+    items <- tryCatch(duty_item_get_all(), error=function(e) data.frame())
+    as.character(nrow(items))
+  })
+  
+  # 绩效统计
+  output$perf_sheets <- renderText({
+    items <- tryCatch(perf_sheet_list(), error=function(e) data.frame())
+    as.character(nrow(items))
+  })
+  output$perf_emps <- renderText({
+    current <- format(Sys.Date(), "%Y-%m")
+    emps <- tryCatch(perf_active_employees(current), error=function(e) data.frame())
+    as.character(nrow(emps))
+  })
+  output$perf_inds <- renderText({
+    as.character(length(perf_indicators()))
+  })
+  
+  ##################
+  # 新卡片导航
+  ##################
+  observeEvent(input$card_asset, { navigate_to_tab("资产") })
+  observeEvent(input$card_note, { navigate_to_tab("记事") })
+  observeEvent(input$card_duty, { navigate_to_tab("岗职") })
+  observeEvent(input$card_perf, { navigate_to_tab("绩效") })
+  
   })  # moduleServer
 }

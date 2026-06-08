@@ -66,6 +66,22 @@ data_center_ui <- function() {
         .module-daily { border-left: 4px solid #f39c12; }
         .module-daily .module-icon { color: #f39c12; }
         
+        /* 资产模块配色 */
+        .module-asset { border-left: 4px solid #1abc9c; }
+        .module-asset .module-icon { color: #1abc9c; }
+        
+        /* 记事模块配色 */
+        .module-note { border-left: 4px solid #6c3bbf; }
+        .module-note .module-icon { color: #6c3bbf; }
+        
+        /* 岗职模块配色 */
+        .module-duty { border-left: 4px solid #e67e22; }
+        .module-duty .module-icon { color: #e67e22; }
+        
+        /* 绩效模块配色 */
+        .module-perf { border-left: 4px solid #e74c3c; }
+        .module-perf .module-icon { color: #e74c3c; }
+        
         /* 明细表格样式 */
         .detail-section {
           margin-top: 20px;
@@ -178,6 +194,68 @@ data_center_ui <- function() {
               div(class = "stat-item", "总日报数：", span(class = "stat-value", textOutput(ns("dr_total"), inline = TRUE))),
               div(class = "stat-item", "本月日报：", span(class = "stat-value", textOutput(ns("dr_month"), inline = TRUE))),
               div(class = "stat-item", "今日日报：", span(class = "stat-value", textOutput(ns("dr_today"), inline = TRUE)))
+            ),
+            div(class = "view-detail", icon("chevron-right"), " 点击查看明细 →")
+          )
+        ),
+        
+        # 资产模块卡片 ★新增
+        column(4,
+          div(class = "data-module-card module-asset",
+            id = ns("card_asset"),
+            div(class = "module-icon", icon("laptop")),
+            div(class = "module-title", "资产管理"),
+            div(class = "module-stats",
+              div(class = "stat-item", "总资产数：", span(class = "stat-value", textOutput(ns("ast_total"), inline = TRUE))),
+              div(class = "stat-item", "使用中：", span(class = "stat-value", textOutput(ns("ast_active"), inline = TRUE))),
+              div(class = "stat-item", "维护中：", span(class = "stat-value", textOutput(ns("ast_maint"), inline = TRUE)))
+            ),
+            div(class = "view-detail", icon("chevron-right"), " 点击查看明细 →")
+          )
+        )
+      ),
+      
+      fluidRow(
+        # 记事模块卡片 ★新增
+        column(4,
+          div(class = "data-module-card module-note",
+            id = ns("card_note"),
+            div(class = "module-icon", icon("sticky-note")),
+            div(class = "module-title", "记事管理"),
+            div(class = "module-stats",
+              div(class = "stat-item", "总记事数：", span(class = "stat-value", textOutput(ns("note_total"), inline = TRUE))),
+              div(class = "stat-item", "待处理：", span(class = "stat-value", textOutput(ns("note_pending"), inline = TRUE))),
+              div(class = "stat-item", "进行中：", span(class = "stat-value", textOutput(ns("note_progress"), inline = TRUE)))
+            ),
+            div(class = "view-detail", icon("chevron-right"), " 点击查看明细 →")
+          )
+        ),
+        
+        # 岗职模块卡片 ★新增
+        column(4,
+          div(class = "data-module-card module-duty",
+            id = ns("card_duty"),
+            div(class = "module-icon", icon("sitemap")),
+            div(class = "module-title", "岗职矩阵"),
+            div(class = "module-stats",
+              div(class = "stat-item", "岗位数：", span(class = "stat-value", textOutput(ns("duty_pos"), inline = TRUE))),
+              div(class = "stat-item", "人员数：", span(class = "stat-value", textOutput(ns("duty_staff"), inline = TRUE))),
+              div(class = "stat-item", "职责项：", span(class = "stat-value", textOutput(ns("duty_items"), inline = TRUE)))
+            ),
+            div(class = "view-detail", icon("chevron-right"), " 点击查看明细 →")
+          )
+        ),
+        
+        # 绩效模块卡片 ★新增
+        column(4,
+          div(class = "data-module-card module-perf",
+            id = ns("card_perf"),
+            div(class = "module-icon", icon("chart-bar")),
+            div(class = "module-title", "绩效管理"),
+            div(class = "module-stats",
+              div(class = "stat-item", "总月表数：", span(class = "stat-value", textOutput(ns("perf_sheets"), inline = TRUE))),
+              div(class = "stat-item", "当月员工：", span(class = "stat-value", textOutput(ns("perf_emps"), inline = TRUE))),
+              div(class = "stat-item", "指标总数：", span(class = "stat-value", textOutput(ns("perf_inds"), inline = TRUE)))
             ),
             div(class = "view-detail", icon("chevron-right"), " 点击查看明细 →")
           )
