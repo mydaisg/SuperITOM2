@@ -115,6 +115,29 @@ daily_report_get_users <- function() {
   }, error = function(e) { data.frame() }, finally = { db_disconnect(con) })
 }
 
+# 中文大写数字转换（1→一, 10→十, 11→十一, 99→九十九）
+dr_cn_number <- function(n) {
+  if (n <= 0) return(as.character(n))
+  digits <- c("","一","二","三","四","五","六","七","八","九")
+  units  <- c("","十","百","千")
+  if (n < 10) return(digits[n + 1])
+  if (n == 10) return("十")
+  s <- as.character(n)
+  nc <- nchar(s)
+  result <- ""
+  for (i in seq_len(nc)) {
+    d <- as.integer(substr(s, i, i))
+    u <- nc - i + 1  # 1=个位, 2=十位, 3=百位
+    if (d == 0) next
+    if (u == 2 && d == 1) {
+      result <- paste0(result, "十")
+    } else {
+      result <- paste0(result, digits[d + 1], units[u])
+    }
+  }
+  result
+}
+
 # ================================================================
 # UI 定义
 # ================================================================
@@ -373,26 +396,6 @@ daily_report_server <- function(input, output, session, rv) {
       # 记事评论（按记事分组，序号：一/二/三...十一/十二...）
       note_html <- ""
       if (note_count > 0) {
-        # 中文大写数字工具：支持任意正整数
-        to_cn <- function(n) {
-          if (n == 0) return("零")
-          digits <- c("","一","二","三","四","五","六","七","八","九")
-          units  <- c("","十","百","千","万")
-          parts <- integer(0)
-          while (n > 0) { parts <- c(n %% 10, parts); n <- n %/% 10 }
-          if (length(parts) == 1) return(digits[parts[1] + 1])
-          result <- ""
-          for (i in seq_along(parts)) {
-            d <- parts[i]; u <- length(parts) - i + 1
-            if (d == 0) { if (i == length(parts)) result <- paste0(result, ""); next }
-            if (u >= 2 && d == 1 && i == 1) {
-              result <- paste0(result, units[u])
-            } else {
-              result <- paste0(result, digits[d + 1], units[u])
-            }
-          }
-          result
-        }
         note_by_no <- split(user_notes, user_notes$note_no)
         note_items <- ""
         gi <- 0
@@ -401,7 +404,7 @@ daily_report_server <- function(input, output, session, rv) {
           gn_title <- grp$note_title[1] %||% gn; gn_count <- nrow(grp)
           note_items <- paste0(note_items, sprintf(
             '<div style="font-size:12px;font-weight:600;color:#6c3bbf;margin:6px 0 4px;">%s、 📋 %s %s · %d条</div>',
-            to_cn(gi), gn, gn_title, gn_count))
+            dr_cn_number(gi), gn, gn_title, gn_count))
           for (ni in 1:nrow(grp)) {
             nc <- grp[ni, ]
             ct <- if (nchar(nc$content) > 100) paste0(substr(nc$content, 1, 100), "...") else nc$content
@@ -453,7 +456,7 @@ daily_report_server <- function(input, output, session, rv) {
         gi <- 0
         for (gn in names(note_by_no)) {
           gi <- gi + 1; grp <- note_by_no[[gn]]
-          text_report <- paste0(text_report, sprintf("    %s、 %s %s\n", cn_numbers[gi], gn, grp$note_title[1] %||% ""))
+          text_report <- paste0(text_report, sprintf("    %s、 %s %s\n", dr_cn_number(gi), gn, grp$note_title[1] %||% ""))
           for (ni in 1:nrow(grp)) {
             nc <- grp[ni, ]
             text_report <- paste0(text_report, sprintf("      %d、 %s\n", ni, nc$content))
