@@ -88,6 +88,25 @@ daily_report_get_task_logs <- function(report_date) {
   }, finally = { db_disconnect(con) })
 }
 
+# 获取指定日期的记事评论
+daily_report_get_note_comments <- function(report_date) {
+  con <- db_connect()
+  tryCatch({
+    date_str <- as.character(report_date)
+    query <- sprintf("
+      SELECT nc.id, nc.content, nc.created_at, nc.created_by,
+             n.note_no, n.title as note_title,
+             u.username, u.display_name
+      FROM note_comments nc
+      LEFT JOIN notes n ON nc.note_id = n.id
+      LEFT JOIN users u ON nc.created_by = u.id
+      WHERE DATE(nc.created_at) = '%s'
+      ORDER BY nc.created_at DESC
+    ", date_str)
+    dbGetQuery(con, query)
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
 # 获取所有活跃用户列表
 daily_report_get_users <- function() {
   con <- db_connect()
@@ -130,6 +149,7 @@ daily_report_ui <- function() {
       }
       .dr-section-title.wo { border-left-color: #5bc0de; }
       .dr-section-title.task { border-left-color: #5cb85c; }
+      .dr-section-title.note { border-left-color: #6c3bbf; }
       .dr-item {
         padding: 6px 12px; margin-bottom: 4px; background: #f9f9f9;
         border-radius: 4px; font-size: 13px; line-height: 1.6;
@@ -211,6 +231,7 @@ daily_report_server <- function(input, output, session, rv) {
     work_orders <- daily_report_get_work_orders(report_date)
     tasks <- daily_report_get_tasks(report_date)
     task_logs <- daily_report_get_task_logs(report_date)
+    note_comments <- daily_report_get_note_comments(report_date)
     users <- daily_report_get_users()
 
     dr_data(list(
@@ -218,6 +239,7 @@ daily_report_server <- function(input, output, session, rv) {
       work_orders = work_orders,
       tasks = tasks,
       task_logs = task_logs,
+      note_comments = note_comments,
       users = users
     ))
   }, ignoreNULL = TRUE, ignoreInit = FALSE)
@@ -232,6 +254,7 @@ daily_report_server <- function(input, output, session, rv) {
     work_orders <- data$work_orders
     tasks <- data$tasks
     task_logs <- data$task_logs
+    note_comments <- data$note_comments
     user_filter <- input$dr_user_filter
 
     if (nrow(users) == 0) return(div(class = "dr-empty", "暂无用户数据"))
@@ -274,13 +297,20 @@ daily_report_server <- function(input, output, session, rv) {
         user_logs <- task_logs[!is.na(task_logs$creator_name) & task_logs$creator_name == u$username, , drop = FALSE]
       }
 
+      # 该用户的记事评论
+      user_notes <- data.frame()
+      if (nrow(note_comments) > 0) {
+        user_notes <- note_comments[!is.na(note_comments$created_by) & note_comments$created_by == uid, , drop = FALSE]
+      }
+
       # 无数据则跳过
-      if (nrow(user_wo) == 0 && nrow(user_tasks) == 0 && nrow(user_logs) == 0) next
+      if (nrow(user_wo) == 0 && nrow(user_tasks) == 0 && nrow(user_logs) == 0 && nrow(user_notes) == 0) next
 
       # 统计
       wo_count <- nrow(user_wo)
       task_count <- nrow(user_tasks)
       log_count <- nrow(user_logs)
+      note_count <- nrow(user_notes)
 
       # 构建卡片HTML
       wo_html <- ""
@@ -340,15 +370,57 @@ daily_report_server <- function(input, output, session, rv) {
         log_html <- sprintf('<div class="dr-section"><div class="dr-section-title">反馈记录 (%d)</div>%s</div>', log_count, log_items)
       }
 
+      # 记事评论（按记事分组，序号：一/二/三...十一/十二...）
+      note_html <- ""
+      if (note_count > 0) {
+        # 中文大写数字工具：支持任意正整数
+        to_cn <- function(n) {
+          if (n == 0) return("零")
+          digits <- c("","一","二","三","四","五","六","七","八","九")
+          units  <- c("","十","百","千","万")
+          parts <- integer(0)
+          while (n > 0) { parts <- c(n %% 10, parts); n <- n %/% 10 }
+          if (length(parts) == 1) return(digits[parts[1] + 1])
+          result <- ""
+          for (i in seq_along(parts)) {
+            d <- parts[i]; u <- length(parts) - i + 1
+            if (d == 0) { if (i == length(parts)) result <- paste0(result, ""); next }
+            if (u >= 2 && d == 1 && i == 1) {
+              result <- paste0(result, units[u])
+            } else {
+              result <- paste0(result, digits[d + 1], units[u])
+            }
+          }
+          result
+        }
+        note_by_no <- split(user_notes, user_notes$note_no)
+        note_items <- ""
+        gi <- 0
+        for (gn in names(note_by_no)) {
+          gi <- gi + 1; grp <- note_by_no[[gn]]
+          gn_title <- grp$note_title[1] %||% gn; gn_count <- nrow(grp)
+          note_items <- paste0(note_items, sprintf(
+            '<div style="font-size:12px;font-weight:600;color:#6c3bbf;margin:6px 0 4px;">%s、 📋 %s %s · %d条</div>',
+            to_cn(gi), gn, gn_title, gn_count))
+          for (ni in 1:nrow(grp)) {
+            nc <- grp[ni, ]
+            ct <- if (nchar(nc$content) > 100) paste0(substr(nc$content, 1, 100), "...") else nc$content
+            note_items <- paste0(note_items, sprintf(
+              '<div class="dr-item"><span class="dr-badge" style="background:#6c3bbf;">记事</span> %d、 %s</div>', ni, ct))
+          }
+        }
+        note_html <- sprintf('<div class="dr-section"><div class="dr-section-title note">记事评论 (%d)</div>%s</div>', note_count, note_items)
+      }
+
       cards_html <- paste0(cards_html, sprintf(
         '<div class="dr-card">
           <div class="dr-card-header">
             <div class="dr-avatar">%s</div>
             <div class="dr-name">%s</div>
-            <div class="dr-stats">工单 %d | 任务 %d | 反馈 %d</div>
+            <div class="dr-stats">工单 %d | 任务 %d | 记事 %d</div>
           </div>
-          %s%s%s
-        </div>', initial, uname, wo_count, task_count, log_count, wo_html, task_html, log_html))
+          %s%s%s%s
+        </div>', initial, uname, wo_count, task_count, note_count, wo_html, task_html, log_html, note_html))
 
       # 纯文本日报
       text_report <- paste0(text_report, sprintf("【%s】\n", uname))
@@ -373,6 +445,19 @@ daily_report_server <- function(input, output, session, rv) {
           text_report <- paste0(text_report, sprintf("    - [%s] %s %s (%s)\n",
             status_cn, ifelse(is.na(tk$task_no), "", tk$task_no), tk$task_name,
             ifelse(is.na(tk$project_name), "", tk$project_name)))
+        }
+      }
+      if (note_count > 0) {
+        text_report <- paste0(text_report, "  [记事]\n")
+        note_by_no <- split(user_notes, user_notes$note_no)
+        gi <- 0
+        for (gn in names(note_by_no)) {
+          gi <- gi + 1; grp <- note_by_no[[gn]]
+          text_report <- paste0(text_report, sprintf("    %s、 %s %s\n", cn_numbers[gi], gn, grp$note_title[1] %||% ""))
+          for (ni in 1:nrow(grp)) {
+            nc <- grp[ni, ]
+            text_report <- paste0(text_report, sprintf("      %d、 %s\n", ni, nc$content))
+          }
         }
       }
       text_report <- paste0(text_report, "\n")
