@@ -8,6 +8,7 @@ note_server <- function(input, output, session, rv) {
   note_trigger <- reactiveVal(0)
   note_pending_page <- reactiveVal(1)
   note_compact_mode <- reactiveVal(FALSE)  # 简约/详细切换
+  note_search_term <- reactiveVal("")      # 搜索关键词
   
   ##################
   # Trello 看板
@@ -16,8 +17,10 @@ note_server <- function(input, output, session, rv) {
     note_trigger()
     note_pending_page()
     note_compact_mode()
+    note_search_term()
     req(rv$logged_in)
-    items <- note_get_all()
+    kw <- note_search_term()
+    items <- if (is.null(kw) || kw == "") note_get_all() else note_search(kw)
     compact <- note_compact_mode()
     
     build_col <- function(status, label, items, page = NULL, page_size = NULL) {
@@ -92,6 +95,81 @@ note_server <- function(input, output, session, rv) {
       }
       do.call(tagList, cards)
     }
+
+    # 已完成列专用：按月分组，本月展开，往月收缩
+    build_done_col <- function(items) {
+      subset <- items[items$status == "completed", ]
+      if (nrow(subset) == 0) return(tagList())
+      now_month <- format(Sys.Date(), "%Y-%m")
+      subset$month <- substr(subset$updated_at, 1, 7)
+      months <- unique(subset$month)
+      months <- sort(months, decreasing = TRUE)
+
+      month_groups <- lapply(months, function(mo) {
+        grp <- subset[subset$month == mo, ]
+        is_current <- (mo == now_month)
+        grp_id <- paste0("ndone-", gsub("-","",mo))
+
+        header <- tags$div(
+          class = "note-card", style = "padding:8px 12px; background:#e8f5e9; border:1px solid #c8e6c9; cursor:pointer; margin-bottom:6px;",
+          onclick = sprintf("var d=document.getElementById('%s');d.style.display=d.style.display==='none'?'block':'none';", grp_id),
+          tags$div(style = "font-size:12px; font-weight:600; color:#2e7d32;",
+            "📦 记事-已完成-", format(as.Date(paste0(mo,"-01")), "%Y年%m月"),
+            sprintf(" (%d条)", nrow(grp)),
+            if (!is_current) tags$span(" ▸", style = "float:right;") else tags$span(" ▾", style = "float:right;")
+          )
+        )
+
+        body <- tags$div(id = grp_id,
+          style = if (is_current) "display:block;" else "display:none;",
+          lapply(1:nrow(grp), function(i) {
+            r <- grp[i, ]
+            imp_card <- r$importance %||% 0
+            if (imp_card > 0) {
+              flags <- sprintf('<span class="note-importance" onclick="Shiny.setInputValue(\'note_flag_click\', %d, {priority:\'event\'}); event.stopPropagation();" title="点击切换重要性 (当前: %d)">%s</span>',
+                r$id, imp_card, paste(rep("🚩", imp_card), collapse = ""))
+            } else {
+              flags <- sprintf('<span class="note-importance-empty" onclick="Shiny.setInputValue(\'note_flag_click\', %d, {priority:\'event\'}); event.stopPropagation();" title="点击添加重要性">🏳</span>', r$id)
+            }
+            pinned <- r$pinned[1] %||% 0
+            pin_html <- if (pinned > 0) {
+              sprintf('<span class="note-pin-icon pinned" onclick="Shiny.setInputValue(\'note_pin_click\',%d,{priority:\'event\'});event.stopPropagation();" title="已置顶，点击取消">📌</span>', r$id)
+            } else {
+              sprintf('<span class="note-pin-icon" onclick="Shiny.setInputValue(\'note_pin_click\',%d,{priority:\'event\'});event.stopPropagation();" title="点击置顶">📌</span>', r$id)
+            }
+            card_class <- if (pinned > 0) "note-card note-card-pinned" else "note-card"
+            note_no <- r$note_no[1] %||% ""
+            body <- r$content %||% ""
+            body_lines <- strsplit(body, "\n")[[1]]
+            if (length(body_lines) > 1) body <- paste(body_lines[-1], collapse = "\n") else body <- ""
+            if (nchar(body) > 400) body <- paste0(substr(body, 1, 400), "...")
+            last_comment <- note_comment_get_last(r$id)
+            comment_html <- ""
+            if (!is.null(last_comment) && nrow(last_comment) > 0) {
+              ct <- last_comment$content[1]; cn <- last_comment$creator_name[1] %||% "匿名"
+              if (isTRUE(nchar(ct) > 80)) ct <- paste0(substr(ct, 1, 80), "...")
+              comment_html <- as.character(tags$div(style="font-size:11px; color:#5e6c84; margin-top:6px; padding:4px 6px; background:#f4f5f7; border-radius:3px;",
+                tags$span(style="color:#999;", cn, ": "), tags$span(ct)))
+            }
+            tags$div(class = card_class, `data-id` = r$id,
+              tags$div(class = "note-title",
+                HTML(pin_html),
+                if (isTRUE(note_no != "")) tags$span(style="color:#337ab7;font-size:11px;margin-right:6px;", note_no),
+                r$title, " ", HTML(flags)),
+              if (!compact && isTRUE(nchar(body) > 0)) tags$div(class="note-body", body) else "",
+              if (!compact) tags$div(class="note-meta",
+                tags$span(icon("clock"), substr(r$created_at,1,16)),
+                if (!is.na(r$reminder_at) && nchar(r$reminder_at) > 10) tags$span(icon("bell"), substr(r$reminder_at,1,16)),
+                if (!is.na(r$due_at) && nchar(r$due_at) > 10) tags$span(icon("calendar-check"), substr(r$due_at,1,16))
+              ),
+              if (!compact) HTML(comment_html) else ""
+            )
+          })
+        )
+        tagList(header, body)
+      })
+      do.call(tagList, unlist(month_groups, recursive = FALSE))
+    }
     
     # 待处理分页
     pending_count <- sum(items$status == "pending", na.rm = TRUE)
@@ -147,7 +225,19 @@ note_server <- function(input, output, session, rv) {
     
     tagList(
       fluidRow(
-        column(10, stats_bar),
+        column(5, stats_bar),
+        column(5,
+          tags$div(style = "display:flex; gap:6px; align-items:center; justify-content:flex-end;",
+            if (kw != "") tags$span(style = "font-size:10px; color:#999; white-space:nowrap;",
+              sprintf("「%s」%d条", kw, nrow(items))),
+            textInput("note_search_input", NULL, width = "160px",
+              placeholder = "搜索标题/评论…"),
+            actionButton("note_search_btn", NULL, icon = icon("search"),
+              class = "btn-sm btn-primary", style = "flex-shrink:0;"),
+            if (kw != "") actionButton("note_search_clear_btn", NULL, icon = icon("times"),
+              class = "btn-sm btn-default", style = "flex-shrink:0;")
+          )
+        ),
         column(2, div(style = "text-align:right; padding-top:4px;",
           tags$button(class = "btn btn-sm btn-outline-secondary",
             onclick = "Shiny.setInputValue('note_toggle_compact', Math.random(), {priority:'event'})",
@@ -166,7 +256,7 @@ note_server <- function(input, output, session, rv) {
       ),
       tags$div(class = "trello-col done",
         tags$h4(sprintf("✅ 已完成 (%d)", sum(items$status == "completed", na.rm = TRUE))),
-        build_col("completed", "已完成", items)
+        build_done_col(items)
       )
     )
   )  # closes tagList(stats_bar, trello-board)
@@ -191,6 +281,32 @@ note_server <- function(input, output, session, rv) {
     result <- note_toggle_pin(as.integer(input$note_pin_click))
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "warning"), duration = 2)
+  })
+
+  ##################
+  # 搜索（点击按钮触发，输入框在右侧栏）
+  ##################
+  observeEvent(input$note_search_btn, {
+    req(rv$logged_in)
+    kw <- trimws(input$note_search_input %||% "")
+    note_search_term(kw)
+    note_pending_page(1)
+  })
+
+  observeEvent(input$note_search_clear_btn, {
+    req(rv$logged_in)
+    note_search_term("")
+    note_pending_page(1)
+    updateTextInput(session, "note_search_input", value = "")
+  })
+
+  # 恢复搜索框值（renderUI 重渲染会清空 input）
+  observe({
+    req(rv$logged_in)
+    kw <- note_search_term()
+    if (!is.null(kw) && kw != "") {
+      updateTextInput(session, "note_search_input", value = kw)
+    }
   })
 
   ##################

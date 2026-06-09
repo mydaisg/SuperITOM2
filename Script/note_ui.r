@@ -129,6 +129,13 @@ note_ui <- function() {
           Shiny.setInputValue('note_edit_click', msg.note_id, {priority: 'event'});
         }, 150);
       });
+      // 搜索框回车触发搜索
+      $(document).on('keypress', '#note_search_input', function(e) {
+        if (e.which === 13) {
+          e.preventDefault();
+          $('#note_search_btn').click();
+        }
+      });
     ")),
     tags$style(HTML("
       .trello-board { display:flex; gap:12px; overflow-x:auto; padding:6px 0; }
@@ -170,7 +177,7 @@ note_ui <- function() {
       .note-stat-box .stat-lbl { font-size:10px; color:#8899aa; margin-top:2px; }
     ")),
     fluidPage(
-      # 看板（含统计栏 + 创建表单 + 待处理分页）
+      # 看板（含统计栏 + 搜索栏 + 创建表单 + 待处理分页）
       uiOutput("note_board")
     )
   )

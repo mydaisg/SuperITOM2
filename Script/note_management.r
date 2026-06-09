@@ -29,6 +29,42 @@ note_get_all <- function() {
 }
 
 ##################
+# 搜索记事（标题 + 评论内容）
+##################
+note_search <- function(keyword) {
+  if (is.null(keyword) || trimws(keyword) == "") return(note_get_all())
+  con <- db_connect()
+  tryCatch({
+    kw <- trimws(keyword)
+    # 判断精确搜索：用 "" 或 <> 包裹
+    exact <- FALSE
+    if (grepl('^".*"$', kw) || grepl("^<.*>$", kw)) {
+      exact <- TRUE
+      kw <- gsub('^["<]|["<]$', '', kw)  # 去掉首尾引号
+    }
+    safe <- gsub("'", "''", kw)
+    if (exact) {
+      # 精确匹配：标题完全相等 或 评论内容完全相等
+      query <- sprintf("
+        SELECT DISTINCT n.*, u.username as creator_name
+        FROM notes n LEFT JOIN users u ON n.created_by = u.id
+        LEFT JOIN note_comments c ON c.note_id = n.id
+        WHERE n.title = '%s' OR c.content = '%s'
+        ORDER BY n.pinned DESC, n.updated_at DESC", safe, safe)
+    } else {
+      # 模糊搜索：标题 LIKE 或 评论 LIKE 或 正文 LIKE
+      query <- sprintf("
+        SELECT DISTINCT n.*, u.username as creator_name
+        FROM notes n LEFT JOIN users u ON n.created_by = u.id
+        LEFT JOIN note_comments c ON c.note_id = n.id
+        WHERE n.title LIKE '%%%s%%' OR n.content LIKE '%%%s%%' OR c.content LIKE '%%%s%%'
+        ORDER BY n.pinned DESC, n.updated_at DESC", safe, safe, safe)
+    }
+    dbGetQuery(con, query)
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+##################
 # 获取单条
 ##################
 note_get_by_id <- function(id) {
