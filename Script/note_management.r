@@ -164,6 +164,30 @@ note_patch <- function(id, ...) {
 }
 
 ##################
+# 取消提醒 / 延长到期
+##################
+note_cancel_reminder <- function(id) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("UPDATE notes SET reminder_at = NULL, updated_at = datetime('now','localtime') WHERE id = %d", as.integer(id)))
+    list(success = TRUE, message = "已取消提醒")
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+
+note_extend_due <- function(id) {
+  con <- db_connect()
+  tryCatch({
+    note <- dbGetQuery(con, sprintf("SELECT due_at FROM notes WHERE id = %d", as.integer(id)))
+    if (nrow(note) == 0 || is.na(note$due_at[1]) || note$due_at[1] == "") return(list(success=FALSE, message="无到期时间"))
+    new_due <- as.character(as.POSIXct(note$due_at[1]) + 86400)
+    dbExecute(con, sprintf("UPDATE notes SET due_at='%s', updated_at=datetime('now','localtime') WHERE id=%d", new_due, as.integer(id)))
+    list(success = TRUE, message = "到期时间已延长1天")
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+
+##################
 # 置顶切换（最多5条）
 ##################
 note_toggle_pin <- function(id) {
@@ -311,6 +335,18 @@ note_comment_update <- function(comment_id, content) {
     note_id <- dbGetQuery(con, sprintf("SELECT note_id FROM note_comments WHERE id = %d", as.integer(comment_id)))$note_id[1]
     if (!is.na(note_id)) dbExecute(con, sprintf("UPDATE notes SET updated_at = datetime('now','localtime') WHERE id = %d", note_id))
     list(success = TRUE, message = "评论已更新")
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+
+note_comment_update_time <- function(comment_id, created_at) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("UPDATE note_comments SET created_at='%s' WHERE id=%d",
+      created_at, as.integer(comment_id)))
+    note_id <- dbGetQuery(con, sprintf("SELECT note_id FROM note_comments WHERE id = %d", as.integer(comment_id)))$note_id[1]
+    if (!is.na(note_id)) dbExecute(con, sprintf("UPDATE notes SET updated_at = datetime('now','localtime') WHERE id = %d", note_id))
+    list(success = TRUE, message = "评论时间已更新")
   }, error = function(e) list(success = FALSE, message = e$message),
   finally = { db_disconnect(con) })
 }

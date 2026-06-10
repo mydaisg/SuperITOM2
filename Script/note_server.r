@@ -9,6 +9,7 @@ note_server <- function(input, output, session, rv) {
   note_pending_page <- reactiveVal(1)
   note_compact_mode <- reactiveVal(FALSE)  # 简约/详细切换
   note_search_term <- reactiveVal("")      # 搜索关键词
+  note_filter <- reactiveVal("")           # 筛选: "reminder"/"due"/""
   
   ##################
   # Trello 看板
@@ -18,9 +19,17 @@ note_server <- function(input, output, session, rv) {
     note_pending_page()
     note_compact_mode()
     note_search_term()
+    note_filter()
     req(rv$logged_in)
     kw <- note_search_term()
     items <- if (is.null(kw) || kw == "") note_get_all() else note_search(kw)
+    # 筛选：提醒/到期
+    flt <- note_filter()
+    if (flt == "reminder") {
+      items <- items[!is.na(items$reminder_at) & items$reminder_at != "" & as.POSIXct(items$reminder_at) <= Sys.time(), , drop = FALSE]
+    } else if (flt == "due") {
+      items <- items[!is.na(items$due_at) & items$due_at != "" & as.POSIXct(items$due_at) < Sys.time(), , drop = FALSE]
+    }
     compact <- note_compact_mode()
     
     build_col <- function(status, label, items, page = NULL, page_size = NULL) {
@@ -77,6 +86,17 @@ note_server <- function(input, output, session, rv) {
           } else {
             sprintf('<span class="note-pin-icon" onclick="Shiny.setInputValue(\'note_pin_click\',%d,{priority:\'event\'});event.stopPropagation();" title="点击置顶">📌</span>', r$id)
           }
+          # 超时判定：待处理>8h，进行中>4h，时间标红
+          stale_cls <- ""
+          if (status == "pending" || status == "in_progress") {
+            updated_dt <- tryCatch(as.POSIXct(r$updated_at), error = function(e) NULL)
+            if (!is.null(updated_dt)) {
+              hours_ago <- as.numeric(difftime(Sys.time(), updated_dt, units = "hours"))
+              if ((status == "pending" && hours_ago > 8) || (status == "in_progress" && hours_ago > 4)) {
+                stale_cls <- "note-stale-time"
+              }
+            }
+          }
           card_class <- if (pinned > 0) "note-card note-card-pinned" else "note-card"
           cards[[i]] <- tags$div(class = card_class, `data-id` = r$id,
             tags$div(class = "note-title",
@@ -85,9 +105,12 @@ note_server <- function(input, output, session, rv) {
               r$title, " ", HTML(flags)),
             if (!compact && isTRUE(nchar(body) > 0)) tags$div(class = "note-body", body) else "",
             if (!compact) tags$div(class = "note-meta",
-              tags$span(icon("clock"), created),
-              if (isTRUE(reminder != "")) tags$span(icon("bell"), reminder),
-              if (isTRUE(due != "")) tags$span(class = due_cls, icon("calendar-check"), due)
+              tags$span(icon("clock"), `class` = if (stale_cls != "") stale_cls else NULL,
+                tags$span(created, style = if (stale_cls != "") "color:#e53e3e;font-weight:bold;" else "")),
+              if (isTRUE(reminder != "")) tags$span(icon("bell"), reminder,
+                HTML(sprintf('<a class="note-cancel-reminder" href="#" onclick="Shiny.setInputValue(\'note_cancel_reminder_btn\',%d,{priority:\'event\'});return false;" style="color:#999;font-size:10px;margin-left:2px;text-decoration:none;">✕</a>', r$id))),
+              if (isTRUE(due != "")) tags$span(class = due_cls, icon("calendar-check"), due,
+                HTML(sprintf('<a class="note-extend-due" href="#" onclick="Shiny.setInputValue(\'note_extend_due_btn\',%d,{priority:\'event\'});return false;" style="color:#2563eb;font-size:10px;margin-left:2px;text-decoration:none;">+1天</a>', r$id)))
             ),
             if (!compact) HTML(comment_html) else ""
           )
@@ -159,8 +182,10 @@ note_server <- function(input, output, session, rv) {
               if (!compact && isTRUE(nchar(body) > 0)) tags$div(class="note-body", body) else "",
               if (!compact) tags$div(class="note-meta",
                 tags$span(icon("clock"), substr(r$created_at,1,16)),
-                if (!is.na(r$reminder_at) && nchar(r$reminder_at) > 10) tags$span(icon("bell"), substr(r$reminder_at,1,16)),
-                if (!is.na(r$due_at) && nchar(r$due_at) > 10) tags$span(icon("calendar-check"), substr(r$due_at,1,16))
+                if (!is.na(r$reminder_at) && nchar(r$reminder_at) > 10) tags$span(icon("bell"), substr(r$reminder_at,1,16),
+                  HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_cancel_reminder_btn\',%d,{priority:\'event\'});return false;" style="color:#999;font-size:10px;margin-left:2px;text-decoration:none;">✕</a>', r$id))),
+                if (!is.na(r$due_at) && nchar(r$due_at) > 10) tags$span(icon("calendar-check"), substr(r$due_at,1,16),
+                  HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_extend_due_btn\',%d,{priority:\'event\'});return false;" style="color:#2563eb;font-size:10px;margin-left:2px;text-decoration:none;">+1天</a>', r$id)))
               ),
               if (!compact) HTML(comment_html) else ""
             )
@@ -204,9 +229,13 @@ note_server <- function(input, output, session, rv) {
     )
     
     # 统计栏（统一白底+彩色数字）
+    reminder_count <- sum(!is.na(items$reminder_at) & items$reminder_at != "" & as.POSIXct(items$reminder_at) <= Sys.time(), na.rm = TRUE)
+    due_count <- sum(!is.na(items$due_at) & items$due_at != "" & as.POSIXct(items$due_at) < Sys.time(), na.rm = TRUE)
+
     stats_bar <- tags$div(style = "display:flex; gap:10px; margin-bottom:10px;",
-      tags$div(class = "note-stat-box", style = "flex:1;",
-        tags$div(class = "stat-num", style = "color:#4a5568;", nrow(items)),
+      tags$div(class = "note-stat-box", style = "flex:1; cursor:pointer;",
+        onclick = sprintf("Shiny.setInputValue('note_filter_click','%s',{priority:'event'})", if(flt=="") "reminder" else ""),
+        tags$div(class = "stat-num", style = paste("color:#6c3bbf;", if(flt=="reminder") "background:#ede2ff;border-radius:4px;" else ""), nrow(items)),
         tags$div(class = "stat-lbl", "全部")
       ),
       tags$div(class = "note-stat-box", style = "flex:1;",
@@ -220,29 +249,38 @@ note_server <- function(input, output, session, rv) {
       tags$div(class = "note-stat-box", style = "flex:1;",
         tags$div(class = "stat-num", style = "color:#0d7d3a;", sum(items$status == "completed", na.rm = TRUE)),
         tags$div(class = "stat-lbl", "已完成")
+      ),
+      if (reminder_count > 0) tags$div(class = "note-stat-box", style = "flex:1; cursor:pointer;",
+        onclick = sprintf("Shiny.setInputValue('note_filter_click','%s',{priority:'event'})", if(flt=="reminder") "" else "reminder"),
+        tags$div(class = "stat-num", style = paste("color:#f59e0b;", if(flt=="reminder") "background:#fef3c7;border-radius:4px;" else ""),
+          tags$span(class = if(flt!="reminder") "note-blink" else "", reminder_count)),
+        tags$div(class = "stat-lbl", "⏰ 提醒")
+      ),
+      if (due_count > 0) tags$div(class = "note-stat-box", style = "flex:1; cursor:pointer;",
+        onclick = sprintf("Shiny.setInputValue('note_filter_click','%s',{priority:'event'})", if(flt=="due") "" else "due"),
+        tags$div(class = "stat-num", style = paste("color:#e53e3e;", if(flt=="due") "background:#fee2e2;border-radius:4px;" else ""),
+          tags$span(class = if(flt!="due") "note-blink" else "", due_count)),
+        tags$div(class = "stat-lbl", "📅 到期")
       )
     )
     
     tagList(
-      fluidRow(
-        column(5, stats_bar),
-        column(5,
-          tags$div(style = "display:flex; gap:6px; align-items:center; justify-content:flex-end;",
-            if (kw != "") tags$span(style = "font-size:10px; color:#999; white-space:nowrap;",
-              sprintf("「%s」%d条", kw, nrow(items))),
-            textInput("note_search_input", NULL, width = "160px",
-              placeholder = "搜索标题/评论…"),
-            actionButton("note_search_btn", NULL, icon = icon("search"),
-              class = "btn-sm btn-primary", style = "flex-shrink:0;"),
-            if (kw != "") actionButton("note_search_clear_btn", NULL, icon = icon("times"),
-              class = "btn-sm btn-default", style = "flex-shrink:0;")
-          )
+      # 一行：统计 | 搜索 | 简约
+      tags$div(style = "display:flex; gap:10px; align-items:center; margin-bottom:10px;",
+        tags$div(style = "flex:1;", stats_bar),
+        tags$div(style = "display:flex; gap:4px; align-items:center; flex-shrink:0;",
+          if (kw != "") tags$span(style = "font-size:10px; color:#999; white-space:nowrap;",
+            sprintf("「%s」%d条", kw, nrow(items))),
+          textInput("note_search_input", NULL, width = "140px",
+            placeholder = "搜索标题/评论…"),
+          actionButton("note_search_btn", NULL, icon = icon("search"),
+            class = "btn-sm btn-primary"),
+          if (kw != "") actionButton("note_search_clear_btn", NULL, icon = icon("times"),
+            class = "btn-sm btn-default")
         ),
-        column(2, div(style = "text-align:right; padding-top:4px;",
-          tags$button(class = "btn btn-sm btn-outline-secondary",
-            onclick = "Shiny.setInputValue('note_toggle_compact', Math.random(), {priority:'event'})",
-            if (compact) "📋 详细" else "📋 简约")
-        ))
+        tags$button(class = "btn btn-sm btn-outline-secondary",
+          onclick = "Shiny.setInputValue('note_toggle_compact', Math.random(), {priority:'event'})",
+          if (compact) "📋 详细" else "📋 简约")
       ),
       tags$div(class = "trello-board",
         tags$div(class = "trello-col pending",
@@ -274,6 +312,22 @@ note_server <- function(input, output, session, rv) {
   })
 
   ##################
+  # 卡片快捷操作：取消提醒 / 延长到期
+  ##################
+  observeEvent(input$note_cancel_reminder_btn, {
+    req(rv$logged_in)
+    result <- note_cancel_reminder(as.integer(input$note_cancel_reminder_btn))
+    note_trigger(note_trigger() + 1)
+    showNotification(result$message, type = if(result$success) "message" else "warning", duration = 1.5)
+  })
+  observeEvent(input$note_extend_due_btn, {
+    req(rv$logged_in)
+    result <- note_extend_due(as.integer(input$note_extend_due_btn))
+    note_trigger(note_trigger() + 1)
+    showNotification(result$message, type = if(result$success) "message" else "warning", duration = 1.5)
+  })
+
+  ##################
   # 置顶切换
   ##################
   observeEvent(input$note_pin_click, {
@@ -281,6 +335,18 @@ note_server <- function(input, output, session, rv) {
     result <- note_toggle_pin(as.integer(input$note_pin_click))
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "warning"), duration = 2)
+  })
+
+  ##################
+  # 统计栏点击筛选：提醒/到期
+  ##################
+  observeEvent(input$note_filter_click, {
+    req(rv$logged_in)
+    val <- input$note_filter_click
+    if (is.null(val) || val == "" || val == "reminder" || val == "due") {
+      note_filter(val)
+      note_pending_page(1)
+    }
   })
 
   ##################
@@ -359,8 +425,8 @@ note_server <- function(input, output, session, rv) {
     note_no <- note$note_no[1] %||% sprintf("NTE%s%03d", format(Sys.Date(),"%Y%m%d"), note$id[1])
     rem_val <- note$reminder_at[1] %||% ""
     due_val <- note$due_at[1] %||% ""
-    if (nchar(rem_val) > 16) rem_val <- substr(rem_val, 1, 16)
-    if (nchar(due_val) > 16) due_val <- substr(due_val, 1, 16)
+    if (isTRUE(nchar(rem_val) > 16)) rem_val <- substr(rem_val, 1, 16)
+    if (isTRUE(nchar(due_val) > 16)) due_val <- substr(due_val, 1, 16)
     st <- note$status[1]; imp <- note$importance[1] %||% 0
     
     # 小旗：项目风格，直接点击切换
@@ -440,8 +506,11 @@ note_server <- function(input, output, session, rv) {
                 <div class="comment-text" style="font-size:13px; line-height:1.5; white-space:pre-wrap; word-break:break-word;">%s</div>
                 <div class="comment-edit-area" style="display:none; margin-top:4px;">
                   <textarea class="form-control comment-edit-input" style="font-size:13px;" rows="2">%s</textarea>
-                  <button class="btn btn-xs btn-primary comment-save-btn" style="margin-top:4px;" data-id="%d">保存</button>
-                  <button class="btn btn-xs btn-default comment-cancel-btn" style="margin-top:4px;">取消</button>
+                  <div style="margin-top:3px;">
+                    <input class="form-control comment-edit-time" style="font-size:11px; width:150px; display:inline;" value="%s" placeholder="时间">
+                    <button class="btn btn-xs btn-primary comment-save-btn" style="margin-top:2px;" data-id="%d">保存</button>
+                    <button class="btn btn-xs btn-default comment-cancel-btn" style="margin-top:2px;">取消</button>
+                  </div>
                 </div>
                 %s
               </div>
@@ -454,7 +523,7 @@ note_server <- function(input, output, session, rv) {
             %s
           </div>',
           c$id, clr, indent, clr, cn, status_badge, ca,
-          c$content, c$content, c$id,
+          c$content, c$content, ca, c$id,
           sprintf('<div class="comment-reply-form" style="display:none; margin-top:6px;"><textarea class="form-control comment-reply-input" rows="2" placeholder="回复 %s ..." style="font-size:12px;"></textarea><button class="btn btn-xs btn-primary comment-reply-submit" data-id="%d" style="margin-top:3px;">回复</button><button class="btn btn-xs btn-default comment-reply-cancel" style="margin-top:3px;">取消</button></div>', cn, c$id),
           mark_btn, reply_btn, c$id, c$id,
           sub_html
@@ -490,7 +559,12 @@ note_server <- function(input, output, session, rv) {
         tags$div(style="font-size:13px; color:#333; white-space:pre-wrap; line-height:1.6; max-height:150px; overflow-y:auto;",
           note$content[1] %||% ""),
         tags$div(style="font-size:12px; color:#999; margin-top:6px;",
-          sprintf("⏰ 提醒: %s  |  📅 到期: %s", rem_val, due_val))
+          tags$span("⏰ 提醒: ", rem_val,
+            if (isTRUE(rem_val != "")) HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_cancel_reminder_btn\',%d,{priority:\'event\'});return false;" style="color:#e53e3e;font-size:10px;margin-left:4px;text-decoration:none;">✕取消</a>', note$id[1]))),
+          "  |  ",
+          tags$span("📅 到期: ", due_val,
+            if (isTRUE(due_val != "")) HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_extend_due_btn\',%d,{priority:\'event\'});return false;" style="color:#2563eb;font-size:10px;margin-left:4px;text-decoration:none;">+1天</a>', note$id[1])))
+        )
       ),
       
       # 内容编辑（初始隐藏）
@@ -525,7 +599,7 @@ note_server <- function(input, output, session, rv) {
       ) else tags$p(class = "note-no-comment", style = "color:#999; font-size:12px;", "暂无评论"),
       
       # 评论输入 + 按钮
-      textAreaInput("note_comment_new_m", NULL, rows = 2, placeholder = "添加评论..."),
+      textAreaInput("note_comment_new_m", NULL, rows = 8, placeholder = "添加评论...", width = "100%"),
       div(style="text-align:right; margin-top:4px; margin-bottom:8px;",
         actionButton("note_add_comment_m", "发表评论", class = "btn-info btn-sm", icon = icon("comment")))
     )
@@ -624,7 +698,7 @@ note_server <- function(input, output, session, rv) {
       return()
     }
     updateTextAreaInput(session, "note_comment_new_m", value = "")
-    # 构建新评论 HTML 并注入弹窗
+    # 构建新评论 HTML 并注入弹窗（含编辑区+时间输入）
     new_comment_html <- sprintf(
       '<div class="comment-item" id="comment-%d" style="background:#fafafa; padding:8px 12px; margin-bottom:6px; border-radius:6px; border-left:4px solid #3498db;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
@@ -634,6 +708,14 @@ note_server <- function(input, output, session, rv) {
               <span style="margin-left:8px;">%s</span>
             </div>
             <div class="comment-text" style="font-size:13px; line-height:1.5; white-space:pre-wrap; word-break:break-word;">%s</div>
+            <div class="comment-edit-area" style="display:none; margin-top:4px;">
+              <textarea class="form-control comment-edit-input" style="font-size:13px;" rows="2">%s</textarea>
+              <div style="margin-top:3px;">
+                <input class="form-control comment-edit-time" style="font-size:11px; width:150px; display:inline;" value="%s" placeholder="时间">
+                <button class="btn btn-xs btn-primary comment-save-btn" style="margin-top:2px;" data-id="%d">保存</button>
+                <button class="btn btn-xs btn-default comment-cancel-btn" style="margin-top:2px;">取消</button>
+              </div>
+            </div>
           </div>
           <div class="comment-actions" style="display:none; margin-left:8px; white-space:nowrap; flex-shrink:0;">
             <button class="btn btn-xs btn-success comment-done-btn" data-id="%d">✅</button>
@@ -646,6 +728,9 @@ note_server <- function(input, output, session, rv) {
       result$creator_name,
       substr(result$created_at, 1, 16),
       gsub("'", "\\'", input$note_comment_new_m),
+      gsub("'", "\\'", input$note_comment_new_m),
+      substr(result$created_at, 1, 16),
+      result$id,
       result$id, result$id, result$id)
     session$sendCustomMessage(type = "noteInjectComment", message = list(html = new_comment_html, comment_id = result$id))
     note_trigger(note_trigger() + 1)
@@ -676,11 +761,19 @@ note_server <- function(input, output, session, rv) {
   ##################
   observeEvent(input$note_comment_edit, {
     req(rv$logged_in)
-    parts <- strsplit(as.character(input$note_comment_edit), ":")[[1]]
+    parts <- strsplit(as.character(input$note_comment_edit), ":::")[[1]]
+    if (length(parts) < 2) return()
     cid <- as.integer(parts[1])
-    result <- note_comment_update(cid, parts[2])
+    content <- parts[2]
+    time <- if (length(parts) >= 3 && trimws(parts[3]) != "") trimws(parts[3]) else NULL
+    result1 <- note_comment_update(cid, content)
+    if (!is.null(time) && result1$success) {
+      note_comment_update_time(cid, time)
+    }
     note_trigger(note_trigger() + 1)
-    showNotification(result$message, type = "message", duration = 1.5)
+    removeModal()
+    session$sendCustomMessage("noteReopenModal", list(note_id = rv$note_edit_id))
+    showNotification(result1$message, type = "message", duration = 1.5)
   })
 
   observeEvent(input$note_comment_delete, {

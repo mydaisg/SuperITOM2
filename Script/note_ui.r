@@ -90,12 +90,13 @@ note_ui <- function() {
         $item.find('.comment-text').show();
         $item.find('.comment-edit-area').hide();
       });
-      // 评论保存
+      // 评论保存（含时间）
       $(document).on('click','.comment-save-btn',function(e){
         e.stopPropagation();
         var id = $(this).data('id');
         var text = $(this).closest('.comment-item').find('.comment-edit-input').val();
-        Shiny.setInputValue('note_comment_edit', id+':'+text, {priority:'event'});
+        var time = $(this).closest('.comment-item').find('.comment-edit-time').val();
+        Shiny.setInputValue('note_comment_edit', id+':::'+text+':::'+time, {priority:'event'});
       });
       // 评论删除
       $(document).on('click','.comment-del-btn',function(e){
@@ -167,6 +168,8 @@ note_ui <- function() {
       .note-importance-empty:hover { color:#e53e3e; }
       .note-due-overdue { color:#e53e3e; font-weight:bold; }
       .comment-status-badge { font-size:10px; padding:1px 6px; border-radius:10px; margin-left:6px; white-space:nowrap; }
+      @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+      .note-blink { animation: blink 1.2s ease-in-out infinite; }
       .note-pin-icon { font-size:14px; cursor:pointer; margin-right:4px; opacity:0.25; transition:opacity 0.2s; }
       .note-pin-icon:hover { opacity:0.7; }
       .note-pin-icon.pinned { opacity:1; }
