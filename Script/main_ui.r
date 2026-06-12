@@ -259,7 +259,7 @@ main_ui <- function() {
             br(),
             fluidRow(
               column(3, selectInput("insp_my_status_filter", "任务状态", choices = NULL)),
-              column(2, div(style = "margin-top: 20px;", actionButton("insp_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+              column(2, div(style = "margin-top: 20px;", actionButton("insp_my_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
             ),
             DTOutput("insp_my_task_table")
           ),
@@ -269,7 +269,7 @@ main_ui <- function() {
             fluidRow(
               column(2, selectInput("insp_plan_status_filter", "计划状态", choices = NULL)),
               column(3, div(style = "margin-top: 20px;", actionButton("insp_create_plan", "创建计划", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;"))),
-              column(2, div(style = "margin-top: 20px;", actionButton("insp_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+              column(2, div(style = "margin-top: 20px;", actionButton("insp_plan_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
             ),
             DTOutput("inspection_plan_table"),
             br(),

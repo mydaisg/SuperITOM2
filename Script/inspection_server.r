@@ -1455,7 +1455,10 @@ inspection_server <- function(input, output, session, rv) {
   })
   
   # 刷新按钮
-  observeEvent(input$insp_refresh, {
+  observeEvent(input$insp_my_refresh, {
+    rv$inspection_refresh_trigger <- rv$inspection_refresh_trigger + 1
+  })
+  observeEvent(input$insp_plan_refresh, {
     rv$inspection_refresh_trigger <- rv$inspection_refresh_trigger + 1
   })
   
