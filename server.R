@@ -15,6 +15,8 @@ source("Script/inspection_management.r") # 巡检管理模块（数据层）
 source("Script/inspection_server.r")    # 巡检管理模块（服务端）
 source("Script/login_ui.r")         # 登录界面定义
 source("Script/data_center_server.r")   # 数据中心模块（数据归集）
+source("Script/integration_management.r") # 集成模块数据层
+source("Script/integration_server.r")     # 集成模块服务端
 source("Script/process_engine.r")       # 流程引擎核心（定义 %||% 等工具函数，network_test.r 依赖）
 source("Script/github_autosubmit.r") # GitHub自动提交功能
 source("Script/std_computer.r")        # 标准化模块
@@ -1863,7 +1865,10 @@ server <- function(input, output, session) {
 
   # 数据中心模块逻辑（数据归集）
   data_center_server("data_center", rv)
-
+  
+  # 集成模块逻辑
+  integration_server(input, output, session, rv)
+  
   # 巡检模块逻辑
   inspection_server(input, output, session, rv)
 

@@ -31,6 +31,7 @@ source("Script/daily_report.r")
 
 # 加载数据中心模块（数据归集）
 source("Script/data_center_ui.r")
+source("Script/integration_ui.r")
 
 # 加载流程模块
 source("Script/process_ui.r")
@@ -659,6 +660,13 @@ main_ui <- function() {
       )
     ),
     
+    # 集成标签页
+    tabPanel(
+      "集成",
+      icon = icon("plug"),
+      integration_ui()
+    ),
+
     # 数据中心标签页（数据归集）
     tabPanel(
       "数据",

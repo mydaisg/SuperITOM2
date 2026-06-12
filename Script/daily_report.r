@@ -88,11 +88,12 @@ daily_report_get_task_logs <- function(report_date) {
   }, finally = { db_disconnect(con) })
 }
 
-# 获取指定日期的记事评论
+# 获取指定日期的记事评论（含跨天连续性：当天评论的所有祖先+后代）
 daily_report_get_note_comments <- function(report_date) {
   con <- db_connect()
   tryCatch({
     date_str <- as.character(report_date)
+    # 第一步：当天的评论
     query <- sprintf("
       SELECT nc.id, nc.content, nc.created_at, nc.created_by,
              nc.parent_id,
@@ -102,9 +103,59 @@ daily_report_get_note_comments <- function(report_date) {
       LEFT JOIN notes n ON nc.note_id = n.id
       LEFT JOIN users u ON nc.created_by = u.id
       WHERE DATE(nc.created_at) = '%s'
-      ORDER BY nc.created_at ASC
     ", date_str)
-    dbGetQuery(con, query)
+    today <- dbGetQuery(con, query)
+
+    if (nrow(today) == 0) return(data.frame())
+
+    # 第二步：当天评论的所有父级（祖先链）
+    parent_ids <- unique(today$parent_id[!is.na(today$parent_id) & today$parent_id > 0])
+    ancestors <- data.frame()
+    while (length(parent_ids) > 0) {
+      ids_str <- paste(parent_ids, collapse=",")
+      a <- dbGetQuery(con, sprintf("
+        SELECT nc.id, nc.content, nc.created_at, nc.created_by, nc.parent_id,
+               n.note_no, n.title as note_title,
+               u.username, u.display_name
+        FROM note_comments nc
+        LEFT JOIN notes n ON nc.note_id = n.id
+        LEFT JOIN users u ON nc.created_by = u.id
+        WHERE nc.id IN (%s)
+      ", ids_str))
+      if (nrow(a) > 0) {
+        ancestors <- rbind(ancestors, a)
+        grand_ids <- unique(a$parent_id[!is.na(a$parent_id) & a$parent_id > 0])
+        parent_ids <- setdiff(grand_ids, c(ancestors$id, today$id))
+      } else break
+    }
+
+    # 第三步：当天评论的所有子级（后代）
+    today_ids <- today$id
+    children <- data.frame()
+    while (length(today_ids) > 0) {
+      ids_str <- paste(today_ids, collapse=",")
+      ch <- dbGetQuery(con, sprintf("
+        SELECT nc.id, nc.content, nc.created_at, nc.created_by, nc.parent_id,
+               n.note_no, n.title as note_title,
+               u.username, u.display_name
+        FROM note_comments nc
+        LEFT JOIN notes n ON nc.note_id = n.id
+        LEFT JOIN users u ON nc.created_by = u.id
+        WHERE nc.parent_id IN (%s)
+      ", ids_str))
+      if (nrow(ch) > 0) {
+        children <- rbind(children, ch)
+        today_ids <- setdiff(ch$id, c(children$id, today$id))
+      } else break
+    }
+
+    # 合并去重，按时间排序
+    result <- today
+    if (nrow(ancestors) > 0) result <- rbind(result, ancestors)
+    if (nrow(children) > 0) result <- rbind(result, children)
+    result <- result[!duplicated(result$id), ]
+    result <- result[order(result$created_at), ]
+    result
   }, error = function(e) data.frame(), finally = { db_disconnect(con) })
 }
 

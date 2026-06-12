@@ -425,7 +425,142 @@ network_test_server <- function(input, output, session) {
     results
   }
 
-  # 逐条执行队列中的任务
+  # 后台进程句柄（callr::r_bg 异步执行，不阻塞UI）
+  nt_bg_job <- reactiveVal(NULL)
+
+  # 在后台R进程中执行的完整任务函数
+  .run_task <- function(task) {
+    Sys.setlocale("LC_CTYPE", "Chinese")
+    switch(task$type,
+      "system" = {
+        out <- tryCatch({
+          result <- system(task$cmd, intern = TRUE, ignore.stderr = TRUE)
+          if (length(result) == 0) "(无输出)" else {
+            result <- iconv(result, from = "GBK", to = "UTF-8", sub = "")
+            paste(result, collapse = "\n")
+          }
+        }, error = function(e) paste("执行失败:", e$message))
+        paste0(sprintf("\n== %s ==\n$ %s\n\n", task$label, task$cmd), out, "\n")
+      },
+      "port" = {
+        header <- sprintf("\n== 文件服务器 %s - 端口 %s ==\n\n", task$ip, task$port)
+        out <- tryCatch({
+          con <- suppressWarnings(socketConnection(host = task$ip, port = as.integer(task$port), open = "r+b", blocking = TRUE, timeout = 3))
+          close(con)
+          paste0("ComputerName     : ", task$ip, "\nRemoteAddress    : ", task$ip, "\nRemotePort       : ", task$port, "\nTcpTestSucceeded : TRUE")
+        }, error = function(e) {
+          err_msg <- iconv(e$message, from = "GBK", to = "UTF-8", sub = "")
+          paste0("ComputerName     : ", task$ip, "\nRemoteAddress    : ", task$ip, "\nRemotePort       : ", task$port, "\nTcpTestSucceeded : FALSE\nError            : ", err_msg)
+        })
+        paste0(header, out, "\n")
+      },
+      "ping" = {
+        header <- sprintf("\n== 文件服务器 %s - Ping ==\n\n", task$ip)
+        out <- tryCatch({
+          result <- system(sprintf("ping -n %d %s", as.integer(task$count), task$ip), intern = TRUE, ignore.stderr = TRUE)
+          if (length(result) == 0) "(无输出)" else {
+            result <- iconv(result, from = "GBK", to = "UTF-8", sub = "")
+            paste(result, collapse = "\n")
+          }
+        }, error = function(e) paste("执行失败:", e$message))
+        paste0(header, out, "\n")
+      },
+      "email_mx" = {
+        header <- sprintf("\n== MX记录查询 - %s ==\n\n", task$domain)
+        out <- system(sprintf("nslookup -type=mx %s", task$domain), intern = TRUE, ignore.stderr = TRUE)
+        out <- iconv(out, from = "GBK", to = "UTF-8", sub = "")
+        paste0(header, paste(out, collapse = "\n"), "\n")
+      },
+      "email_a" = {
+        domain <- task$domain
+        subdomains <- c("mail", "smtp", "pop", "imap", paste0("mail.", domain))
+        results <- ""
+        mx_result <- system(sprintf("nslookup -type=mx %s", domain), intern = TRUE, ignore.stderr = TRUE)
+        mx_result <- iconv(mx_result, from = "GBK", to = "UTF-8", sub = "")
+        mx_lines <- mx_result[grepl("mail exchanger", mx_result, ignore.case = TRUE)]
+        mx_targets <- trimws(gsub(".*= ", "", mx_lines))
+        if (length(mx_targets) > 0) {
+          results <- paste0(results, sprintf("MX目标服务器:\n%s\n\n", paste(mx_targets, collapse = "\n")))
+          for (mt in mx_targets) {
+            parts <- trimws(strsplit(mt, " ")[[1]])
+            mx_host <- parts[length(parts)]
+            label <- sprintf("A记录 - MX目标: %s", mx_host)
+            a_result <- system(sprintf("nslookup %s", mx_host), intern = TRUE, ignore.stderr = TRUE)
+            a_result <- iconv(a_result, from = "GBK", to = "UTF-8", sub = "")
+            results <- paste0(results, sprintf("== %s ==\n$ nslookup %s\n\n", label, mx_host), paste(a_result, collapse = "\n"), "\n\n")
+          }
+        }
+        for (sd in subdomains) {
+          if (sd == paste0("mail.", domain)) next
+          label <- sprintf("A记录 - 子域: %s.%s", sd, domain)
+          a_result <- system(sprintf("nslookup %s.%s", sd, domain), intern = TRUE, ignore.stderr = TRUE)
+          a_result <- iconv(a_result, from = "GBK", to = "UTF-8", sub = "")
+          results <- paste0(results, sprintf("== %s ==\n$ nslookup %s.%s\n\n", label, sd, domain), paste(a_result, collapse = "\n"), "\n\n")
+        }
+        results
+      },
+      "email_ptr" = {
+        domain <- task$domain
+        header <- sprintf("\n== PTR反向解析 - %s ==\n\n", domain)
+        mx_result <- system(sprintf("nslookup -type=mx %s", domain), intern = TRUE, ignore.stderr = TRUE)
+        mx_result <- iconv(mx_result, from = "GBK", to = "UTF-8", sub = "")
+        mx_lines <- mx_result[grepl("mail exchanger", mx_result, ignore.case = TRUE)]
+        mx_targets <- trimws(gsub(".*= ", "", mx_lines))
+        if (length(mx_targets) == 0) return(paste0(header, "未能获取MX记录\n"))
+        results <- ""
+        for (mt in mx_targets) {
+          parts <- trimws(strsplit(mt, " ")[[1]]); mx_host <- parts[length(parts)]
+          ip_result <- system(sprintf("nslookup %s", mx_host), intern = TRUE, ignore.stderr = TRUE)
+          ip_result <- iconv(ip_result, from = "GBK", to = "UTF-8", sub = "")
+          ip_lines <- ip_result[grepl("Address", ip_result, ignore.case = TRUE) & !grepl("#", ip_result)]
+          ips <- unique(unlist(regmatches(ip_lines, gregexpr("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}", ip_lines))))
+          results <- paste0(results, sprintf("MX: %s\n", mx_host))
+          for (ip in ips) {
+            ptr <- system(sprintf("nslookup %s", ip), intern = TRUE, ignore.stderr = TRUE)
+            ptr <- iconv(ptr, from = "GBK", to = "UTF-8", sub = "")
+            ptr_name_lines <- ptr[grepl("name\\s*=", ptr, ignore.case = TRUE) | grepl("名称", ptr)]
+            if (length(ptr_name_lines) > 0) {
+              pname <- trimws(gsub(".*name\\s*=\\s*|.*名称\\s*:\\s*", "", ptr_name_lines[1], ignore.case = TRUE))
+              match <- if (grepl(gsub("\\.$", "", domain), pname, ignore.case = TRUE)) " \u2713 匹配" else " \u2717 不匹配"
+              results <- paste0(results, sprintf("  %-15s \u2192 %s%s\n", ip, pname, match))
+            } else {
+              results <- paste0(results, sprintf("  %-15s \u2192 (无PTR记录)\n", ip))
+            }
+          }
+        }
+        paste0(header, results, "--- PTR解析完成 ---\n")
+      },
+      "email_txt" = {
+        header <- sprintf("\n== %s - %s ==\n\n", task$label_prefix, task$query)
+        out <- system(sprintf("nslookup -type=txt %s", task$query), intern = TRUE, ignore.stderr = TRUE)
+        out <- iconv(out, from = "GBK", to = "UTF-8", sub = "")
+        out <- paste(out, collapse = "\n")
+        txt_match <- regmatches(out, gregexpr('"([^"]+)"', out))[[1]]
+        txt_vals <- gsub('"', '', txt_match)
+        if (length(txt_vals) > 0) out <- paste0(out, "\n--- 解析结果 ---\n", paste(txt_vals, collapse = "\n"))
+        paste0(header, out, "\n")
+      },
+      "email_mailport" = {
+        port_map <- list(smtp = c(25, 465, 587), pop3 = c(110, 995), imap = c(143, 993))
+        ports <- port_map[[task$protocol]] %||% c(25, 465, 587)
+        proto_name <- toupper(task$protocol)
+        results <- ""
+        for (p in ports) {
+          header <- sprintf("\n== %s端口测试 - %s:%d ==\n\n", proto_name, task$domain, p)
+          res <- tryCatch({
+            con <- suppressWarnings(socketConnection(host = task$domain, port = p, open = "r+b", blocking = TRUE, timeout = 5))
+            close(con)
+            sprintf("Port %-4d : OPEN", p)
+          }, error = function(e) sprintf("Port %-4d : CLOSED (%s)", p, substr(iconv(e$message, from = "GBK", to = "UTF-8", sub = ""), 1, 40)))
+          results <- paste0(results, header, res, "\n")
+        }
+        results
+      },
+      paste("未知任务类型:", task$type)
+    )
+  }
+
+  # 逐条执行队列中的任务（异步：每任务独立R进程，UI不阻塞）
   observe({
     if (!nt_running()) return()
     queue <- nt_queue()
@@ -440,24 +575,24 @@ network_test_server <- function(input, output, session) {
       return()
     }
 
-    task <- queue[[1]]
-    remaining <- queue[-1]
-    nt_queue(remaining)
-
-    result_text <- switch(task$type,
-      "system" = nt_exec_system(task$label, task$cmd),
-      "port" = nt_exec_port_test(task$ip, task$port),
-      "ping" = nt_exec_ping(task$ip, task$count),
-      "email_mx" = nt_exec_mx(task$domain),
-      "email_a" = nt_exec_a_record(task$domain),
-      "email_ptr" = nt_exec_ptr(task$domain),
-      "email_txt" = nt_exec_txt(task$query, task$label_prefix),
-      "email_mailport" = nt_exec_mail_ports(task$domain, task$protocol),
-      paste("未知任务类型:", task$type)
-    )
-    nt_result(paste0(nt_result(), result_text))
-
-    invalidateLater(50, session)
+    bg <- nt_bg_job()
+    if (is.null(bg)) {
+      # 启动后台进程执行第一个任务
+      task <- queue[[1]]
+      bg <- callr::r_bg(.run_task, args = list(task = task))
+      nt_bg_job(bg)
+      invalidateLater(200)
+    } else if (bg$is_alive()) {
+      # 后台还在跑，等200ms再检查
+      invalidateLater(200)
+    } else {
+      # 后台完成，收割结果
+      result_text <- tryCatch(suppressWarnings(bg$get_result()), error = function(e) paste("后台执行失败:", e$message))
+      nt_result(paste0(nt_result(), result_text))
+      nt_bg_job(NULL)
+      nt_queue(queue[-1])  # 移出已完成的任务
+      invalidateLater(50)
+    }
   })
 
   # 显示累计结果（带颜色）

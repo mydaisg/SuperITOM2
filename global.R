@@ -939,6 +939,22 @@ migrate_database <- function() {
       cat("数据库迁移完成：已创建 performance_results 表\n")
     }
 
+    # 集成模块表
+    if (!"integrations" %in% tables) {
+      dbExecute(con, "CREATE TABLE integrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        base_url TEXT,
+        auth_header TEXT,
+        auth_value TEXT,
+        method TEXT DEFAULT 'POST',
+        description TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 integrations 表\n")
+    }
+
   }, error = function(e) {
     cat("数据库迁移失败:", e$message, "\n")
   }, finally = {
