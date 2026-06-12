@@ -299,7 +299,7 @@ daily_report_server <- function(input, output, session, rv) {
   dr_data <- reactiveVal(NULL)
 
   # 生成日报
-  observeEvent(list(input$dr_refresh, input$dr_date, input$dr_user_filter), {
+  observeEvent(list(input$dr_refresh, input$dr_date, input$dr_user_filter, rv$daily_report_refresh), {
     req(rv$logged_in, input$dr_date)
 
     report_date <- input$dr_date

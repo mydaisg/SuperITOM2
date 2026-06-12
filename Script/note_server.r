@@ -368,8 +368,9 @@ note_server <- function(input, output, session, rv) {
     updateTextInput(session, "note_search_input", value = "")
   })
 
-  # 恢复搜索框值（renderUI 重渲染会清空 input）
+  # 恢复搜索框值（renderUI 重渲染会清空 input，需要同时响应 note_trigger 和 search_term 变化）
   observe({
+    note_trigger()
     req(rv$logged_in)
     kw <- note_search_term()
     if (!is.null(kw) && kw != "") {
@@ -516,7 +517,7 @@ note_server <- function(input, output, session, rv) {
                 </div>
                 %s
               </div>
-              <div class="comment-actions" style="display:none; margin-left:8px; white-space:nowrap; flex-shrink:0;">
+              <div class="comment-actions" style="margin-left:8px; white-space:nowrap; flex-shrink:0;">
                 %s%s
                 <button class="btn btn-xs btn-info comment-edit-btn" data-id="%d">✏</button>
                 <button class="btn btn-xs btn-danger comment-del-btn" data-id="%d">🗑</button>
@@ -543,15 +544,23 @@ note_server <- function(input, output, session, rv) {
     }
     
     modal_body <- tagList(
-      # 编号 + 小旗
-      tags$div(style="background:#f5f5f5; padding:10px; border-radius:6px; margin-bottom:10px;",
-        tags$div(style="display:flex; justify-content:space-between; align-items:center;",
-          tags$div(
+      # 编号 + 状态/时间 + 小旗 + 阅读/关闭（同行）
+      tags$div(style="background:#f5f5f5; padding:8px 10px; border-radius:6px; margin-bottom:10px;",
+        tags$div(style="display:flex; justify-content:space-between; align-items:center; flex-wrap:nowrap;",
+          tags$div(style="display:flex; align-items:center; gap:12px; flex-wrap:nowrap; white-space:nowrap; overflow:hidden;",
             tags$b(style="color:#337ab7; font-size:15px;", note_no),
-            tags$span(style="font-size:12px; color:#999; margin-left:10px;",
-              sprintf("状态: %s | 创建: %s", st, substr(note$created_at[1] %||% "", 1, 16)))
+            tags$span(style="font-size:12px; color:#999;",
+              sprintf("状态: %s | 创建: %s", st, substr(note$created_at[1] %||% "", 1, 16))),
+            tags$span(style="font-size:12px; color:#999;",
+              "⏰ 提醒: ", rem_val,
+              if (isTRUE(rem_val != "")) HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_cancel_reminder_btn\',%d,{priority:\'event\'});return false;" style="color:#e53e3e;font-size:10px;margin-left:2px;text-decoration:none;">✕</a>', note$id[1]))),
+            tags$span(style="font-size:12px; color:#999;",
+              "📅 到期: ", due_val,
+              if (isTRUE(due_val != "")) HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_extend_due_btn\',%d,{priority:\'event\'});return false;" style="color:#2563eb;font-size:10px;margin-left:2px;text-decoration:none;">Ext 1D</a>', note$id[1])))
           ),
-          HTML(flags_html)
+          tags$div(style="display:flex; align-items:center; gap:6px; flex-shrink:0;",
+            HTML(flags_html)
+          )
         )
       ),
       
@@ -559,14 +568,7 @@ note_server <- function(input, output, session, rv) {
       tags$div(id = "note_content_ro", style="display:none;",
         tags$div(style="font-size:15px; font-weight:bold; margin-bottom:6px;", note$title[1]),
         tags$div(style="font-size:13px; color:#333; white-space:pre-wrap; line-height:1.6; max-height:150px; overflow-y:auto;",
-          note$content[1] %||% ""),
-        tags$div(style="font-size:12px; color:#999; margin-top:6px;",
-          tags$span("⏰ 提醒: ", rem_val,
-            if (isTRUE(rem_val != "")) HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_cancel_reminder_btn\',%d,{priority:\'event\'});return false;" style="color:#e53e3e;font-size:10px;margin-left:4px;text-decoration:none;">✕取消</a>', note$id[1]))),
-          "  |  ",
-          tags$span("📅 到期: ", due_val,
-            if (isTRUE(due_val != "")) HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_extend_due_btn\',%d,{priority:\'event\'});return false;" style="color:#2563eb;font-size:10px;margin-left:4px;text-decoration:none;">Ext 1D</a>', note$id[1])))
-        )
+          note$content[1] %||% "")
       ),
       
       # 内容编辑（默认可见）
@@ -586,20 +588,15 @@ note_server <- function(input, output, session, rv) {
       
       tags$hr(),
       
-      # 评论标题 + 模式切换 + 排序
+      # 评论标题 + 排序
       tags$div(style = "display:flex; justify-content:space-between; align-items:center;",
         tags$h5("💬 评论", style = "margin:0;"),
-        tags$div(style="display:flex; gap:4px;",
-          tags$button(id="note_read_mode_toggle", class="btn btn-xs btn-default",
-            onclick="var ro=$('#note_content_ro');var ed=$('#note_content_ed');var btn=$('#note_read_mode_toggle');var ca=$('.comment-actions');var ta=$('#note_comment_new_m');var ab=$('#note_add_comment_m');if(ed.is(':visible')){ed.hide();ro.show();btn.text('📓 编辑');ca.hide();ta.hide();ab.hide();$('#note_toggle_edit').hide();$('#note_cancel_edit').show();$('#note_do_save').show();}else{ro.hide();ed.show();btn.text('📖 阅读');ca.show();ta.show();ab.show();$('#note_toggle_edit').show();$('#note_cancel_edit').hide();$('#note_do_save').hide();}",
-            "📖 阅读"),
-          if (nchar(comment_html) > 0) tags$button(
-            id = "note_comment_sort_btn",
-            class = "btn btn-xs btn-default",
-            onclick = "var $list=$('.note-comment-list');var $btn=$('#note_comment_sort_btn');if($btn.text().indexOf('最早')>=0){$list.append($list.children().get().reverse());$btn.html('🔽 最新在前');}else{$list.prepend($list.children().get().reverse());$btn.html('🔼 最早在前');}",
-            "🔼 最早在前"
-          ) else ""
-        )
+        if (nchar(comment_html) > 0) tags$button(
+          id = "note_comment_sort_btn",
+          class = "btn btn-xs btn-default",
+          onclick = "var $list=$('.note-comment-list');var $btn=$('#note_comment_sort_btn');if($btn.text().indexOf('最早')>=0){$list.append($list.children().get().reverse());$btn.html('🔽 最新在前');}else{$list.prepend($list.children().get().reverse());$btn.html('🔼 最早在前');}",
+          "🔼 最早在前"
+        ) else ""
       ),
       if (nchar(comment_html) > 0) tags$div(
         class = "note-comment-list",
@@ -614,14 +611,22 @@ note_server <- function(input, output, session, rv) {
     )
     
     showModal(modalDialog(
-      title = tags$span(icon("sticky-note"), " ", note_no, " — ", note$title[1]),
+      title = tags$div(style="display:flex; justify-content:space-between; align-items:center; width:100%;",
+        tags$span(icon("sticky-note"), " ", note_no, " — ", note$title[1]),
+        tags$div(style="display:flex; gap:6px; flex-shrink:0;",
+          tags$button(id="note_read_mode_toggle", class="btn btn-xs btn-default",
+            onclick="var ro=$('#note_content_ro');var ed=$('#note_content_ed');var btn=$('#note_read_mode_toggle');var ca=$('.comment-actions');var ta=$('#note_comment_new_m');var ab=$('#note_add_comment_m');if(ed.is(':visible')){Shiny.setInputValue('note_readmode_autosave',Math.random(),{priority:'event'});ed.hide();ro.show();btn.text('📓 编辑');ca.hide();ta.hide();ab.hide();}else{ro.hide();ed.show();btn.text('📖 阅读');ca.show();ta.show();ab.show();}",
+            "📖 阅读"),
+          tags$button(class="btn btn-xs btn-default",
+            onclick="$('#shiny-modal').modal('hide')",
+            "✕ 关闭")
+        )
+      ),
       size = "l",
       modal_body,
       footer = tags$div(style = "display:flex; align-items:center; gap:4px; flex-wrap:nowrap; justify-content:flex-end;",
         HTML(status_btns),
-        actionButton("note_toggle_edit", "✏ 修改", class = "btn-warning btn-sm"),
-        actionButton("note_cancel_edit", "取消修改", class = "btn-default btn-sm", style = "display:none;"),
-        actionButton("note_do_save", "💾 保存", class = "btn-primary btn-sm", style = "display:none;"),
+        actionButton("note_do_save", "💾 保存", class = "btn-primary btn-sm"),
         tags$button(class = "btn btn-info btn-sm note-wo-btn", `data-id` = note$id[1], "📋转工单"),
         tags$button(class = "btn btn-warning btn-sm note-report-btn", `data-id` = note$id[1], "📅日报"),
         tags$button(class = "btn btn-danger btn-sm note-del-btn", `data-id` = note$id[1], "🗑删除"),
@@ -629,24 +634,10 @@ note_server <- function(input, output, session, rv) {
       ),
       easyClose = TRUE
     ))
-    # 初次打开时设为编辑模式（默认）
-    tryCatch({
-      session$sendCustomMessage(type = "noteEditMode", message = list(mode = "edit"))
-    }, error = function(e) NULL)
   })
 
   ##################
-  # 切换编辑模式：显示编辑区 + 显示评论编辑按钮
-  ##################
-  observeEvent(input$note_toggle_edit, {
-    session$sendCustomMessage(type = "noteEditMode", message = list(mode = "edit"))
-  })
-  observeEvent(input$note_cancel_edit, {
-    session$sendCustomMessage(type = "noteEditMode", message = list(mode = "view"))
-  })
-
-  ##################
-  # 保存修改
+  # 保存修改（不关弹窗，留在卡片内）
   ##################
   observeEvent(input$note_do_save, {
     req(rv$logged_in, rv$note_edit_id, input$note_edit_content_m)
@@ -658,13 +649,26 @@ note_server <- function(input, output, session, rv) {
       created_at = if (trimws(input$note_edit_created_m) != "") input$note_edit_created_m else NULL,
       reminder_at = if (trimws(input$note_edit_reminder_m) != "") input$note_edit_reminder_m else NULL,
       due_at = if (trimws(input$note_edit_due_m) != "") input$note_edit_due_m else NULL)
-    removeModal()
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "error"))
   })
 
+  # 阅读模式切换时自动保存
+  observeEvent(input$note_readmode_autosave, {
+    req(rv$logged_in, rv$note_edit_id, input$note_edit_content_m)
+    lines <- strsplit(trimws(input$note_edit_content_m), "\n")[[1]]
+    title <- if (length(lines) > 0) lines[1] else "未命名"
+    note_update(rv$note_edit_id,
+      title = title, content = input$note_edit_content_m,
+      note_no = if (trimws(input$note_edit_no_m) != "") input$note_edit_no_m else NULL,
+      created_at = if (trimws(input$note_edit_created_m) != "") input$note_edit_created_m else NULL,
+      reminder_at = if (trimws(input$note_edit_reminder_m) != "") input$note_edit_reminder_m else NULL,
+      due_at = if (trimws(input$note_edit_due_m) != "") input$note_edit_due_m else NULL)
+    note_trigger(note_trigger() + 1)
+  })
+
   ##################
-  # 状态移动（无论是否编辑模式都可用）
+  # 状态移动
   ##################
   observeEvent(input$note_move_click, {
     req(rv$logged_in)
@@ -730,7 +734,7 @@ note_server <- function(input, output, session, rv) {
               </div>
             </div>
           </div>
-          <div class="comment-actions" style="display:none; margin-left:8px; white-space:nowrap; flex-shrink:0;">
+          <div class="comment-actions" style="margin-left:8px; white-space:nowrap; flex-shrink:0;">
             <button class="btn btn-xs btn-success comment-done-btn" data-id="%d">✅</button>
             <button class="btn btn-xs btn-info comment-edit-btn" data-id="%d">✏</button>
             <button class="btn btn-xs btn-danger comment-del-btn" data-id="%d">🗑</button>
@@ -747,6 +751,7 @@ note_server <- function(input, output, session, rv) {
       result$id, result$id, result$id)
     session$sendCustomMessage(type = "noteInjectComment", message = list(html = new_comment_html, comment_id = result$id))
     note_trigger(note_trigger() + 1)
+    rv$daily_report_refresh <- rv$daily_report_refresh + 1
     showNotification("评论已添加", type = "message", duration = 1.5)
   })
 
@@ -784,6 +789,7 @@ note_server <- function(input, output, session, rv) {
       note_comment_update_time(cid, time)
     }
     note_trigger(note_trigger() + 1)
+    rv$daily_report_refresh <- rv$daily_report_refresh + 1
     removeModal()
     session$sendCustomMessage("noteReopenModal", list(note_id = rv$note_edit_id))
     showNotification(result1$message, type = "message", duration = 1.5)
@@ -798,6 +804,7 @@ note_server <- function(input, output, session, rv) {
       session$sendCustomMessage(type = "noteRemoveComment", message = list(comment_id = cid))
     }
     note_trigger(note_trigger() + 1)
+    rv$daily_report_refresh <- rv$daily_report_refresh + 1
     showNotification(result$message, type = "message", duration = 1.5)
   })
 
@@ -818,6 +825,7 @@ note_server <- function(input, output, session, rv) {
       session$sendCustomMessage(type = "noteCommentMarkDone", message = list(comment_id = cid, status = "completed", completed_at = cat))
     }
     note_trigger(note_trigger() + 1)
+    rv$daily_report_refresh <- rv$daily_report_refresh + 1
     showNotification(result$message, type = "message", duration = 1.5)
   })
 
@@ -829,6 +837,7 @@ note_server <- function(input, output, session, rv) {
       session$sendCustomMessage(type = "noteCommentMarkDone", message = list(comment_id = cid, status = "", completed_at = ""))
     }
     note_trigger(note_trigger() + 1)
+    rv$daily_report_refresh <- rv$daily_report_refresh + 1
     showNotification("已取消完成标记", type = "message", duration = 1.5)
   })
 

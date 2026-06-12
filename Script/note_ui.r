@@ -23,17 +23,6 @@ note_ui <- function() {
         e.stopPropagation();
         Shiny.setInputValue('note_report_click',$(this).data('id'),{priority:'event'});
       });
-      Shiny.addCustomMessageHandler('noteEditMode', function(msg) {
-        if (msg.mode === 'edit') {
-          $('#note_content_ro').hide(); $('#note_content_ed').show();
-          $('#note_toggle_edit').hide(); $('#note_cancel_edit').show(); $('#note_do_save').show();
-          $('.comment-actions').show();
-        } else {
-          $('#note_content_ro').show(); $('#note_content_ed').hide();
-          $('#note_toggle_edit').show(); $('#note_cancel_edit').hide(); $('#note_do_save').hide();
-          $('.comment-actions').hide();
-        }
-      });
       Shiny.addCustomMessageHandler('noteInjectComment', function(msg) {
         var $comments = $('.modal-body .note-comment-list');
         if ($comments.length === 0) {

@@ -53,7 +53,8 @@ server <- function(input, output, session) {
   # 当这些值发生变化时，依赖它们的UI和计算会自动更新
   rv <- reactiveValues(
     logged_in = FALSE,  # 登录状态，默认为未登录
-    current_user = NULL # 当前用户信息，默认为空
+    current_user = NULL, # 当前用户信息，默认为空
+    daily_report_refresh = 0  # 日报刷新触发器
   )
   
   # OLD 架构：renderUI 直接返回 login_ui() 或 main_ui()
