@@ -129,8 +129,9 @@ daily_report_get_note_comments <- function(report_date) {
       } else break
     }
 
-    # 第三步：当天评论的所有子级（后代）
+    # 第三步：当天评论的所有子级（后代），递归直到无更多层级
     today_ids <- today$id
+    all_ids <- today$id
     children <- data.frame()
     while (length(today_ids) > 0) {
       ids_str <- paste(today_ids, collapse=",")
@@ -145,7 +146,9 @@ daily_report_get_note_comments <- function(report_date) {
       ", ids_str))
       if (nrow(ch) > 0) {
         children <- rbind(children, ch)
-        today_ids <- setdiff(ch$id, c(children$id, today$id))
+        new_ids <- setdiff(ch$id, all_ids)
+        all_ids <- c(all_ids, new_ids)
+        today_ids <- new_ids
       } else break
     }
 
@@ -460,24 +463,30 @@ daily_report_server <- function(input, output, session, rv) {
           note_items <- paste0(note_items, sprintf(
             '<div style="font-size:12px;font-weight:600;color:#6c3bbf;margin:6px 0 4px;">%s、 📋 %s %s · %d条</div>',
             dr_cn_number(gi), gn, gn_title, nrow(grp)))
-          # 顶层评论 + 子回复
+          # 顶层评论 + 递归子回复（支持任意层级）
           ni <- 0
+          render_replies <- function(pid, prefix, indent_em) {
+            sub <- reps[reps$parent_id == pid, , drop = FALSE]
+            if (nrow(sub) == 0) return("")
+            html <- ""
+            for (si in seq_len(nrow(sub))) {
+              sc <- sub[si, ]
+              sct <- if (nchar(sc$content) > 100) paste0(substr(sc$content, 1, 100), "...") else sc$content
+              lab <- sprintf("%s.%d", prefix, si)
+              html <- paste0(html, sprintf(
+                '<div class="dr-item" style="text-indent:%dem;"><span class="dr-badge" style="background:#a78bfa;">回复</span> %s %s</div>',
+                indent_em, lab, sct))
+              html <- paste0(html, render_replies(sc$id, lab, indent_em + 1))
+            }
+            html
+          }
           for (ti in seq_len(nrow(tops))) {
             ni <- ni + 1; tc <- tops[ti, ]
             ct <- if (nchar(tc$content) > 100) paste0(substr(tc$content, 1, 100), "...") else tc$content
             note_items <- paste0(note_items, sprintf(
               '<div class="dr-item"><span class="dr-badge" style="background:#6c3bbf;">记事</span> %d、 %s</div>', ni, ct))
-            # 子回复：1.1、1.2
             if (nrow(reps) > 0) {
-              sub <- reps[reps$parent_id == tc$id, , drop = FALSE]
-              if (nrow(sub) > 0) {
-                for (si in seq_len(nrow(sub))) {
-                  sc <- sub[si, ]
-                  sct <- if (nchar(sc$content) > 100) paste0(substr(sc$content, 1, 100), "...") else sc$content
-                  note_items <- paste0(note_items, sprintf(
-                    '<div class="dr-item" style="text-indent:2em;"><span class="dr-badge" style="background:#a78bfa;">回复</span> %d.%d %s</div>', ni, si, sct))
-                }
-              }
+              note_items <- paste0(note_items, render_replies(tc$id, as.character(ni), 2))
             }
           }
         }
@@ -529,15 +538,24 @@ daily_report_server <- function(input, output, session, rv) {
           reps <- grp[!(is.na(grp$parent_id) | grp$parent_id == 0), , drop = FALSE]
           text_report <- paste0(text_report, sprintf("    %s、 %s %s\n", dr_cn_number(gi), gn, grp$note_title[1] %||% ""))
           ni <- 0
+          txt_render_replies <- function(pid, prefix, depth) {
+            sub <- reps[reps$parent_id == pid, , drop = FALSE]
+            if (nrow(sub) == 0) return("")
+            txt <- ""
+            for (si in seq_len(nrow(sub))) {
+              sc <- sub[si, ]
+              lab <- sprintf("%s.%d", prefix, si)
+              indent <- paste(rep("  ", depth), collapse="")
+              txt <- paste0(txt, sprintf("%s      %s %s\n", indent, lab, sc$content))
+              txt <- paste0(txt, txt_render_replies(sc$id, lab, depth + 1))
+            }
+            txt
+          }
           for (ti in seq_len(nrow(tops))) {
             ni <- ni + 1; tc <- tops[ti, ]
             text_report <- paste0(text_report, sprintf("      %d、 %s\n", ni, tc$content))
-            sub <- reps[reps$parent_id == tc$id, , drop = FALSE]
-            if (nrow(sub) > 0) {
-              for (si in seq_len(nrow(sub))) {
-                sc <- sub[si, ]
-                text_report <- paste0(text_report, sprintf("        %d.%d %s\n", ni, si, sc$content))
-              }
+            if (nrow(reps) > 0) {
+              text_report <- paste0(text_report, txt_render_replies(tc$id, as.character(ni), 0))
             }
           }
         }
