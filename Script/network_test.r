@@ -198,7 +198,8 @@ network_test_ui <- function() {
 
 # 辅助函数：格式化测试结果为HTML
 .format_result_html <- function(text) {
-  lines <- strsplit(text, "\n", fixed = TRUE)[[1]]
+  text <- enc2utf8(text)  # 确保 UTF-8
+  lines <- suppressWarnings(strsplit(text, "\n", fixed = TRUE)[[1]])
   lines <- lines[!is.na(lines)]
   html_lines <- sapply(lines, function(line) {
     if (is.na(line) || is.null(line)) return("")
@@ -230,6 +231,9 @@ network_test_server <- function(input, output, session) {
   # 累计显示的文本（原始文本，用于保存）
   nt_result <- reactiveVal("")
 
+  # 当前测试名称（用于自动保存日志文件名）
+  nt_test_name <- reactiveVal("")
+
   # 待执行的命令队列
   nt_queue <- reactiveVal(list())
 
@@ -245,7 +249,7 @@ network_test_server <- function(input, output, session) {
         "(无输出)"
       } else {
         # 编码转换：GBK -> UTF-8
-        result <- iconv(result, from = "GBK", to = "UTF-8", sub = "")
+        # iconv removed
         paste(result, collapse = "\n")
       }
     }, error = function(e) {
@@ -266,7 +270,7 @@ network_test_server <- function(input, output, session) {
              "RemotePort       : ", port, "\n",
              "TcpTestSucceeded : TRUE")
     }, error = function(e) {
-      err_msg <- iconv(e$message, from = "GBK", to = "UTF-8", sub = "")
+      err_msg <- e$message  # iconv removed
       paste0("ComputerName     : ", ip, "\n",
              "RemoteAddress    : ", ip, "\n",
              "RemotePort       : ", port, "\n",
@@ -285,7 +289,7 @@ network_test_server <- function(input, output, session) {
       if (length(result) == 0) {
         "(无输出)"
       } else {
-        result <- iconv(result, from = "GBK", to = "UTF-8", sub = "")
+        # iconv removed
         paste(result, collapse = "\n")
       }
     }, error = function(e) {
@@ -301,7 +305,7 @@ network_test_server <- function(input, output, session) {
     label <- sprintf("MX记录查询 - %s", domain)
     header <- sprintf("\n== %s ==\n\n", label)
     result <- system(sprintf("nslookup -type=mx %s", domain), intern = TRUE, ignore.stderr = TRUE)
-    result <- iconv(result, from = "GBK", to = "UTF-8", sub = "")
+    # iconv removed
     paste0(header, paste(result, collapse = "\n"), "\n")
   }
 
@@ -311,7 +315,7 @@ network_test_server <- function(input, output, session) {
     results <- ""
     # 先查主域名 MX 指向的域名
     mx_result <- system(sprintf("nslookup -type=mx %s", domain), intern = TRUE, ignore.stderr = TRUE)
-    mx_result <- iconv(mx_result, from = "GBK", to = "UTF-8", sub = "")
+    # iconv removed
     mx_lines <- mx_result[grepl("mail exchanger", mx_result, ignore.case=TRUE)]
     mx_targets <- gsub(".*= ", "", mx_lines)
     mx_targets <- trimws(gsub("\\s+", " ", mx_targets))
@@ -323,7 +327,7 @@ network_test_server <- function(input, output, session) {
         label <- sprintf("A记录 - MX目标: %s", mx_host)
         header <- sprintf("== %s ==\n$ nslookup %s\n\n", label, mx_host)
         a_result <- system(sprintf("nslookup %s", mx_host), intern = TRUE, ignore.stderr = TRUE)
-        a_result <- iconv(a_result, from = "GBK", to = "UTF-8", sub = "")
+        # iconv removed
         results <- paste0(results, header, paste(a_result, collapse = "\n"), "\n\n")
       }
     }
@@ -333,7 +337,7 @@ network_test_server <- function(input, output, session) {
       label <- sprintf("A记录 - 子域: %s.%s", sd, domain)
       header <- sprintf("== %s ==\n$ nslookup %s.%s\n\n", label, sd, domain)
       a_result <- system(sprintf("nslookup %s.%s", sd, domain), intern = TRUE, ignore.stderr = TRUE)
-      a_result <- iconv(a_result, from = "GBK", to = "UTF-8", sub = "")
+      # iconv removed
       results <- paste0(results, header, paste(a_result, collapse = "\n"), "\n\n")
     }
     results
@@ -344,7 +348,7 @@ network_test_server <- function(input, output, session) {
     label <- sprintf("%s - %s", label_prefix, query)
     header <- sprintf("\n== %s ==\n\n", label)
     result <- system(sprintf("nslookup -type=txt %s", query), intern = TRUE, ignore.stderr = TRUE)
-    result <- iconv(result, from = "GBK", to = "UTF-8", sub = "")
+    # iconv removed
     out <- paste(result, collapse = "\n")
     # 提取 TXT 记录值
     txt_match <- regmatches(out, gregexpr('"([^"]+)"', out))[[1]]
@@ -360,7 +364,7 @@ network_test_server <- function(input, output, session) {
     label <- sprintf("PTR反向解析 - %s", domain)
     header <- sprintf("\n== %s ==\n\n", label)
     mx_result <- system(sprintf("nslookup -type=mx %s", domain), intern = TRUE, ignore.stderr = TRUE)
-    mx_result <- iconv(mx_result, from = "GBK", to = "UTF-8", sub = "")
+    # iconv removed
     mx_lines <- mx_result[grepl("mail exchanger", mx_result, ignore.case=TRUE)]
     mx_targets <- gsub(".*= ", "", mx_lines)
     mx_targets <- trimws(gsub("\\s+", " ", mx_targets))
@@ -372,13 +376,13 @@ network_test_server <- function(input, output, session) {
       parts <- trimws(strsplit(mt, " ")[[1]])
       mx_host <- parts[length(parts)]
       ip_result <- system(sprintf("nslookup %s", mx_host), intern = TRUE, ignore.stderr = TRUE)
-      ip_result <- iconv(ip_result, from = "GBK", to = "UTF-8", sub = "")
+      # iconv removed
       ip_lines <- ip_result[grepl("Address", ip_result, ignore.case=TRUE) & !grepl("#", ip_result)]
       ips <- unique(unlist(regmatches(ip_lines, gregexpr("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}", ip_lines))))
       results <- paste0(results, sprintf("MX: %s\n", mx_host))
       for (ip in ips) {
         ptr <- system(sprintf("nslookup %s", ip), intern = TRUE, ignore.stderr = TRUE)
-        ptr <- iconv(ptr, from = "GBK", to = "UTF-8", sub = "")
+        # iconv removed
         ptr_name_lines <- ptr[grepl("name\\s*=", ptr, ignore.case=TRUE) | grepl("名称", ptr)]
         if (length(ptr_name_lines) > 0) {
           pname <- trimws(gsub(".*name\\s*=\\s*|.*名称\\s*:\\s*", "", ptr_name_lines[1], ignore.case=TRUE))
@@ -416,7 +420,7 @@ network_test_server <- function(input, output, session) {
         close(con)
         sprintf("Port %-4d : OPEN    [%s]%s", p, protocol_label, tls_label)
       }, error = function(e) {
-        err <- iconv(e$message, from = "GBK", to = "UTF-8", sub = "")
+        err <- e$message  # iconv removed
         err_short <- substr(err, 1, 40)
         sprintf("Port %-4d : CLOSED  [%s] (%s)", p, protocol_label, err_short)
       })
@@ -436,7 +440,7 @@ network_test_server <- function(input, output, session) {
         out <- tryCatch({
           result <- system(task$cmd, intern = TRUE, ignore.stderr = TRUE)
           if (length(result) == 0) "(无输出)" else {
-            result <- iconv(result, from = "GBK", to = "UTF-8", sub = "")
+            result <- iconv(result, from="", to="UTF-8", sub="")
             paste(result, collapse = "\n")
           }
         }, error = function(e) paste("执行失败:", e$message))
@@ -449,7 +453,7 @@ network_test_server <- function(input, output, session) {
           close(con)
           paste0("ComputerName     : ", task$ip, "\nRemoteAddress    : ", task$ip, "\nRemotePort       : ", task$port, "\nTcpTestSucceeded : TRUE")
         }, error = function(e) {
-          err_msg <- iconv(e$message, from = "GBK", to = "UTF-8", sub = "")
+          err_msg <- e$message  # iconv removed
           paste0("ComputerName     : ", task$ip, "\nRemoteAddress    : ", task$ip, "\nRemotePort       : ", task$port, "\nTcpTestSucceeded : FALSE\nError            : ", err_msg)
         })
         paste0(header, out, "\n")
@@ -459,7 +463,7 @@ network_test_server <- function(input, output, session) {
         out <- tryCatch({
           result <- system(sprintf("ping -n %d %s", as.integer(task$count), task$ip), intern = TRUE, ignore.stderr = TRUE)
           if (length(result) == 0) "(无输出)" else {
-            result <- iconv(result, from = "GBK", to = "UTF-8", sub = "")
+            result <- iconv(result, from="", to="UTF-8", sub="")
             paste(result, collapse = "\n")
           }
         }, error = function(e) paste("执行失败:", e$message))
@@ -468,7 +472,7 @@ network_test_server <- function(input, output, session) {
       "email_mx" = {
         header <- sprintf("\n== MX记录查询 - %s ==\n\n", task$domain)
         out <- system(sprintf("nslookup -type=mx %s", task$domain), intern = TRUE, ignore.stderr = TRUE)
-        out <- iconv(out, from = "GBK", to = "UTF-8", sub = "")
+        result <- iconv(result, from="", to="UTF-8", sub="")
         paste0(header, paste(out, collapse = "\n"), "\n")
       },
       "email_a" = {
@@ -476,7 +480,7 @@ network_test_server <- function(input, output, session) {
         subdomains <- c("mail", "smtp", "pop", "imap", paste0("mail.", domain))
         results <- ""
         mx_result <- system(sprintf("nslookup -type=mx %s", domain), intern = TRUE, ignore.stderr = TRUE)
-        mx_result <- iconv(mx_result, from = "GBK", to = "UTF-8", sub = "")
+        result <- iconv(result, from="", to="UTF-8", sub="")
         mx_lines <- mx_result[grepl("mail exchanger", mx_result, ignore.case = TRUE)]
         mx_targets <- trimws(gsub(".*= ", "", mx_lines))
         if (length(mx_targets) > 0) {
@@ -486,7 +490,7 @@ network_test_server <- function(input, output, session) {
             mx_host <- parts[length(parts)]
             label <- sprintf("A记录 - MX目标: %s", mx_host)
             a_result <- system(sprintf("nslookup %s", mx_host), intern = TRUE, ignore.stderr = TRUE)
-            a_result <- iconv(a_result, from = "GBK", to = "UTF-8", sub = "")
+            result <- iconv(result, from="", to="UTF-8", sub="")
             results <- paste0(results, sprintf("== %s ==\n$ nslookup %s\n\n", label, mx_host), paste(a_result, collapse = "\n"), "\n\n")
           }
         }
@@ -494,7 +498,7 @@ network_test_server <- function(input, output, session) {
           if (sd == paste0("mail.", domain)) next
           label <- sprintf("A记录 - 子域: %s.%s", sd, domain)
           a_result <- system(sprintf("nslookup %s.%s", sd, domain), intern = TRUE, ignore.stderr = TRUE)
-          a_result <- iconv(a_result, from = "GBK", to = "UTF-8", sub = "")
+          result <- iconv(result, from="", to="UTF-8", sub="")
           results <- paste0(results, sprintf("== %s ==\n$ nslookup %s.%s\n\n", label, sd, domain), paste(a_result, collapse = "\n"), "\n\n")
         }
         results
@@ -503,7 +507,7 @@ network_test_server <- function(input, output, session) {
         domain <- task$domain
         header <- sprintf("\n== PTR反向解析 - %s ==\n\n", domain)
         mx_result <- system(sprintf("nslookup -type=mx %s", domain), intern = TRUE, ignore.stderr = TRUE)
-        mx_result <- iconv(mx_result, from = "GBK", to = "UTF-8", sub = "")
+        result <- iconv(result, from="", to="UTF-8", sub="")
         mx_lines <- mx_result[grepl("mail exchanger", mx_result, ignore.case = TRUE)]
         mx_targets <- trimws(gsub(".*= ", "", mx_lines))
         if (length(mx_targets) == 0) return(paste0(header, "未能获取MX记录\n"))
@@ -511,13 +515,13 @@ network_test_server <- function(input, output, session) {
         for (mt in mx_targets) {
           parts <- trimws(strsplit(mt, " ")[[1]]); mx_host <- parts[length(parts)]
           ip_result <- system(sprintf("nslookup %s", mx_host), intern = TRUE, ignore.stderr = TRUE)
-          ip_result <- iconv(ip_result, from = "GBK", to = "UTF-8", sub = "")
+          result <- iconv(result, from="", to="UTF-8", sub="")
           ip_lines <- ip_result[grepl("Address", ip_result, ignore.case = TRUE) & !grepl("#", ip_result)]
           ips <- unique(unlist(regmatches(ip_lines, gregexpr("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}", ip_lines))))
           results <- paste0(results, sprintf("MX: %s\n", mx_host))
           for (ip in ips) {
             ptr <- system(sprintf("nslookup %s", ip), intern = TRUE, ignore.stderr = TRUE)
-            ptr <- iconv(ptr, from = "GBK", to = "UTF-8", sub = "")
+            result <- iconv(result, from="", to="UTF-8", sub="")
             ptr_name_lines <- ptr[grepl("name\\s*=", ptr, ignore.case = TRUE) | grepl("名称", ptr)]
             if (length(ptr_name_lines) > 0) {
               pname <- trimws(gsub(".*name\\s*=\\s*|.*名称\\s*:\\s*", "", ptr_name_lines[1], ignore.case = TRUE))
@@ -533,7 +537,7 @@ network_test_server <- function(input, output, session) {
       "email_txt" = {
         header <- sprintf("\n== %s - %s ==\n\n", task$label_prefix, task$query)
         out <- system(sprintf("nslookup -type=txt %s", task$query), intern = TRUE, ignore.stderr = TRUE)
-        out <- iconv(out, from = "GBK", to = "UTF-8", sub = "")
+        result <- iconv(result, from="", to="UTF-8", sub="")
         out <- paste(out, collapse = "\n")
         txt_match <- regmatches(out, gregexpr('"([^"]+)"', out))[[1]]
         txt_vals <- gsub('"', '', txt_match)
@@ -551,7 +555,7 @@ network_test_server <- function(input, output, session) {
             con <- suppressWarnings(socketConnection(host = task$domain, port = p, open = "r+b", blocking = TRUE, timeout = 5))
             close(con)
             sprintf("Port %-4d : OPEN", p)
-          }, error = function(e) sprintf("Port %-4d : CLOSED (%s)", p, substr(iconv(e$message, from = "GBK", to = "UTF-8", sub = ""), 1, 40)))
+          }, error = function(e) sprintf("Port %-4d : CLOSED (%s)", p, substr(e$message, 1, 40)))
           results <- paste0(results, header, res, "\n")
         }
         results
@@ -572,6 +576,8 @@ network_test_server <- function(input, output, session) {
       )
       nt_result(paste0(nt_result(), end_text))
       nt_running(FALSE)
+      # 全部测试完成后自动保存日志
+      nt_auto_save()
       return()
     }
 
@@ -588,6 +594,7 @@ network_test_server <- function(input, output, session) {
     } else {
       # 后台完成，收割结果
       result_text <- tryCatch(suppressWarnings(bg$get_result()), error = function(e) paste("后台执行失败:", e$message))
+      result_text <- enc2utf8(result_text)  # 确保 UTF-8
       nt_result(paste0(nt_result(), result_text))
       nt_bg_job(NULL)
       nt_queue(queue[-1])  # 移出已完成的任务
@@ -626,7 +633,7 @@ network_test_server <- function(input, output, session) {
   }
 
   # 启动队列执行的通用函数
-  .start_test <- function(cmd_list, custom_target = NULL) {
+  .start_test <- function(cmd_list, custom_target = NULL, tag = NULL) {
     if (nt_running()) {
       showNotification("测试正在执行中，请等待完成", type = "warning")
       return()
@@ -663,6 +670,12 @@ network_test_server <- function(input, output, session) {
       "========================================\n"
     )
     nt_result(header_text)
+    nt_test_name(if (!is.null(tag) && tag != "") tag else target_display)
+    # 确保所有中文 label 在 callr 序列化前已是 UTF-8
+    for (i in seq_along(cmd_list)) {
+      cmd_list[[i]]$label <- enc2utf8(cmd_list[[i]]$label)
+      if (!is.null(cmd_list[[i]]$label_prefix)) cmd_list[[i]]$label_prefix <- enc2utf8(cmd_list[[i]]$label_prefix)
+    }
     nt_queue(cmd_list)
     nt_running(TRUE)
   }
@@ -696,12 +709,12 @@ network_test_server <- function(input, output, session) {
       list(label = "文件服务器 10.10.50.150 - 端口 139", ip = "10.10.50.150", port = 139, type = "port"),
       list(label = "文件服务器 10.10.50.150 - Ping", ip = "10.10.50.150", count = 4, type = "ping")
     )
-    .start_test(cmd_list, "综合测试（包含文件服务器）")
+    .start_test(cmd_list, "综合测试（包含文件服务器）", tag = "all_tests")
   })
 
   # 单项测试：网卡信息
   observeEvent(input$nt_run_ipconfig, {
-    .start_test(list(.build_cmd_ipconfig()))
+    .start_test(list(.build_cmd_ipconfig()), tag = "ipconfig")
   })
 
   # 单项测试：ping
@@ -710,7 +723,7 @@ network_test_server <- function(input, output, session) {
     if (is.null(target) || target == "") {
       showNotification("请输入测试目标", type = "error"); return()
     }
-    .start_test(list(.build_cmd_ping(target, input$nt_ping_count)), target)
+    .start_test(list(.build_cmd_ping(target, input$nt_ping_count)), target, tag = "ping")
   })
 
   # 单项测试：nslookup
@@ -719,13 +732,13 @@ network_test_server <- function(input, output, session) {
     if (is.null(target) || target == "") {
       showNotification("请输入测试目标", type = "error"); return()
     }
-    .start_test(list(.build_cmd_nslookup(target)), target)
+    .start_test(list(.build_cmd_nslookup(target)), target, tag = "nslookup")
   })
 
   # 单项测试：nltest
   observeEvent(input$nt_run_nltest, {
     domain <- trimws(input$nt_domain)
-    .start_test(list(.build_cmd_nltest(domain)), domain)
+    .start_test(list(.build_cmd_nltest(domain)), domain, tag = "nltest")
   })
 
   # 单项测试：tracert
@@ -734,13 +747,13 @@ network_test_server <- function(input, output, session) {
     if (is.null(target) || target == "") {
       showNotification("请输入测试目标", type = "error"); return()
     }
-    .start_test(list(.build_cmd_tracert(target)), target)
+    .start_test(list(.build_cmd_tracert(target)), target, tag = "tracert")
   })
 
   # 单项测试：curl
   observeEvent(input$nt_run_curl, {
     http_target <- trimws(input$nt_http_target)
-    .start_test(list(.build_cmd_curl(http_target)), http_target)
+    .start_test(list(.build_cmd_curl(http_target)), http_target, tag = "curl")
   })
 
   # 文件服务器 #1 测试
@@ -753,7 +766,7 @@ network_test_server <- function(input, output, session) {
       list(label = sprintf("文件服务器 %s - 端口 5000", ip), ip = ip, port = 5000, type = "port"),
       list(label = sprintf("文件服务器 %s - Ping", ip), ip = ip, count = 4, type = "ping")
     )
-    .start_test(cmd_list, ip)
+    .start_test(cmd_list, ip, tag = "fileserver1")
   })
 
   # 文件服务器 #2 测试
@@ -766,7 +779,7 @@ network_test_server <- function(input, output, session) {
       list(label = sprintf("文件服务器 %s - 端口 5000", ip), ip = ip, port = 5000, type = "port"),
       list(label = sprintf("文件服务器 %s - Ping", ip), ip = ip, count = 4, type = "ping")
     )
-    .start_test(cmd_list, ip)
+    .start_test(cmd_list, ip, tag = "fileserver2")
   })
 
   # ========== 邮箱诊断 ==========
@@ -792,61 +805,61 @@ network_test_server <- function(input, output, session) {
       list(type="email_txt", query=paste0("default._domainkey.", domain), label_prefix="DKIM记录检查 (default selector)"),
       list(type="email_txt", query=paste0("_dmarc.", domain), label_prefix="DMARC记录检查")
     )
-    .start_test(cmd_list, sprintf("邮箱诊断: %s", domain))
+    .start_test(cmd_list, sprintf("邮箱诊断: %s", domain), tag = "email_all")
   })
 
   # MX记录
   observeEvent(input$nt_run_email_mx, {
     domain <- .get_email_domain()
-    .start_test(list(list(type="email_mx", domain=domain)), sprintf("MX查询: %s", domain))
+    .start_test(list(list(type="email_mx", domain=domain)), sprintf("MX查询: %s", domain), tag = "email_mx")
   })
 
   # A记录
   observeEvent(input$nt_run_email_a, {
     domain <- .get_email_domain()
-    .start_test(list(list(type="email_a", domain=domain)), sprintf("A记录: %s", domain))
+    .start_test(list(list(type="email_a", domain=domain)), sprintf("A记录: %s", domain), tag = "email_a")
   })
 
   # SMTP端口
   observeEvent(input$nt_run_email_smtp, {
     domain <- .get_email_domain()
-    .start_test(list(list(type="email_mailport", domain=domain, protocol="smtp")), sprintf("SMTP端口: %s", domain))
+    .start_test(list(list(type="email_mailport", domain=domain, protocol="smtp")), sprintf("SMTP端口: %s", domain), tag = "email_smtp")
   })
 
   # POP3端口
   observeEvent(input$nt_run_email_pop3, {
     domain <- .get_email_domain()
-    .start_test(list(list(type="email_mailport", domain=domain, protocol="pop3")), sprintf("POP3端口: %s", domain))
+    .start_test(list(list(type="email_mailport", domain=domain, protocol="pop3")), sprintf("POP3端口: %s", domain), tag = "email_pop3")
   })
 
   # IMAP端口
   observeEvent(input$nt_run_email_imap, {
     domain <- .get_email_domain()
-    .start_test(list(list(type="email_mailport", domain=domain, protocol="imap")), sprintf("IMAP端口: %s", domain))
+    .start_test(list(list(type="email_mailport", domain=domain, protocol="imap")), sprintf("IMAP端口: %s", domain), tag = "email_imap")
   })
 
   # SPF
   observeEvent(input$nt_run_email_spf, {
     domain <- .get_email_domain()
-    .start_test(list(list(type="email_txt", query=domain, label_prefix="SPF记录检查")), sprintf("SPF: %s", domain))
+    .start_test(list(list(type="email_txt", query=domain, label_prefix="SPF记录检查")), sprintf("SPF: %s", domain), tag = "email_spf")
   })
 
   # DKIM
   observeEvent(input$nt_run_email_dkim, {
     domain <- .get_email_domain()
-    .start_test(list(list(type="email_txt", query=paste0("default._domainkey.", domain), label_prefix="DKIM记录检查 (default selector)")), sprintf("DKIM: %s", domain))
+    .start_test(list(list(type="email_txt", query=paste0("default._domainkey.", domain), label_prefix="DKIM记录检查 (default selector)")), sprintf("DKIM: %s", domain), tag = "email_dkim")
   })
 
   # DMARC
   observeEvent(input$nt_run_email_dmarc, {
     domain <- .get_email_domain()
-    .start_test(list(list(type="email_txt", query=paste0("_dmarc.", domain), label_prefix="DMARC记录检查")), sprintf("DMARC: %s", domain))
+    .start_test(list(list(type="email_txt", query=paste0("_dmarc.", domain), label_prefix="DMARC记录检查")), sprintf("DMARC: %s", domain), tag = "email_dmarc")
   })
 
   # PTR
   observeEvent(input$nt_run_email_ptr, {
     domain <- .get_email_domain()
-    .start_test(list(list(type="email_ptr", domain=domain)), sprintf("PTR: %s", domain))
+    .start_test(list(list(type="email_ptr", domain=domain)), sprintf("PTR: %s", domain), tag = "email_ptr")
   })
 
   # 清空
@@ -858,23 +871,47 @@ network_test_server <- function(input, output, session) {
     nt_result("")
   })
 
-  # 保存日志（保存原始文本）
+  # 保存日志（内部通用函数）
+  nt_save_log_file <- function(current_text, test_name_hint = NULL) {
+    if (is.null(current_text) || current_text == "") return(FALSE)
+    if (!dir.exists(nt_log_dir)) dir.create(nt_log_dir, recursive = TRUE)
+    ts <- format(Sys.time(), "%Y%m%d_%H%M%S")
+    # 文件名后缀：tag 优先（英文简称），否则用 nt_target
+    if (!is.null(test_name_hint) && test_name_hint != "") {
+      name_safe <- gsub("[^a-zA-Z0-9._-]", "_", test_name_hint)
+      name_safe <- substr(name_safe, 1, 30)
+    } else {
+      target <- trimws(input$nt_target)
+      name_safe <- gsub("[^a-zA-Z0-9._-]", "_", target)
+    }
+    filename <- sprintf("nt_%s_%s.log", ts, name_safe)
+    filepath <- file.path(nt_log_dir, filename)
+    # 用 UTF-8 编码写入，避免乱码
+    current_text <- enc2utf8(current_text)
+    con <- file(filepath, open = "w", encoding = "UTF-8")
+    on.exit(close(con))
+    suppressWarnings(writeLines(current_text, con))
+    showNotification(sprintf("日志已保存: %s", filename), type = "message", duration = 5)
+    TRUE
+  }
+
+  # 自动保存（测试全部完成时调用）
+  nt_auto_save <- function() {
+    current_text <- nt_result()
+    test_name <- nt_test_name()
+    if (!is.null(test_name) && test_name != "") {
+      nt_save_log_file(current_text, test_name)
+    }
+  }
+
+  # 手动保存日志
   observeEvent(input$nt_save_log, {
     current_text <- nt_result()
     if (is.null(current_text) || current_text == "") {
       showNotification("没有可保存的测试结果", type = "warning"); return()
     }
-
     tryCatch({
-      if (!dir.exists(nt_log_dir)) dir.create(nt_log_dir, recursive = TRUE)
-
-      target <- trimws(input$nt_target)
-      ts <- format(Sys.time(), "%Y%m%d_%H%M%S")
-      target_safe <- gsub("[^a-zA-Z0-9._-]", "_", target)
-      filename <- sprintf("nt_%s_%s.log", ts, target_safe)
-      filepath <- file.path(nt_log_dir, filename)
-      writeLines(current_text, filepath, useBytes = TRUE)
-      showNotification(sprintf("日志已保存: %s", filename), type = "message", duration = 5)
+      nt_save_log_file(current_text, nt_test_name())
     }, error = function(e) {
       showNotification(paste("保存失败:", e$message), type = "error")
     })

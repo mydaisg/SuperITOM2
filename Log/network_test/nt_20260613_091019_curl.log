@@ -1,0 +1,22 @@
+========================================
+       网络测试报告 (V3)
+========================================
+开始时间: 2026-06-13 09:10:18
+测试目标: www.baidu.com
+========================================
+
+== HTTP娴嬭瘯 - curl -I www.baidu.com ==
+$ curl -I www.baidu.com
+
+HTTP/1.1 200 OK
+Cache-Control: private, no-cache, no-store, proxy-revalidate, no-transform
+Content-Length: 0
+Content-Type: text/html
+Pragma: no-cache
+Server: bfe
+Date: Sat, 13 Jun 2026 01:10:18 GMT
+
+========================================
+结束时间: 2026-06-13 09:10:19
+========================================
+

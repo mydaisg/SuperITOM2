@@ -1,0 +1,58 @@
+========================================
+       网络测试报告 (V3)
+========================================
+开始时间: 2026-06-13 09:13:00
+测试目标: (本机网络配置)
+========================================
+
+== 缃戝崱淇℃伅 ==
+$ ipconfig /all
+
+
+Windows IP Configuration
+
+   Host Name . . . . . . . . . . . . : DWTCNSGZRD002
+   Primary Dns Suffix  . . . . . . . : lvcc.org
+   Node Type . . . . . . . . . . . . : Hybrid
+   IP Routing Enabled. . . . . . . . : No
+   WINS Proxy Enabled. . . . . . . . : No
+   DNS Suffix Search List. . . . . . : lvcc.org
+
+Ethernet adapter 以太网:
+
+   Connection-specific DNS Suffix  . : 
+   Description . . . . . . . . . . . : Realtek PCIe GbE Family Controller
+   Physical Address. . . . . . . . . : 00-68-EB-97-70-EF
+   DHCP Enabled. . . . . . . . . . . : Yes
+   Autoconfiguration Enabled . . . . : Yes
+   IPv4 Address. . . . . . . . . . . : 10.3.3.131(Preferred) 
+   Subnet Mask . . . . . . . . . . . : 255.255.254.0
+   Lease Obtained. . . . . . . . . . : 2026年6月10日 16:17:10
+   Lease Expires . . . . . . . . . . : 2026年6月13日 16:17:09
+   Default Gateway . . . . . . . . . : 10.3.3.254
+   DHCP Server . . . . . . . . . . . : 10.3.3.254
+   DNS Servers . . . . . . . . . . . : 10.10.50.253
+                                       223.5.5.5
+   NetBIOS over Tcpip. . . . . . . . : Enabled
+
+Ethernet adapter vEthernet (WSL):
+
+   Connection-specific DNS Suffix  . : 
+   Description . . . . . . . . . . . : Hyper-V Virtual Ethernet Adapter
+   Physical Address. . . . . . . . . : 00-15-5D-D6-E4-73
+   DHCP Enabled. . . . . . . . . . . : No
+   Autoconfiguration Enabled . . . . : Yes
+   Link-local IPv6 Address . . . . . : fe80::1a0b:8dcb:5359:19fa%38(Preferred) 
+   IPv4 Address. . . . . . . . . . . : 172.28.0.1(Preferred) 
+   Subnet Mask . . . . . . . . . . . : 255.255.240.0
+   Default Gateway . . . . . . . . . : 
+   DHCPv6 IAID . . . . . . . . . . . : 637539677
+   DHCPv6 Client DUID. . . . . . . . : 00-01-00-01-31-60-FE-DB-00-68-EB-97-70-EF
+   DNS Servers . . . . . . . . . . . : fec0:0:0:ffff::1%1
+                                       fec0:0:0:ffff::2%1
+                                       fec0:0:0:ffff::3%1
+   NetBIOS over Tcpip. . . . . . . . : Enabled
+========================================
+结束时间: 2026-06-13 09:13:01
+========================================
+

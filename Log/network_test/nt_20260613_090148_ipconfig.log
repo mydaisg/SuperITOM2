@@ -1,0 +1,21 @@
+========================================
+       网络测试报告 (V3)
+========================================
+开始时间: 2026-06-13 09:01:47
+测试目标: (本机网络配置)
+========================================
+
+== 网卡信息 ==
+$ ipconfig /all
+
+
+Windows IP Configuration
+
+   Host Name . . . . . . . . . . . . : DWTCNSGZRD002
+   Primary Dns Suffix  . . . . . . . : lvcc.org
+   Node Type . . . . . . . . . . . . : Hybrid
+   IP Routing Enabled. . . . . . . . : No
+   WINS Proxy Enabled. . . . . . . . : No
+   DNS Suffix Search List. . . . . . : lvcc.org
+
+Ethernet adapter 
