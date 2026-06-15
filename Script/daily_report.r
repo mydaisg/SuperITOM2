@@ -239,10 +239,12 @@ daily_report_ui <- function() {
       .dr-empty { color: #999; font-size: 13px; padding: 8px 12px; }
     ")),
     fluidRow(
-      column(3, dateInput("dr_date", "选择日期", value = Sys.Date(), language = "zh-CN")),
-      column(2, div(style = "margin-top:25px;",
+      column(2, dateInput("dr_date", "选择日期", value = Sys.Date(), language = "zh-CN")),
+      column(3, div(style = "margin-top:25px;",
         actionButton("dr_today", "今天", class = "btn-default btn-sm"),
-        actionButton("dr_yesterday", "昨天", class = "btn-default btn-sm"))),
+        actionButton("dr_yesterday", "昨天", class = "btn-default btn-sm"),
+        actionButton("dr_this_week", "本周", class = "btn-default btn-sm"),
+        actionButton("dr_last_week", "上周", class = "btn-default btn-sm"))),
       column(2, selectInput("dr_user_filter", "筛选人员",
         choices = c("全部人员" = "all"))),
       column(2, div(style = "margin-top:25px;",
@@ -282,6 +284,16 @@ daily_report_server <- function(input, output, session, rv) {
   })
   observeEvent(input$dr_yesterday, {
     updateDateInput(session, "dr_date", value = Sys.Date() - 1)
+  })
+  observeEvent(input$dr_this_week, {
+    d <- Sys.Date()
+    monday <- d - as.integer(format(d, "%u")) + 1
+    updateDateInput(session, "dr_date", value = monday)
+  })
+  observeEvent(input$dr_last_week, {
+    d <- Sys.Date() - 7
+    monday <- d - as.integer(format(d, "%u")) + 1
+    updateDateInput(session, "dr_date", value = monday)
   })
 
   # 初始化用户筛选下拉
@@ -448,7 +460,7 @@ daily_report_server <- function(input, output, session, rv) {
         log_html <- sprintf('<div class="dr-section"><div class="dr-section-title">反馈记录 (%d)</div>%s</div>', log_count, log_items)
       }
 
-      # 记事评论（按记事分组，层级缩进：1、1.1、1.2）
+      # 工作日志（按记事分组，层级缩进：4空格/级）
       note_html <- ""
       if (note_count > 0) {
         note_by_no <- split(user_notes, user_notes$note_no)
@@ -457,40 +469,43 @@ daily_report_server <- function(input, output, session, rv) {
         for (gn in names(note_by_no)) {
           gi <- gi + 1; grp <- note_by_no[[gn]]
           gn_title <- grp$note_title[1] %||% gn
-          # 分离顶层评论和回复
           tops <- grp[is.na(grp$parent_id) | grp$parent_id == 0, , drop = FALSE]
           reps <- grp[!(is.na(grp$parent_id) | grp$parent_id == 0), , drop = FALSE]
+          # 一级标题（字体加大）
           note_items <- paste0(note_items, sprintf(
-            '<div style="font-size:12px;font-weight:600;color:#6c3bbf;margin:6px 0 4px;">%s、 📋 %s %s · %d条</div>',
+            '<div style="font-size:14px;font-weight:600;color:#6c3bbf;margin:6px 0 4px;">%s、 📋 %s %s · %d条</div>',
             dr_cn_number(gi), gn, gn_title, nrow(grp)))
-          # 顶层评论 + 递归子回复（支持任意层级）
+          # 清理空白行辅助函数
+          .clean_lines <- function(txt) { trimws(gsub("\n\\s*\n", "\n", txt)) }
           ni <- 0
+          # 递归子回复（每级缩进 4字符 ≈ 2em）
           render_replies <- function(pid, prefix, indent_em) {
             sub <- reps[reps$parent_id == pid, , drop = FALSE]
             if (nrow(sub) == 0) return("")
             html <- ""
             for (si in seq_len(nrow(sub))) {
               sc <- sub[si, ]
-              sct <- if (nchar(sc$content) > 100) paste0(substr(sc$content, 1, 100), "...") else sc$content
+              sct <- .clean_lines(sc$content)
               lab <- sprintf("%s.%d", prefix, si)
               html <- paste0(html, sprintf(
-                '<div class="dr-item" style="text-indent:%dem;"><span class="dr-badge" style="background:#a78bfa;">回复</span> %s %s</div>',
+                '<div class="dr-item" style="padding-left:%dem; white-space:pre-wrap;"><span class="dr-badge" style="background:#a78bfa;">沟通%s</span>\n<div style="padding-left:2em;">%s</div></div>',
                 indent_em, lab, sct))
-              html <- paste0(html, render_replies(sc$id, lab, indent_em + 1))
+              html <- paste0(html, render_replies(sc$id, lab, indent_em + 2))
             }
             html
           }
           for (ti in seq_len(nrow(tops))) {
             ni <- ni + 1; tc <- tops[ti, ]
-            ct <- if (nchar(tc$content) > 100) paste0(substr(tc$content, 1, 100), "...") else tc$content
+            ct <- .clean_lines(tc$content)
             note_items <- paste0(note_items, sprintf(
-              '<div class="dr-item"><span class="dr-badge" style="background:#6c3bbf;">记事</span> %d、 %s</div>', ni, ct))
+              '<div class="dr-item" style="white-space:pre-wrap;"><span class="dr-badge" style="background:#6c3bbf;">工作%d</span>\n<div style="padding-left:2em;">%s</div></div>', ni, ct))
             if (nrow(reps) > 0) {
-              note_items <- paste0(note_items, render_replies(tc$id, as.character(ni), 2))
+              note_items <- paste0(note_items, render_replies(tc$id, as.character(ni), 4))
             }
           }
         }
-        note_html <- sprintf('<div class="dr-section"><div class="dr-section-title note">记事评论 (%d)</div>%s</div>', note_count, note_items)
+        report_date_str <- substr(as.character(data$date), 1, 10)
+        note_html <- sprintf('<div class="dr-section"><div class="dr-section-title note">工作日志 %s (%d条)</div>%s</div>', report_date_str, note_count, note_items)
       }
 
       cards_html <- paste0(cards_html, sprintf(
