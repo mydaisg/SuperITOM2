@@ -37,14 +37,9 @@ note_search <- function(keyword) {
   tryCatch({
     kw <- trimws(keyword)
     # 判断精确搜索：用 "" 或 <> 包裹
-    exact <- FALSE
     if (grepl('^".*"$', kw) || grepl("^<.*>$", kw)) {
-      exact <- TRUE
-      kw <- gsub('^["<]|["<]$', '', kw)  # 去掉首尾引号
-    }
-    safe <- gsub("'", "''", kw)
-    if (exact) {
-      # 精确匹配：标题完全相等 或 评论内容完全相等
+      kw <- gsub('^["<]|["<]$', '', kw)  # 精确匹配
+      safe <- gsub("'", "''", kw)
       query <- sprintf("
         SELECT DISTINCT n.*, u.username as creator_name
         FROM notes n LEFT JOIN users u ON n.created_by = u.id
@@ -52,13 +47,19 @@ note_search <- function(keyword) {
         WHERE n.title = '%s' OR c.content = '%s'
         ORDER BY n.pinned DESC, n.updated_at DESC", safe, safe)
     } else {
-      # 模糊搜索：标题 LIKE 或 评论 LIKE 或 正文 LIKE
+      # 空格分隔 → AND 关系，每个词匹配标题/正文/评论任一即可
+      words <- strsplit(kw, "\\s+")[[1]]
+      words <- words[words != ""]
+      conditions <- sapply(words, function(w) {
+        sw <- gsub("'", "''", w)
+        sprintf("(n.title LIKE '%%%s%%' OR n.content LIKE '%%%s%%' OR c.content LIKE '%%%s%%')", sw, sw, sw)
+      })
       query <- sprintf("
         SELECT DISTINCT n.*, u.username as creator_name
         FROM notes n LEFT JOIN users u ON n.created_by = u.id
         LEFT JOIN note_comments c ON c.note_id = n.id
-        WHERE n.title LIKE '%%%s%%' OR n.content LIKE '%%%s%%' OR c.content LIKE '%%%s%%'
-        ORDER BY n.pinned DESC, n.updated_at DESC", safe, safe, safe)
+        WHERE %s
+        ORDER BY n.pinned DESC, n.updated_at DESC", paste(conditions, collapse = " AND "))
     }
     dbGetQuery(con, query)
   }, error = function(e) data.frame(), finally = { db_disconnect(con) })
