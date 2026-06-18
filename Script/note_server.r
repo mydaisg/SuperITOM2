@@ -23,6 +23,59 @@ note_server <- function(input, output, session, rv) {
     req(rv$logged_in)
     kw <- note_search_term()
     items <- if (is.null(kw) || kw == "") note_get_all() else note_search(kw)
+    # 搜索关键字词列表（用于高亮）
+    search_words <- if (!is.null(kw) && kw != "") strsplit(trimws(kw), "\\s+")[[1]] else character(0)
+    search_words <- search_words[search_words != ""]
+    # 关键字高亮辅助函数
+    .hl <- function(text, words) {
+      if (length(words) == 0 || is.null(text) || is.na(text)) return(text)
+      for (w in words) {
+        # 使用 gsubfn 或多次替换实现不区分大小写高亮
+        pos <- gregexpr(w, text, ignore.case = TRUE)[[1]]
+        if (pos[1] > 0) {
+          parts <- c(); last <- 1
+          for (i in seq_along(pos)) {
+            p <- pos[i]; l <- attr(pos, "match.length")[i]
+            if (p > last) parts <- c(parts, substr(text, last, p - 1))
+            parts <- c(parts, '<mark style="background:#fde68a;color:#92400e;border-radius:3px;padding:0 2px;">',
+              substr(text, p, p + l - 1), '</mark>')
+            last <- p + l
+          }
+          if (last <= nchar(text)) parts <- c(parts, substr(text, last, nchar(text)))
+          text <- paste(parts, collapse = "")
+        }
+      }
+      text
+    }
+    # 提取匹配片段（内容匹配时显示关键词附近文字）
+    .snippet <- function(text, words, radius = 40) {
+      if (length(words) == 0 || is.null(text) || is.na(text)) return(substr(text, 1, radius * 2))
+      best <- Inf
+      for (w in words) {
+        p <- regexpr(w, text, ignore.case = TRUE)[1]
+        if (p > 0 && p < best) best <- p
+      }
+      if (best == Inf) return(substr(text, 1, radius * 2))
+      start <- max(1, best - radius)
+      end <- min(nchar(text), best + radius)
+      snip <- substr(text, start, end)
+      if (start > 1) snip <- paste0("…", snip)
+      if (end < nchar(text)) snip <- paste0(snip, "…")
+      snip
+    }
+    # 搜索时：标题命中优先排列
+    if (length(search_words) > 0 && nrow(items) > 0) {
+      items$match_title <- FALSE
+      for (w in search_words) {
+        items$match_title <- items$match_title | grepl(w, items$title, ignore.case = TRUE)
+      }
+      items <- items[order(items$match_title, decreasing = TRUE), ]
+    }
+    # 搜索时：拉取匹配关键字的评论（供卡片展示）
+    matching_comments <- data.frame()
+    if (length(search_words) > 0 && nrow(items) > 0) {
+      matching_comments <- note_search_get_matching_comments(items$id, kw)
+    }
     # 筛选：提醒/到期
     flt <- note_filter()
     if (flt == "reminder") {
@@ -72,15 +125,37 @@ note_server <- function(input, output, session, rv) {
           body <- r$content %||% ""
           body_lines <- strsplit(body, "\n")[[1]]
           if (length(body_lines) > 1) body <- paste(body_lines[-1], collapse = "\n") else body <- ""
-          if (nchar(body) > 400) body <- paste0(substr(body, 1, 400), "...")
+          if (length(search_words) > 0) {
+            body <- .snippet(body, search_words, 80)
+          } else if (nchar(body) > 400) {
+            body <- paste0(substr(body, 1, 400), "...")
+          }
           
-          last_comment <- note_comment_get_last(r$id)
+          # 搜索时：显示匹配关键字的评论；否则显示最新评论
           comment_html <- ""
-          if (!is.null(last_comment) && nrow(last_comment) > 0) {
-            ct <- last_comment$content[1]; cn <- last_comment$creator_name[1] %||% "匿名"
-            if (isTRUE(nchar(ct) > 80)) ct <- paste0(substr(ct, 1, 80), "...")
-            comment_html <- as.character(tags$div(style="font-size:11px; color:#5e6c84; margin-top:6px; padding:4px 6px; background:#f4f5f7; border-radius:3px;",
-              tags$span(style="color:#999;", cn, ": "), tags$span(ct)))
+          if (length(search_words) > 0 && nrow(matching_comments) > 0) {
+            mc <- matching_comments[matching_comments$note_id == r$id, , drop = FALSE]
+            if (nrow(mc) > 0) {
+              parts <- c()
+              for (mi in 1:min(nrow(mc), 2)) {
+                mcc <- mc[mi, ]
+                cn <- mcc$creator_name[1] %||% "匿名"
+                ct <- .snippet(mcc$content[1], search_words, 60)
+                ct <- .hl(ct, search_words)
+                parts <- c(parts, sprintf('<div style="margin-bottom:2px;"><span style="color:#999;">%s:</span> <span>%s</span></div>', cn, ct))
+              }
+              if (nrow(mc) > 2) parts <- c(parts, sprintf('<div style="font-size:10px; color:#999;">... 还有 %d 条匹配评论</div>', nrow(mc) - 2))
+              comment_html <- as.character(tags$div(style="font-size:11px; color:#5e6c84; margin-top:6px; padding:4px 6px; background:#f4f5f7; border-radius:3px;",
+                HTML(paste(parts, collapse = ""))))
+            }
+          } else {
+            last_comment <- note_comment_get_last(r$id)
+            if (!is.null(last_comment) && nrow(last_comment) > 0) {
+              ct <- last_comment$content[1]; cn <- last_comment$creator_name[1] %||% "匿名"
+              if (isTRUE(nchar(ct) > 80)) ct <- paste0(substr(ct, 1, 80), "...")
+              comment_html <- as.character(tags$div(style="font-size:11px; color:#5e6c84; margin-top:6px; padding:4px 6px; background:#f4f5f7; border-radius:3px;",
+                tags$span(style="color:#999;", cn, ": "), tags$span(ct)))
+            }
           }
           
           pinned <- r$pinned[1] %||% 0
@@ -105,8 +180,8 @@ note_server <- function(input, output, session, rv) {
             tags$div(class = "note-title",
               HTML(pin_html),
               if (isTRUE(note_no != "")) tags$span(style="color:#337ab7;font-size:11px;margin-right:6px;", note_no),
-              r$title, " ", HTML(flags)),
-            if (!compact && isTRUE(nchar(body) > 0)) tags$div(class = "note-body", body) else "",
+              HTML(.hl(r$title, search_words)), " ", HTML(flags)),
+            if (!compact && isTRUE(nchar(body) > 0)) tags$div(class = "note-body", HTML(.hl(body, search_words))) else "",
             if (!compact) tags$div(class = "note-meta", style = "white-space:nowrap; overflow:hidden; text-overflow:ellipsis;",
               tags$span(if (stale_cls != "") class = stale_cls else NULL,
                 if (stale_cls != "") tags$span(style="color:#e53e3e;font-weight:bold;", "🕐", created) else tags$span("🕐", created)),
@@ -168,21 +243,43 @@ note_server <- function(input, output, session, rv) {
             body <- r$content %||% ""
             body_lines <- strsplit(body, "\n")[[1]]
             if (length(body_lines) > 1) body <- paste(body_lines[-1], collapse = "\n") else body <- ""
-            if (nchar(body) > 400) body <- paste0(substr(body, 1, 400), "...")
-            last_comment <- note_comment_get_last(r$id)
+            if (length(search_words) > 0) {
+              body <- .snippet(body, search_words, 80)
+            } else if (nchar(body) > 400) {
+              body <- paste0(substr(body, 1, 400), "...")
+            }
+            # 搜索时：显示匹配评论；否则显示最新评论
             comment_html <- ""
-            if (!is.null(last_comment) && nrow(last_comment) > 0) {
-              ct <- last_comment$content[1]; cn <- last_comment$creator_name[1] %||% "匿名"
-              if (isTRUE(nchar(ct) > 80)) ct <- paste0(substr(ct, 1, 80), "...")
-              comment_html <- as.character(tags$div(style="font-size:11px; color:#5e6c84; margin-top:6px; padding:4px 6px; background:#f4f5f7; border-radius:3px;",
-                tags$span(style="color:#999;", cn, ": "), tags$span(ct)))
+            if (length(search_words) > 0 && nrow(matching_comments) > 0) {
+              mc <- matching_comments[matching_comments$note_id == r$id, , drop = FALSE]
+              if (nrow(mc) > 0) {
+                parts <- c()
+                for (mi in 1:min(nrow(mc), 2)) {
+                  mcc <- mc[mi, ]
+                  cn <- mcc$creator_name[1] %||% "匿名"
+                  ct <- .snippet(mcc$content[1], search_words, 60)
+                  ct <- .hl(ct, search_words)
+                  parts <- c(parts, sprintf('<div style="margin-bottom:2px;"><span style="color:#999;">%s:</span> <span>%s</span></div>', cn, ct))
+                }
+                if (nrow(mc) > 2) parts <- c(parts, sprintf('<div style="font-size:10px; color:#999;">... 还有 %d 条匹配评论</div>', nrow(mc) - 2))
+                comment_html <- as.character(tags$div(style="font-size:11px; color:#5e6c84; margin-top:6px; padding:4px 6px; background:#f4f5f7; border-radius:3px;",
+                  HTML(paste(parts, collapse = ""))))
+              }
+            } else {
+              last_comment <- note_comment_get_last(r$id)
+              if (!is.null(last_comment) && nrow(last_comment) > 0) {
+                ct <- last_comment$content[1]; cn <- last_comment$creator_name[1] %||% "匿名"
+                if (isTRUE(nchar(ct) > 80)) ct <- paste0(substr(ct, 1, 80), "...")
+                comment_html <- as.character(tags$div(style="font-size:11px; color:#5e6c84; margin-top:6px; padding:4px 6px; background:#f4f5f7; border-radius:3px;",
+                  tags$span(style="color:#999;", cn, ": "), tags$span(ct)))
+              }
             }
             tags$div(class = card_class, `data-id` = r$id,
               tags$div(class = "note-title",
                 HTML(pin_html),
                 if (isTRUE(note_no != "")) tags$span(style="color:#337ab7;font-size:11px;margin-right:6px;", note_no),
-                r$title, " ", HTML(flags)),
-              if (!compact && isTRUE(nchar(body) > 0)) tags$div(class="note-body", body) else "",
+                HTML(.hl(r$title, search_words)), " ", HTML(flags)),
+              if (!compact && isTRUE(nchar(body) > 0)) tags$div(class="note-body", HTML(.hl(body, search_words))) else "",
               if (!compact) tags$div(class="note-meta", style = "white-space:nowrap; overflow:hidden; text-overflow:ellipsis;",
                 tags$span("🕐", substr(r$created_at,1,16)),
                 if (!is.na(r$reminder_at) && nchar(r$reminder_at) > 10) tags$span("⏰", substr(r$reminder_at,1,16),
@@ -738,7 +835,13 @@ note_server <- function(input, output, session, rv) {
             <button class="btn btn-xs btn-success comment-done-btn" data-id="%d">✅</button>
             <button class="btn btn-xs btn-info comment-edit-btn" data-id="%d">✏</button>
             <button class="btn btn-xs btn-danger comment-del-btn" data-id="%d">🗑</button>
+            <button class="btn btn-xs btn-default comment-reply-btn" data-id="%d" data-name="%s">💬 回复</button>
           </div>
+        </div>
+        <div class="comment-reply-form" style="display:none; margin-top:6px;">
+          <textarea class="form-control comment-reply-input" rows="2" placeholder="回复 %s ..." style="font-size:12px;"></textarea>
+          <button class="btn btn-xs btn-primary comment-reply-submit" data-id="%d" style="margin-top:3px;">回复</button>
+          <button class="btn btn-xs btn-default comment-reply-cancel" style="margin-top:3px;">取消</button>
         </div>
       </div>',
       result$id,
@@ -748,7 +851,8 @@ note_server <- function(input, output, session, rv) {
       gsub("'", "\\'", input$note_comment_new_m),
       substr(result$created_at, 1, 16),
       result$id,
-      result$id, result$id, result$id)
+      result$id, result$id, result$id,
+      result$id, result$creator_name, result$creator_name, result$id)
     session$sendCustomMessage(type = "noteInjectComment", message = list(html = new_comment_html, comment_id = result$id))
     note_trigger(note_trigger() + 1)
     rv$daily_report_refresh <- rv$daily_report_refresh + 1

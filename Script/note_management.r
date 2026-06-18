@@ -65,6 +65,29 @@ note_search <- function(keyword) {
   }, error = function(e) data.frame(), finally = { db_disconnect(con) })
 }
 
+# 搜索时获取指定记事中匹配关键字的评论（用于卡片展示）
+note_search_get_matching_comments <- function(note_ids, keyword) {
+  if (length(note_ids) == 0 || is.null(keyword) || trimws(keyword) == "") return(data.frame())
+  con <- db_connect()
+  tryCatch({
+    words <- strsplit(trimws(keyword), "\\s+")[[1]]
+    words <- words[words != ""]
+    if (length(words) == 0) return(data.frame())
+    conditions <- sapply(words, function(w) {
+      sw <- gsub("'", "''", w)
+      sprintf("c.content LIKE '%%%s%%'", sw)
+    })
+    ids_str <- paste(as.integer(note_ids), collapse = ",")
+    dbGetQuery(con, sprintf("
+      SELECT c.id, c.note_id, c.content, c.created_at,
+             u.username as creator_name
+      FROM note_comments c
+      LEFT JOIN users u ON c.created_by = u.id
+      WHERE c.note_id IN (%s) AND (%s)
+      ORDER BY c.created_at ASC", ids_str, paste(conditions, collapse = " AND ")))
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
 ##################
 # 获取单条
 ##################
