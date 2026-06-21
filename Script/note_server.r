@@ -358,31 +358,6 @@ note_server <- function(input, output, session, rv) {
     )
     
     tagList(
-      # 快速关键字栏（分类关键字 | 搜索历史）
-      if (nrow(items) > 0) {
-        cat_kw <- note_keywords_cache()
-        hist_kw <- note_search_history()
-        kw_bar <- ""
-        kw_btn <- function(label, cls) {
-          sprintf('<span class="note-kw-tag %s" onclick="Shiny.setInputValue(\'note_kw_click\',\'%s\',{priority:\'event\'})">%s <a href="#" onclick="event.stopPropagation();Shiny.setInputValue(\'note_kw_del\',\'%s\',{priority:\'event\'});return false;" style="color:#999;text-decoration:none;">✕</a></span>',
-            cls, label, label, label)
-        }
-        if (length(cat_kw) > 0) {
-          cats <- paste(sapply(cat_kw[1:min(10,length(cat_kw))], function(x) kw_btn(x, "kw-cat")), collapse = "")
-        } else cats <- ""
-        if (length(hist_kw) > 0) {
-          hists <- paste(sapply(hist_kw[1:min(8,length(hist_kw))], function(x) kw_btn(x, "kw-hist")), collapse = "")
-        } else hists <- ""
-        if (cats != "" || hists != "") {
-          tags$div(style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; padding:4px 0; border-bottom:1px solid #f0f0f5;",
-            tags$div(style = "display:flex; gap:4px; flex-wrap:wrap; align-items:center;",
-              if (cats != "") tags$span(style="font-size:10px;color:#999;margin-right:2px;","分类:"),
-              if (cats != "") HTML(cats)),
-            tags$div(style = "display:flex; gap:4px; flex-wrap:wrap; align-items:center;",
-              if (hists != "") tags$span(style="font-size:10px;color:#999;margin-right:2px;","历史:"),
-              if (hists != "") HTML(hists)))
-        }
-      },
       # 一行：统计 | 搜索 | 简约
       tags$div(style = "display:flex; gap:10px; align-items:center; margin-bottom:10px;",
         tags$div(style = "flex:1;", stats_bar),
@@ -400,6 +375,30 @@ note_server <- function(input, output, session, rv) {
           onclick = "Shiny.setInputValue('note_toggle_compact', Math.random(), {priority:'event'})",
           if (compact) "📋 详细" else "📋 简约")
       ),
+      # 快速关键字栏（分类关键字 | 搜索历史）——在数据块下面
+      if (nrow(items) > 0) {
+        cat_kw <- note_keywords_cache()
+        hist_kw <- note_search_history()
+        kw_btn <- function(label, cls) {
+          sprintf('<span class="note-kw-tag %s" onclick="Shiny.setInputValue(\'note_kw_click\',\'%s\',{priority:\'event\'})">%s <a href="#" onclick="event.stopPropagation();Shiny.setInputValue(\'note_kw_del\',\'%s\',{priority:\'event\'});return false;" style="color:#999;text-decoration:none;">✕</a></span>',
+            cls, label, label, label)
+        }
+        if (length(cat_kw) > 0) {
+          cats <- paste(sapply(cat_kw[1:min(10,length(cat_kw))], function(x) kw_btn(x, "kw-cat")), collapse = "")
+        } else cats <- ""
+        if (length(hist_kw) > 0) {
+          hists <- paste(sapply(hist_kw[1:min(8,length(hist_kw))], function(x) kw_btn(x, "kw-hist")), collapse = "")
+        } else hists <- ""
+        if (cats != "" || hists != "") {
+          tags$div(style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;",
+            tags$div(style = "display:flex; gap:4px; flex-wrap:wrap; align-items:center;",
+              if (cats != "") tags$span(style="font-size:10px;color:#999;margin-right:2px;","分类:"),
+              if (cats != "") HTML(cats)),
+            tags$div(style = "display:flex; gap:4px; flex-wrap:wrap; align-items:center;",
+              if (hists != "") tags$span(style="font-size:10px;color:#999;margin-right:2px;","历史:"),
+              if (hists != "") HTML(hists)))
+        }
+      },
       tags$div(class = "trello-board",
         tags$div(class = "trello-col pending",
           tags$h4(sprintf("📋 待处理 (%d)", pending_count)),

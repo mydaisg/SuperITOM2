@@ -403,13 +403,16 @@ note_get_top_keywords <- function(n = 10) {
   tryCatch({
     titles <- dbGetQuery(con, "SELECT title FROM notes WHERE title IS NOT NULL AND title != ''")$title
     if (length(titles) == 0) return(character(0))
-    # 分词：按空格、标点、中文常见分隔符拆分
-    all_words <- unlist(strsplit(titles, "[\\s,，。；;：:、（）()\\[\\]【】\\-_/|]+"))
+    # 分词：按中英文标点、特殊字符、常见间隔符拆分
+    all_words <- unlist(strsplit(titles, "[\\s,，。；;：:、（）()\\[\\]【】\\{\\}《》\"'\\-_/|#＠@＋+＝=&%°℃\\r\\n\\t]+"))
+    # 再对中文连续串按常见后缀词切分
+    all_words <- unlist(strsplit(all_words, "(?<=.)(?=需求|项目|服务|管理|系统|平台|模块|功能|配置|部署|优化|升级|维护|巡检|报价|施工|安装|调试|方案|报告|申请|审批|采购|合同|进度|质量|安全|培训|会议|测试|检查|评估|分析|设计|开发|上线)", perl=TRUE))
+    all_words <- trimws(all_words)
     all_words <- all_words[nchar(all_words) >= 2]  # 跳过单字
-    # 过滤掉纯数字和常见停用词
+    # 过滤纯数字和停用词
     stopwords <- c("的","是","在","和","与","或","及","之","不","了","也","就","都","这","那","但","而","且","所","为","被","把","从","对","向","以","到","要","会","能","可以","需要","进行","一个","这个","那个","每个","一些","还有","出来","起来","一下","就是","还是","不是","没有","已经","因为","所以","如果","虽然","但是","然后","因此")
     all_words <- all_words[!tolower(all_words) %in% stopwords]
-    all_words <- all_words[!grepl("^\\d+$", all_words)]  # 纯数字
+    all_words <- all_words[!grepl("^[\\d\\s\\.\\-]+$", all_words)]  # 纯数字日期类
     if (length(all_words) == 0) return(character(0))
     freq <- sort(table(all_words), decreasing = TRUE)
     names(freq)[1:min(n, length(freq))]
