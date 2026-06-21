@@ -167,6 +167,10 @@ note_ui <- function() {
       .note-stat-box:hover { box-shadow:0 1px 4px rgba(0,0,0,0.06); }
       .note-stat-box .stat-num { font-size:22px; font-weight:800; line-height:1.2; }
       .note-stat-box .stat-lbl { font-size:10px; color:#8899aa; margin-top:2px; }
+      .note-kw-tag { display:inline-block; font-size:11px; padding:2px 8px; border-radius:12px; cursor:pointer; margin:1px 2px; transition:all 0.15s; }
+      .note-kw-tag:hover { opacity:0.8; }
+      .kw-cat { background:#ede9fe; color:#5b21b6; }
+      .kw-hist { background:#dbeafe; color:#1e40af; }
     ")),
     fluidPage(
       # 看板（含统计栏 + 搜索栏 + 创建表单 + 待处理分页）

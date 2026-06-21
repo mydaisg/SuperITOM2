@@ -396,3 +396,22 @@ note_get_today <- function() {
     dbGetQuery(con, sprintf("SELECT id, title, content, status, importance, created_at FROM notes WHERE date(created_at) = '%s' ORDER BY created_at DESC", today))
   }, finally = { db_disconnect(con) })
 }
+
+# 从所有标题提取 TOP N 关键字（供快速筛选）
+note_get_top_keywords <- function(n = 10) {
+  con <- db_connect()
+  tryCatch({
+    titles <- dbGetQuery(con, "SELECT title FROM notes WHERE title IS NOT NULL AND title != ''")$title
+    if (length(titles) == 0) return(character(0))
+    # 分词：按空格、标点、中文常见分隔符拆分
+    all_words <- unlist(strsplit(titles, "[\\s,，。；;：:、（）()\\[\\]【】\\-_/|]+"))
+    all_words <- all_words[nchar(all_words) >= 2]  # 跳过单字
+    # 过滤掉纯数字和常见停用词
+    stopwords <- c("的","是","在","和","与","或","及","之","不","了","也","就","都","这","那","但","而","且","所","为","被","把","从","对","向","以","到","要","会","能","可以","需要","进行","一个","这个","那个","每个","一些","还有","出来","起来","一下","就是","还是","不是","没有","已经","因为","所以","如果","虽然","但是","然后","因此")
+    all_words <- all_words[!tolower(all_words) %in% stopwords]
+    all_words <- all_words[!grepl("^\\d+$", all_words)]  # 纯数字
+    if (length(all_words) == 0) return(character(0))
+    freq <- sort(table(all_words), decreasing = TRUE)
+    names(freq)[1:min(n, length(freq))]
+  }, error = function(e) character(0), finally = { db_disconnect(con) })
+}

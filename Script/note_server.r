@@ -10,6 +10,8 @@ note_server <- function(input, output, session, rv) {
   note_compact_mode <- reactiveVal(FALSE)  # 简约/详细切换
   note_search_term <- reactiveVal("")      # 搜索关键词
   note_filter <- reactiveVal("")           # 筛选: "reminder"/"due"/""
+  note_search_history <- reactiveVal(character(0))  # 最近搜索记录
+  note_keywords_cache <- reactiveVal(character(0))  # TOP10关键字缓存
   
   ##################
   # Trello 看板
@@ -356,6 +358,31 @@ note_server <- function(input, output, session, rv) {
     )
     
     tagList(
+      # 快速关键字栏（分类关键字 | 搜索历史）
+      if (nrow(items) > 0) {
+        cat_kw <- note_keywords_cache()
+        hist_kw <- note_search_history()
+        kw_bar <- ""
+        kw_btn <- function(label, cls) {
+          sprintf('<span class="note-kw-tag %s" onclick="Shiny.setInputValue(\'note_kw_click\',\'%s\',{priority:\'event\'})">%s <a href="#" onclick="event.stopPropagation();Shiny.setInputValue(\'note_kw_del\',\'%s\',{priority:\'event\'});return false;" style="color:#999;text-decoration:none;">✕</a></span>',
+            cls, label, label, label)
+        }
+        if (length(cat_kw) > 0) {
+          cats <- paste(sapply(cat_kw[1:min(10,length(cat_kw))], function(x) kw_btn(x, "kw-cat")), collapse = "")
+        } else cats <- ""
+        if (length(hist_kw) > 0) {
+          hists <- paste(sapply(hist_kw[1:min(8,length(hist_kw))], function(x) kw_btn(x, "kw-hist")), collapse = "")
+        } else hists <- ""
+        if (cats != "" || hists != "") {
+          tags$div(style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; padding:4px 0; border-bottom:1px solid #f0f0f5;",
+            tags$div(style = "display:flex; gap:4px; flex-wrap:wrap; align-items:center;",
+              if (cats != "") tags$span(style="font-size:10px;color:#999;margin-right:2px;","分类:"),
+              if (cats != "") HTML(cats)),
+            tags$div(style = "display:flex; gap:4px; flex-wrap:wrap; align-items:center;",
+              if (hists != "") tags$span(style="font-size:10px;color:#999;margin-right:2px;","历史:"),
+              if (hists != "") HTML(hists)))
+        }
+      },
       # 一行：统计 | 搜索 | 简约
       tags$div(style = "display:flex; gap:10px; align-items:center; margin-bottom:10px;",
         tags$div(style = "flex:1;", stats_bar),
@@ -456,6 +483,13 @@ note_server <- function(input, output, session, rv) {
     kw <- trimws(input$note_search_input %||% "")
     note_search_term(kw)
     note_pending_page(1)
+    # 保存到搜索历史（去重，最多8条）
+    if (kw != "") {
+      hist <- note_search_history()
+      hist <- unique(c(kw, hist))
+      if (length(hist) > 8) hist <- hist[1:8]
+      note_search_history(hist)
+    }
   })
 
   observeEvent(input$note_search_clear_btn, {
@@ -473,6 +507,47 @@ note_server <- function(input, output, session, rv) {
     if (!is.null(kw) && kw != "") {
       updateTextInput(session, "note_search_input", value = kw)
     }
+  })
+
+  # 关键字缓存（首次加载或刷新时更新TOP10）
+  observe({
+    note_trigger()
+    req(rv$logged_in)
+    if (length(note_keywords_cache()) == 0) {
+      tryCatch({ note_keywords_cache(note_get_top_keywords(10)) }, error = function(e) NULL)
+    }
+  })
+
+  # 关键字点击 → 设搜索词触发筛选
+  observeEvent(input$note_kw_click, {
+    req(rv$logged_in, input$note_kw_click)
+    kw <- trimws(input$note_kw_click)
+    if (kw == "") return()
+    note_search_term(kw)
+    note_pending_page(1)
+    # 加入搜索历史（去重，最多8条）
+    hist <- note_search_history()
+    hist <- unique(c(kw, hist))
+    if (length(hist) > 8) hist <- hist[1:8]
+    note_search_history(hist)
+  })
+
+  # 关键字 X 删除
+  observeEvent(input$note_kw_del, {
+    req(rv$logged_in, input$note_kw_del)
+    del <- trimws(input$note_kw_del)
+    note_search_history(setdiff(note_search_history(), del))
+    # 也尝试清除分类缓存（如果删除的是分类关键字）
+    kw <- note_keywords_cache()
+    if (del %in% kw) {
+      note_keywords_cache(c(setdiff(kw, del), note_get_top_keywords(1)))
+    }
+  })
+
+  # 刷新关键字缓存
+  observeEvent(input$note_kw_refresh, {
+    req(rv$logged_in)
+    tryCatch({ note_keywords_cache(note_get_top_keywords(10)) }, error = function(e) NULL)
   })
 
   ##################
