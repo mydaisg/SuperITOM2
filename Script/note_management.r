@@ -398,23 +398,62 @@ note_get_today <- function() {
 }
 
 # 从所有标题提取 TOP N 关键字（供快速筛选）
+# 策略：CJK bigram 提取 + 非中文词抽取 + 分隔符切分 → 频次排序 → 过滤
 note_get_top_keywords <- function(n = 10) {
   con <- db_connect()
   tryCatch({
     titles <- dbGetQuery(con, "SELECT title FROM notes WHERE title IS NOT NULL AND title != ''")$title
     if (length(titles) == 0) return(character(0))
-    # 分词：按中英文标点、特殊字符、常见间隔符拆分
-    all_words <- unlist(strsplit(titles, "[\\s,，。；;：:、（）()\\[\\]【】\\{\\}《》\"'\\-_/|#＠@＋+＝=&%°℃\\r\\n\\t]+"))
-    # 再对中文连续串按常见后缀词切分
-    all_words <- unlist(strsplit(all_words, "(?<=.)(?=需求|项目|服务|管理|系统|平台|模块|功能|配置|部署|优化|升级|维护|巡检|报价|施工|安装|调试|方案|报告|申请|审批|采购|合同|进度|质量|安全|培训|会议|测试|检查|评估|分析|设计|开发|上线)", perl=TRUE))
-    all_words <- trimws(all_words)
-    all_words <- all_words[nchar(all_words) >= 2]  # 跳过单字
-    # 过滤纯数字和停用词
-    stopwords <- c("的","是","在","和","与","或","及","之","不","了","也","就","都","这","那","但","而","且","所","为","被","把","从","对","向","以","到","要","会","能","可以","需要","进行","一个","这个","那个","每个","一些","还有","出来","起来","一下","就是","还是","不是","没有","已经","因为","所以","如果","虽然","但是","然后","因此")
-    all_words <- all_words[!tolower(all_words) %in% stopwords]
-    all_words <- all_words[!grepl("^[\\d\\s\\.\\-]+$", all_words)]  # 纯数字日期类
+    n_titles <- length(titles)
+    all_words <- character(0)
+    for (t in titles) {
+      # 1) CJK bigram：连续中文每相邻两字组成词
+      cjk_runs <- regmatches(t, gregexpr("[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+", t, perl = TRUE))[[1]]
+      for (run in cjk_runs) {
+        chars <- strsplit(run, "")[[1]]
+        if (length(chars) >= 2) {
+          for (i in seq_len(length(chars) - 1)) {
+            all_words <- c(all_words, paste0(chars[i], chars[i + 1]))
+          }
+        }
+      }
+      # 2) 非中文词：英文字母序列（如 SuperITOM、ssh、API 等）
+      en_runs <- strsplit(t, "[^A-Za-z]+")[[1]]
+      en_runs <- en_runs[nchar(en_runs) >= 2]
+      if (length(en_runs) > 0) all_words <- c(all_words, en_runs)
+      # 3) 分隔符切分：按标点/数字切开后保留 ≥2 字的片段
+      segs <- strsplit(t, "[\\s,，。；;：:、（）()\\[\\]【】《》\"'\\-_/|#＠@＋+＝=&%°℃\\r\\n\\t\\d]+")[[1]]
+      segs <- trimws(segs)
+      segs <- segs[nchar(segs) >= 2]
+      if (length(segs) > 0) all_words <- c(all_words, segs)
+    }
     if (length(all_words) == 0) return(character(0))
-    freq <- sort(table(all_words), decreasing = TRUE)
-    names(freq)[1:min(n, length(freq))]
+    freq <- table(all_words)
+    # 停用词（常见虚词 + 日期时间成分）
+    stopwords <- tolower(c(
+      "的","是","在","和","与","或","及","之","不","了","也","就","都","这","那","但",
+      "而","且","所","为","被","把","从","对","向","以","到","要","会","能","可以",
+      "需要","进行","一个","这个","那个","每个","一些","还有","出来","起来","一下",
+      "就是","还是","不是","没有","已经","因为","所以","如果","虽然","但是","然后",
+      "因此","不过","可能","应该","必须","一定",
+      "什么","怎么","怎样","如何","为什么","多少","哪个","哪里","什么时候","谁",
+      "年","月","日","时","分","秒","周","星期",
+      "今天","明天","昨天","上午","下午","晚上","中午",
+      "说","想","看","做","来","去","给","让","用","有","知道","觉得","认为"
+    ))
+    # 过滤条件（严格版）：
+    # 1) 停用词/单字/纯数字/日期 直接排除
+    # 2) 仅2字词（bigram）：只保留出现≥2次的（过滤跨边界垃圾如"础服"）
+    # 3) 过于泛化（>50%标题）排除
+    bad <- names(freq) %in% stopwords |
+      nchar(names(freq)) < 2 |
+      grepl("^[\\d\\s\\.\\-:\\/]+$", names(freq), perl = TRUE) |      # 纯数字/日期(20260606,2026-06-06)
+      grepl("^\\d+[年月日时分秒周]+$", names(freq), perl = TRUE) |    # 数字+日期后缀(2026年,06月)
+      (nchar(names(freq)) == 2 & freq < 2) |                          # 2字词必须出现≥2次
+      freq > n_titles * 0.5                                           # 出现在>50%标题中，过于泛化
+    freq <- freq[!bad]
+    if (length(freq) == 0) return(character(0))
+    freq <- sort(freq, decreasing = TRUE)
+    names(freq)[seq_len(min(n, length(freq)))]
   }, error = function(e) character(0), finally = { db_disconnect(con) })
 }

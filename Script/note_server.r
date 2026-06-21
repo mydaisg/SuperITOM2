@@ -10,7 +10,8 @@ note_server <- function(input, output, session, rv) {
   note_compact_mode <- reactiveVal(FALSE)  # 简约/详细切换
   note_search_term <- reactiveVal("")      # 搜索关键词
   note_filter <- reactiveVal("")           # 筛选: "reminder"/"due"/""
-  note_search_history <- reactiveVal(character(0))  # 最近搜索记录
+  note_search_history <- reactiveVal(character(0))  # 最近搜索记录（最多15条）
+  note_search_freq <- reactiveVal(list())           # 搜索频次 {keyword: count}
   note_keywords_cache <- reactiveVal(character(0))  # TOP10关键字缓存
   
   ##################
@@ -375,10 +376,18 @@ note_server <- function(input, output, session, rv) {
           onclick = "Shiny.setInputValue('note_toggle_compact', Math.random(), {priority:'event'})",
           if (compact) "📋 详细" else "📋 简约")
       ),
-      # 快速关键字栏（分类关键字 | 搜索历史）——在数据块下面
+      # 快速关键字栏（TOP10标题关键词 | TOP5高频搜索）
       if (nrow(items) > 0) {
         cat_kw <- note_keywords_cache()
-        hist_kw <- note_search_history()
+        # 历史搜索频次 → 取 TOP5（排除已出现在标题关键字中的）
+        freq <- note_search_freq()
+        if (length(freq) > 0) {
+          freq_sorted <- sort(unlist(freq), decreasing = TRUE)
+          hist_kw <- names(freq_sorted)[seq_len(min(5, length(freq_sorted)))]
+          hist_kw <- setdiff(hist_kw, cat_kw)
+        } else {
+          hist_kw <- character(0)
+        }
         kw_btn <- function(label, cls) {
           sprintf('<span class="note-kw-tag %s" onclick="Shiny.setInputValue(\'note_kw_click\',\'%s\',{priority:\'event\'})">%s <a href="#" onclick="event.stopPropagation();Shiny.setInputValue(\'note_kw_del\',\'%s\',{priority:\'event\'});return false;" style="color:#999;text-decoration:none;">✕</a></span>',
             cls, label, label, label)
@@ -387,7 +396,7 @@ note_server <- function(input, output, session, rv) {
           cats <- paste(sapply(cat_kw[1:min(10,length(cat_kw))], function(x) kw_btn(x, "kw-cat")), collapse = "")
         } else cats <- ""
         if (length(hist_kw) > 0) {
-          hists <- paste(sapply(hist_kw[1:min(8,length(hist_kw))], function(x) kw_btn(x, "kw-hist")), collapse = "")
+          hists <- paste(sapply(hist_kw, function(x) kw_btn(x, "kw-hist")), collapse = "")
         } else hists <- ""
         if (cats != "" || hists != "") {
           tags$div(style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;",
@@ -395,7 +404,7 @@ note_server <- function(input, output, session, rv) {
               if (cats != "") tags$span(style="font-size:10px;color:#999;margin-right:2px;","分类:"),
               if (cats != "") HTML(cats)),
             tags$div(style = "display:flex; gap:4px; flex-wrap:wrap; align-items:center;",
-              if (hists != "") tags$span(style="font-size:10px;color:#999;margin-right:2px;","历史:"),
+              if (hists != "") tags$span(style="font-size:10px;color:#999;margin-right:2px;","高频:"),
               if (hists != "") HTML(hists)))
         }
       },
@@ -482,12 +491,15 @@ note_server <- function(input, output, session, rv) {
     kw <- trimws(input$note_search_input %||% "")
     note_search_term(kw)
     note_pending_page(1)
-    # 保存到搜索历史（去重，最多8条）
+    # 保存到搜索历史（去重，最多15条） + 频次
     if (kw != "") {
       hist <- note_search_history()
       hist <- unique(c(kw, hist))
-      if (length(hist) > 8) hist <- hist[1:8]
+      if (length(hist) > 15) hist <- hist[1:15]
       note_search_history(hist)
+      freq <- note_search_freq()
+      freq[[kw]] <- (freq[[kw]] %||% 0L) + 1L
+      note_search_freq(freq)
     }
   })
 
@@ -524,11 +536,14 @@ note_server <- function(input, output, session, rv) {
     if (kw == "") return()
     note_search_term(kw)
     note_pending_page(1)
-    # 加入搜索历史（去重，最多8条）
+    # 加入搜索历史（去重，最多15条） + 频次
     hist <- note_search_history()
     hist <- unique(c(kw, hist))
-    if (length(hist) > 8) hist <- hist[1:8]
+    if (length(hist) > 15) hist <- hist[1:15]
     note_search_history(hist)
+    freq <- note_search_freq()
+    freq[[kw]] <- (freq[[kw]] %||% 0L) + 1L
+    note_search_freq(freq)
   })
 
   # 关键字 X 删除
@@ -536,6 +551,10 @@ note_server <- function(input, output, session, rv) {
     req(rv$logged_in, input$note_kw_del)
     del <- trimws(input$note_kw_del)
     note_search_history(setdiff(note_search_history(), del))
+    # 清除频次记录
+    freq <- note_search_freq()
+    freq[[del]] <- NULL
+    note_search_freq(freq)
     # 也尝试清除分类缓存（如果删除的是分类关键字）
     kw <- note_keywords_cache()
     if (del %in% kw) {
