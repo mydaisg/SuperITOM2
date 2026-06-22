@@ -4,6 +4,12 @@ duty_matrix_server <- function(input, output, session, rv) {
 
   duty_trigger <- reactiveVal(0)
   refresh <- function() { duty_trigger(duty_trigger() + 1) }
+  is_admin <- reactive({
+    !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+  })
+  current_uid <- reactive({
+    if (is.null(rv$current_user) || nrow(rv$current_user) == 0) NULL else rv$current_user$id[1]
+  })
 
   ##################
   # 矩阵视图：列=岗位(一级)+人员(二级)，行=职责项
@@ -14,6 +20,13 @@ duty_matrix_server <- function(input, output, session, rv) {
     items     <- duty_item_get_all()
     positions <- duty_position_get_all()
     staff_all <- duty_staff_get_all()
+    # 非admin用户只看自己的记录
+    if (!is_admin()) {
+      staff_all <- staff_all[!is.na(staff_all$user_id) & staff_all$user_id == current_uid(), , drop = FALSE]
+      if (nrow(staff_all) == 0) {
+        return(tags$p(style="color:#999; padding:20px; text-align:center;", "你暂无岗职记录"))
+      }
+    }
 
     if (nrow(positions) == 0 || nrow(items) == 0) {
       return(tags$p(style="color:#999; padding:20px; text-align:center;",
@@ -110,7 +123,7 @@ duty_matrix_server <- function(input, output, session, rv) {
   # 点击单元格 → 弹窗设置/修改 RBAC
   ##################
   observeEvent(input$duty_matrix_click, {
-    req(rv$logged_in)
+    req(rv$logged_in, is_admin())
     sid <- as.integer(input$duty_matrix_click$sid)
     pid <- as.integer(input$duty_matrix_click$pid)
     did <- as.integer(input$duty_matrix_click$did)
@@ -290,7 +303,7 @@ duty_matrix_server <- function(input, output, session, rv) {
   # 卡片按钮：添加人员到岗位
   ##################
   observeEvent(input$duty_card_add_staff, {
-    req(rv$logged_in)
+    req(rv$logged_in, is_admin())
     pid <- as.integer(input$duty_card_add_staff)
     pos <- duty_position_get_all()[duty_position_get_all()$id == pid, ]
     staff <- duty_staff_get_all()
@@ -314,7 +327,7 @@ duty_matrix_server <- function(input, output, session, rv) {
   # 卡片按钮：添加职责到人员
   ##################
   observeEvent(input$duty_card_add_duty, {
-    req(rv$logged_in)
+    req(rv$logged_in, is_admin())
     sid <- as.integer(input$duty_card_add_duty)
     st <- duty_staff_get_all()[duty_staff_get_all()$id == sid, ]
     if (is.na(st$position_id[1]) || st$position_id[1] == 0) {
@@ -342,12 +355,12 @@ duty_matrix_server <- function(input, output, session, rv) {
   # 卡片按钮：从岗位移除人员 / 从人员移除职责
   ##################
   observeEvent(input$duty_card_rm_staff, {
-    req(rv$logged_in)
+    req(rv$logged_in, is_admin())
     duty_staff_update(as.integer(input$duty_card_rm_staff$sid), position_id = NULL)
     refresh()
   })
   observeEvent(input$duty_card_rm_duty, {
-    req(rv$logged_in)
+    req(rv$logged_in, is_admin())
     duty_matrix_delete(
       as.integer(input$duty_card_rm_duty$sid),
       as.integer(input$duty_card_rm_duty$pid),
@@ -359,7 +372,7 @@ duty_matrix_server <- function(input, output, session, rv) {
   # 卡片按钮：编辑/删除
   ##################
   observeEvent(input$duty_card_edit, {
-    req(rv$logged_in)
+    req(rv$logged_in, is_admin())
     tp <- input$duty_card_edit$type; eid <- as.integer(input$duty_card_edit$id)
     if (tp == "position") {
       row <- duty_position_get_all()[duty_position_get_all()$id == eid, ]
@@ -394,7 +407,7 @@ duty_matrix_server <- function(input, output, session, rv) {
   })
 
   observeEvent(input$duty_card_del, {
-    req(rv$logged_in)
+    req(rv$logged_in, is_admin())
     tp <- input$duty_card_del$type; did <- as.integer(input$duty_card_del$id)
     result <- switch(tp,
       "position" = duty_position_delete(did),
@@ -416,23 +429,44 @@ duty_matrix_server <- function(input, output, session, rv) {
     refresh(); showNotification(result$message, type=ifelse(result$success,"message","error"))
   })
 
-  # 更新人员创建表单的岗位下拉选项
+  # 更新人员创建表单的岗位下拉选项 和 系统用户下拉
   observe({
     req(rv$logged_in)
     positions <- duty_position_get_all()
-    choices <- if (nrow(positions) > 0) stats::setNames(positions$id, positions$name) else c("(请先创建岗位)" = "")
-    updateSelectInput(session, "duty_new_staff_position", choices = c("(无)" = "", choices))
+    pchoices <- if (nrow(positions) > 0) stats::setNames(positions$id, positions$name) else c("(请先创建岗位)" = "")
+    updateSelectInput(session, "duty_new_staff_position", choices = c("(无)" = "", pchoices))
+    # 系统用户列表
+    con <- db_connect()
+    users <- tryCatch({
+      dbGetQuery(con, "SELECT id, username, display_name FROM users WHERE active = 1 ORDER BY username")
+    }, finally = { db_disconnect(con) })
+    if (nrow(users) > 0) {
+      labels <- ifelse(!is.na(users$display_name) & users$display_name != "",
+                       sprintf("%s (%s)", users$username, users$display_name),
+                       users$username)
+      uchoices <- stats::setNames(as.character(users$id), labels)
+    } else {
+      uchoices <- c("(无系统用户)" = "")
+    }
+    updateSelectInput(session, "duty_new_staff_user", choices = c("(选择系统用户)" = "", uchoices))
   })
 
-  # 创建人员
+  # 创建人员（从系统用户中选择）
   observeEvent(input$duty_add_staff, {
-    req(rv$logged_in, input$duty_new_staff_name)
+    req(rv$logged_in, input$duty_new_staff_user)
+    uid <- as.integer(input$duty_new_staff_user)
     pos_id <- if (!is.null(input$duty_new_staff_position) && input$duty_new_staff_position != "") as.integer(input$duty_new_staff_position) else NULL
-    result <- duty_staff_add(input$duty_new_staff_name, input$duty_new_staff_dept %||% "", input$duty_new_staff_email %||% "", position_id = pos_id)
+    # 查询用户名和邮箱
+    con <- db_connect()
+    user_info <- tryCatch({
+      dbGetQuery(con, sprintf("SELECT username, display_name, email FROM users WHERE id = %d", uid))
+    }, finally = { db_disconnect(con) })
+    name <- if (nrow(user_info) > 0 && !is.na(user_info$display_name[1]) && user_info$display_name[1] != "")
+              user_info$display_name[1] else user_info$username[1]
+    email <- if (nrow(user_info) > 0) user_info$email[1] %||% "" else ""
+    result <- duty_staff_add(name, department = "", email = email, user_id = uid, position_id = pos_id)
     if (result$success) {
-      updateTextInput(session,"duty_new_staff_name",value="")
-      updateTextInput(session,"duty_new_staff_dept",value="")
-      updateTextInput(session,"duty_new_staff_email",value="")
+      updateSelectInput(session, "duty_new_staff_user", selected = "")
     }
     refresh(); showNotification(result$message, type=ifelse(result$success,"message","error"))
   })

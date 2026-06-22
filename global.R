@@ -899,6 +899,22 @@ migrate_database <- function() {
     }
 
     # ===============================================
+    # 记事派发表（admin派发记事给多个user）
+    # ===============================================
+    if (!"note_dispatches" %in% tables) {
+      dbExecute(con, "CREATE TABLE note_dispatches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        note_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (note_id) REFERENCES notes(id),
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        UNIQUE(note_id, user_id)
+      )")
+      cat("数据库迁移完成：已创建 note_dispatches 表\n")
+    }
+
+    # ===============================================
     # 资产管理模块
     # ===============================================
     if (!"assets" %in% tables) {

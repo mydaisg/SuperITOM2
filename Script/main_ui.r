@@ -398,6 +398,23 @@ main_ui <- function(is_admin = FALSE) {
                   $('body').removeClass('admin-user');
                 }
               });
+              Shiny.addCustomMessageHandler('runjs', function(msg) {
+                if (window[msg]) window[msg]();
+              });
+              // 快速工单：滚动+聚焦
+              window.scrollToQuickWO = function() {
+                var h4s = document.querySelectorAll('h4');
+                for (var i = 0; i < h4s.length; i++) {
+                  if (h4s[i].innerText.indexOf('快速工单') !== -1) {
+                    h4s[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    break;
+                  }
+                }
+                setTimeout(function() {
+                  var ta = document.querySelector('#quick_work_order_text');
+                  if (ta) ta.focus();
+                }, 300);
+              };
             });
           "))
         ),
@@ -679,15 +696,15 @@ main_ui <- function(is_admin = FALSE) {
     #   process_ui()
     # ),
 
-    # 岗职矩阵标签页（admin专用）
-    if (is_admin) tabPanel(
+    # 岗职矩阵标签页
+    tabPanel(
       "岗职",
       icon = icon("sitemap"),
       duty_matrix_ui()
     ),
 
-    # 绩效管理标签页（admin专用）
-    if (is_admin) tabPanel(
+    # 绩效管理标签页
+    tabPanel(
       "绩效",
       icon = icon("chart-bar"),
       performance_ui()

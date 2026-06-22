@@ -24,7 +24,7 @@ asset_generate_number <- function() {
 asset_get_all <- function() {
   con <- db_connect()
   tryCatch({
-    dbGetQuery(con, "SELECT a.*, u.username as creator_name FROM assets a LEFT JOIN users u ON a.created_by = u.id ORDER BY a.hostname ASC")
+    dbGetQuery(con, "SELECT a.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name FROM assets a LEFT JOIN users u ON a.created_by = u.id ORDER BY a.hostname ASC")
   }, error = function(e) data.frame(), finally = { db_disconnect(con) })
 }
 
@@ -34,7 +34,7 @@ asset_get_all <- function() {
 asset_get_by_id <- function(id) {
   con <- db_connect()
   tryCatch({
-    r <- dbGetQuery(con, sprintf("SELECT a.*, u.username as creator_name FROM assets a LEFT JOIN users u ON a.created_by = u.id WHERE a.id = %d", as.integer(id)))
+    r <- dbGetQuery(con, sprintf("SELECT a.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name FROM assets a LEFT JOIN users u ON a.created_by = u.id WHERE a.id = %d", as.integer(id)))
     if (nrow(r) == 0) NULL else r
   }, finally = { db_disconnect(con) })
 }

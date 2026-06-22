@@ -60,7 +60,7 @@ inspection_plan_get_all <- function(status_filter = NULL, current_user = NULL) {
   con <- db_connect()
   tryCatch({
     uid <- insp_visible_user_id(current_user)
-    query <- "SELECT ip.*, u1.username as creator_name, u2.username as responsible_name
+    query <- "SELECT ip.*, COALESCE(NULLIF(u1.display_name,''), u1.username) as creator_name, COALESCE(NULLIF(u2.display_name,''), u2.username) as responsible_name
               FROM inspection_plans ip
               LEFT JOIN users u1 ON ip.created_by = u1.id
               LEFT JOIN users u2 ON ip.responsible_user = u2.id
@@ -89,7 +89,7 @@ inspection_plan_get_by_id <- function(id) {
   con <- db_connect()
   tryCatch({
     id <- as.integer(id)
-    query <- sprintf("SELECT ip.*, u1.username as creator_name, u2.username as responsible_name
+    query <- sprintf("SELECT ip.*, COALESCE(NULLIF(u1.display_name,''), u1.username) as creator_name, COALESCE(NULLIF(u2.display_name,''), u2.username) as responsible_name
                      FROM inspection_plans ip
                      LEFT JOIN users u1 ON ip.created_by = u1.id
                      LEFT JOIN users u2 ON ip.responsible_user = u2.id
@@ -757,7 +757,7 @@ inspection_record_get_by_task <- function(task_id) {
   con <- db_connect()
   tryCatch({
     query <- sprintf(
-      "SELECT r.*, u.username as inspector_name
+      "SELECT r.*, COALESCE(NULLIF(u.display_name,''), u.username) as inspector_name
        FROM inspection_records r
        LEFT JOIN users u ON r.inspector = u.id
        WHERE r.task_id = %d AND r.is_deleted = 0
@@ -776,7 +776,7 @@ inspection_record_get_all <- function(date_from = NULL, date_to = NULL, plan_fil
   con <- db_connect()
   tryCatch({
     query <- "SELECT r.*, t.task_no, t.item_names, t.plan_id,
-                     p.name as plan_name, u.username as inspector_name,
+                     p.name as plan_name, COALESCE(NULLIF(u.display_name,''), u.username) as inspector_name,
                      t.status as task_status
               FROM inspection_records r
               LEFT JOIN inspection_tasks t ON r.task_id = t.id
@@ -846,7 +846,7 @@ inspection_record_delete <- function(id, current_user = NULL) {
 inspection_plan_get_deleted <- function() {
   con <- db_connect()
   tryCatch({
-    query <- "SELECT ip.*, u1.username as creator_name, u2.username as responsible_name
+    query <- "SELECT ip.*, COALESCE(NULLIF(u1.display_name,''), u1.username) as creator_name, COALESCE(NULLIF(u2.display_name,''), u2.username) as responsible_name
               FROM inspection_plans ip
               LEFT JOIN users u1 ON ip.created_by = u1.id
               LEFT JOIN users u2 ON ip.responsible_user = u2.id
@@ -866,7 +866,7 @@ inspection_record_get_deleted <- function() {
   con <- db_connect()
   tryCatch({
     query <- "SELECT r.*, t.task_no, t.item_names, t.plan_id,
-                     p.name as plan_name, u.username as inspector_name
+                     p.name as plan_name, COALESCE(NULLIF(u.display_name,''), u.username) as inspector_name
               FROM inspection_records r
               LEFT JOIN inspection_tasks t ON r.task_id = t.id
               LEFT JOIN inspection_plans p ON t.plan_id = p.id
@@ -1422,7 +1422,7 @@ inspection_plan_get_comments <- function(plan_id) {
   con <- db_connect()
   tryCatch({
     plan_id <- as.integer(plan_id)
-    query <- sprintf("SELECT c.id, c.comment, c.created_at, u.username as creator_name
+    query <- sprintf("SELECT c.id, c.comment, c.created_at, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name
                       FROM inspection_plan_comments c
                       LEFT JOIN users u ON c.created_by = u.id
                       WHERE c.plan_id = %d

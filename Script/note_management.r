@@ -45,9 +45,9 @@ note_get_all <- function(current_user = NULL) {
   tryCatch({
     uid <- note_visible_user_id(current_user)
     if (is.null(uid)) {
-      dbGetQuery(con, "SELECT n.*, u.username as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id ORDER BY n.pinned DESC, n.updated_at DESC")
+      dbGetQuery(con, "SELECT n.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id ORDER BY n.pinned DESC, n.updated_at DESC")
     } else {
-      dbGetQuery(con, sprintf("SELECT n.*, u.username as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id WHERE n.created_by = %d ORDER BY n.pinned DESC, n.updated_at DESC", uid))
+      dbGetQuery(con, sprintf("SELECT n.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id WHERE (n.created_by = %d OR n.id IN (SELECT note_id FROM note_dispatches WHERE user_id = %d)) ORDER BY n.pinned DESC, n.updated_at DESC", uid, uid))
     }
   }, error = function(e) data.frame(), finally = { db_disconnect(con) })
 }
@@ -60,14 +60,14 @@ note_search <- function(keyword, current_user = NULL) {
   con <- db_connect()
   tryCatch({
     uid <- note_visible_user_id(current_user)
-    user_filter <- if (is.null(uid)) "" else sprintf("AND n.created_by = %d", uid)
+    user_filter <- if (is.null(uid)) "" else sprintf("AND (n.created_by = %d OR n.id IN (SELECT note_id FROM note_dispatches WHERE user_id = %d))", uid, uid)
     kw <- trimws(keyword)
     # 判断精确搜索：用 "" 或 <> 包裹
     if (grepl('^".*"$', kw) || grepl("^<.*>$", kw)) {
       kw <- gsub('^["<]|["<]$', '', kw)  # 精确匹配
       safe <- gsub("'", "''", kw)
       query <- sprintf("
-        SELECT DISTINCT n.*, u.username as creator_name
+        SELECT DISTINCT n.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name
         FROM notes n LEFT JOIN users u ON n.created_by = u.id
         LEFT JOIN note_comments c ON c.note_id = n.id
         WHERE (n.title = '%s' OR c.content = '%s') %s
@@ -81,7 +81,7 @@ note_search <- function(keyword, current_user = NULL) {
         sprintf("(n.title LIKE '%%%s%%' OR n.content LIKE '%%%s%%' OR c.content LIKE '%%%s%%')", sw, sw, sw)
       })
       query <- sprintf("
-        SELECT DISTINCT n.*, u.username as creator_name
+        SELECT DISTINCT n.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name
         FROM notes n LEFT JOIN users u ON n.created_by = u.id
         LEFT JOIN note_comments c ON c.note_id = n.id
         WHERE (%s) %s
@@ -122,9 +122,9 @@ note_get_by_id <- function(id, current_user = NULL) {
   tryCatch({
     uid <- note_visible_user_id(current_user)
     if (is.null(uid)) {
-      r <- dbGetQuery(con, sprintf("SELECT n.*, u.username as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id WHERE n.id = %d", as.integer(id)))
+      r <- dbGetQuery(con, sprintf("SELECT n.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id WHERE n.id = %d", as.integer(id)))
     } else {
-      r <- dbGetQuery(con, sprintf("SELECT n.*, u.username as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id WHERE n.id = %d AND n.created_by = %d", as.integer(id), uid))
+      r <- dbGetQuery(con, sprintf("SELECT n.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id WHERE n.id = %d AND (n.created_by = %d OR n.id IN (SELECT note_id FROM note_dispatches WHERE user_id = %d))", as.integer(id), uid, uid))
     }
     if (nrow(r) == 0) NULL else r
   }, finally = { db_disconnect(con) })
@@ -314,10 +314,10 @@ note_convert_to_work_order <- function(note_id, current_user) {
 note_comment_add <- function(note_id, content, created_by = NULL, parent_id = NULL, current_user = NULL) {
   con <- db_connect()
   tryCatch({
-    # 非admin用户只能在自己可见的记事下评论
+    # 非admin用户只能在自己可见的记事下评论（创建人或被派发人）
     uid <- note_visible_user_id(current_user)
     if (!is.null(uid)) {
-      owner_check <- dbGetQuery(con, sprintf("SELECT id FROM notes WHERE id = %d AND created_by = %d", as.integer(note_id), uid))
+      owner_check <- dbGetQuery(con, sprintf("SELECT id FROM notes WHERE id = %d AND (created_by = %d OR id IN (SELECT note_id FROM note_dispatches WHERE user_id = %d))", as.integer(note_id), uid, uid))
       if (nrow(owner_check) == 0) return(list(success = FALSE, message = "无权在此记事下评论"))
     }
     pid <- if (is.null(parent_id)) "NULL" else as.character(as.integer(parent_id))
@@ -335,7 +335,7 @@ note_comment_add <- function(note_id, content, created_by = NULL, parent_id = NU
     dbExecute(con, sprintf("UPDATE notes SET updated_at = datetime('now','localtime') WHERE id = %d", as.integer(note_id)))
     id <- dbGetQuery(con, "SELECT last_insert_rowid() as id")$id[1]
     r <- dbGetQuery(con, sprintf(
-      "SELECT c.*, u.username as creator_name FROM note_comments c LEFT JOIN users u ON c.created_by = u.id WHERE c.id = %d", id))
+      "SELECT c.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name FROM note_comments c LEFT JOIN users u ON c.created_by = u.id WHERE c.id = %d", id))
     list(success = TRUE, message = "评论已添加", id = id,
       created_at = if (nrow(r) > 0) r$created_at[1] else format(Sys.time(), "%Y-%m-%d %H:%M"),
       creator_name = if (nrow(r) > 0) r$creator_name[1] %||% "匿名" else "匿名",
@@ -375,28 +375,45 @@ note_comment_get_by_id <- function(comment_id) {
   con <- db_connect()
   tryCatch({
     r <- dbGetQuery(con, sprintf(
-      "SELECT c.*, u.username as creator_name FROM note_comments c LEFT JOIN users u ON c.created_by = u.id WHERE c.id = %d",
+      "SELECT c.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name FROM note_comments c LEFT JOIN users u ON c.created_by = u.id WHERE c.id = %d",
       as.integer(comment_id)))
     if (nrow(r) == 0) NULL else r
   }, finally = { db_disconnect(con) })
 }
 
-note_comment_get_last <- function(note_id) {
+note_comment_get_last <- function(note_id, current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    uid <- note_visible_user_id(current_user)
+    extra <- ""
+    if (!is.null(uid)) {
+      note <- dbGetQuery(con, sprintf("SELECT created_by FROM notes WHERE id = %d", as.integer(note_id)))
+      is_owner <- nrow(note) > 0 && note$created_by[1] == uid
+      is_dispatched <- !is_owner && nrow(dbGetQuery(con, sprintf("SELECT 1 FROM note_dispatches WHERE note_id = %d AND user_id = %d", as.integer(note_id), uid))) > 0
+      if (is_dispatched) extra <- sprintf("AND c.created_by = %d", uid)
+    }
     r <- dbGetQuery(con, sprintf(
-      "SELECT c.*, u.username as creator_name FROM note_comments c LEFT JOIN users u ON c.created_by = u.id WHERE c.note_id = %d ORDER BY c.created_at DESC LIMIT 1",
-      as.integer(note_id)))
+      "SELECT c.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name FROM note_comments c LEFT JOIN users u ON c.created_by = u.id WHERE c.note_id = %d %s ORDER BY c.created_at DESC LIMIT 1",
+      as.integer(note_id), extra))
     if (nrow(r) == 0) NULL else r
   }, finally = { db_disconnect(con) })
 }
 
-note_comment_get_all <- function(note_id) {
+note_comment_get_all <- function(note_id, current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    uid <- note_visible_user_id(current_user)
+    # 派发用户只看自己的评论；创建人和admin看全部
+    extra <- ""
+    if (!is.null(uid)) {
+      note <- dbGetQuery(con, sprintf("SELECT created_by FROM notes WHERE id = %d", as.integer(note_id)))
+      is_owner <- nrow(note) > 0 && note$created_by[1] == uid
+      is_dispatched <- !is_owner && nrow(dbGetQuery(con, sprintf("SELECT 1 FROM note_dispatches WHERE note_id = %d AND user_id = %d", as.integer(note_id), uid))) > 0
+      if (is_dispatched) extra <- sprintf("AND c.created_by = %d", uid)
+    }
     dbGetQuery(con, sprintf(
-      "SELECT c.*, u.username as creator_name FROM note_comments c LEFT JOIN users u ON c.created_by = u.id WHERE c.note_id = %d ORDER BY c.created_at ASC",
-      as.integer(note_id)))
+      "SELECT c.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name FROM note_comments c LEFT JOIN users u ON c.created_by = u.id WHERE c.note_id = %d %s ORDER BY c.created_at ASC",
+      as.integer(note_id), extra))
   }, finally = { db_disconnect(con) })
 }
 
@@ -526,3 +543,41 @@ note_get_top_keywords <- function(n = 10, current_user = NULL) {
     names(freq)[seq_len(min(n, length(freq)))]
   }, error = function(e) character(0), finally = { db_disconnect(con) })
 }
+
+##################
+# 记事派发（admin → 多个user）
+##################
+note_dispatch_set <- function(note_id, user_ids) {
+  con <- db_connect()
+  tryCatch({
+    nid <- as.integer(note_id)
+    # 清除旧派发
+    dbExecute(con, sprintf("DELETE FROM note_dispatches WHERE note_id = %d", nid))
+    # 添加新派发
+    for (uid in user_ids) {
+      if (is.null(uid) || uid == "") next
+      dbExecute(con, sprintf("INSERT OR IGNORE INTO note_dispatches (note_id, user_id) VALUES (%d, %d)", nid, as.integer(uid)))
+    }
+    list(success = TRUE, message = sprintf("已派发给 %d 人", length(user_ids)))
+  }, error = function(e) list(success = FALSE, message = paste("派发失败:", e$message)),
+  finally = { db_disconnect(con) })
+}
+
+note_dispatch_get_users <- function(note_id) {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, sprintf(
+      "SELECT u.id, u.username, COALESCE(NULLIF(u.display_name,''), u.username) as display_name
+       FROM note_dispatches nd JOIN users u ON nd.user_id = u.id WHERE nd.note_id = %d ORDER BY u.username", as.integer(note_id)))
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+note_is_dispatched_user <- function(note_id, user_id, con = NULL) {
+  own_con <- is.null(con)
+  if (own_con) con <- db_connect()
+  tryCatch({
+    r <- dbGetQuery(con, sprintf("SELECT 1 FROM note_dispatches WHERE note_id = %d AND user_id = %d", as.integer(note_id), as.integer(user_id)))
+    nrow(r) > 0
+  }, error = function(e) FALSE, finally = { if (own_con) db_disconnect(con) })
+}
+

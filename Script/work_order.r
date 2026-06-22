@@ -48,36 +48,27 @@ work_order_get_all <- function(status_filter = NULL, assigned_to = NULL, current
 
     result <- dbGetQuery(con, query)
 
-    # 单独查询用户信息并合并
+    # 单独查询用户信息并合并（优先使用显示名称）
     if (nrow(result) > 0) {
-      users <- dbGetQuery(con, "SELECT id, username FROM users")
+      users <- dbGetQuery(con, "SELECT id, username, display_name FROM users")
+      udisplay <- function(uid, default = "未知") {
+        if (is.na(uid)) return(NA_character_)
+        r <- users[users$id == uid, ]
+        if (nrow(r) == 0) return(default)
+        dn <- r$display_name[1]
+        if (!is.na(dn) && dn != "") dn else r$username[1]
+      }
 
-      # 添加创建人名称
-      result$creator_name <- sapply(result$created_by, function(x) {
-        name <- users$username[users$id == x]
-        if (length(name) > 0) name[1] else "未知"
-      })
+      result$creator_name <- sapply(result$created_by, udisplay)
 
       # 添加指派给名称
-      result$assignee_name <- sapply(result$assigned_to, function(x) {
-        if (is.na(x)) return(NA_character_)
-        name <- users$username[users$id == x]
-        if (length(name) > 0) name[1] else NA_character_
-      })
+      result$assignee_name <- sapply(result$assigned_to, udisplay)
 
       # 添加指派人名称
-      result$assigner_name <- sapply(result$assigned_by, function(x) {
-        if (is.na(x)) return(NA_character_)
-        name <- users$username[users$id == x]
-        if (length(name) > 0) name[1] else NA_character_
-      })
+      result$assigner_name <- sapply(result$assigned_by, udisplay)
 
       # 添加处理人名称
-      result$handler_name <- sapply(result$handled_by, function(x) {
-        if (is.na(x)) return(NA_character_)
-        name <- users$username[users$id == x]
-        if (length(name) > 0) name[1] else NA_character_
-      })
+      result$handler_name <- sapply(result$handled_by, udisplay)
 
       # 添加请求用户名称（request_user 是用户名文本）
       result$request_user_name <- sapply(result$request_user, function(x) {
@@ -439,7 +430,7 @@ work_order_delete <- function(id, current_user = NULL) {
 work_order_get_assignable_users <- function() {
   con <- db_connect()
   tryCatch({
-    query <- "SELECT id, username, role FROM users 
+    query <- "SELECT id, username, display_name, role FROM users 
               WHERE active = 1 
               ORDER BY role, username"
     result <- dbGetQuery(con, query)

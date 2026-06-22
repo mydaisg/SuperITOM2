@@ -152,7 +152,7 @@ note_server <- function(input, output, session, rv) {
                 HTML(paste(parts, collapse = ""))))
             }
           } else {
-            last_comment <- note_comment_get_last(r$id)
+            last_comment <- note_comment_get_last(r$id, rv$current_user)
             if (!is.null(last_comment) && nrow(last_comment) > 0) {
               ct <- last_comment$content[1]; cn <- last_comment$creator_name[1] %||% "匿名"
               if (isTRUE(nchar(ct) > 80)) ct <- paste0(substr(ct, 1, 80), "...")
@@ -269,7 +269,7 @@ note_server <- function(input, output, session, rv) {
                   HTML(paste(parts, collapse = ""))))
               }
             } else {
-              last_comment <- note_comment_get_last(r$id)
+              last_comment <- note_comment_get_last(r$id, rv$current_user)
               if (!is.null(last_comment) && nrow(last_comment) > 0) {
                 ct <- last_comment$content[1]; cn <- last_comment$creator_name[1] %||% "匿名"
                 if (isTRUE(nchar(ct) > 80)) ct <- paste0(substr(ct, 1, 80), "...")
@@ -643,7 +643,7 @@ note_server <- function(input, output, session, rv) {
     
     # 彩虹评论（嵌套 + 状态徽章 + 编辑/删除/标记/回复）
     rainbow_colors <- c("#e74c3c","#e67e22","#f1c40f","#2ecc71","#1abc9c","#3498db","#9b59b6","#e91e63")
-    comments <- note_comment_get_all(note$id[1])
+    comments <- note_comment_get_all(note$id[1], rv$current_user)
     comment_html <- ""
     if (!is.null(comments) && nrow(comments) > 0) {
       # 分离顶层和子评论
@@ -771,7 +771,12 @@ note_server <- function(input, output, session, rv) {
           column(4,
             textInput("note_edit_created_m", "创建时间", value = substr(note$created_at[1] %||% format(Sys.time(),"%Y-%m-%d %H:%M"), 1, 16)),
             textInput("note_edit_reminder_m", "⏰ 提醒时间", placeholder = "YYYY-MM-DD HH:MM", value = rem_val),
-            textInput("note_edit_due_m", "📅 到期时间", placeholder = "YYYY-MM-DD HH:MM", value = due_val)
+            textInput("note_edit_due_m", "📅 到期时间", placeholder = "YYYY-MM-DD HH:MM", value = due_val),
+            if (!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin") tagList(
+              tags$hr(style = "margin:6px 0;"),
+              tags$b("📨 派发给"),
+              selectInput("note_edit_dispatch", NULL, choices = NULL, multiple = TRUE, width = "100%")
+            )
           )
         )
       ),
@@ -824,6 +829,20 @@ note_server <- function(input, output, session, rv) {
       ),
       easyClose = TRUE
     ))
+    # 初始化派发下拉（admin专用）
+    if (!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin") {
+      con <- db_connect()
+      all_users <- tryCatch({
+        dbGetQuery(con, "SELECT id, username, COALESCE(NULLIF(display_name,''), username) as display_name FROM users WHERE active = 1 AND role != 'admin' ORDER BY username")
+      }, finally = { db_disconnect(con) })
+      dispatched <- note_dispatch_get_users(note$id[1])
+      if (nrow(all_users) > 0) {
+        labels <- sprintf("%s", all_users$display_name)
+        choices <- stats::setNames(as.character(all_users$id), labels)
+        selected_vals <- if (nrow(dispatched) > 0) as.character(dispatched$id) else character(0)
+        updateSelectInput(session, "note_edit_dispatch", choices = choices, selected = selected_vals)
+      }
+    }
   })
 
   ##################
@@ -838,7 +857,13 @@ note_server <- function(input, output, session, rv) {
       note_no = if (trimws(input$note_edit_no_m) != "") input$note_edit_no_m else NULL,
       created_at = if (trimws(input$note_edit_created_m) != "") input$note_edit_created_m else NULL,
       reminder_at = if (trimws(input$note_edit_reminder_m) != "") input$note_edit_reminder_m else NULL,
-      due_at = if (trimws(input$note_edit_due_m) != "") input$note_edit_due_m else NULL)
+      due_at = if (trimws(input$note_edit_due_m) != "") input$note_edit_due_m else NULL,
+      current_user = rv$current_user)
+    # 保存派发（admin 专用）
+    if (result$success && !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin") {
+      dispatch_uids <- input$note_edit_dispatch
+      if (!is.null(dispatch_uids)) note_dispatch_set(rv$note_edit_id, dispatch_uids)
+    }
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "error"))
   })
@@ -853,7 +878,12 @@ note_server <- function(input, output, session, rv) {
       note_no = if (trimws(input$note_edit_no_m) != "") input$note_edit_no_m else NULL,
       created_at = if (trimws(input$note_edit_created_m) != "") input$note_edit_created_m else NULL,
       reminder_at = if (trimws(input$note_edit_reminder_m) != "") input$note_edit_reminder_m else NULL,
-      due_at = if (trimws(input$note_edit_due_m) != "") input$note_edit_due_m else NULL)
+      due_at = if (trimws(input$note_edit_due_m) != "") input$note_edit_due_m else NULL,
+      current_user = rv$current_user)
+    if (!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin") {
+      dispatch_uids <- input$note_edit_dispatch
+      if (!is.null(dispatch_uids)) note_dispatch_set(rv$note_edit_id, dispatch_uids)
+    }
     note_trigger(note_trigger() + 1)
   })
 

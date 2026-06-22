@@ -89,7 +89,7 @@ server <- function(input, output, session) {
       rv$logged_in <- TRUE
       rv$current_user <- result$user
       session$sendCustomMessage(type = "saveLoginState", message = list(user_id = result$user$id[1]))
-      showNotification(sprintf("欢迎回来，%s！", result$user$username[1]), type = "message")
+      showNotification(sprintf("欢迎回来，%s！", result$user$display_name[1] %||% result$user$username[1]), type = "message")
     } else {
       showNotification(result$message, type = "error")
     }
@@ -103,7 +103,7 @@ server <- function(input, output, session) {
     if (result$success) {
       rv$logged_in <- TRUE
       rv$current_user <- result$user
-      showNotification(sprintf("欢迎回来，%s！", result$user$username[1]), type = "message")
+      showNotification(sprintf("欢迎回来，%s！", result$user$display_name[1] %||% result$user$username[1]), type = "message")
     } else {
       session$sendCustomMessage(type = "clearLoginState", message = list())
     }
@@ -632,7 +632,8 @@ server <- function(input, output, session) {
       # 获取可派发用户列表
       users <- work_order_get_assignable_users()
       if (nrow(users) > 0) {
-        choices <- setNames(users$id, sprintf("%s (%s)", users$username, users$role))
+        uname <- ifelse(!is.na(users$display_name) & users$display_name != "", users$display_name, users$username)
+        choices <- setNames(users$id, sprintf("%s (%s)", uname, users$role))
         
         # 关闭详情弹窗
         removeModal()
@@ -843,7 +844,8 @@ server <- function(input, output, session) {
     req(rv$logged_in)
     users <- work_order_get_assignable_users()
     if (nrow(users) > 0) {
-      choices <- setNames(users$id, sprintf("%s (%s)", users$username, users$role))
+      uname <- ifelse(!is.na(users$display_name) & users$display_name != "", users$display_name, users$username)
+      choices <- setNames(users$id, sprintf("%s (%s)", uname, users$role))
       updateSelectInput(session, "work_order_assignee", choices = choices)
     }
   })
@@ -954,18 +956,7 @@ server <- function(input, output, session) {
   
   # 处理快速创建按钮点击事件 - 滚动到快速工单区域并聚焦文本框
   observeEvent(input$show_quick_work_order, {
-    runjs('
-      // 滚动到快速工单区域
-      var quickPanel = document.querySelector(".well-panel h4");
-      if (quickPanel && quickPanel.innerText.indexOf("快速工单") !== -1) {
-        quickPanel.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-      // 聚焦到文本框
-      setTimeout(function() {
-        var textarea = document.querySelector("#quick_work_order_text");
-        if (textarea) textarea.focus();
-      }, 300);
-    ')
+    session$sendCustomMessage("runjs", 'scrollToQuickWO')
   })
   
   # 处理刷新工单按钮点击事件

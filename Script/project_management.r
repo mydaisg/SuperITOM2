@@ -20,7 +20,7 @@ project_get_all <- function(status_filter = NULL, current_user = NULL) {
   con <- db_connect()
   tryCatch({
     uid <- proj_visible_user_id(current_user)
-    query <- "SELECT p.*, u.username as creator_name FROM projects p
+    query <- "SELECT p.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name FROM projects p
               LEFT JOIN users u ON p.created_by = u.id"
     conditions <- c()
     if (!is.null(uid)) {
@@ -44,7 +44,7 @@ project_get_all <- function(status_filter = NULL, current_user = NULL) {
 project_get_by_id <- function(id) {
   con <- db_connect()
   tryCatch({
-    query <- sprintf("SELECT p.*, u.username as creator_name FROM projects p
+    query <- sprintf("SELECT p.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name FROM projects p
                       LEFT JOIN users u ON p.created_by = u.id
                       WHERE p.id = %d", as.integer(id))
     dbGetQuery(con, query)
@@ -207,7 +207,7 @@ wp_get_by_phase <- function(phase_id) {
   con <- db_connect()
   tryCatch({
     dbGetQuery(con, sprintf(
-      "SELECT wp.*, u.username as assignee_name FROM project_work_packages wp
+      "SELECT wp.*, COALESCE(NULLIF(u.display_name,''), u.username) as assignee_name FROM project_work_packages wp
        LEFT JOIN users u ON wp.assigned_to = u.id
        WHERE wp.phase_id = %d ORDER BY wp.sort_order, wp.id",
       as.integer(phase_id)))
@@ -221,7 +221,7 @@ wp_get_by_project <- function(project_id) {
   con <- db_connect()
   tryCatch({
     dbGetQuery(con, sprintf(
-      "SELECT wp.*, ph.name as phase_name, u.username as assignee_name
+      "SELECT wp.*, ph.name as phase_name, COALESCE(NULLIF(u.display_name,''), u.username) as assignee_name
        FROM project_work_packages wp
        LEFT JOIN project_phases ph ON wp.phase_id = ph.id
        LEFT JOIN users u ON wp.assigned_to = u.id
@@ -293,7 +293,7 @@ task_get_by_wp <- function(work_package_id) {
   con <- db_connect()
   tryCatch({
     query <- sprintf(
-      "SELECT t.*, u.username as assignee_name, u2.username as creator_name,
+      "SELECT t.*, COALESCE(NULLIF(u.display_name,''), u.username) as assignee_name, u2.username as creator_name,
               (SELECT COUNT(*) FROM project_task_logs WHERE task_id = t.id AND log_type IN ('execution', 'feedback')) as exec_count
        FROM project_tasks t
        LEFT JOIN users u ON t.assigned_to = u.id
@@ -310,7 +310,7 @@ task_get_by_project <- function(project_id) {
   con <- db_connect()
   tryCatch({
     dbGetQuery(con, sprintf(
-      "SELECT t.*, u.username as assignee_name, u2.username as creator_name,
+      "SELECT t.*, COALESCE(NULLIF(u.display_name,''), u.username) as assignee_name, u2.username as creator_name,
               ph.name as phase_name, wp.name as wp_name
        FROM project_tasks t
        LEFT JOIN users u ON t.assigned_to = u.id
@@ -328,7 +328,7 @@ task_get_by_id <- function(id) {
   con <- db_connect()
   tryCatch({
     dbGetQuery(con, sprintf(
-      "SELECT t.*, u.username as assignee_name, u2.username as creator_name,
+      "SELECT t.*, COALESCE(NULLIF(u.display_name,''), u.username) as assignee_name, u2.username as creator_name,
               p.name as project_name, p.project_no,
               ph.name as phase_name, wp.name as wp_name
        FROM project_tasks t
@@ -564,7 +564,7 @@ task_log_get_by_task <- function(task_id) {
   con <- db_connect()
   tryCatch({
     dbGetQuery(con, sprintf(
-      "SELECT l.*, u.username as creator_name FROM project_task_logs l
+      "SELECT l.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name FROM project_task_logs l
        LEFT JOIN users u ON l.created_by = u.id
        WHERE l.task_id = %d ORDER BY l.created_at DESC",
       as.integer(task_id)))
@@ -784,7 +784,7 @@ phase_get_all <- function(status_filter = "all") {
 task_get_all_global <- function(status_filter = "all", priority_filter = "all") {
   con <- db_connect()
   tryCatch({
-    query <- "SELECT t.*, u.username as assignee_name, u2.username as creator_name,
+    query <- "SELECT t.*, COALESCE(NULLIF(u.display_name,''), u.username) as assignee_name, u2.username as creator_name,
               p.name as project_name, p.project_no,
               ph.name as phase_name, wp.name as wp_name
               FROM project_tasks t

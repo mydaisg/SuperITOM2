@@ -81,7 +81,7 @@ duty_matrix_ui <- function() {
           ),
           column(4,
             tags$div(style="display:flex; gap:4px;",
-              textInput("duty_new_staff_name", NULL, placeholder = "人员姓名"),
+              selectInput("duty_new_staff_user", NULL, choices = c("(选择系统用户)" = ""), width="160px"),
               selectInput("duty_new_staff_position", NULL, choices = c("(无)" = ""), width="120px"),
               actionButton("duty_add_staff", NULL, icon=icon("plus"), class="btn-primary btn-sm", style="margin-top:22px;")
             )

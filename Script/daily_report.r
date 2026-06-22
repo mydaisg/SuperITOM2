@@ -16,9 +16,9 @@ daily_report_get_work_orders <- function(report_date) {
       SELECT wo.id, wo.order_no, wo.title, wo.priority, wo.status, wo.category,
              wo.assigned_to, wo.handled_by, wo.created_by,
              wo.created_at, wo.handled_at, wo.completed_at,
-             u_assign.username as assignee_name,
-             u_handler.username as handler_name,
-             u_creator.username as creator_name
+             COALESCE(NULLIF(u_assign.display_name,''), u_assign.username) as assignee_name,
+             COALESCE(NULLIF(u_handler.display_name,''), u_handler.username) as handler_name,
+             COALESCE(NULLIF(u_creator.display_name,''), u_creator.username) as creator_name
       FROM work_orders wo
       LEFT JOIN users u_assign ON wo.assigned_to = u_assign.id
       LEFT JOIN users u_handler ON wo.handled_by = u_handler.id
@@ -75,7 +75,7 @@ daily_report_get_task_logs <- function(report_date) {
     query <- sprintf("
       SELECT l.task_id, l.log_type, l.content, l.created_at,
              t.task_no, t.name as task_name,
-             u.username as creator_name
+             COALESCE(NULLIF(u.display_name,''), u.username) as creator_name
       FROM project_task_logs l
       LEFT JOIN project_tasks t ON l.task_id = t.id
       LEFT JOIN users u ON l.created_by = u.id
@@ -390,7 +390,7 @@ daily_report_server <- function(input, output, session, rv) {
       # 该用户的反馈日志
       user_logs <- data.frame()
       if (nrow(task_logs) > 0) {
-        user_logs <- task_logs[!is.na(task_logs$creator_name) & task_logs$creator_name == u$username, , drop = FALSE]
+        user_logs <- task_logs[!is.na(task_logs$creator_name) & (task_logs$creator_name == u$display_name | task_logs$creator_name == u$username), , drop = FALSE]
       }
 
       # 该用户的记事评论
@@ -584,10 +584,49 @@ daily_report_server <- function(input, output, session, rv) {
       text_report <- paste0(text_report, "\n")
     }
 
-    if (cards_html == "") {
+    # Admin 派发汇总（底部展示所有被派发记事的评论）
+    dispatch_html <- ""
+    is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+    if (is_admin) {
+      con <- db_connect()
+      disps <- tryCatch({
+        dbGetQuery(con, sprintf(
+          "SELECT DISTINCT n.id, n.note_no, n.title,
+                  nc.content, nc.status, nc.completed_at,
+                  u.username, COALESCE(NULLIF(u.display_name,''), u.username) as display_name,
+                  nc.created_at as comment_time
+           FROM notes n
+           JOIN note_dispatches nd ON nd.note_id = n.id
+           LEFT JOIN note_comments nc ON nc.note_id = n.id
+           LEFT JOIN users u ON nc.created_by = u.id
+           WHERE date(nc.created_at) = '%s'
+           ORDER BY n.title, nc.created_at", format(as.Date(data$date), "%Y-%m-%d")))
+      }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+      if (nrow(disps) > 0) {
+        by_title <- split(disps, disps$title)
+        dispatch_html <- '<div class="dr-section"><div class="dr-section-title" style="background:#ede9fe;color:#5b21b6;">📨 派发记事汇总</div>'
+        for (tn in names(by_title)) {
+          grp <- by_title[[tn]]
+          dispatch_html <- paste0(dispatch_html, sprintf(
+            '<div style="font-weight:600;color:#6c3bbf;margin:6px 0 3px;">📋 %s</div>', tn))
+          for (ri in seq_len(nrow(grp))) {
+            r <- grp[ri, ]
+            done_badge <- if (!is.na(r$status) && r$status == "completed")
+              '<span style="display:inline-block;background:#d4edda;color:#155724;border-radius:10px;padding:0 8px;font-size:10px;margin-left:6px;">✅ 已完成</span>' else ""
+            dispatch_html <- paste0(dispatch_html, sprintf(
+              '<div style="font-size:12px;padding:2px 0 2px 16px;color:#555;">%s <span style="color:#999;">(%s)</span>%s</div>',
+              r$content, r$display_name, done_badge))
+          }
+        }
+        dispatch_html <- paste0(dispatch_html, '</div>')
+      }
+    }
+
+    if (cards_html == "" && dispatch_html == "") {
       cards_html <- '<div class="dr-empty" style="text-align:center;padding:40px;font-size:15px;color:#999;">该日期暂无工作记录</div>'
       text_report <- paste0(text_report, "该日期暂无工作记录\n")
     }
+    cards_html <- paste0(cards_html, dispatch_html)
 
     # 更新隐藏textarea的内容
     session$sendCustomMessage("dr_update_text", text_report)

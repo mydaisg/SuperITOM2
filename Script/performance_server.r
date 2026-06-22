@@ -4,6 +4,12 @@
 
 performance_server <- function(input, output, session, rv) {
   perf_refresh <- reactiveVal(0)
+  is_admin <- reactive({
+    !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+  })
+  current_uid <- reactive({
+    if (is.null(rv$current_user) || nrow(rv$current_user) == 0) NULL else rv$current_user$id[1]
+  })
 
   ##################
   # Header：标题 + 统计卡片 + 月份选择器（不依赖 perf_month）
@@ -135,6 +141,24 @@ performance_server <- function(input, output, session, rv) {
   output$perf_emp_filter_ui <- renderUI({
     req(rv$logged_in, input$perf_month)
     emps <- tryCatch(perf_active_employees(input$perf_month), error = function(e) data.frame())
+    # 非admin用户：确保自己出现在列表中
+    if (!is_admin()) {
+      if (!is.null(current_uid())) {
+        if (nrow(emps) == 0 || !any(emps$id == current_uid())) {
+          own_info <- tryCatch({
+            con <- db_connect()
+            r <- dbGetQuery(con, sprintf("SELECT id, display_name, username FROM users WHERE id = %d", current_uid()))
+            db_disconnect(con)
+            if (nrow(r) > 0) r else NULL
+          }, error = function(e) NULL)
+          if (!is.null(own_info) && nrow(own_info) > 0) {
+            own_info$employee_name <- ifelse(is.na(own_info$display_name[1]) | own_info$display_name[1] == "", own_info$username[1], own_info$display_name[1])
+            emps <- rbind(emps, own_info)
+          }
+        }
+      }
+      emps <- emps[emps$id == current_uid(), , drop = FALSE]
+    }
     choices <- c("全部" = "")
     if (nrow(emps) > 0) {
       names_vec <- ifelse(is.na(emps$display_name) | emps$display_name == "", emps$username, emps$display_name)
@@ -359,7 +383,7 @@ performance_server <- function(input, output, session, rv) {
 
   # 移除员工
   observeEvent(input$perf_remove_employee, {
-    req(rv$logged_in)
+    req(rv$logged_in, is_admin())
     result <- perf_sheet_employee_remove(as.integer(input$perf_remove_employee))
     perf_refresh(perf_refresh() + 1)
     showNotification(result$message, type = "message")
@@ -370,6 +394,24 @@ performance_server <- function(input, output, session, rv) {
     req(rv$logged_in, input$perf_month)
     sheet <- current_sheet()
     emps <- tryCatch(perf_active_employees(input$perf_month), error = function(e) data.frame())
+    # 非admin用户：确保自己出现在列表中（即使未被管理员添加或没有历史工单）
+    if (!is_admin()) {
+      if (!is.null(current_uid())) {
+        if (nrow(emps) == 0 || !any(emps$id == current_uid())) {
+          own_info <- tryCatch({
+            con <- db_connect()
+            r <- dbGetQuery(con, sprintf("SELECT id, display_name, username FROM users WHERE id = %d", current_uid()))
+            db_disconnect(con)
+            if (nrow(r) > 0) {
+              r$employee_name <- ifelse(is.na(r$display_name[1]) | r$display_name[1] == "", r$username[1], r$display_name[1])
+              r
+            } else NULL
+          }, error = function(e) NULL)
+          if (!is.null(own_info)) emps <- rbind(emps, own_info)
+        }
+      }
+      emps <- emps[emps$id == current_uid(), , drop = FALSE]
+    }
     # 查询各员工已匹配计数
     matched_count <- setNames(integer(0), character(0))
     if (!is.null(sheet)) {
@@ -450,7 +492,7 @@ performance_server <- function(input, output, session, rv) {
   })
 
   observeEvent(input$perf_create_sheet, {
-    req(rv$logged_in)
+    req(rv$logged_in, is_admin())
     showModal(modalDialog(title = "新建月绩效表",
       selectInput("perf_new_month", "年份", choices = seq(2024, as.integer(format(Sys.Date(), "%Y"))), selected = format(Sys.Date(), "%Y")),
       selectInput("perf_new_month2", "月份", choices = sprintf("%02d", 1:12), selected = format(Sys.Date(), "%m")),
@@ -459,7 +501,7 @@ performance_server <- function(input, output, session, rv) {
   })
 
   observeEvent(input$perf_confirm_create, {
-    req(rv$logged_in)
+    req(rv$logged_in, is_admin())
     ym <- sprintf("%s-%s", input$perf_new_month, input$perf_new_month2)
     result <- perf_sheet_create(ym)
     removeModal()
@@ -557,7 +599,7 @@ performance_server <- function(input, output, session, rv) {
   # 结果评定
   ##################
   observeEvent(input$perf_rate, {
-    req(rv$logged_in)
+    req(rv$logged_in, is_admin())
     sheet <- current_sheet(); req(sheet)
     emps <- perf_sheet_employee_list(sheet$id[1])
     if (nrow(emps) == 0) { showNotification("请先添加员工", type="warning"); return() }
@@ -611,7 +653,7 @@ performance_server <- function(input, output, session, rv) {
   })
 
   observeEvent(input$perf_rate_data, {
-    req(rv$logged_in)
+    req(rv$logged_in, is_admin())
     sheet <- current_sheet(); req(sheet)
     data <- jsonlite::fromJSON(input$perf_rate_data)
     saved <- 0
