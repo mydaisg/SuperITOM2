@@ -2,18 +2,35 @@
 # 数据层：项目 → 阶段 → 工作包 → 任务 → 执行反馈
 # 包含所有数据库CRUD操作
 
+##################
+# 权限辅助：非admin用户返回其ID用于过滤
+##################
+proj_visible_user_id <- function(current_user) {
+  if (is.null(current_user) || nrow(current_user) == 0) return(NULL)
+  if (current_user$role[1] == "admin") return(NULL)
+  as.integer(current_user$id[1])
+}
+
 # ================================================================
 # 项目 CRUD
 # ================================================================
 
 # 获取所有项目
-project_get_all <- function(status_filter = NULL) {
+project_get_all <- function(status_filter = NULL, current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    uid <- proj_visible_user_id(current_user)
     query <- "SELECT p.*, u.username as creator_name FROM projects p
               LEFT JOIN users u ON p.created_by = u.id"
+    conditions <- c()
+    if (!is.null(uid)) {
+      conditions <- c(conditions, sprintf("p.created_by = %d", uid))
+    }
     if (!is.null(status_filter) && status_filter != "" && status_filter != "all") {
-      query <- paste(query, sprintf("WHERE p.status = '%s'", status_filter))
+      conditions <- c(conditions, sprintf("p.status = '%s'", status_filter))
+    }
+    if (length(conditions) > 0) {
+      query <- paste(query, "WHERE", paste(conditions, collapse = " AND "))
     }
     query <- paste(query, "ORDER BY p.created_at DESC")
     dbGetQuery(con, query)

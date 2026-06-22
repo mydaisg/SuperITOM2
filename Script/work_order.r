@@ -1,10 +1,20 @@
 # 工单管理模块
 # 包含工单的创建、查询、派发、处理、完成等功能
 
+##################
+# 权限辅助：非admin用户返回其ID用于过滤，admin返回NULL表示不过滤
+##################
+wo_visible_user_id <- function(current_user) {
+  if (is.null(current_user) || nrow(current_user) == 0) return(NULL)
+  if (current_user$role[1] == "admin") return(NULL)
+  as.integer(current_user$id[1])
+}
+
 # 获取所有工单（用于列表显示，描述字段截断）
-work_order_get_all <- function(status_filter = NULL, assigned_to = NULL) {
+work_order_get_all <- function(status_filter = NULL, assigned_to = NULL, current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    uid <- wo_visible_user_id(current_user)
     # 先查询工单基础数据
     query <- "SELECT wo.id, wo.order_no, wo.title,
               CASE
@@ -18,6 +28,10 @@ work_order_get_all <- function(status_filter = NULL, assigned_to = NULL) {
               FROM work_orders wo"
 
     conditions <- c()
+    # 非admin用户：只看自己创建/指派/处理的工单
+    if (!is.null(uid)) {
+      conditions <- c(conditions, sprintf("(wo.created_by = %d OR wo.assigned_to = %d OR wo.handled_by = %d)", uid, uid, uid))
+    }
     # 处理状态筛选："all" 或 "" 或 NULL 都表示全部
     if (!is.null(status_filter) && status_filter != "" && status_filter != "all") {
       conditions <- c(conditions, sprintf("wo.status = '%s'", status_filter))
@@ -421,13 +435,12 @@ work_order_delete <- function(id, current_user = NULL) {
   })
 }
 
-# 获取可派发的用户列表（IT服务台、IT服务工程师、IT系统工程师）
+# 获取可派发的用户列表（所有活跃用户）
 work_order_get_assignable_users <- function() {
   con <- db_connect()
   tryCatch({
     query <- "SELECT id, username, role FROM users 
-              WHERE role IN ('it_desk', 'it_engineer', 'sys_engineer', 'admin') 
-              AND active = 1 
+              WHERE active = 1 
               ORDER BY role, username"
     result <- dbGetQuery(con, query)
     return(result)
@@ -440,17 +453,19 @@ work_order_get_assignable_users <- function() {
 }
 
 # 获取工单统计信息
-work_order_get_stats <- function() {
+work_order_get_stats <- function(current_user = NULL) {
   con <- db_connect()
   tryCatch({
-    query <- "SELECT
+    uid <- wo_visible_user_id(current_user)
+    user_filter <- if (is.null(uid)) "" else sprintf("WHERE created_by = %d OR assigned_to = %d OR handled_by = %d", uid, uid, uid)
+    query <- sprintf("SELECT
                 COUNT(*) as total,
                 SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
                 SUM(CASE WHEN status = 'assigned' THEN 1 ELSE 0 END) as assigned,
                 SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing,
                 SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
                 SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed
-              FROM work_orders"
+              FROM work_orders %s", user_filter)
     result <- dbGetQuery(con, query)
     return(result)
   }, error = function(e) {

@@ -63,7 +63,7 @@ server <- function(input, output, session) {
       login_ui()
     } else {
       message("[RENDER] 调用 main_ui()")
-      main_ui()
+      main_ui(is_admin = !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
     }
   })
 
@@ -182,34 +182,34 @@ server <- function(input, output, session) {
   # 工单统计输出（使用触发器确保自动刷新）
   output$wo_stat_total <- renderText({
     rv$logged_in; rv$work_order_refresh_trigger
-    stats <- work_order_get_stats()
+    stats <- work_order_get_stats(rv$current_user)
     message("[OUT] wo_stat_total called, logged_in=", rv$logged_in, 
             " trigger=", rv$work_order_refresh_trigger, " total=", stats$total[1])
     as.character(stats$total[1])
   })
   output$wo_stat_pending <- renderText({
     rv$logged_in; rv$work_order_refresh_trigger
-    stats <- work_order_get_stats()
+    stats <- work_order_get_stats(rv$current_user)
     as.character(stats$pending[1])
   })
   output$wo_stat_assigned <- renderText({
     rv$logged_in; rv$work_order_refresh_trigger
-    stats <- work_order_get_stats()
+    stats <- work_order_get_stats(rv$current_user)
     as.character(stats$assigned[1])
   })
   output$wo_stat_processing <- renderText({
     rv$logged_in; rv$work_order_refresh_trigger
-    stats <- work_order_get_stats()
+    stats <- work_order_get_stats(rv$current_user)
     as.character(stats$processing[1])
   })
   output$wo_stat_completed <- renderText({
     rv$logged_in; rv$work_order_refresh_trigger
-    stats <- work_order_get_stats()
+    stats <- work_order_get_stats(rv$current_user)
     as.character(stats$completed[1])
   })
   output$wo_stat_closed <- renderText({
     rv$logged_in; rv$work_order_refresh_trigger
-    stats <- work_order_get_stats()
+    stats <- work_order_get_stats(rv$current_user)
     as.character(stats$closed[1])
   })
   # ★ 去掉 suspendWhenHidden=FALSE，让输出在 display:none 时挂起
@@ -270,7 +270,7 @@ server <- function(input, output, session) {
   output$work_order_table <- renderDT({
     req(rv$logged_in)
     rv$work_order_refresh_trigger
-    all_orders <- work_order_get_all(input$work_order_status_filter)
+    all_orders <- work_order_get_all(input$work_order_status_filter, current_user = rv$current_user)
 
     # 服务器端搜索过滤
     search_term <- input$work_order_search
@@ -406,7 +406,7 @@ server <- function(input, output, session) {
     req(rv$logged_in)
     selected_rows <- input$work_order_table_rows_selected
     if (length(selected_rows) > 0) {
-      all_orders <- work_order_get_all(input$work_order_status_filter)
+      all_orders <- work_order_get_all(input$work_order_status_filter, current_user = rv$current_user)
       if (nrow(all_orders) >= selected_rows) {
         rv$selected_work_order_id <- all_orders$id[selected_rows]
         rv$selected_work_order_detail <- all_orders[selected_rows, ]
@@ -1719,6 +1719,69 @@ server <- function(input, output, session) {
     showNotification("代码已从 GitHub 拉取", type = "message")
   })
   
+  # ========== 个人信息模块（所有用户可见） ==========
+  # 渲染个人信息
+  output$self_info_username <- renderText({
+    req(rv$logged_in, rv$current_user)
+    rv$current_user$username[1]
+  })
+  output$self_info_display_name <- renderText({
+    req(rv$logged_in, rv$current_user)
+    if (!is.null(rv$current_user$display_name) && !is.na(rv$current_user$display_name[1]) && rv$current_user$display_name[1] != "")
+      rv$current_user$display_name[1] else "-"
+  })
+  output$self_info_role <- renderText({
+    req(rv$logged_in, rv$current_user)
+    switch(rv$current_user$role[1],
+      admin = "管理员",
+      it_desk = "IT服务台",
+      it_engineer = "IT工程师",
+      sys_engineer = "系统工程师",
+      user = "普通用户",
+      rv$current_user$role[1])
+  })
+
+  # 修改密码
+  observeEvent(input$self_save_password, {
+    req(rv$logged_in, rv$current_user)
+    old_pw <- trimws(input$self_old_password %||% "")
+    new_pw <- trimws(input$self_new_password %||% "")
+    new_pw_confirm <- trimws(input$self_new_password_confirm %||% "")
+
+    output$self_password_msg <- renderText({ "" })
+
+    # 校验
+    if (old_pw == "" || new_pw == "" || new_pw_confirm == "") {
+      output$self_password_msg <- renderText({ "所有密码字段不能为空" })
+      return()
+    }
+    if (nchar(new_pw) < 3) {
+      output$self_password_msg <- renderText({ "新密码长度至少3位" })
+      return()
+    }
+    if (new_pw != new_pw_confirm) {
+      output$self_password_msg <- renderText({ "两次输入的新密码不一致" })
+      return()
+    }
+    # 验证旧密码是否正确
+    if (old_pw != rv$current_user$password[1]) {
+      output$self_password_msg <- renderText({ "旧密码不正确" })
+      return()
+    }
+    # 调用 user_update_password（该函数也允许用户修改自己的密码）
+    result <- user_update_password(rv$current_user$id[1], new_pw, rv$current_user)
+    if (result$success) {
+      # 更新 current_user 中的密码字段
+      rv$current_user$password[1] <- new_pw
+      output$self_password_msg <- renderText({ "密码修改成功" })
+      updateTextInput(session, "self_old_password", value = "")
+      updateTextInput(session, "self_new_password", value = "")
+      updateTextInput(session, "self_new_password_confirm", value = "")
+    } else {
+      output$self_password_msg <- renderText({ result$message })
+    }
+  })
+
   # ========== 首页模块 ==========
   # 我的项目（排除已完成/已关闭）
   output$home_my_projects <- renderUI({

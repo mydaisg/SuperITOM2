@@ -81,7 +81,7 @@ project_server <- function(input, output, session, rv) {
   # 项目列表（用于筛选下拉）
   project_choices <- reactive({
     rv$proj_data_refresh
-    projs <- project_get_all("all")
+    projs <- project_get_all("all", rv$current_user)
     if (nrow(projs) > 0) {
       c("\u5168\u90e8\u9879\u76ee" = "all", setNames(as.character(projs$id), projs$name))
     } else { c("\u5168\u90e8\u9879\u76ee" = "all") }
@@ -196,7 +196,7 @@ project_server <- function(input, output, session, rv) {
     level <- rv$proj_nav_level
     if (level == "projects") {
       fv <- if (!is.null(input$proj_status_filter)) input$proj_status_filter else "all"
-      data <- project_get_all(fv)
+      data <- project_get_all(fv, rv$current_user)
       if (nrow(data) > 0) {
         display <- data.frame(
           `操作` = sprintf('<button class="btn btn-sm btn-info proj-view-btn" data-id="%s">\u8be6\u60c5</button> <button class="btn btn-sm btn-success proj-enter-btn" data-id="%s" data-name="%s">\u8fdb\u5165</button>', data$id, data$id, esc(data$name)),
@@ -387,7 +387,7 @@ project_server <- function(input, output, session, rv) {
     wellPanel(h4("\u6dfb\u52a0\u65b0\u9636\u6bb5"), fluidRow(
       column(3, selectInput("pd_new_phase_project", "\u6240\u5c5e\u9879\u76ee",
         choices = {
-          projs <- project_get_all("all")
+          projs <- project_get_all("all", rv$current_user)
           if (nrow(projs) > 0) setNames(as.character(projs$id), projs$name) else c()
         })),
       column(3, textInput("pd_new_phase_name", "\u9636\u6bb5\u540d\u79f0")),
@@ -456,7 +456,7 @@ project_server <- function(input, output, session, rv) {
 
   # 任务管理 - 新建任务表单
   output$tm_create_form <- renderUI({
-    projs <- project_get_all("all")
+    projs <- project_get_all("all", rv$current_user)
     proj_choices <- if (nrow(projs) > 0) setNames(as.character(projs$id), projs$name) else c()
     wellPanel(h4("\u521b\u5efa\u65b0\u4efb\u52a1"), fluidRow(
       column(2, selectInput("tm_new_project", "\u6240\u5c5e\u9879\u76ee", choices = proj_choices)),
@@ -551,7 +551,7 @@ project_server <- function(input, output, session, rv) {
 
     # 获取项目数据
     if (proj_f == "all") {
-      projs <- project_get_all("all")
+      projs <- project_get_all("all", rv$current_user)
     } else {
       projs <- project_get_by_id(as.integer(proj_f))
     }

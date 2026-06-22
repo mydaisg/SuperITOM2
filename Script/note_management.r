@@ -2,6 +2,25 @@
 # NTE+YYYYMMDD+3位流水，评论可编辑删除
 
 ##################
+# 权限辅助：非admin用户返回其ID用于过滤，admin返回NULL表示不过滤
+##################
+note_visible_user_id <- function(current_user) {
+  if (is.null(current_user) || nrow(current_user) == 0) return(NULL)
+  if (current_user$role[1] == "admin") return(NULL)
+  as.integer(current_user$id[1])
+}
+
+# 检查记事所有权：非admin用户只能操作自己的记事
+note_check_ownership <- function(note_id, current_user, con) {
+  uid <- note_visible_user_id(current_user)
+  if (is.null(uid)) return(TRUE)  # admin 无限制
+  note <- dbGetQuery(con, sprintf(
+    "SELECT id FROM notes WHERE id = %d AND created_by = %d",
+    as.integer(note_id), uid))
+  nrow(note) > 0
+}
+
+##################
 # 编号生成 NTE+YYYYMMDD+3位流水
 ##################
 note_generate_number <- function() {
@@ -21,20 +40,27 @@ note_generate_number <- function() {
 ##################
 # 获取所有记事
 ##################
-note_get_all <- function() {
+note_get_all <- function(current_user = NULL) {
   con <- db_connect()
   tryCatch({
-    dbGetQuery(con, "SELECT n.*, u.username as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id ORDER BY n.pinned DESC, n.updated_at DESC")
+    uid <- note_visible_user_id(current_user)
+    if (is.null(uid)) {
+      dbGetQuery(con, "SELECT n.*, u.username as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id ORDER BY n.pinned DESC, n.updated_at DESC")
+    } else {
+      dbGetQuery(con, sprintf("SELECT n.*, u.username as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id WHERE n.created_by = %d ORDER BY n.pinned DESC, n.updated_at DESC", uid))
+    }
   }, error = function(e) data.frame(), finally = { db_disconnect(con) })
 }
 
 ##################
 # 搜索记事（标题 + 评论内容）
 ##################
-note_search <- function(keyword) {
-  if (is.null(keyword) || trimws(keyword) == "") return(note_get_all())
+note_search <- function(keyword, current_user = NULL) {
+  if (is.null(keyword) || trimws(keyword) == "") return(note_get_all(current_user))
   con <- db_connect()
   tryCatch({
+    uid <- note_visible_user_id(current_user)
+    user_filter <- if (is.null(uid)) "" else sprintf("AND n.created_by = %d", uid)
     kw <- trimws(keyword)
     # 判断精确搜索：用 "" 或 <> 包裹
     if (grepl('^".*"$', kw) || grepl("^<.*>$", kw)) {
@@ -44,8 +70,8 @@ note_search <- function(keyword) {
         SELECT DISTINCT n.*, u.username as creator_name
         FROM notes n LEFT JOIN users u ON n.created_by = u.id
         LEFT JOIN note_comments c ON c.note_id = n.id
-        WHERE n.title = '%s' OR c.content = '%s'
-        ORDER BY n.pinned DESC, n.updated_at DESC", safe, safe)
+        WHERE (n.title = '%s' OR c.content = '%s') %s
+        ORDER BY n.pinned DESC, n.updated_at DESC", safe, safe, user_filter)
     } else {
       # 空格分隔 → AND 关系，每个词匹配标题/正文/评论任一即可
       words <- strsplit(kw, "\\s+")[[1]]
@@ -58,8 +84,8 @@ note_search <- function(keyword) {
         SELECT DISTINCT n.*, u.username as creator_name
         FROM notes n LEFT JOIN users u ON n.created_by = u.id
         LEFT JOIN note_comments c ON c.note_id = n.id
-        WHERE %s
-        ORDER BY n.pinned DESC, n.updated_at DESC", paste(conditions, collapse = " AND "))
+        WHERE (%s) %s
+        ORDER BY n.pinned DESC, n.updated_at DESC", paste(conditions, collapse = " AND "), user_filter)
     }
     dbGetQuery(con, query)
   }, error = function(e) data.frame(), finally = { db_disconnect(con) })
@@ -91,10 +117,15 @@ note_search_get_matching_comments <- function(note_ids, keyword) {
 ##################
 # 获取单条
 ##################
-note_get_by_id <- function(id) {
+note_get_by_id <- function(id, current_user = NULL) {
   con <- db_connect()
   tryCatch({
-    r <- dbGetQuery(con, sprintf("SELECT n.*, u.username as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id WHERE n.id = %d", as.integer(id)))
+    uid <- note_visible_user_id(current_user)
+    if (is.null(uid)) {
+      r <- dbGetQuery(con, sprintf("SELECT n.*, u.username as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id WHERE n.id = %d", as.integer(id)))
+    } else {
+      r <- dbGetQuery(con, sprintf("SELECT n.*, u.username as creator_name FROM notes n LEFT JOIN users u ON n.created_by = u.id WHERE n.id = %d AND n.created_by = %d", as.integer(id), uid))
+    }
     if (nrow(r) == 0) NULL else r
   }, finally = { db_disconnect(con) })
 }
@@ -150,9 +181,10 @@ note_fill_missing_no <- function() {
 ##################
 # 更新记事（编辑弹窗用）
 ##################
-note_update <- function(id, title = NULL, content = NULL, reminder_at = NULL, due_at = NULL, note_no = NULL, created_at = NULL) {
+note_update <- function(id, title = NULL, content = NULL, reminder_at = NULL, due_at = NULL, note_no = NULL, created_at = NULL, current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    if (!note_check_ownership(id, current_user, con)) return(list(success = FALSE, message = "无权操作此记事"))
     sets <- "updated_at = datetime('now','localtime')"
     if (!is.null(title))       sets <- paste0(sets, sprintf(", title='%s'", gsub("'","''",title)))
     if (!is.null(content))     sets <- paste0(sets, sprintf(", content='%s'", gsub("'","''",content)))
@@ -169,9 +201,10 @@ note_update <- function(id, title = NULL, content = NULL, reminder_at = NULL, du
 ##################
 # 快速更新字段（状态/重要性/提醒/到期）
 ##################
-note_patch <- function(id, ...) {
+note_patch <- function(id, ..., current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    if (!note_check_ownership(id, current_user, con)) return(list(success = FALSE, message = "无权操作此记事"))
     args <- list(...)
     sets <- c()
     if ("status" %in% names(args))     sets <- c(sets, sprintf("status='%s'", args$status))
@@ -190,18 +223,20 @@ note_patch <- function(id, ...) {
 ##################
 # 取消提醒 / 延长到期
 ##################
-note_cancel_reminder <- function(id) {
+note_cancel_reminder <- function(id, current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    if (!note_check_ownership(id, current_user, con)) return(list(success = FALSE, message = "无权操作此记事"))
     dbExecute(con, sprintf("UPDATE notes SET reminder_at = NULL, updated_at = datetime('now','localtime') WHERE id = %d", as.integer(id)))
     list(success = TRUE, message = "已取消提醒")
   }, error = function(e) list(success = FALSE, message = e$message),
   finally = { db_disconnect(con) })
 }
 
-note_extend_due <- function(id) {
+note_extend_due <- function(id, current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    if (!note_check_ownership(id, current_user, con)) return(list(success = FALSE, message = "无权操作此记事"))
     note <- dbGetQuery(con, sprintf("SELECT due_at FROM notes WHERE id = %d", as.integer(id)))
     if (nrow(note) == 0 || is.na(note$due_at[1]) || note$due_at[1] == "") return(list(success=FALSE, message="无到期时间"))
     new_due <- as.character(as.POSIXct(note$due_at[1]) + 86400)
@@ -214,9 +249,10 @@ note_extend_due <- function(id) {
 ##################
 # 置顶切换（最多5条）
 ##################
-note_toggle_pin <- function(id) {
+note_toggle_pin <- function(id, current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    if (!note_check_ownership(id, current_user, con)) return(list(success = FALSE, message = "无权操作此记事"))
     note <- dbGetQuery(con, sprintf("SELECT pinned FROM notes WHERE id = %d", as.integer(id)))
     if (nrow(note) == 0) return(list(success = FALSE, message = "记事不存在"))
     pinned <- note$pinned[1] %||% 0
@@ -237,9 +273,10 @@ note_toggle_pin <- function(id) {
 ##################
 # 删除
 ##################
-note_delete <- function(id) {
+note_delete <- function(id, current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    if (!note_check_ownership(id, current_user, con)) return(list(success = FALSE, message = "无权操作此记事"))
     dbExecute(con, sprintf("DELETE FROM notes WHERE id = %d", as.integer(id)))
     list(success = TRUE, message = "已删除")
   }, error = function(e) list(success = FALSE, message = paste("删除失败:", e$message)),
@@ -250,8 +287,8 @@ note_delete <- function(id) {
 # 转工单
 ##################
 note_convert_to_work_order <- function(note_id, current_user) {
-  note <- note_get_by_id(note_id)
-  if (is.null(note) || nrow(note) == 0) return(list(success = FALSE, message = "记事不存在"))
+  note <- note_get_by_id(note_id, current_user)
+  if (is.null(note) || nrow(note) == 0) return(list(success = FALSE, message = "记事不存在或无权操作"))
   
   result <- work_order_add(
     title = paste0("[记事转] ", note$title[1]),
@@ -274,9 +311,15 @@ note_convert_to_work_order <- function(note_id, current_user) {
 ##################
 # 评论相关
 ##################
-note_comment_add <- function(note_id, content, created_by = NULL, parent_id = NULL) {
+note_comment_add <- function(note_id, content, created_by = NULL, parent_id = NULL, current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    # 非admin用户只能在自己可见的记事下评论
+    uid <- note_visible_user_id(current_user)
+    if (!is.null(uid)) {
+      owner_check <- dbGetQuery(con, sprintf("SELECT id FROM notes WHERE id = %d AND created_by = %d", as.integer(note_id), uid))
+      if (nrow(owner_check) == 0) return(list(success = FALSE, message = "无权在此记事下评论"))
+    }
     pid <- if (is.null(parent_id)) "NULL" else as.character(as.integer(parent_id))
     query <- if (pid == "NULL") {
       sprintf("INSERT INTO note_comments (note_id, content, created_by) VALUES (%d,'%s',%s)",
@@ -304,9 +347,15 @@ note_comment_add <- function(note_id, content, created_by = NULL, parent_id = NU
 ##################
 # 评论状态标记（默认NULL，可标记为 completed 等）
 ##################
-note_comment_mark_status <- function(comment_id, status) {
+note_comment_mark_status <- function(comment_id, status, current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    # 非admin用户只能标记自己的评论
+    uid <- note_visible_user_id(current_user)
+    if (!is.null(uid)) {
+      owner_check <- dbGetQuery(con, sprintf("SELECT id FROM note_comments WHERE id = %d AND created_by = %d", as.integer(comment_id), uid))
+      if (nrow(owner_check) == 0) return(list(success = FALSE, message = "无权操作此评论"))
+    }
     val <- if (is.null(status) || status == "") "NULL" else sprintf("'%s'", status)
     completed_val <- if (isTRUE(status == "completed")) sprintf("'%s'", format(Sys.time(), "%Y-%m-%d %H:%M")) else "NULL"
     if (val == "NULL") {
@@ -351,9 +400,14 @@ note_comment_get_all <- function(note_id) {
   }, finally = { db_disconnect(con) })
 }
 
-note_comment_update <- function(comment_id, content) {
+note_comment_update <- function(comment_id, content, current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    uid <- note_visible_user_id(current_user)
+    if (!is.null(uid)) {
+      owner_check <- dbGetQuery(con, sprintf("SELECT id FROM note_comments WHERE id = %d AND created_by = %d", as.integer(comment_id), uid))
+      if (nrow(owner_check) == 0) return(list(success = FALSE, message = "无权修改此评论"))
+    }
     dbExecute(con, sprintf("UPDATE note_comments SET content='%s' WHERE id=%d",
       gsub("'","''",content), as.integer(comment_id)))
     note_id <- dbGetQuery(con, sprintf("SELECT note_id FROM note_comments WHERE id = %d", as.integer(comment_id)))$note_id[1]
@@ -375,9 +429,14 @@ note_comment_update_time <- function(comment_id, created_at) {
   finally = { db_disconnect(con) })
 }
 
-note_comment_delete <- function(comment_id) {
+note_comment_delete <- function(comment_id, current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    uid <- note_visible_user_id(current_user)
+    if (!is.null(uid)) {
+      owner_check <- dbGetQuery(con, sprintf("SELECT id FROM note_comments WHERE id = %d AND created_by = %d", as.integer(comment_id), uid))
+      if (nrow(owner_check) == 0) return(list(success = FALSE, message = "无权删除此评论"))
+    }
     note_id <- dbGetQuery(con, sprintf("SELECT note_id FROM note_comments WHERE id = %d", as.integer(comment_id)))$note_id[1]
     dbExecute(con, sprintf("DELETE FROM note_comments WHERE id=%d", as.integer(comment_id)))
     if (!is.na(note_id)) dbExecute(con, sprintf("UPDATE notes SET updated_at = datetime('now','localtime') WHERE id = %d", note_id))
@@ -389,20 +448,30 @@ note_comment_delete <- function(comment_id) {
 ##################
 # 今日记事（供日报用）
 ##################
-note_get_today <- function() {
+note_get_today <- function(current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    uid <- note_visible_user_id(current_user)
     today <- format(Sys.Date(), "%Y-%m-%d")
-    dbGetQuery(con, sprintf("SELECT id, title, content, status, importance, created_at FROM notes WHERE date(created_at) = '%s' ORDER BY created_at DESC", today))
+    if (is.null(uid)) {
+      dbGetQuery(con, sprintf("SELECT id, title, content, status, importance, created_at FROM notes WHERE date(created_at) = '%s' ORDER BY created_at DESC", today))
+    } else {
+      dbGetQuery(con, sprintf("SELECT id, title, content, status, importance, created_at FROM notes WHERE date(created_at) = '%s' AND created_by = %d ORDER BY created_at DESC", today, uid))
+    }
   }, finally = { db_disconnect(con) })
 }
 
 # 从所有标题提取 TOP N 关键字（供快速筛选）
 # 策略：CJK bigram 提取 + 非中文词抽取 + 分隔符切分 → 频次排序 → 过滤
-note_get_top_keywords <- function(n = 10) {
+note_get_top_keywords <- function(n = 10, current_user = NULL) {
   con <- db_connect()
   tryCatch({
-    titles <- dbGetQuery(con, "SELECT title FROM notes WHERE title IS NOT NULL AND title != ''")$title
+    uid <- note_visible_user_id(current_user)
+    if (is.null(uid)) {
+      titles <- dbGetQuery(con, "SELECT title FROM notes WHERE title IS NOT NULL AND title != ''")$title
+    } else {
+      titles <- dbGetQuery(con, sprintf("SELECT title FROM notes WHERE title IS NOT NULL AND title != '' AND created_by = %d", uid))$title
+    }
     if (length(titles) == 0) return(character(0))
     n_titles <- length(titles)
     all_words <- character(0)

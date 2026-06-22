@@ -25,7 +25,7 @@ note_server <- function(input, output, session, rv) {
     note_filter()
     req(rv$logged_in)
     kw <- note_search_term()
-    items <- if (is.null(kw) || kw == "") note_get_all() else note_search(kw)
+    items <- if (is.null(kw) || kw == "") note_get_all(rv$current_user) else note_search(kw, rv$current_user)
     # 搜索关键字词列表（用于高亮）
     search_words <- if (!is.null(kw) && kw != "") strsplit(trimws(kw), "\\s+")[[1]] else character(0)
     search_words <- search_words[search_words != ""]
@@ -450,13 +450,13 @@ note_server <- function(input, output, session, rv) {
   ##################
   observeEvent(input$note_cancel_reminder_btn, {
     req(rv$logged_in)
-    result <- note_cancel_reminder(as.integer(input$note_cancel_reminder_btn))
+    result <- note_cancel_reminder(as.integer(input$note_cancel_reminder_btn), rv$current_user)
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = if(result$success) "message" else "warning", duration = 1.5)
   })
   observeEvent(input$note_extend_due_btn, {
     req(rv$logged_in)
-    result <- note_extend_due(as.integer(input$note_extend_due_btn))
+    result <- note_extend_due(as.integer(input$note_extend_due_btn), rv$current_user)
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = if(result$success) "message" else "warning", duration = 1.5)
   })
@@ -466,7 +466,7 @@ note_server <- function(input, output, session, rv) {
   ##################
   observeEvent(input$note_pin_click, {
     req(rv$logged_in)
-    result <- note_toggle_pin(as.integer(input$note_pin_click))
+    result <- note_toggle_pin(as.integer(input$note_pin_click), rv$current_user)
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "warning"), duration = 2)
   })
@@ -525,7 +525,7 @@ note_server <- function(input, output, session, rv) {
     note_trigger()
     req(rv$logged_in)
     if (length(note_keywords_cache()) == 0) {
-      tryCatch({ note_keywords_cache(note_get_top_keywords(10)) }, error = function(e) NULL)
+      tryCatch({ note_keywords_cache(note_get_top_keywords(10, rv$current_user)) }, error = function(e) NULL)
     }
   })
 
@@ -558,14 +558,14 @@ note_server <- function(input, output, session, rv) {
     # 也尝试清除分类缓存（如果删除的是分类关键字）
     kw <- note_keywords_cache()
     if (del %in% kw) {
-      note_keywords_cache(c(setdiff(kw, del), note_get_top_keywords(1)))
+      note_keywords_cache(c(setdiff(kw, del), note_get_top_keywords(1, rv$current_user)))
     }
   })
 
   # 刷新关键字缓存
   observeEvent(input$note_kw_refresh, {
     req(rv$logged_in)
-    tryCatch({ note_keywords_cache(note_get_top_keywords(10)) }, error = function(e) NULL)
+    tryCatch({ note_keywords_cache(note_get_top_keywords(10, rv$current_user)) }, error = function(e) NULL)
   })
 
   ##################
@@ -611,7 +611,7 @@ note_server <- function(input, output, session, rv) {
   ##################
   observeEvent(input$note_edit_click, {
     req(rv$logged_in)
-    note <- note_get_by_id(as.integer(input$note_edit_click))
+    note <- note_get_by_id(as.integer(input$note_edit_click), rv$current_user)
     if (is.null(note) || nrow(note) == 0) return()
     rv$note_edit_id <- note$id[1]
     
@@ -873,11 +873,11 @@ note_server <- function(input, output, session, rv) {
   observeEvent(input$note_flag_click, {
     req(rv$logged_in)
     id <- as.integer(input$note_flag_click)
-    note <- note_get_by_id(id)
+    note <- note_get_by_id(id, rv$current_user)
     if (is.null(note)) return()
     imp <- (note$importance[1] %||% 0) + 1
     if (imp > 5) imp <- 0
-    result <- note_patch(id, importance = imp)
+    result <- note_patch(id, importance = imp, current_user = rv$current_user)
     note_trigger(note_trigger() + 1)
   })
 
@@ -888,7 +888,7 @@ note_server <- function(input, output, session, rv) {
     req(rv$logged_in)
     parts <- strsplit(as.character(input$note_flag_set), ":")[[1]]
     id <- as.integer(parts[1]); val <- as.integer(parts[2])
-    result <- note_patch(id, importance = val)
+    result <- note_patch(id, importance = val, current_user = rv$current_user)
     note_trigger(note_trigger() + 1)
   })
 
@@ -899,7 +899,7 @@ note_server <- function(input, output, session, rv) {
     req(rv$logged_in, rv$note_edit_id, input$note_comment_new_m)
     if (trimws(input$note_comment_new_m) == "") return()
     uid <- if (!is.null(rv$current_user) && nrow(rv$current_user) > 0) rv$current_user$id[1] else NULL
-    result <- note_comment_add(rv$note_edit_id, input$note_comment_new_m, uid)
+    result <- note_comment_add(rv$note_edit_id, input$note_comment_new_m, uid, current_user = rv$current_user)
     if (!result$success) {
       showNotification(result$message, type = "error", duration = 2)
       return()
@@ -962,7 +962,7 @@ note_server <- function(input, output, session, rv) {
     text <- trimws(data$text)
     if (is.null(text) || text == "") return()
     uid <- if (!is.null(rv$current_user) && nrow(rv$current_user) > 0) rv$current_user$id[1] else NULL
-    result <- note_comment_add(rv$note_edit_id, text, uid, parent_id = pid)
+    result <- note_comment_add(rv$note_edit_id, text, uid, parent_id = pid, current_user = rv$current_user)
     if (result$success) {
       removeModal()
       session$sendCustomMessage("noteReopenModal", list(note_id = rv$note_edit_id))
@@ -981,7 +981,7 @@ note_server <- function(input, output, session, rv) {
     cid <- as.integer(parts[1])
     content <- parts[2]
     time <- if (length(parts) >= 3 && trimws(parts[3]) != "") trimws(parts[3]) else NULL
-    result1 <- note_comment_update(cid, content)
+    result1 <- note_comment_update(cid, content, rv$current_user)
     if (!is.null(time) && result1$success) {
       note_comment_update_time(cid, time)
     }
@@ -995,7 +995,7 @@ note_server <- function(input, output, session, rv) {
   observeEvent(input$note_comment_delete, {
     req(rv$logged_in)
     cid <- as.integer(input$note_comment_delete)
-    result <- note_comment_delete(cid)
+    result <- note_comment_delete(cid, rv$current_user)
     if (result$success) {
       # 用 JS 从弹窗DOM中移除评论
       session$sendCustomMessage(type = "noteRemoveComment", message = list(comment_id = cid))
@@ -1011,7 +1011,7 @@ note_server <- function(input, output, session, rv) {
   observeEvent(input$note_comment_done, {
     req(rv$logged_in)
     cid <- as.integer(input$note_comment_done)
-    result <- note_comment_mark_status(cid, "completed")
+    result <- note_comment_mark_status(cid, "completed", rv$current_user)
     if (result$success) {
       # 取写入的 completed_at 作为徽章显示时间
       cmt <- note_comment_get_by_id(cid)
@@ -1029,7 +1029,7 @@ note_server <- function(input, output, session, rv) {
   observeEvent(input$note_comment_undone, {
     req(rv$logged_in)
     cid <- as.integer(input$note_comment_undone)
-    result <- note_comment_mark_status(cid, "")
+    result <- note_comment_mark_status(cid, "", rv$current_user)
     if (result$success) {
       session$sendCustomMessage(type = "noteCommentMarkDone", message = list(comment_id = cid, status = "", completed_at = ""))
     }
@@ -1050,13 +1050,13 @@ note_server <- function(input, output, session, rv) {
   })
   observeEvent(input$note_report_click, {
     req(rv$logged_in)
-    result <- note_patch(as.integer(input$note_report_click), reported_to_daily = 1)
+    result <- note_patch(as.integer(input$note_report_click), reported_to_daily = 1, current_user = rv$current_user)
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = "message", duration = 2)
   })
   observeEvent(input$note_del_click, {
     req(rv$logged_in)
-    result <- note_delete(as.integer(input$note_del_click))
+    result <- note_delete(as.integer(input$note_del_click), rv$current_user)
     removeModal()
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "error"))

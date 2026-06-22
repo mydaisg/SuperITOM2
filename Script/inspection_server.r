@@ -36,37 +36,37 @@ inspection_server <- function(input, output, session, rv) {
   # ========================================
   output$insp_stat_plans <- renderText({
     rv$inspection_refresh_trigger
-    stats <- inspection_get_stats()
+    stats <- inspection_get_stats(rv$current_user)
     as.character(stats$total_plans[1])
   })
   
   output$insp_stat_active_plans <- renderText({
     rv$inspection_refresh_trigger
-    stats <- inspection_get_stats()
+    stats <- inspection_get_stats(rv$current_user)
     as.character(stats$active_plans[1])
   })
   
   output$insp_stat_pending_tasks <- renderText({
     rv$inspection_refresh_trigger
-    stats <- inspection_get_stats()
+    stats <- inspection_get_stats(rv$current_user)
     as.character(stats$pending_tasks[1])
   })
   
   output$insp_stat_completed_tasks <- renderText({
     rv$inspection_refresh_trigger
-    stats <- inspection_get_stats()
+    stats <- inspection_get_stats(rv$current_user)
     as.character(stats$completed_tasks[1])
   })
   
   output$insp_stat_abnormal_tasks <- renderText({
     rv$inspection_refresh_trigger
-    stats <- inspection_get_stats()
+    stats <- inspection_get_stats(rv$current_user)
     as.character(stats$abnormal_tasks[1])
   })
   
   output$insp_stat_issues <- renderText({
     rv$inspection_refresh_trigger
-    stats <- inspection_get_stats()
+    stats <- inspection_get_stats(rv$current_user)
     as.character(stats$pending_issues[1])
   })
   
@@ -198,7 +198,7 @@ inspection_server <- function(input, output, session, rv) {
     req(rv$logged_in)
     rv$inspection_refresh_trigger
     
-    plans <- inspection_plan_get_all(input$insp_plan_status_filter)
+    plans <- inspection_plan_get_all(input$insp_plan_status_filter, rv$current_user)
     
     if (nrow(plans) > 0) {
       plans$status_label <- sapply(plans$status, function(s) {
@@ -268,7 +268,7 @@ inspection_server <- function(input, output, session, rv) {
     # 依赖选中的计划ID，当用户选择不同计划时刷新
     rv$inspection_selected_plan_id
     
-    tasks <- inspection_task_get_all(input$insp_task_status_filter, rv$inspection_selected_plan_id)
+    tasks <- inspection_task_get_all(input$insp_task_status_filter, rv$inspection_selected_plan_id, rv$current_user)
     
     if (nrow(tasks) > 0) {
       tasks$status_label <- sapply(tasks$status, function(s) {
@@ -1180,7 +1180,7 @@ inspection_server <- function(input, output, session, rv) {
                             "paused" = "#f0ad4e", "completed" = "#337ab7", "#999")
       
       # 检查是否有待执行任务
-      tasks <- inspection_task_get_all(plan_filter = plan_id)
+      tasks <- inspection_task_get_all(plan_filter = plan_id, current_user = rv$current_user)
       pending_count <- sum(tasks$status == "pending", na.rm = TRUE)
       
       # 获取历史评论

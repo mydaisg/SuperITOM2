@@ -300,12 +300,18 @@ daily_report_server <- function(input, output, session, rv) {
   observe({
     req(rv$logged_in)
     users <- daily_report_get_users()
+    # 非admin用户只能看自己的日报
+    is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+    if (!is_admin && !is.null(rv$current_user)) {
+      users <- users[users$id == rv$current_user$id[1], , drop = FALSE]
+    }
     if (nrow(users) > 0) {
       labels <- ifelse(is.na(users$display_name) | users$display_name == "",
                        users$username, sprintf("%s (%s)", users$display_name, users$username))
-      choices <- c("全部人员" = "all", setNames(as.character(users$id), labels))
+      choices <- if (is_admin) c("全部人员" = "all", setNames(as.character(users$id), labels))
+                 else setNames(as.character(users$id), labels)
     } else {
-      choices <- c("全部人员" = "all")
+      choices <- if (is_admin) c("全部人员" = "all") else character(0)
     }
     updateSelectInput(session, "dr_user_filter", choices = choices)
   })

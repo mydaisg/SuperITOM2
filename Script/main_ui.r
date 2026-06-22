@@ -48,7 +48,7 @@ source("Script/asset_ui.r")
 # 加载岗职模块
 source("Script/duty_matrix_ui.r")
 
-main_ui <- function() {
+main_ui <- function(is_admin = FALSE) {
   # 读取字体大小配置
   table_font_size <- config_get_value("table_font_size", "13")
   input_font_size <- config_get_value("input_font_size", "13")
@@ -380,9 +380,7 @@ main_ui <- function() {
             .navbar-default .navbar-nav > li > a:focus {
               background-color: #d6e9f8 !important;
             }
-            /* 默认隐藏管理菜单，JS根据角色控制显示 */
-            .admin-menu-item { display: none !important; }
-            body.admin-user .admin-menu-item { display: block !important; }
+            /* 管理菜单用服务端 is_admin 控制显示，不再需要CSS隐藏 */
           ", table_font_size, table_font_size, input_font_size))),
           tags$script(HTML("
             $(document).on('shiny:connected', function(event) {
@@ -681,15 +679,15 @@ main_ui <- function() {
     #   process_ui()
     # ),
 
-    # 岗职矩阵标签页
-    tabPanel(
+    # 岗职矩阵标签页（admin专用）
+    if (is_admin) tabPanel(
       "岗职",
       icon = icon("sitemap"),
       duty_matrix_ui()
     ),
 
-    # 绩效管理标签页
-    tabPanel(
+    # 绩效管理标签页（admin专用）
+    if (is_admin) tabPanel(
       "绩效",
       icon = icon("chart-bar"),
       performance_ui()
@@ -764,11 +762,12 @@ main_ui <- function() {
       )
     ),
     
-    # 管理菜单（admin专用，JS控制显示/隐藏）
+    # 管理菜单（admin全功能 / user仅个人信息）
     navbarMenu(
       "管理",
       icon = icon("tools"),
-      tabPanel(
+      # --- admin 专属 ---
+      if (is_admin) tabPanel(
         "用户管理",
         icon = icon("users"),
         fluidPage(
@@ -794,7 +793,7 @@ main_ui <- function() {
           )
         )
       ),
-      tabPanel(
+      if (is_admin) tabPanel(
         "系统设置",
         icon = icon("cogs"),
         fluidPage(
@@ -827,7 +826,7 @@ main_ui <- function() {
           )
         )
       ),
-      tabPanel(
+      if (is_admin) tabPanel(
         "选项配置",
         icon = icon("sliders-h"),
         fluidPage(
@@ -862,7 +861,7 @@ main_ui <- function() {
           )
         )
       ),
-      tabPanel(
+      if (is_admin) tabPanel(
         "GitHub",
         icon = icon("github"),
         fluidPage(
@@ -886,6 +885,38 @@ main_ui <- function() {
               br(),
               h4("提交结果"),
               verbatimTextOutput("git_result")
+            )
+          )
+        )
+      ),
+      # --- 所有用户可见 ---
+      tabPanel(
+        "个人信息",
+        icon = icon("user-circle"),
+        fluidPage(
+          titlePanel("个人信息"),
+          fluidRow(
+            column(6,
+              wellPanel(
+                h4("账号信息"),
+                div(style = "margin-bottom:10px;",
+                  tags$b("用户名："), textOutput("self_info_username", inline = TRUE)),
+                div(style = "margin-bottom:10px;",
+                  tags$b("显示名称："), textOutput("self_info_display_name", inline = TRUE)),
+                div(style = "margin-bottom:10px;",
+                  tags$b("角色："), textOutput("self_info_role", inline = TRUE))
+              )
+            ),
+            column(6,
+              wellPanel(
+                h4("修改密码"),
+                passwordInput("self_old_password", "旧密码"),
+                passwordInput("self_new_password", "新密码"),
+                passwordInput("self_new_password_confirm", "确认新密码"),
+                actionButton("self_save_password", "保存密码", class = "btn-primary", icon = icon("save")),
+                br(), br(),
+                textOutput("self_password_msg")
+              )
             )
           )
         )

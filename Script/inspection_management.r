@@ -3,6 +3,15 @@
 # 流程：计划 -> 任务 -> 执行 -> 记录/异常 -> 整改工单
 # ============================================================
 
+##################
+# 权限辅助：非admin用户返回其ID用于过滤
+##################
+insp_visible_user_id <- function(current_user) {
+  if (is.null(current_user) || nrow(current_user) == 0) return(NULL)
+  if (current_user$role[1] == "admin") return(NULL)
+  as.integer(current_user$id[1])
+}
+
 # ----------------------------------------------------------
 # 0. 辅助函数
 # ----------------------------------------------------------
@@ -47,15 +56,19 @@ generate_plan_name_from_items <- function(inspection_category, item_names) {
 # ----------------------------------------------------------
 
 # 获取所有巡检计划
-inspection_plan_get_all <- function(status_filter = NULL) {
+inspection_plan_get_all <- function(status_filter = NULL, current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    uid <- insp_visible_user_id(current_user)
     query <- "SELECT ip.*, u1.username as creator_name, u2.username as responsible_name
               FROM inspection_plans ip
               LEFT JOIN users u1 ON ip.created_by = u1.id
               LEFT JOIN users u2 ON ip.responsible_user = u2.id
               WHERE ip.is_deleted = 0"
     
+    if (!is.null(uid)) {
+      query <- sprintf("%s AND (ip.created_by = %d OR ip.id IN (SELECT DISTINCT plan_id FROM inspection_tasks WHERE inspector = %d))", query, uid, uid)
+    }
     if (!is.null(status_filter) && status_filter != "" && status_filter != "all") {
       query <- sprintf("%s AND ip.status = '%s'", query, status_filter)
     }
@@ -458,9 +471,10 @@ inspection_task_get_mine <- function(inspector_id, status_filter = NULL) {
 }
 
 # 获取所有巡检任务
-inspection_task_get_all <- function(status_filter = NULL, plan_filter = NULL) {
+inspection_task_get_all <- function(status_filter = NULL, plan_filter = NULL, current_user = NULL) {
   con <- db_connect()
   tryCatch({
+    uid <- insp_visible_user_id(current_user)
     query <- "SELECT t.id, t.task_no, t.plan_id, t.item_ids, t.item_names, t.check_standards,
                      t.inspector, t.scheduled_date, t.status, t.created_at, t.updated_at, t.is_deleted,
                      p.name as plan_name, p.category as plan_category,
@@ -470,6 +484,9 @@ inspection_task_get_all <- function(status_filter = NULL, plan_filter = NULL) {
               LEFT JOIN users u ON t.inspector = u.id
               WHERE t.is_deleted = 0"
     
+    if (!is.null(uid)) {
+      query <- sprintf("%s AND (t.inspector = %d OR p.created_by = %d)", query, uid, uid)
+    }
     if (!is.null(status_filter) && status_filter != "" && status_filter != "all") {
       query <- sprintf("%s AND t.status = '%s'", query, status_filter)
     }
@@ -1308,10 +1325,12 @@ inspection_issue_get_by_task <- function(task_id) {
 # ----------------------------------------------------------
 
 # 获取巡检统计（排除已删除的记录）
-inspection_get_stats <- function() {
+inspection_get_stats <- function(current_user = NULL) {
   con <- db_connect()
   tryCatch({
-    query <- "SELECT
+    uid <- insp_visible_user_id(current_user)
+    user_filter <- if (is.null(uid)) "" else sprintf("AND (p.created_by = %d OR t.inspector = %d)", uid, uid)
+    query <- sprintf("SELECT
                COUNT(DISTINCT p.id) as total_plans,
                COUNT(DISTINCT CASE WHEN p.status = 'active' THEN p.id END) as active_plans,
                COUNT(DISTINCT t.id) as total_tasks,
@@ -1323,7 +1342,7 @@ inspection_get_stats <- function() {
               FROM inspection_plans p
               LEFT JOIN inspection_tasks t ON p.id = t.plan_id AND t.is_deleted = 0
               LEFT JOIN inspection_issues i ON t.id = i.task_id
-              WHERE p.is_deleted = 0"
+              WHERE p.is_deleted = 0 %s", user_filter)
     result <- dbGetQuery(con, query)
     return(result)
   }, error = function(e) {

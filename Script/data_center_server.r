@@ -17,7 +17,7 @@ data_center_server <- function(id, rv) {
   })
 
   output$wo_viz <- renderUI({
-    s <- work_order_get_stats()
+    s <- work_order_get_stats(rv$current_user)
     total <- s$total[1]; pending <- s$pending[1]+s$assigned[1]+s$processing[1]; done <- s$completed[1]+s$closed[1]
     pct <- if(total>0) round(done/total*100) else 0
     HTML(sprintf('<div class="dc-big-num" style="color:#e53e3e;">%d</div>
@@ -36,7 +36,7 @@ data_center_server <- function(id, rv) {
   })
 
   output$insp_viz <- renderUI({
-    s <- inspection_get_stats()
+    s <- inspection_get_stats(rv$current_user)
     plans <- s$total_plans[1]; active <- s$active_plans[1]; issues <- s$pending_issues[1]
     HTML(sprintf('<div class="dc-big-num" style="color:#0d7d3a;">%d</div>
       <div style="font-size:10px;color:#8899aa;margin-bottom:4px;">巡检计划</div>
