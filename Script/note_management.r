@@ -237,11 +237,11 @@ note_extend_due <- function(id, current_user = NULL) {
   con <- db_connect()
   tryCatch({
     if (!note_check_ownership(id, current_user, con)) return(list(success = FALSE, message = "无权操作此记事"))
-    note <- dbGetQuery(con, sprintf("SELECT due_at FROM notes WHERE id = %d", as.integer(id)))
-    if (nrow(note) == 0 || is.na(note$due_at[1]) || note$due_at[1] == "") return(list(success=FALSE, message="无到期时间"))
-    new_due <- as.character(as.POSIXct(note$due_at[1]) + 86400)
-    dbExecute(con, sprintf("UPDATE notes SET due_at='%s', updated_at=datetime('now','localtime') WHERE id=%d", new_due, as.integer(id)))
-    list(success = TRUE, message = "到期时间已延长1天")
+    note <- dbGetQuery(con, sprintf("SELECT reminder_at FROM notes WHERE id = %d", as.integer(id)))
+    if (nrow(note) == 0 || is.na(note$reminder_at[1]) || note$reminder_at[1] == "") return(list(success=FALSE, message="无提醒时间"))
+    new_rem <- as.character(as.POSIXct(note$reminder_at[1]) + 86400)
+    dbExecute(con, sprintf("UPDATE notes SET reminder_at='%s', updated_at=datetime('now','localtime') WHERE id=%d", new_rem, as.integer(id)))
+    list(success = TRUE, message = "提醒时间已延长1天")
   }, error = function(e) list(success = FALSE, message = e$message),
   finally = { db_disconnect(con) })
 }

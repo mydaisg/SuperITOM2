@@ -21,7 +21,7 @@ login_ui <- function() {
                background: rgba(102, 126, 234, 0.85);",
       div(
         style = "background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); width: 400px;",
-        h2("Super ITOM 2 登录", style = "text-align: center; color: #667eea; margin-bottom: 30px;"),
+        h2("LVCC ITOM 登录", style = "text-align: center; color: #667eea; margin-bottom: 30px;"),
         textInput("login_username", "用户名", placeholder = "请输入用户名"),
         passwordInput("login_password", "密码", placeholder = "请输入密码"),
         br(), br(),

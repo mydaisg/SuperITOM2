@@ -120,9 +120,10 @@ note_server <- function(input, output, session, rv) {
           note_no <- r$note_no[1] %||% ""
           
           due_cls <- ""
-          if (!is.na(r$due_at) && r$due_at != "") {
-            due_dt <- tryCatch(as.POSIXct(r$due_at), error = function(e) NULL)
-            if (!is.null(due_dt) && due_dt < Sys.time()) due_cls <- "note-due-overdue"
+          rem_overdue <- FALSE
+          if (!is.na(r$reminder_at) && r$reminder_at != "") {
+            rem_dt <- tryCatch(as.POSIXct(r$reminder_at), error = function(e) NULL)
+            if (!is.null(rem_dt) && rem_dt < Sys.time()) rem_overdue <- TRUE
           }
           
           body <- r$content %||% ""
@@ -188,10 +189,10 @@ note_server <- function(input, output, session, rv) {
             if (!compact) tags$div(class = "note-meta", style = "white-space:nowrap; overflow:hidden; text-overflow:ellipsis;",
               tags$span(if (stale_cls != "") class = stale_cls else NULL,
                 if (stale_cls != "") tags$span(style="color:#e53e3e;font-weight:bold;", "🕐", created) else tags$span("🕐", created)),
-              if (isTRUE(reminder != "")) tags$span("⏰", reminder,
-                HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_cancel_reminder_btn\',%d,{priority:\'event\'});return false;" style="color:#999;font-size:9px;margin-left:1px;text-decoration:none;">✕</a>', r$id))),
-              if (isTRUE(due != "")) tags$span(class = due_cls, "📅", due,
-                HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_extend_due_btn\',%d,{priority:\'event\'});return false;" style="color:#2563eb;font-size:9px;margin-left:1px;text-decoration:none;">Ext 1D</a>', r$id)))
+              if (isTRUE(reminder != "")) tags$span(class = if(rem_overdue) "note-due-overdue" else "", "⏰", reminder,
+                HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_cancel_reminder_btn\',%d,{priority:\'event\'});return false;" style="color:#999;font-size:9px;margin-left:1px;text-decoration:none;">✕</a>', r$id)),
+                HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_extend_due_btn\',%d,{priority:\'event\'});return false;" style="color:#2563eb;font-size:9px;margin-left:2px;text-decoration:none;">Ext 1D</a>', r$id))),
+              if (isTRUE(due != "")) tags$span("📅", due)
             ),
             if (!compact) HTML(comment_html) else ""
           )
@@ -286,9 +287,9 @@ note_server <- function(input, output, session, rv) {
               if (!compact) tags$div(class="note-meta", style = "white-space:nowrap; overflow:hidden; text-overflow:ellipsis;",
                 tags$span("🕐", substr(r$created_at,1,16)),
                 if (!is.na(r$reminder_at) && nchar(r$reminder_at) > 10) tags$span("⏰", substr(r$reminder_at,1,16),
-                  HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_cancel_reminder_btn\',%d,{priority:\'event\'});return false;" style="color:#999;font-size:9px;margin-left:1px;text-decoration:none;">✕</a>', r$id))),
-                if (!is.na(r$due_at) && nchar(r$due_at) > 10) tags$span("📅", substr(r$due_at,1,16),
-                  HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_extend_due_btn\',%d,{priority:\'event\'});return false;" style="color:#2563eb;font-size:9px;margin-left:1px;text-decoration:none;">Ext 1D</a>', r$id)))
+                  HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_cancel_reminder_btn\',%d,{priority:\'event\'});return false;" style="color:#999;font-size:9px;margin-left:1px;text-decoration:none;">✕</a>', r$id)),
+                  HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_extend_due_btn\',%d,{priority:\'event\'});return false;" style="color:#2563eb;font-size:9px;margin-left:2px;text-decoration:none;">Ext 1D</a>', r$id))),
+                if (!is.na(r$due_at) && nchar(r$due_at) > 10) tags$span("📅", substr(r$due_at,1,16))
               ),
               if (!compact) HTML(comment_html) else ""
             )
@@ -743,10 +744,10 @@ note_server <- function(input, output, session, rv) {
               sprintf("状态: %s | 创建: %s", st, substr(note$created_at[1] %||% "", 1, 16))),
             tags$span(style="font-size:12px; color:#999;",
               "⏰ 提醒: ", rem_val,
-              if (isTRUE(rem_val != "")) HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_cancel_reminder_btn\',%d,{priority:\'event\'});return false;" style="color:#e53e3e;font-size:10px;margin-left:2px;text-decoration:none;">✕</a>', note$id[1]))),
+              if (isTRUE(rem_val != "")) HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_cancel_reminder_btn\',%d,{priority:\'event\'});return false;" style="color:#e53e3e;font-size:10px;margin-left:2px;text-decoration:none;">✕</a>', note$id[1])),
+              if (isTRUE(rem_val != "")) HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_extend_due_btn\',%d,{priority:\'event\'});return false;" style="color:#2563eb;font-size:10px;margin-left:2px;text-decoration:none;">Ext 1D</a>', note$id[1]))),
             tags$span(style="font-size:12px; color:#999;",
-              "📅 到期: ", due_val,
-              if (isTRUE(due_val != "")) HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_extend_due_btn\',%d,{priority:\'event\'});return false;" style="color:#2563eb;font-size:10px;margin-left:2px;text-decoration:none;">Ext 1D</a>', note$id[1])))
+              "📅 到期: ", due_val)
           ),
           tags$div(style="display:flex; align-items:center; gap:6px; flex-shrink:0;",
             HTML(flags_html)

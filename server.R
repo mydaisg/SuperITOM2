@@ -1710,6 +1710,232 @@ server <- function(input, output, session) {
     showNotification("代码已从 GitHub 拉取", type = "message")
   })
   
+  # ========== RBAC 授权管理（admin专用） ==========
+  source("Script/rbac_management.r")
+  rbac_refresh <- reactiveVal(0)
+
+  # 权限清单：三级可折叠模块→部件→操作
+  output$rbac_perm_table <- renderUI({
+    rbac_refresh(); req(rv$logged_in)
+    perms <- rbac_permission_get_all()
+    # 处理空 component
+    perms$component <- ifelse(is.na(perms$component) | perms$component == "", "(通用)", perms$component)
+    modules <- unique(perms$module)
+    # 生成唯一ID前缀
+    safe_id <- function(x) gsub("[^\\w]", "_", x, perl = TRUE)
+    tagList(
+      tags$style(HTML("
+        .rbac-mod-hdr { background:#e8f0fe; padding:6px 12px; margin:6px 0 2px; cursor:pointer; border-radius:4px; font-weight:700; font-size:14px; user-select:none; border:1px solid #c8daf5; }
+        .rbac-mod-hdr:hover { background:#d4e4fc; }
+        .rbac-comp-hdr { background:#f5f5f5; padding:4px 10px; margin:2px 0; cursor:pointer; border-radius:3px; font-weight:600; font-size:12px; user-select:none; border:1px solid #e0e0e0; }
+        .rbac-comp-hdr:hover { background:#e8e8e8; }
+        .rbac-ops { display:flex; flex-wrap:wrap; gap:4px; padding:2px 0 2px 24px; }
+        .rbac-op { background:#fff; border:1px solid #ddd; border-radius:3px; padding:2px 8px; font-size:11px; font-family:monospace; }
+      ")),
+      lapply(modules, function(mod) {
+        mod_perms <- perms[perms$module == mod, ]
+        mod_id <- safe_id(mod)
+        components <- unique(mod_perms$component)
+        tags$div(
+          tags$div(class = "rbac-mod-hdr", onclick = sprintf(
+            "var el=document.getElementById('rbac-mod-%s'); el.style.display=el.style.display==='none'?'block':'none';", mod_id
+          ), paste0("📁 ", mod, " (", nrow(mod_perms), "项)")),
+          tags$div(id = paste0("rbac-mod-", mod_id), style = "display:block; padding-left:12px;",
+            lapply(components, function(comp) {
+              comp_perms <- mod_perms[mod_perms$component == comp, ]
+              comp_id <- paste0(mod_id, "_", safe_id(comp))
+              tags$div(
+                tags$div(class = "rbac-comp-hdr", onclick = sprintf(
+                  "var el=document.getElementById('rbac-comp-%s'); el.style.display=el.style.display==='none'?'flex':'none';", comp_id
+                ), paste0("▸ ", comp, " (", nrow(comp_perms), ")")),
+                tags$div(id = paste0("rbac-comp-", comp_id), class = "rbac-ops", style = "display:flex;",
+                  lapply(seq_len(nrow(comp_perms)), function(i) {
+                    tags$span(class = "rbac-op",
+                      paste0(comp_perms$name[i], " [", comp_perms$code[i], "]"))
+                  })
+                )
+              )
+            })
+          )
+        )
+      })
+    )
+  })
+
+  # 角色列表（带刷新）
+  output$rbac_role_table <- DT::renderDT({
+    rbac_refresh(); req(rv$logged_in)
+    roles <- rbac_role_get_all()
+    DT::datatable(roles, rownames = FALSE, selection = "single",
+      colnames = c("ID", "角色名称", "描述"),
+      options = list(pageLength = 10, dom = 't'))
+  })
+
+  selected_role_id <- reactiveVal(NULL)
+  observeEvent(input$rbac_role_table_rows_selected, {
+    roles <- rbac_role_get_all()
+    if (length(input$rbac_role_table_rows_selected) > 0) {
+      selected_role_id(roles$id[input$rbac_role_table_rows_selected])
+    }
+  })
+
+  # 角色权限编辑：三级模块→部件→操作可折叠勾选框
+  output$rbac_role_perms_ui <- renderUI({
+    req(selected_role_id())
+    roles <- rbac_role_get_all()
+    role <- roles[roles$id == selected_role_id(), ]
+    current_perms <- rbac_role_perms_get(selected_role_id())
+    all_perms <- rbac_permission_get_all()
+    all_perms$component <- ifelse(is.na(all_perms$component) | all_perms$component == "", "(通用)", all_perms$component)
+    modules <- unique(all_perms$module)
+    safe_id <- function(x) gsub("[^\\w]", "_", x, perl = TRUE)
+
+    tagList(
+      h5(paste("为角色 [", role$name[1], "] 配置权限")),
+      # 快速模式：selectInput 搜索（也带上 component）
+      wellPanel(
+        tags$b("快速搜索添加："),
+        selectInput("rbac_role_perms_select", NULL,
+          choices = stats::setNames(all_perms$code, sprintf("[%s/%s] %s", all_perms$module, all_perms$component, all_perms$name)),
+          selected = current_perms, multiple = TRUE, width = "100%", selectize = TRUE),
+        tags$p(style = "color:#999;font-size:10px;", "输入关键字搜索权限，支持多选（勾选=有此权限）")
+      ),
+      # 树形勾选模式：模块→部件→操作
+      h5("按模块/部件勾选："),
+      # JS同步checkbox到selectInput
+      tags$script(HTML('
+        $(document).off("change.rbac").on("change.rbac", "input[name=\"rbac_perm_codes\"]", function() {
+          var vals = [];
+          $("input[name=\"rbac_perm_codes\"]:checked").each(function(){ vals.push($(this).val()); });
+          var sel = $("#rbac_role_perms_select")[0].selectize;
+          if (sel) { sel.clear(); vals.forEach(function(v){ sel.addItem(v, true); }); }
+        });
+      ')),
+      tags$style(HTML("
+        .rp-mod-hdr { background:#e8f0fe; padding:5px 10px; margin:4px 0 0; cursor:pointer; border-radius:4px; font-weight:700; font-size:13px; user-select:none; border:1px solid #c8daf5; display:flex; align-items:center; gap:8px; }
+        .rp-mod-hdr:hover { background:#d4e4fc; }
+        .rp-comp-hdr { background:#f0f0f0; padding:3px 10px; margin:1px 0; cursor:pointer; border-radius:3px; font-weight:600; font-size:12px; user-select:none; display:flex; align-items:center; gap:8px; }
+        .rp-comp-hdr:hover { background:#e0e0e0; }
+        .rp-op-row { display:flex; flex-wrap:wrap; gap:4px; padding:2px 0 2px 40px; }
+      ")),
+      lapply(modules, function(mod) {
+        mod_perms <- all_perms[all_perms$module == mod, ]
+        mod_id <- safe_id(mod)
+        mod_all_checked <- all(mod_perms$code %in% current_perms)
+        components <- unique(mod_perms$component)
+        tags$div(style = "margin-bottom:4px; border:1px solid #d0d0d0; border-radius:4px; overflow:hidden;",
+          tags$div(class = "rp-mod-hdr",
+            tags$input(type = "checkbox",
+              class = paste0("rp-mod-cb-", mod_id),
+              onclick = sprintf("
+                var cbs = document.querySelectorAll('.rp-cb-%s');
+                cbs.forEach(function(cb){ cb.checked = this.checked; cb.dispatchEvent(new Event('change',{bubbles:true})); });
+              ", mod_id),
+              checked = if(mod_all_checked) NA else NULL),
+            tags$span(onclick = sprintf(
+              "var el=document.getElementById('rp-mod-body-%s'); el.style.display=el.style.display==='none'?'block':'none';", mod_id
+            ), style = "flex:1;", paste0("📁 ", mod, " (", nrow(mod_perms), "项)"))
+          ),
+          tags$div(id = paste0("rp-mod-body-", mod_id), style = "display:block;",
+            lapply(components, function(comp) {
+              comp_perms <- mod_perms[mod_perms$component == comp, ]
+              comp_id <- paste0(mod_id, "_", safe_id(comp))
+              comp_all_checked <- all(comp_perms$code %in% current_perms)
+              tags$div(
+                tags$div(class = "rp-comp-hdr",
+                  tags$input(type = "checkbox",
+                    class = paste0("rp-mod-cb-", mod_id, " rp-comp-cb-", comp_id),
+                    onclick = sprintf("
+                      var cbs = document.querySelectorAll('.rp-cb-%s');
+                      cbs.forEach(function(cb){ cb.checked = this.checked; cb.dispatchEvent(new Event('change',{bubbles:true})); });
+                      var modCB = document.querySelector('.rp-mod-cb-%s');
+                      var allCBs = document.querySelectorAll('.rp-cb-%s');
+                      modCB.checked = true;
+                      allCBs.forEach(function(cb){ if(!cb.checked) modCB.checked = false; });
+                    ", comp_id, mod_id, mod_id),
+                    checked = if(comp_all_checked) NA else NULL),
+                  tags$span(onclick = sprintf(
+                    "var el=document.getElementById('rp-comp-body-%s'); el.style.display=el.style.display==='none'?'flex':'none';", comp_id
+                  ), style = "flex:1;", paste0("▸ ", comp))
+                ),
+                tags$div(id = paste0("rp-comp-body-", comp_id), class = "rp-op-row", style = "display:flex;",
+                  lapply(seq_len(nrow(comp_perms)), function(i) {
+                    p <- comp_perms[i, ]
+                    tags$label(style = "font-size:11px; white-space:nowrap;",
+                      tags$input(type = "checkbox",
+                        class = paste0("rp-cb-", mod_id, " rp-cb-", comp_id),
+                        name = "rbac_perm_codes", value = p$code,
+                        checked = if(p$code %in% current_perms) NA else NULL),
+                      p$name)
+                  })
+                )
+              )
+            })
+          )
+        )
+      })
+    )
+  })
+
+  # 保存角色权限（同时处理select和多选框）
+  observeEvent(input$rbac_save_perms, {
+    req(rv$logged_in, selected_role_id())
+    perms <- input$rbac_role_perms_select
+    if (is.null(perms)) perms <- character(0)
+    result <- rbac_role_perms_set(selected_role_id(), perms)
+    if (result$success) rbac_refresh(rbac_refresh() + 1)
+    showNotification(result$message, type = if(result$success) "message" else "error")
+  })
+
+  # 添加角色（刷新列表）
+  observeEvent(input$rbac_add_role, {
+    req(rv$logged_in, input$rbac_new_role_name)
+    result <- rbac_role_add(input$rbac_new_role_name)
+    if (result$success) {
+      updateTextInput(session, "rbac_new_role_name", value = "")
+      rbac_refresh(rbac_refresh() + 1)
+    }
+    showNotification(result$message, type = if(result$success) "message" else "error")
+  })
+
+  # 用户列表
+  output$rbac_user_table <- DT::renderDT({
+    req(rv$logged_in)
+    users <- rbac_user_get_all()
+    DT::datatable(users[, c("id","username","display_name","role")], rownames = FALSE, selection = "single",
+      colnames = c("ID","用户名","显示名","原角色"),
+      options = list(pageLength = 15, dom = 't'))
+  })
+
+  selected_user_id <- reactiveVal(NULL)
+  observeEvent(input$rbac_user_table_rows_selected, {
+    users <- rbac_user_get_all()
+    if (length(input$rbac_user_table_rows_selected) > 0) {
+      selected_user_id(users$id[input$rbac_user_table_rows_selected])
+    }
+  })
+
+  # 用户角色分配
+  output$rbac_user_roles_ui <- renderUI({
+    req(selected_user_id())
+    all_roles <- rbac_role_get_all()
+    current_roles <- rbac_user_roles_get(selected_user_id())
+    tagList(
+      checkboxGroupInput("rbac_user_roles_cb", "分配角色",
+        choices = stats::setNames(as.character(all_roles$id), all_roles$name),
+        selected = as.character(current_roles)),
+      tags$p(style = "color:#999;font-size:11px;", "用户可拥有多个角色，权限叠加")
+    )
+  })
+
+  observeEvent(input$rbac_save_user_roles, {
+    req(rv$logged_in, selected_user_id())
+    role_ids <- input$rbac_user_roles_cb
+    if (is.null(role_ids)) role_ids <- character(0)
+    result <- rbac_user_roles_set(selected_user_id(), role_ids)
+    showNotification(result$message, type = if(result$success) "message" else "error")
+  })
+
   # ========== 个人信息模块（所有用户可见） ==========
   # 渲染个人信息
   output$self_info_username <- renderText({

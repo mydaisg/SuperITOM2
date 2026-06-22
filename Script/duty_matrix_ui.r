@@ -89,7 +89,8 @@ duty_matrix_ui <- function() {
           column(4,
             tags$div(style="display:flex; gap:4px;",
               textInput("duty_new_item_name", NULL, placeholder = "职责名称"),
-              textInput("duty_new_item_cat", NULL, placeholder = "分类", width="100px"),
+              textInput("duty_new_item_cat", NULL, placeholder = "分类", width="90px"),
+              numericInput("duty_new_item_sort", NULL, value = 0, min = 0, max = 999, width = "60px"),
               actionButton("duty_add_item", NULL, icon=icon("plus"), class="btn-primary btn-sm", style="margin-top:22px;")
             )
           )

@@ -91,22 +91,23 @@ duty_item_get_all <- function() {
   tryCatch({ dbGetQuery(con, "SELECT * FROM duty_items ORDER BY sort_order, id") },
     finally = { db_disconnect(con) })
 }
-duty_item_add <- function(name, description = "", category = "") {
+duty_item_add <- function(name, description = "", category = "", sort_order = 0) {
   con <- db_connect()
   tryCatch({
-    dbExecute(con, sprintf("INSERT INTO duty_items (name, description, category) VALUES ('%s','%s','%s')",
-      gsub("'","''",name), gsub("'","''",description), gsub("'","''",category)))
+    dbExecute(con, sprintf("INSERT INTO duty_items (name, description, category, sort_order) VALUES ('%s','%s','%s',%d)",
+      gsub("'","''",name), gsub("'","''",description), gsub("'","''",category), as.integer(sort_order)))
     list(success = TRUE, message = "职责项已添加")
   }, error = function(e) list(success = FALSE, message = e$message),
   finally = { db_disconnect(con) })
 }
-duty_item_update <- function(id, name = NULL, description = NULL, category = NULL) {
+duty_item_update <- function(id, name = NULL, description = NULL, category = NULL, sort_order = NULL) {
   con <- db_connect()
   tryCatch({
     sets <- c()
     if (!is.null(name)) sets <- c(sets, sprintf("name='%s'", gsub("'","''",name)))
     if (!is.null(description)) sets <- c(sets, sprintf("description='%s'", gsub("'","''",description)))
     if (!is.null(category)) sets <- c(sets, sprintf("category='%s'", gsub("'","''",category)))
+    if (!is.null(sort_order)) sets <- c(sets, sprintf("sort_order=%d", as.integer(sort_order)))
     if (length(sets) == 0) return(list(success = FALSE, message = "无变更"))
     dbExecute(con, sprintf("UPDATE duty_items SET %s WHERE id = %d", paste(sets, collapse=", "), as.integer(id)))
     list(success = TRUE, message = "已更新")

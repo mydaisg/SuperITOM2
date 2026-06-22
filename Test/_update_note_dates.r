@@ -1,0 +1,5 @@
+con <- DBI::dbConnect(RSQLite::SQLite(), "DB/GH_ITOM.db")
+DBI::dbExecute(con, "PRAGMA busy_timeout = 5000")
+n <- DBI::dbExecute(con, "UPDATE notes SET created_at = '2026-06-01 09:27', reminder_at = '2026-06-20 14:00', due_at = '2026-06-30 21:00'")
+cat("Updated", n, "rows\n")
+DBI::dbDisconnect(con)

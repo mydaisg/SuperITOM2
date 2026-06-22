@@ -47,7 +47,7 @@ duty_matrix_server <- function(input, output, session, rv) {
 
     # 岗位表头（一级，跨多个人员列）
     pos_header <- tags$tr(
-      tags$th(style="width:100px;", rowspan=2, "职责项"),
+      tags$th(style="min-width:80px; white-space:nowrap;", rowspan=2, "职责项"),
       lapply(1:nrow(positions), function(i) {
         p <- positions[i, ]
         n_staff <- nrow(pos_staff_map[[as.character(p$id)]])
@@ -401,6 +401,7 @@ duty_matrix_server <- function(input, output, session, rv) {
         textInput("duty_edit_item_name","名称",value=row$name[1]),
         textInput("duty_edit_item_cat","分类",value=row$category[1] %||% ""),
         textInput("duty_edit_item_desc","描述",value=row$description[1] %||% ""),
+        numericInput("duty_edit_item_sort","显示顺序",value=row$sort_order[1] %||% 0, min=0, max=999),
         footer=tagList(actionButton("duty_edit_save","保存",class="btn-primary"),
           actionButton("duty_edit_delete","删除",class="btn-danger"), modalButton("取消")), easyClose=TRUE))
     }
@@ -414,6 +415,45 @@ duty_matrix_server <- function(input, output, session, rv) {
       "staff" = duty_staff_delete(did),
       "item" = duty_item_delete(did))
     refresh(); showNotification(result$message, type=if(result$success)"message" else "error")
+  })
+
+  ##################
+  # 编辑弹窗：保存
+  ##################
+  observeEvent(input$duty_edit_save, {
+    req(rv$logged_in, is_admin())
+    tp <- rv$duty_edit_type; eid <- rv$duty_edit_id
+    if (is.null(tp) || is.null(eid)) return()
+    result <- if (tp == "position") {
+      duty_position_update(eid, input$duty_edit_pos_name, input$duty_edit_pos_desc %||% "")
+    } else if (tp == "staff") {
+      duty_staff_update(eid, input$duty_edit_staff_name,
+        department = input$duty_edit_staff_dept %||% "",
+        email = input$duty_edit_staff_email %||% "",
+        position_id = if (input$duty_edit_staff_pos != "") as.integer(input$duty_edit_staff_pos) else NULL)
+    } else if (tp == "item") {
+      duty_item_update(eid, input$duty_edit_item_name,
+        category = input$duty_edit_item_cat %||% "",
+        description = input$duty_edit_item_desc %||% "",
+        sort_order = input$duty_edit_item_sort %||% 0)
+    }
+    removeModal(); refresh()
+    showNotification(result$message, type = if(result$success) "message" else "error")
+  })
+
+  ##################
+  # 编辑弹窗：删除
+  ##################
+  observeEvent(input$duty_edit_delete, {
+    req(rv$logged_in, is_admin())
+    tp <- rv$duty_edit_type; eid <- rv$duty_edit_id
+    if (is.null(tp) || is.null(eid)) return()
+    result <- switch(tp,
+      "position" = duty_position_delete(eid),
+      "staff" = duty_staff_delete(eid),
+      "item" = duty_item_delete(eid))
+    removeModal(); refresh()
+    showNotification(result$message, type = if(result$success) "message" else "error")
   })
 
   ##################
@@ -474,7 +514,7 @@ duty_matrix_server <- function(input, output, session, rv) {
   # 创建职责
   observeEvent(input$duty_add_item, {
     req(rv$logged_in, input$duty_new_item_name)
-    result <- duty_item_add(input$duty_new_item_name, input$duty_new_item_desc %||% "", input$duty_new_item_cat %||% "")
+    result <- duty_item_add(input$duty_new_item_name, input$duty_new_item_desc %||% "", input$duty_new_item_cat %||% "", input$duty_new_item_sort %||% 0)
     if (result$success) {
       updateTextInput(session,"duty_new_item_name",value="")
       updateTextInput(session,"duty_new_item_cat",value="")

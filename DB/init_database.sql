@@ -142,6 +142,6 @@ INSERT OR IGNORE INTO users (username, password, role) VALUES ('admin', 'admin12
 
 -- 插入默认系统配置
 INSERT OR IGNORE INTO system_config (config_key, config_value, description) VALUES 
-    ('app_name', 'SuperITOM2', '应用名称'),
+    ('app_name', 'LVCC ITOM', '应用名称'),
     ('version', '1.0.0', '应用版本'),
     ('max_data_records', '10000', '最大数据记录数');

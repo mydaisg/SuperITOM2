@@ -1,7 +1,7 @@
 {
-  "_comment": "SuperITOM2 环境配置文件。在不同平台部署时，修改 platform 和 paths 下的对应项即可。",
+  "_comment": "LVCC ITOM 环境配置文件。在不同平台部署时，修改 platform 和 paths 下的对应项即可。",
   "app": {
-    "name": "SuperITOM2",
+    "name": "LVCC ITOM",
     "version": "1.0.0",
     "env": "development"
   },

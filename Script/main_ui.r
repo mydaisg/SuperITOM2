@@ -57,7 +57,7 @@ main_ui <- function(is_admin = FALSE) {
   # navbarPage是Shiny中创建带有标签页的导航栏界面的函数
   navbarPage(
     id = "main_tabs",  # 用于 updateTabsetPanel 切换标签
-    title = "SuperITOM2",  # 应用标题
+    title = "LVCC ITOM",  # 应用标题
     theme = shinytheme("cosmo"),  # 使用cosmo主题，使界面更美观
     collapsible = TRUE,  # 移动端导航栏可折叠
     
@@ -180,7 +180,7 @@ main_ui <- function(is_admin = FALSE) {
             Shiny.setInputValue('proj_enter_click', {id: String(id), name: name}, {priority:'event'});
           });
         ")),
-        titlePanel("欢迎使用 Super ITOM 2"),
+        titlePanel("欢迎使用 LVCC ITOM（Information Technology Operations Management）"),
         br(),
         fluidRow(
           column(6,
@@ -874,6 +874,60 @@ main_ui <- function(is_admin = FALSE) {
                 actionButton("co_add", "添加", class = "btn-primary btn-sm"))),
               column(2, div(style = "margin-top:20px;",
                 actionButton("co_save_edit", "保存修改", class = "btn-warning btn-sm")))
+            )
+          )
+        )
+      ),
+      if (is_admin) tabPanel(
+        "授权管理",
+        icon = icon("shield-alt"),
+        fluidPage(
+          titlePanel("RBAC 授权管理"),
+          tabsetPanel(
+            tabPanel("权限清单",
+              br(),
+              uiOutput("rbac_perm_table")
+            ),
+            tabPanel("角色管理",
+              br(),
+              fluidRow(
+                column(3,
+                  wellPanel(
+                    h4("角色列表"),
+                    DTOutput("rbac_role_table"),
+                    br(),
+                    textInput("rbac_new_role_name", NULL, placeholder = "新角色名称"),
+                    actionButton("rbac_add_role", "添加角色", class = "btn-primary btn-sm", icon = icon("plus"))
+                  )
+                ),
+                column(9,
+                  wellPanel(
+                    h4("权限配置"),
+                    uiOutput("rbac_role_perms_ui"),
+                    br(),
+                    actionButton("rbac_save_perms", "保存权限", class = "btn-success", icon = icon("save"))
+                  )
+                )
+              )
+            ),
+            tabPanel("用户授权",
+              br(),
+              fluidRow(
+                column(4,
+                  wellPanel(
+                    h4("用户列表"),
+                    DTOutput("rbac_user_table")
+                  )
+                ),
+                column(8,
+                  wellPanel(
+                    h4("角色分配"),
+                    uiOutput("rbac_user_roles_ui"),
+                    br(),
+                    actionButton("rbac_save_user_roles", "保存角色", class = "btn-success", icon = icon("save"))
+                  )
+                )
+              )
             )
           )
         )

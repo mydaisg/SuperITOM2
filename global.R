@@ -915,6 +915,153 @@ migrate_database <- function() {
     }
 
     # ===============================================
+    # RBAC 授权管理（角色-权限-用户）
+    # ===============================================
+    if (!"rbac_permissions" %in% tables) {
+      dbExecute(con, "CREATE TABLE rbac_permissions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        module TEXT NOT NULL,
+        component TEXT DEFAULT '',
+        code TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT DEFAULT ''
+      )")
+      dbExecute(con, "CREATE TABLE rbac_roles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        description TEXT DEFAULT ''
+      )")
+      dbExecute(con, "CREATE TABLE rbac_role_permissions (
+        role_id INTEGER NOT NULL,
+        permission_id INTEGER NOT NULL,
+        PRIMARY KEY (role_id, permission_id),
+        FOREIGN KEY (role_id) REFERENCES rbac_roles(id),
+        FOREIGN KEY (permission_id) REFERENCES rbac_permissions(id)
+      )")
+      dbExecute(con, "CREATE TABLE rbac_user_roles (
+        user_id INTEGER NOT NULL,
+        role_id INTEGER NOT NULL,
+        PRIMARY KEY (user_id, role_id),
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (role_id) REFERENCES rbac_roles(id)
+      )")
+      cat("数据库迁移完成：已创建 RBAC 授权管理表\n")
+    }
+    # 兼容：旧 rbac_permissions 表没有 component 列
+    perm_cols <- dbGetQuery(con, "PRAGMA table_info(rbac_permissions)")
+    if (nrow(perm_cols) > 0 && !("component" %in% perm_cols$name)) {
+      tryCatch({
+        dbExecute(con, "ALTER TABLE rbac_permissions ADD COLUMN component TEXT DEFAULT ''")
+        cat("数据库迁移完成：已添加 component 列到 rbac_permissions 表\n")
+      }, error = function(e) cat("警告：添加 component 列失败:", e$message, "\n"))
+    }
+    # 初始化种子权限（idempotent）
+    perms_exist <- dbGetQuery(con, "SELECT COUNT(*) as cnt FROM rbac_permissions")$cnt[1]
+    if (perms_exist == 0) {
+      seed_perms <- rbind(
+        data.frame(module="首页",   component="看板",     code="home_view",       name="查看", description="查看首页统计数据"),
+        data.frame(module="记事",   component="看板",     code="note_view",       name="查看", description="查看记事看板"),
+        data.frame(module="记事",   component="操作",     code="note_create",     name="创建", description="创建新记事"),
+        data.frame(module="记事",   component="操作",     code="note_edit",       name="编辑", description="编辑自己的记事"),
+        data.frame(module="记事",   component="操作",     code="note_delete",     name="删除", description="删除自己的记事"),
+        data.frame(module="记事",   component="派发",     code="note_dispatch",   name="派发", description="派发记事给其他用户"),
+        data.frame(module="工单",   component="列表",     code="wo_view",         name="查看", description="查看工单列表"),
+        data.frame(module="工单",   component="列表",     code="wo_create",       name="创建", description="创建新工单"),
+        data.frame(module="工单",   component="列表",     code="wo_edit",         name="编辑", description="编辑工单"),
+        data.frame(module="工单",   component="操作",     code="wo_assign",       name="派发", description="派发和流转工单"),
+        data.frame(module="工单",   component="操作",     code="wo_delete",       name="删除", description="删除工单"),
+        data.frame(module="项目",   component="列表",     code="proj_view",       name="查看", description="查看项目列表"),
+        data.frame(module="项目",   component="操作",     code="proj_create",     name="创建", description="创建新项目"),
+        data.frame(module="项目",   component="操作",     code="proj_edit",       name="编辑", description="编辑项目"),
+        data.frame(module="项目",   component="操作",     code="proj_delete",     name="删除", description="删除项目"),
+        data.frame(module="项目",   component="钻入",     code="proj_manage",     name="管理", description="管理阶段/工作包/任务"),
+        data.frame(module="巡检",   component="看板",     code="insp_view",       name="查看", description="查看巡检"),
+        data.frame(module="巡检",   component="操作",     code="insp_create",     name="创建", description="创建巡检计划"),
+        data.frame(module="巡检",   component="操作",     code="insp_execute",    name="执行", description="执行巡检任务"),
+        data.frame(module="巡检",   component="操作",     code="insp_manage",     name="管理", description="管理计划和模板"),
+        data.frame(module="日报",   component="报表",     code="dr_view",         name="查看", description="查看日报"),
+        data.frame(module="岗职",   component="矩阵",     code="duty_view",       name="查看", description="查看岗位职责矩阵"),
+        data.frame(module="岗职",   component="编辑",     code="duty_manage",     name="管理", description="编辑岗位/人员/职责"),
+        data.frame(module="绩效",   component="报表",     code="perf_view",       name="查看", description="查看绩效数据"),
+        data.frame(module="绩效",   component="编辑",     code="perf_create",     name="添加", description="手工添加工作项"),
+        data.frame(module="绩效",   component="编辑",     code="perf_manage",     name="管理", description="评定和月表管理"),
+        data.frame(module="资产",   component="列表",     code="asset_view",      name="查看", description="查看资产列表"),
+        data.frame(module="资产",   component="编辑",     code="asset_manage",    name="管理", description="编辑资产信息"),
+        data.frame(module="测试",   component="面板",     code="ntest_view",      name="查看", description="查看网络测试"),
+        data.frame(module="测试",   component="面板",     code="ntest_run",       name="执行", description="执行网络测试"),
+        data.frame(module="标准化", component="列表",     code="std_view",        name="查看", description="查看标准化管理"),
+        data.frame(module="标准化", component="列表",     code="std_manage",      name="管理", description="管理主机和脚本"),
+        data.frame(module="可视化", component="图表",     code="viz_view",        name="查看", description="查看可视化图表"),
+        data.frame(module="管理",   component="用户",     code="admin_users",     name="管理", description="管理用户账号"),
+        data.frame(module="管理",   component="系统",     code="admin_system",    name="设置", description="修改系统配置"),
+        data.frame(module="管理",   component="配置",     code="admin_options",   name="选项", description="管理下拉选项"),
+        data.frame(module="管理",   component="集成",     code="admin_github",    name="GitHub", description="GitHub提交/拉取"),
+        data.frame(module="管理",   component="安全",     code="admin_rbac",      name="授权", description="管理角色和权限")
+      )
+      for (i in seq_len(nrow(seed_perms))) {
+        dbExecute(con, sprintf("INSERT OR IGNORE INTO rbac_permissions (module, component, code, name, description) VALUES ('%s','%s','%s','%s','%s')",
+          seed_perms$module[i], seed_perms$component[i], seed_perms$code[i], seed_perms$name[i], seed_perms$description[i]))
+      }
+      cat("数据库迁移完成：已初始化", nrow(seed_perms), "条 RBAC 权限\n")
+      # 对已有权限更新 component（兼容旧数据）
+      for (i in seq_len(nrow(seed_perms))) {
+        dbExecute(con, sprintf("UPDATE rbac_permissions SET component='%s' WHERE code='%s' AND (component IS NULL OR component='')",
+          seed_perms$component[i], seed_perms$code[i]))
+      }
+    }
+    # 初始化种子角色（idempotent）
+    roles_exist <- dbGetQuery(con, "SELECT COUNT(*) as cnt FROM rbac_roles")$cnt[1]
+    if (roles_exist == 0) {
+      dbExecute(con, "INSERT INTO rbac_roles (name, description) VALUES ('管理员', '系统管理员，拥有全部权限')")
+      dbExecute(con, "INSERT INTO rbac_roles (name, description) VALUES ('普通用户', '基本用户，查看个人数据')")
+      dbExecute(con, "INSERT INTO rbac_roles (name, description) VALUES ('IT工程师', 'IT工程师，处理工单和巡检')")
+      cat("数据库迁移完成：已初始化 3 个 RBAC 角色\n")
+    }
+    # 自动分配管理员角色权限（全部权限）
+    admin_role <- dbGetQuery(con, "SELECT id FROM rbac_roles WHERE name='管理员'")
+    if (nrow(admin_role) > 0) {
+      all_perms <- dbGetQuery(con, "SELECT id FROM rbac_permissions")
+      for (pid in all_perms$id) {
+        dbExecute(con, sprintf("INSERT OR IGNORE INTO rbac_role_permissions (role_id, permission_id) VALUES (%d, %d)", admin_role$id[1], pid))
+      }
+    }
+    # 自动分配普通用户权限
+    user_role <- dbGetQuery(con, "SELECT id FROM rbac_roles WHERE name='普通用户'")
+    if (nrow(user_role) > 0) {
+      user_perms <- c("home_view","note_view","note_create","note_edit","wo_view","wo_create",
+                      "proj_view","proj_create","proj_edit","proj_manage",
+                      "insp_view","insp_execute","dr_view","duty_view","perf_view","perf_create",
+                      "asset_view","ntest_view","ntest_run","std_view","viz_view")
+      for (code in user_perms) {
+        pid <- dbGetQuery(con, sprintf("SELECT id FROM rbac_permissions WHERE code='%s'", code))
+        if (nrow(pid) > 0) dbExecute(con, sprintf("INSERT OR IGNORE INTO rbac_role_permissions (role_id, permission_id) VALUES (%d, %d)", user_role$id[1], pid$id[1]))
+      }
+    }
+    # 自动分配IT工程师权限
+    eng_role <- dbGetQuery(con, "SELECT id FROM rbac_roles WHERE name='IT工程师'")
+    if (nrow(eng_role) > 0) {
+      eng_perms <- c("home_view","note_view","note_create","note_edit","wo_view","wo_create","wo_edit","wo_assign",
+                     "proj_view","proj_create","proj_edit","proj_manage",
+                     "insp_view","insp_create","insp_execute","dr_view","duty_view","perf_view","perf_create",
+                     "asset_view","asset_manage","ntest_view","ntest_run","std_view","std_manage","viz_view")
+      for (code in eng_perms) {
+        pid <- dbGetQuery(con, sprintf("SELECT id FROM rbac_permissions WHERE code='%s'", code))
+        if (nrow(pid) > 0) dbExecute(con, sprintf("INSERT OR IGNORE INTO rbac_role_permissions (role_id, permission_id) VALUES (%d, %d)", eng_role$id[1], pid$id[1]))
+      }
+    }
+    # 迁移现有用户到 RBAC：admin→管理员, 其他→普通用户
+    if (!"rbac_user_roles" %in% tables || dbGetQuery(con, "SELECT COUNT(*) as cnt FROM rbac_user_roles")$cnt == 0) {
+      existing_users <- dbGetQuery(con, "SELECT id, role FROM users WHERE active = 1")
+      for (i in seq_len(nrow(existing_users))) {
+        uid <- existing_users$id[i]
+        role_name <- if (existing_users$role[i] == "admin") "管理员" else "普通用户"
+        rid <- dbGetQuery(con, sprintf("SELECT id FROM rbac_roles WHERE name='%s'", role_name))
+        if (nrow(rid) > 0) dbExecute(con, sprintf("INSERT OR IGNORE INTO rbac_user_roles (user_id, role_id) VALUES (%d, %d)", uid, rid$id[1]))
+      }
+      cat("数据库迁移完成：已迁移现有用户到 RBAC\n")
+    }
+
+    # ===============================================
     # 资产管理模块
     # ===============================================
     if (!"assets" %in% tables) {

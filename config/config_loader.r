@@ -1,4 +1,4 @@
-# SuperITOM2 配置加载器
+# LVCC ITOM 配置加载器
 # 读取 config/init.json 并暴露为全局变量，自动适配不同平台
 
 # 检测操作系统

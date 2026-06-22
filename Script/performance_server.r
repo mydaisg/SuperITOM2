@@ -179,9 +179,26 @@ performance_server <- function(input, output, session, rv) {
     req(rv$logged_in); perf_refresh()
     sheet <- current_sheet()
     if (is.null(sheet)) return(DT::datatable(data.frame(信息 = "暂无绩效表"), options = list(dom = 't')))
+    # 非admin只看自己的员工记录
+    # 算全部矩阵，非admin再遮住别人数据
     calc <- tryCatch(perf_calculate(sheet$id[1]), error = function(e) list(matrix = data.frame(), summary = data.frame()))
     matrix_data <- calc$matrix
     if (nrow(matrix_data) == 0) return(DT::datatable(data.frame(信息 = "暂无匹配数据"), options = list(dom = 't')))
+    if (!is_admin() && !is.null(current_uid()) && ncol(matrix_data) > 3) {
+      # 找到当前用户在 employees 中的名字
+      emp_name <- if (!is.null(rv$current_user)) {
+        dn <- rv$current_user$display_name[1]
+        if (is.na(dn) || dn == "") rv$current_user$username[1] else dn
+      } else ""
+      # 前3列是类别/指标/code，第4列起是员工列，最后一列是总分
+      emp_cols <- seq(4, ncol(matrix_data) - 1)
+      for (ci in emp_cols) {
+        cname <- colnames(matrix_data)[ci]
+        if (cname != emp_name) {
+          matrix_data[[ci]] <- "-"
+        }
+      }
+    }
 
     DT::datatable(matrix_data, escape = FALSE, rownames = FALSE,
       colnames = c("类别" = "category", "指标" = "indicator"),
@@ -238,6 +255,16 @@ performance_server <- function(input, output, session, rv) {
     sheet <- current_sheet()
     if (is.null(sheet)) return(NULL)
     calc <- tryCatch(perf_calculate(sheet$id[1]), error = function(e) list(matrix = data.frame(), summary = data.frame()))
+    # 非admin只显示自己的行
+    if (!is_admin() && !is.null(current_uid())) {
+      emp_name <- if (!is.null(rv$current_user)) {
+        dn <- rv$current_user$display_name[1]
+        if (is.na(dn) || dn == "") rv$current_user$username[1] else dn
+      } else ""
+      if (nrow(calc$summary) > 0 && "员工" %in% names(calc$summary)) {
+        calc$summary <- calc$summary[calc$summary$员工 == emp_name, , drop = FALSE]
+      }
+    }
     summary_data <- calc$summary
     if (nrow(summary_data) == 0 || "信息" %in% names(summary_data)) return(NULL)
 
@@ -254,6 +281,10 @@ performance_server <- function(input, output, session, rv) {
   output$perf_work_source_table <- DT::renderDT({
     req(rv$logged_in); perf_refresh(); req(input$perf_month)
     sources <- tryCatch(perf_load_work_sources(input$perf_month), error = function(e) data.frame())
+    # 非admin只看自己的
+    if (!is_admin() && !is.null(current_uid()) && nrow(sources) > 0) {
+      sources <- sources[sources$employee_id == current_uid(), , drop = FALSE]
+    }
     if (nrow(sources) == 0) return(DT::datatable(data.frame(信息 = "本月无工作记录"), options = list(dom = 't')))
     if (!is.null(input$perf_ws_filter) && nchar(input$perf_ws_filter) > 0)
       sources <- sources[sources$source_type == input$perf_ws_filter, ]
@@ -294,6 +325,10 @@ performance_server <- function(input, output, session, rv) {
     sheet <- current_sheet()
     if (is.null(sheet)) return(DT::datatable(data.frame(信息 = "暂无数据"), options = list(dom = 't')))
     items <- tryCatch(perf_work_items_by_sheet(sheet$id[1]), error = function(e) data.frame())
+    # 非admin只看自己的
+    if (!is_admin() && !is.null(current_uid()) && nrow(items) > 0) {
+      items <- items[items$employee_id == current_uid(), , drop = FALSE]
+    }
     if (nrow(items) == 0) return(DT::datatable(data.frame(信息 = "暂无工作项"), options = list(dom = 't')))
     scores <- if (nrow(items) > 0) {
       mapply(function(code, lvl) perf_item_score(code, lvl), items$indicator_code, items$deduction_level)
