@@ -117,8 +117,102 @@ duty_item_update <- function(id, name = NULL, description = NULL, category = NUL
 duty_item_delete <- function(id) {
   con <- db_connect()
   tryCatch({
+    # 级联删除子任务及子矩阵
+    sub_ids <- dbGetQuery(con, sprintf("SELECT id FROM duty_sub_items WHERE duty_item_id = %d", as.integer(id)))
+    if (nrow(sub_ids) > 0) {
+      for (sid in sub_ids$id) {
+        dbExecute(con, sprintf("DELETE FROM duty_sub_matrix WHERE duty_sub_item_id = %d", sid))
+      }
+      dbExecute(con, sprintf("DELETE FROM duty_sub_items WHERE duty_item_id = %d", as.integer(id)))
+    }
     dbExecute(con, sprintf("DELETE FROM duty_items WHERE id = %d", as.integer(id)))
     dbExecute(con, sprintf("DELETE FROM duty_matrix WHERE duty_item_id = %d", as.integer(id)))
+    list(success = TRUE, message = "已删除")
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+
+##################
+# 二级任务项 CRUD
+##################
+duty_sub_item_get_by_item <- function(item_id) {
+  con <- db_connect()
+  tryCatch({ dbGetQuery(con, sprintf("SELECT * FROM duty_sub_items WHERE duty_item_id = %d ORDER BY sort_order, id", as.integer(item_id))) },
+    finally = { db_disconnect(con) })
+}
+duty_sub_item_get_all_with_parent <- function() {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, "SELECT si.*, di.name as parent_name, di.sort_order as parent_sort
+      FROM duty_sub_items si JOIN duty_items di ON si.duty_item_id = di.id
+      ORDER BY di.sort_order, di.id, si.sort_order, si.id")
+  }, finally = { db_disconnect(con) })
+}
+duty_sub_item_add <- function(item_id, name, description = "", category = "", sort_order = 0) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("INSERT INTO duty_sub_items (duty_item_id, name, description, category, sort_order) VALUES (%d,'%s','%s','%s',%d)",
+      as.integer(item_id), gsub("'","''",name), gsub("'","''",description), gsub("'","''",category), as.integer(sort_order)))
+    list(success = TRUE, message = "二级任务已添加")
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+duty_sub_item_update <- function(id, name = NULL, description = NULL, category = NULL, sort_order = NULL) {
+  con <- db_connect()
+  tryCatch({
+    sets <- c()
+    if (!is.null(name)) sets <- c(sets, sprintf("name='%s'", gsub("'","''",name)))
+    if (!is.null(description)) sets <- c(sets, sprintf("description='%s'", gsub("'","''",description)))
+    if (!is.null(category)) sets <- c(sets, sprintf("category='%s'", gsub("'","''",category)))
+    if (!is.null(sort_order)) sets <- c(sets, sprintf("sort_order=%d", as.integer(sort_order)))
+    if (length(sets) == 0) return(list(success = FALSE, message = "无变更"))
+    dbExecute(con, sprintf("UPDATE duty_sub_items SET %s WHERE id = %d", paste(sets, collapse=", "), as.integer(id)))
+    list(success = TRUE, message = "已更新")
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+duty_sub_item_delete <- function(id) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("DELETE FROM duty_sub_matrix WHERE duty_sub_item_id = %d", as.integer(id)))
+    dbExecute(con, sprintf("DELETE FROM duty_sub_items WHERE id = %d", as.integer(id)))
+    list(success = TRUE, message = "已删除")
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+
+##################
+# 二级矩阵 CRUD
+##################
+duty_sub_matrix_get <- function() {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, "SELECT dsm.*, s.name as staff_name, s.department, p.name as position_name,
+      si.name as duty_name, si.category as duty_category, si.duty_item_id
+      FROM duty_sub_matrix dsm
+      JOIN duty_staff s ON dsm.staff_id = s.id
+      JOIN duty_positions p ON dsm.position_id = p.id
+      JOIN duty_sub_items si ON dsm.duty_sub_item_id = si.id
+      ORDER BY s.department, s.name, p.name")
+  }, finally = { db_disconnect(con) })
+}
+duty_sub_matrix_set <- function(staff_id, position_id, duty_sub_item_id, responsibility_level, comment = "") {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf(
+      "INSERT OR REPLACE INTO duty_sub_matrix (staff_id, position_id, duty_sub_item_id, responsibility_level, comment, updated_at)
+       VALUES (%d, %d, %d, '%s', '%s', datetime('now','localtime'))",
+      as.integer(staff_id), as.integer(position_id), as.integer(duty_sub_item_id),
+      responsibility_level, gsub("'","''",comment)))
+    list(success = TRUE, message = "已更新")
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+duty_sub_matrix_delete <- function(staff_id, position_id, duty_sub_item_id) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("DELETE FROM duty_sub_matrix WHERE staff_id=%d AND position_id=%d AND duty_sub_item_id=%d",
+      as.integer(staff_id), as.integer(position_id), as.integer(duty_sub_item_id)))
     list(success = TRUE, message = "已删除")
   }, error = function(e) list(success = FALSE, message = e$message),
   finally = { db_disconnect(con) })

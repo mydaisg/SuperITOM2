@@ -1062,6 +1062,43 @@ migrate_database <- function() {
     }
 
     # ===============================================
+    # 岗职矩阵 — 二级任务项
+    # ===============================================
+    if (!"duty_sub_items" %in% tables) {
+      dbExecute(con, "CREATE TABLE duty_sub_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        duty_item_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        category TEXT DEFAULT '',
+        description TEXT DEFAULT '',
+        sort_order INTEGER DEFAULT 0,
+        FOREIGN KEY (duty_item_id) REFERENCES duty_items(id)
+      )")
+      cat("数据库迁移完成：已创建 duty_sub_items 表\n")
+    }
+    if (!"duty_sub_matrix" %in% tables) {
+      dbExecute(con, "CREATE TABLE duty_sub_matrix (
+        staff_id INTEGER NOT NULL,
+        position_id INTEGER NOT NULL,
+        duty_sub_item_id INTEGER NOT NULL,
+        responsibility_level TEXT NOT NULL DEFAULT '执行',
+        comment TEXT DEFAULT '',
+        updated_at TEXT DEFAULT (datetime('now','localtime')),
+        PRIMARY KEY (staff_id, position_id, duty_sub_item_id),
+        FOREIGN KEY (staff_id) REFERENCES duty_staff(id),
+        FOREIGN KEY (position_id) REFERENCES duty_positions(id),
+        FOREIGN KEY (duty_sub_item_id) REFERENCES duty_sub_items(id)
+      )")
+      cat("数据库迁移完成：已创建 duty_sub_matrix 表\n")
+    }
+    # 清理旧数据：如果duty_matrix中存在已删除duty_item_id的记录
+    if ("duty_matrix" %in% tables) {
+      tryCatch({
+        dbExecute(con, "DELETE FROM duty_matrix WHERE duty_item_id NOT IN (SELECT id FROM duty_items)")
+      }, error = function(e) {})
+    }
+
+    # ===============================================
     # 资产管理模块
     # ===============================================
     if (!"assets" %in% tables) {

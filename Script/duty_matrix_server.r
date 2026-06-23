@@ -12,11 +12,12 @@ duty_matrix_server <- function(input, output, session, rv) {
   })
 
   ##################
-  # 矩阵视图：列=岗位(一级)+人员(二级)，行=职责项
+  # 矩阵视图：列=岗位(一级)+人员(二级)，行=职责项(可展开二级)
   ##################
   output$duty_matrix_view <- renderUI({
     duty_trigger(); req(rv$logged_in)
     matrix <- duty_matrix_get()
+    sub_matrix <- tryCatch(duty_sub_matrix_get(), error = function(e) data.frame())
     items     <- duty_item_get_all()
     positions <- duty_position_get_all()
     staff_all <- duty_staff_get_all()
@@ -39,7 +40,7 @@ duty_matrix_server <- function(input, output, session, rv) {
       "知晓"   = "know"
     )
 
-    # 计算每列的子列数（人员数），用于rowspan
+    # 计算每列的子列数（人员数）
     pos_staff_map <- lapply(1:nrow(positions), function(i) {
       staff_all[staff_all$position_id == positions$id[i], ]
     })
@@ -47,11 +48,11 @@ duty_matrix_server <- function(input, output, session, rv) {
 
     # 岗位表头（一级，跨多个人员列）
     pos_header <- tags$tr(
-      tags$th(style="min-width:80px; white-space:nowrap;", rowspan=2, "职责项"),
+      tags$th(style="min-width:100px; white-space:nowrap;", rowspan=2, "职责项"),
       lapply(1:nrow(positions), function(i) {
         p <- positions[i, ]
         n_staff <- nrow(pos_staff_map[[as.character(p$id)]])
-        if (n_staff == 0) n_staff <- 1  # 至少占一列
+        if (n_staff == 0) n_staff <- 1
         tags$th(colspan = n_staff,
           tags$div(p$name),
           tags$div(style="font-size:10px; font-weight:normal; color:#999;", p$description %||% "")
@@ -78,39 +79,84 @@ duty_matrix_server <- function(input, output, session, rv) {
     }
     staff_header <- do.call(tags$tr, staff_header_cells)
 
-    # 数据行
-    rows <- lapply(1:nrow(items), function(ii) {
-      item <- items[ii, ]
+    # 辅助函数：为一行的每个cell生成<td>
+    build_row_cells <- function(item_id, is_sub = FALSE) {
       cells <- list()
       for (pi in 1:nrow(positions)) {
         pos <- positions[pi, ]
         staff_list <- pos_staff_map[[as.character(pos$id)]]
         if (nrow(staff_list) == 0) {
-          # 该岗位无人员，显示空
-          cells[[length(cells)+1]] <- tags$td(class = "duty-cell empty",
-            `data-pid` = pos$id, `data-did` = item$id, "—")
+          if (is_sub) {
+            cells[[length(cells)+1]] <- tags$td(class = "duty-sub-cell empty",
+              `data-pid` = pos$id, `data-sdid` = item_id, "—")
+          } else {
+            cells[[length(cells)+1]] <- tags$td(class = "duty-cell empty",
+              `data-pid` = pos$id, `data-did` = item_id, "—")
+          }
         } else {
           for (si in 1:nrow(staff_list)) {
             st <- staff_list[si, ]
-            # 查找该人员+岗位+职责项的RBAC
-            row <- matrix[matrix$staff_id == st$id &
-                         matrix$position_id == pos$id &
-                         matrix$duty_item_id == item$id, ]
-            if (nrow(row) == 0) {
-              cells[[length(cells)+1]] <- tags$td(class = "duty-cell empty",
-                `data-sid` = st$id, `data-pid` = pos$id, `data-did` = item$id,
-                "—")
+            if (is_sub) {
+              row <- sub_matrix[sub_matrix$staff_id == st$id &
+                               sub_matrix$position_id == pos$id &
+                               sub_matrix$duty_sub_item_id == item_id, ]
+              if (nrow(row) == 0) {
+                cells[[length(cells)+1]] <- tags$td(class = "duty-sub-cell empty",
+                  `data-sid` = st$id, `data-pid` = pos$id, `data-sdid` = item_id, "—")
+              } else {
+                cls <- level_colors[[row$responsibility_level[1]]] %||% "empty"
+                cells[[length(cells)+1]] <- tags$td(class = paste("duty-sub-cell", cls),
+                  `data-sid` = st$id, `data-pid` = pos$id, `data-sdid` = item_id,
+                  row$responsibility_level[1])
+              }
             } else {
-              cls <- level_colors[[row$responsibility_level[1]]] %||% "empty"
-              cells[[length(cells)+1]] <- tags$td(class = paste("duty-cell", cls),
-                `data-sid` = st$id, `data-pid` = pos$id, `data-did` = item$id,
-                row$responsibility_level[1])
+              row <- matrix[matrix$staff_id == st$id &
+                           matrix$position_id == pos$id &
+                           matrix$duty_item_id == item_id, ]
+              if (nrow(row) == 0) {
+                cells[[length(cells)+1]] <- tags$td(class = "duty-cell empty",
+                  `data-sid` = st$id, `data-pid` = pos$id, `data-did` = item_id,
+                  "—")
+              } else {
+                cls <- level_colors[[row$responsibility_level[1]]] %||% "empty"
+                cells[[length(cells)+1]] <- tags$td(class = paste("duty-cell", cls),
+                  `data-sid` = st$id, `data-pid` = pos$id, `data-did` = item_id,
+                  row$responsibility_level[1])
+              }
             }
           }
         }
       }
-      do.call(tags$tr, c(list(tags$td(style="font-weight:600; font-size:12px; text-align:left; padding-left:10px;", item$name)), cells))
-    })
+      cells
+    }
+
+    # 数据行（一级 + 可展开二级子行）
+    all_sub_items <- tryCatch(duty_sub_item_get_all_with_parent(), error = function(e) data.frame())
+    rows <- list()
+    for (ii in 1:nrow(items)) {
+      item <- items[ii, ]
+      # 获取该职责项的子任务
+      subs <- if (nrow(all_sub_items) > 0) all_sub_items[all_sub_items$duty_item_id == item$id, ] else data.frame()
+      has_subs <- nrow(subs) > 0
+      # 一级行
+      row_cells <- build_row_cells(item$id, is_sub = FALSE)
+      name_cell <- tags$td(style="font-weight:600; font-size:12px; text-align:left; padding-left:6px;",
+        if (has_subs) tags$span(class="duty-row-toggle", `data-did`=item$id,
+            style="cursor:pointer; color:#666; margin-right:4px; font-family:monospace; font-size:11px; user-select:none;", "[+]") else "",
+        item$name)
+      rows[[length(rows)+1]] <- do.call(tags$tr, c(list(name_cell, class = "duty-row"), row_cells))
+      # 二级子行（默认隐藏）
+      if (has_subs) {
+        for (si in 1:nrow(subs)) {
+          sub <- subs[si, ]
+          sub_cells <- build_row_cells(sub$id, is_sub = TRUE)
+          sub_name_cell <- tags$td(style="font-size:11px; font-style:italic; text-align:left; padding-left:28px; color:#7b5ea7;",
+            paste0("└ ", sub$name))
+          rows[[length(rows)+1]] <- do.call(tags$tr, c(list(sub_name_cell, class = "duty-sub-row",
+            `data-parent-did` = item$id), sub_cells))
+        }
+      }
+    }
 
     tags$table(class = "table table-bordered table-condensed duty-table",
       tags$thead(pos_header, staff_header),
@@ -120,25 +166,42 @@ duty_matrix_server <- function(input, output, session, rv) {
 
   ##################
   ##################
-  # 点击单元格 → 弹窗设置/修改 RBAC
+  # 点击单元格 → 弹窗设置/修改 RBAC（支持一级+二级）
   ##################
   observeEvent(input$duty_matrix_click, {
     req(rv$logged_in, is_admin())
     sid <- as.integer(input$duty_matrix_click$sid)
     pid <- as.integer(input$duty_matrix_click$pid)
-    did <- as.integer(input$duty_matrix_click$did)
+    is_sub <- !is.null(input$duty_matrix_click$sdid) && !is.na(input$duty_matrix_click$sdid)
 
     pos  <- duty_position_get_all(); pos_row <- pos[pos$id == pid, ]
-    item <- duty_item_get_all(); item_row <- item[item$id == did, ]
     st   <- duty_staff_get_all(); st_row <- st[st$id == sid, ]
     staff_name <- if (nrow(st_row) > 0) st_row$name[1] else "未知"
-    title <- sprintf("%s / %s — %s", pos_row$name[1] %||% "?", staff_name, item_row$name[1] %||% "?")
 
-    # 查当前值
-    matrix <- duty_matrix_get()
-    cur <- matrix[matrix$staff_id == sid & matrix$position_id == pid & matrix$duty_item_id == did, ]
-    cur_level <- if (nrow(cur) > 0) cur$responsibility_level[1] else ""
-    cur_comment <- if (nrow(cur) > 0) cur$comment[1] %||% "" else ""
+    if (is_sub) {
+      sdid <- as.integer(input$duty_matrix_click$sdid)
+      all_subs <- duty_sub_item_get_all_with_parent()
+      sub_row <- all_subs[all_subs$id == sdid, ]
+      item_name <- sprintf("%s → %s", sub_row$parent_name[1] %||% "?", sub_row$name[1] %||% "?")
+      title <- sprintf("%s / %s — %s", pos_row$name[1] %||% "?", staff_name, item_name)
+      # 查当前值
+      sub_matrix <- duty_sub_matrix_get()
+      cur <- sub_matrix[sub_matrix$staff_id == sid & sub_matrix$position_id == pid & sub_matrix$duty_sub_item_id == sdid, ]
+      cur_level <- if (nrow(cur) > 0) cur$responsibility_level[1] else ""
+      cur_comment <- if (nrow(cur) > 0) cur$comment[1] %||% "" else ""
+      rv$duty_modal_sid <- sid; rv$duty_modal_pid <- pid
+      rv$duty_modal_sdid <- sdid; rv$duty_modal_is_sub <- TRUE
+    } else {
+      did <- as.integer(input$duty_matrix_click$did)
+      item <- duty_item_get_all(); item_row <- item[item$id == did, ]
+      title <- sprintf("%s / %s — %s", pos_row$name[1] %||% "?", staff_name, item_row$name[1] %||% "?")
+      matrix <- duty_matrix_get()
+      cur <- matrix[matrix$staff_id == sid & matrix$position_id == pid & matrix$duty_item_id == did, ]
+      cur_level <- if (nrow(cur) > 0) cur$responsibility_level[1] else ""
+      cur_comment <- if (nrow(cur) > 0) cur$comment[1] %||% "" else ""
+      rv$duty_modal_sid <- sid; rv$duty_modal_pid <- pid
+      rv$duty_modal_did <- did; rv$duty_modal_is_sub <- FALSE
+    }
 
     showModal(modalDialog(
       title = title, size = "s",
@@ -151,19 +214,27 @@ duty_matrix_server <- function(input, output, session, rv) {
         modalButton("取消")
       ), easyClose = TRUE
     ))
-    rv$duty_modal_sid <- sid; rv$duty_modal_pid <- pid; rv$duty_modal_did <- did
   })
 
   observeEvent(input$duty_modal_save, {
     req(rv$logged_in, input$duty_modal_level)
-    duty_matrix_set(rv$duty_modal_sid, rv$duty_modal_pid, rv$duty_modal_did,
-      input$duty_modal_level, input$duty_modal_comment %||% "")
+    if (isTRUE(rv$duty_modal_is_sub)) {
+      duty_sub_matrix_set(rv$duty_modal_sid, rv$duty_modal_pid, rv$duty_modal_sdid,
+        input$duty_modal_level, input$duty_modal_comment %||% "")
+    } else {
+      duty_matrix_set(rv$duty_modal_sid, rv$duty_modal_pid, rv$duty_modal_did,
+        input$duty_modal_level, input$duty_modal_comment %||% "")
+    }
     removeModal(); refresh()
     showNotification("矩阵已更新", type = "message")
   })
 
   observeEvent(input$duty_modal_delete, {
-    duty_matrix_delete(rv$duty_modal_sid, rv$duty_modal_pid, rv$duty_modal_did)
+    if (isTRUE(rv$duty_modal_is_sub)) {
+      duty_sub_matrix_delete(rv$duty_modal_sid, rv$duty_modal_pid, rv$duty_modal_sdid)
+    } else {
+      duty_matrix_delete(rv$duty_modal_sid, rv$duty_modal_pid, rv$duty_modal_did)
+    }
     removeModal(); refresh()
     showNotification("已清除", type = "message")
   })
@@ -263,12 +334,21 @@ duty_matrix_server <- function(input, output, session, rv) {
     items <- duty_item_get_all()
     if (nrow(items) == 0) return(tags$p(style="color:#999; text-align:center; padding:10px;","暂无职责项"))
     matrix <- duty_matrix_get()
+    sub_matrix <- tryCatch(duty_sub_matrix_get(), error = function(e) data.frame())
+    all_subs <- tryCatch(duty_sub_item_get_all_with_parent(), error = function(e) data.frame())
     tagList(
       tags$h5("职责项清单", style="margin-top:0;"),
-      tags$div(style="max-height:500px; overflow-y:auto;",
+      tags$div(
         lapply(1:nrow(items), function(i) {
           it <- items[i, ]
           assigned <- matrix[matrix$duty_item_id == it$id, ]
+          cat_val <- it$category[1] %||% ""
+          desc_val <- it$description[1] %||% ""
+          sort_val <- it$sort_order[1]
+          if (is.null(sort_val) || is.na(sort_val) || sort_val == 0) sort_val <- ""
+          # 子任务
+          subs <- if (nrow(all_subs) > 0) all_subs[all_subs$duty_item_id == it$id, ] else data.frame()
+          # 一级已分配人员tag
           assigned_tags <- if (nrow(assigned) > 0) {
             lapply(1:nrow(assigned), function(j) {
               a <- assigned[j, ]
@@ -279,18 +359,78 @@ duty_matrix_server <- function(input, output, session, rv) {
                 tags$span(style="cursor:pointer; margin-left:2px;", `data-sid`=a$staff_id, `data-pid`=a$position_id, `data-did`=it$id, class="duty-card-rm-duty", "×"))
             })
           } else list(tags$span(style="color:#ccc; font-size:11px;", "未分配"))
-          tags$div(class = "duty-card", style = "margin-bottom:6px;",
-            tags$div(class = "duty-card-head", onclick = sprintf("var d=document.getElementById('ditem-%d');d.style.display=d.style.display==='none'?'block':'none';", it$id),
-              style = "cursor:pointer; display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:#f0faf5; border-radius:6px;",
-              tags$b(it$name, style="font-size:13px;"),
-              tags$span(style="font-size:10px; color:#999;", if(nchar(it$category[1]%||%"")>0) it$category[1] else "", " · ", sprintf("%d人", nrow(assigned)), " ▾")
-            ),
-            tags$div(id = sprintf("ditem-%d", it$id), style = "display:none; padding:8px 10px; border:1px solid #e8ecf1; border-top:none; border-radius:0 0 6px 6px;",
-              if (nchar(it$description[1] %||% "") > 0) tags$div(class="duty-card-fields", style="margin-bottom:6px;", it$description[1]),
-              tags$div(style="margin-top:4px;", do.call(tags$div, assigned_tags)),
-              tags$div(style = "margin-top:6px; display:flex; gap:4px;",
-                tags$button(class="btn btn-xs btn-warning duty-card-edit-btn", `data-type`="item", `data-id`=it$id, "✏"),
-                tags$button(class="btn btn-xs btn-danger duty-card-del-btn", `data-type`="item", `data-id`=it$id, "🗑")
+          # 构建子任务卡片
+          sub_cards <- list()
+          if (nrow(subs) > 0) {
+            for (si in 1:nrow(subs)) {
+              sub <- subs[si, ]
+              sub_assigned <- if (nrow(sub_matrix) > 0) sub_matrix[sub_matrix$duty_sub_item_id == sub$id, ] else data.frame()
+              sub_tags <- if (nrow(sub_assigned) > 0) {
+                lapply(1:nrow(sub_assigned), function(j) {
+                  sa <- sub_assigned[j, ]
+                  lvl <- sa$responsibility_level[1] %||% "—"
+                  cls <- switch(lvl, "负责人"="owner","执行"="exec","知晓"="know","")
+                  tags$span(class = paste("tag", cls),
+                    sa$staff_name, "(", lvl, ")",
+                    tags$span(style="cursor:pointer; margin-left:2px;", `data-sid`=sa$staff_id, `data-pid`=sa$position_id, `data-sdid`=sub$id, class="duty-card-rm-sub-duty", "×"))
+                })
+              } else list()
+              sub_cards[[length(sub_cards)+1]] <- tags$div(class = "duty-sub-card",
+                style = "margin-bottom:4px; margin-left:12px; border-left:3px solid #c8b6e0; padding:6px 10px;",
+                tags$div(style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;",
+                  tags$span(
+                    paste0("└ ", sub$name),
+                    if (nchar(sub$category[1] %||% "") > 0) tags$span(style="font-size:10px; color:#999; margin-left:6px; background:#e8f0fe; padding:1px 4px; border-radius:3px;", sub$category[1])
+                  ),
+                  if (nrow(sub_assigned) > 0) tags$span(style="font-size:10px; color:#999;", sprintf("%d人", nrow(sub_assigned)))
+                ),
+                if (nchar(sub$description[1] %||% "") > 0) tags$div(style="font-size:11px; color:#886; margin-bottom:4px; white-space:pre-wrap;", sub$description[1]),
+                if (length(sub_tags) > 0) tags$div(style="margin-top:2px;", do.call(tags$div, sub_tags)),
+                tags$div(style = "margin-top:4px; display:flex; gap:3px;",
+                  tags$button(class="btn btn-xs btn-outline-warning duty-card-edit-btn", `data-type`="subitem", `data-id`=sub$id, "✏"),
+                  tags$button(class="btn btn-xs btn-outline-danger duty-card-del-btn", `data-type`="subitem", `data-id`=sub$id, "🗑")
+                )
+              )
+            }
+          }
+          # 一级卡片头 + 折叠区（含子任务卡片）
+          tags$div(
+            tags$div(class = "duty-card", style = "margin-bottom:4px;",
+              tags$div(class = "duty-card-head",
+                style = "padding:8px 10px; background:#f0faf5; border-radius:6px;",
+                tags$div(style = "display:flex; justify-content:space-between; align-items:center;",
+                  tags$div(style = "display:flex; align-items:center; gap:10px; flex-wrap:wrap;",
+                    if (sort_val != "") tags$span(style="font-size:11px; color:#999; font-family:monospace; background:#e8e8e8; padding:1px 6px; border-radius:3px;", paste0("#", sort_val)),
+                    tags$b(it$name, style="font-size:13px;"),
+                    if (nchar(cat_val) > 0) tags$span(style="font-size:11px; color:#666; background:#e8f0fe; padding:1px 6px; border-radius:3px;", cat_val),
+                    if (nrow(subs) > 0) tags$span(style="font-size:10px; color:#7b5ea7; background:#f0e8ff; padding:1px 5px; border-radius:3px;", paste0("+", nrow(subs), "子"))
+                  ),
+                  tags$span(
+                    style = "font-size:10px; color:#999; cursor:pointer; user-select:none;",
+                    onclick = sprintf("var d=document.getElementById('ditem-%d');if(d)d.style.display=d.style.display==='none'?'block':'none';", it$id),
+                    {
+                      sub_count <- 0
+                      if (nrow(subs) > 0 && nrow(sub_matrix) > 0) {
+                        for (si in seq_len(nrow(subs))) {
+                          sub_count <- sub_count + sum(sub_matrix$duty_sub_item_id == subs$id[si], na.rm = TRUE)
+                        }
+                      }
+                      sprintf("%d人 ▾", nrow(assigned) + sub_count)
+                    }
+                  )
+                ),
+                if (nchar(desc_val) > 0) tags$div(style = "margin-top:6px; font-size:12px; color:#555; line-height:1.5; white-space:pre-wrap;", desc_val)
+              ),
+              # 折叠区：已分配人员 + 编辑按钮 + 二级子任务卡片
+              tags$div(id = sprintf("ditem-%d", it$id), style = "display:none; padding:8px 10px; border:1px solid #e8ecf1; border-top:none; border-radius:0 0 6px 6px;",
+                tags$div(style="margin-top:4px;", do.call(tags$div, assigned_tags)),
+                tags$div(style = "margin-top:6px; display:flex; gap:4px;",
+                  tags$button(class="btn btn-xs btn-warning duty-card-edit-btn", `data-type`="item", `data-id`=it$id, "✏"),
+                  tags$button(class="btn btn-xs btn-danger duty-card-del-btn", `data-type`="item", `data-id`=it$id, "🗑")
+                ),
+                # 二级子任务卡片（放入折叠区内）
+                if (length(sub_cards) > 0) tags$div(style = "margin-top:8px; border-top:1px dashed #e0d0f0; padding-top:6px;",
+                  do.call(tagList, sub_cards))
               )
             )
           )
@@ -324,7 +464,7 @@ duty_matrix_server <- function(input, output, session, rv) {
   })
 
   ##################
-  # 卡片按钮：添加职责到人员
+  # 卡片按钮：添加职责到人员（支持一级+二级）
   ##################
   observeEvent(input$duty_card_add_duty, {
     req(rv$logged_in, is_admin())
@@ -337,17 +477,36 @@ duty_matrix_server <- function(input, output, session, rv) {
     choices <- stats::setNames(items$id, items$name)
     showModal(modalDialog(
       title = paste("添加职责到", st$name[1]),
-      selectInput("duty_card_add_duty_item", "选择职责项", choices = c("(选择)" = "", choices)),
+      selectInput("duty_card_add_duty_item", "一级职责项", choices = c("(选择)" = "", choices)),
+      selectInput("duty_card_add_duty_sub", "二级任务 (可选)", choices = c("— 不指定二级 —" = "")),
       selectInput("duty_card_add_duty_level", "RBAC级别", choices = c("负责人","执行","知晓")),
       footer = tagList(modalButton("取消"), actionButton("duty_card_add_duty_confirm","确定",class="btn-primary")),
       size = "s", easyClose = TRUE
     ))
     rv$duty_card_sid <- sid; rv$duty_card_staff_pid <- st$position_id[1]
   })
+  observeEvent(input$duty_card_add_duty_item, {
+    req(input$duty_card_add_duty_item)
+    item_id <- as.integer(input$duty_card_add_duty_item)
+    subs <- duty_sub_item_get_by_item(item_id)
+    sub_choices <- c("— 不指定二级 —" = "")
+    if (nrow(subs) > 0) {
+      sub_choices <- c(sub_choices, stats::setNames(subs$id, subs$name))
+    }
+    updateSelectInput(session, "duty_card_add_duty_sub", choices = sub_choices, selected = "")
+  })
   observeEvent(input$duty_card_add_duty_confirm, {
     req(input$duty_card_add_duty_item, input$duty_card_add_duty_level, rv$duty_card_sid, rv$duty_card_staff_pid)
-    duty_matrix_set(rv$duty_card_sid, rv$duty_card_staff_pid,
-      as.integer(input$duty_card_add_duty_item), input$duty_card_add_duty_level)
+    sub_id <- input$duty_card_add_duty_sub
+    if (!is.null(sub_id) && sub_id != "") {
+      # 添加二级任务分配
+      duty_sub_matrix_set(rv$duty_card_sid, rv$duty_card_staff_pid,
+        as.integer(sub_id), input$duty_card_add_duty_level)
+    } else {
+      # 添加一级职责分配
+      duty_matrix_set(rv$duty_card_sid, rv$duty_card_staff_pid,
+        as.integer(input$duty_card_add_duty_item), input$duty_card_add_duty_level)
+    }
     removeModal(); refresh()
   })
 
@@ -365,6 +524,15 @@ duty_matrix_server <- function(input, output, session, rv) {
       as.integer(input$duty_card_rm_duty$sid),
       as.integer(input$duty_card_rm_duty$pid),
       as.integer(input$duty_card_rm_duty$did))
+    refresh()
+  })
+  # 移除二级任务分配
+  observeEvent(input$duty_card_rm_sub_duty, {
+    req(rv$logged_in, is_admin())
+    duty_sub_matrix_delete(
+      as.integer(input$duty_card_rm_sub_duty$sid),
+      as.integer(input$duty_card_rm_sub_duty$pid),
+      as.integer(input$duty_card_rm_sub_duty$sdid))
     refresh()
   })
 
@@ -404,6 +572,17 @@ duty_matrix_server <- function(input, output, session, rv) {
         numericInput("duty_edit_item_sort","显示顺序",value=row$sort_order[1] %||% 0, min=0, max=999),
         footer=tagList(actionButton("duty_edit_save","保存",class="btn-primary"),
           actionButton("duty_edit_delete","删除",class="btn-danger"), modalButton("取消")), easyClose=TRUE))
+    } else if (tp == "subitem") {
+      all_subs <- duty_sub_item_get_all_with_parent()
+      row <- all_subs[all_subs$id == eid, ]
+      rv$duty_edit_type <- "subitem"; rv$duty_edit_id <- eid
+      showModal(modalDialog(title=paste("编辑二级任务", row$name[1]), size="s",
+        textInput("duty_edit_item_name","名称",value=row$name[1]),
+        textInput("duty_edit_item_cat","分类",value=row$category[1] %||% ""),
+        textInput("duty_edit_item_desc","描述",value=row$description[1] %||% ""),
+        numericInput("duty_edit_item_sort","显示顺序",value=row$sort_order[1] %||% 0, min=0, max=999),
+        footer=tagList(actionButton("duty_edit_save","保存",class="btn-primary"),
+          actionButton("duty_edit_delete","删除",class="btn-danger"), modalButton("取消")), easyClose=TRUE))
     }
   })
 
@@ -413,7 +592,8 @@ duty_matrix_server <- function(input, output, session, rv) {
     result <- switch(tp,
       "position" = duty_position_delete(did),
       "staff" = duty_staff_delete(did),
-      "item" = duty_item_delete(did))
+      "item" = duty_item_delete(did),
+      "subitem" = duty_sub_item_delete(did))
     refresh(); showNotification(result$message, type=if(result$success)"message" else "error")
   })
 
@@ -436,6 +616,11 @@ duty_matrix_server <- function(input, output, session, rv) {
         category = input$duty_edit_item_cat %||% "",
         description = input$duty_edit_item_desc %||% "",
         sort_order = input$duty_edit_item_sort %||% 0)
+    } else if (tp == "subitem") {
+      duty_sub_item_update(eid, input$duty_edit_item_name,
+        category = input$duty_edit_item_cat %||% "",
+        description = input$duty_edit_item_desc %||% "",
+        sort_order = input$duty_edit_item_sort %||% 0)
     }
     removeModal(); refresh()
     showNotification(result$message, type = if(result$success) "message" else "error")
@@ -451,7 +636,8 @@ duty_matrix_server <- function(input, output, session, rv) {
     result <- switch(tp,
       "position" = duty_position_delete(eid),
       "staff" = duty_staff_delete(eid),
-      "item" = duty_item_delete(eid))
+      "item" = duty_item_delete(eid),
+      "subitem" = duty_sub_item_delete(eid))
     removeModal(); refresh()
     showNotification(result$message, type = if(result$success) "message" else "error")
   })
@@ -521,5 +707,33 @@ duty_matrix_server <- function(input, output, session, rv) {
       updateTextInput(session,"duty_new_item_desc",value="")
     }
     refresh(); showNotification(result$message, type=ifelse(result$success,"message","error"))
+  })
+
+  # 创建二级任务
+  observeEvent(input$duty_add_sub_item, {
+    req(rv$logged_in, input$duty_new_sub_item_parent, input$duty_new_sub_item_name)
+    result <- duty_sub_item_add(
+      as.integer(input$duty_new_sub_item_parent),
+      input$duty_new_sub_item_name,
+      input$duty_new_sub_item_desc %||% "",
+      input$duty_new_sub_item_cat %||% "",
+      input$duty_new_sub_item_sort %||% 0
+    )
+    if (result$success) {
+      updateTextInput(session,"duty_new_sub_item_name",value="")
+      updateTextInput(session,"duty_new_sub_item_cat",value="")
+      updateTextInput(session,"duty_new_sub_item_desc",value="")
+    }
+    refresh(); showNotification(result$message, type=ifelse(result$success,"message","error"))
+  })
+
+  # 更新二级任务父级下拉选项
+  observe({
+    req(rv$logged_in, is_admin())
+    items <- duty_item_get_all()
+    if (nrow(items) > 0) {
+      choices <- stats::setNames(as.character(items$id), items$name)
+      updateSelectInput(session, "duty_new_sub_item_parent", choices = c("(选择上级职责)" = "", choices))
+    }
   })
 }
