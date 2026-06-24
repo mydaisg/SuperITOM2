@@ -145,3 +145,31 @@ rbac_user_get_all <- function() {
     users
   }, finally = { db_disconnect(con) })
 }
+
+##################
+# 模块级别访问控制
+##################
+# 返回用户可访问的模块名向量；admin 返回 NULL 表示全部可访问
+rbac_get_user_modules <- function(current_user) {
+  if (is.null(current_user) || nrow(current_user) == 0) return(character(0))
+  if (current_user$role[1] == "admin") return(NULL)  # NULL = 全部可见
+  uid <- current_user$id[1]
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, sprintf(
+      "SELECT DISTINCT p.module FROM rbac_user_roles ur
+       JOIN rbac_role_permissions rp ON ur.role_id = rp.role_id
+       JOIN rbac_permissions p ON rp.permission_id = p.id
+       WHERE ur.user_id = %d", uid))$module
+  }, error = function(e) character(0),
+  finally = { db_disconnect(con) })
+}
+
+# 获取所有在 RBAC 中注册的模块名（用于判断哪些模块受 RBAC 管控）
+rbac_all_modules <- function() {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, "SELECT DISTINCT module FROM rbac_permissions ORDER BY module")$module
+  }, error = function(e) character(0),
+  finally = { db_disconnect(con) })
+}

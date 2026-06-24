@@ -69,7 +69,9 @@ server <- function(input, output, session) {
       login_ui()
     } else {
       message("[RENDER] 调用 main_ui()")
-      main_ui(is_admin = !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
+      is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+      user_modules <- rbac_get_user_modules(rv$current_user)
+      main_ui(is_admin = is_admin, user_modules = user_modules)
     }
   })
 
@@ -1936,10 +1938,14 @@ server <- function(input, output, session) {
   })
 
   selected_role_id <- reactiveVal(NULL)
+  rbac_role_perms_initial <- reactiveVal(character(0))  # 记录权限初始状态
+  
   observeEvent(input$rbac_role_table_rows_selected, {
     roles <- rbac_role_get_all()
     if (length(input$rbac_role_table_rows_selected) > 0) {
-      selected_role_id(roles$id[input$rbac_role_table_rows_selected])
+      rid <- roles$id[input$rbac_role_table_rows_selected]
+      selected_role_id(rid)
+      rbac_role_perms_initial(as.character(rbac_role_perms_get(rid)))
     }
   })
 
@@ -1966,7 +1972,7 @@ server <- function(input, output, session) {
       # 树形勾选模式 + 保存按钮同行
       div(style = "display:flex; align-items:center; gap:10px; margin-bottom:6px;",
         h5("按模块/部件勾选：", style="margin:0;"),
-        actionButton("rbac_save_perms", "保存权限", class = "btn-success", icon = icon("save"))
+        tags$button(id="rbac_save_perms", type="button", class="btn btn-success action-button", disabled=NA, list(icon("save"), "保存权限"))
       ),
       # JS同步checkbox到selectInput（使用命名空间避免冲突）
       tags$script(HTML('
@@ -1974,7 +1980,9 @@ server <- function(input, output, session) {
           var vals = [];
           $("input.rp-tree-cb:checked").each(function(){ vals.push($(this).val()); });
           var sel = $("#rbac_role_perms_select")[0].selectize;
-          if (sel) { sel.clear(); vals.forEach(function(v){ sel.addItem(v, true); }); }
+          if (sel) { sel.setValue(vals); }
+          // 备份：显式通知Shiny确保observer触发
+          Shiny.setInputValue("rbac_role_perms_select", vals, {priority: "event"});
         });
       ')),
       tags$style(HTML("
@@ -2053,13 +2061,23 @@ server <- function(input, output, session) {
     perms <- input$rbac_role_perms_select
     if (is.null(perms)) perms <- character(0)
     result <- rbac_role_perms_set(selected_role_id(), perms)
-    if (result$success) rbac_refresh(rbac_refresh() + 1)
+    if (result$success) {
+      rbac_role_perms_initial(as.character(perms))  # 更新初始状态
+      rbac_refresh(rbac_refresh() + 1)
+    }
     showNotification(result$message, type = if(result$success) "message" else "error")
   })
 
   # 添加角色（刷新列表）
   observe({ toggle_btn("rbac_add_role", btn_ok(input$rbac_new_role_name)) })
-  observe({ toggle_btn("rbac_save_perms", !is.null(selected_role_id())) })
+  # 保存权限：初始灰色，权限变更后才启用
+  observe({
+    cur <- input$rbac_role_perms_select
+    if (is.null(cur)) cur <- character(0)
+    init <- rbac_role_perms_initial()
+    changed <- !setequal(as.character(cur), as.character(init))
+    toggle_btn("rbac_save_perms", changed)
+  })
   observeEvent(input$rbac_add_role, {
     req(rv$logged_in, input$rbac_new_role_name)
     result <- rbac_role_add(input$rbac_new_role_name)
@@ -2080,10 +2098,15 @@ server <- function(input, output, session) {
   })
 
   selected_user_id <- reactiveVal(NULL)
+  rbac_user_roles_initial <- reactiveVal(character(0))  # 记录初始角色勾选
+  
   observeEvent(input$rbac_user_table_rows_selected, {
     users <- rbac_user_get_all()
     if (length(input$rbac_user_table_rows_selected) > 0) {
-      selected_user_id(users$id[input$rbac_user_table_rows_selected])
+      uid <- users$id[input$rbac_user_table_rows_selected]
+      selected_user_id(uid)
+      # 记录初始角色状态
+      rbac_user_roles_initial(as.character(rbac_user_roles_get(uid)))
     }
   })
 
@@ -2099,12 +2122,25 @@ server <- function(input, output, session) {
       tags$p(style = "color:#999;font-size:11px;", "用户可拥有多个角色，权限叠加")
     )
   })
+  
+  # 保存角色按钮：初始灰色，勾选项变更后才启用
+  observe({
+    cur <- input$rbac_user_roles_cb
+    if (is.null(cur)) cur <- character(0)
+    init <- rbac_user_roles_initial()
+    changed <- !setequal(as.character(cur), as.character(init))
+    toggle_btn("rbac_save_user_roles", changed)
+  })
 
   observeEvent(input$rbac_save_user_roles, {
     req(rv$logged_in, selected_user_id())
     role_ids <- input$rbac_user_roles_cb
     if (is.null(role_ids)) role_ids <- character(0)
     result <- rbac_user_roles_set(selected_user_id(), role_ids)
+    if (result$success) {
+      # 更新初始状态，按钮变回灰色
+      rbac_user_roles_initial(as.character(role_ids))
+    }
     showNotification(result$message, type = if(result$success) "message" else "error")
   })
 

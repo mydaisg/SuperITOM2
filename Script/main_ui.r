@@ -48,10 +48,18 @@ source("Script/asset_ui.r")
 # 加载岗职模块
 source("Script/duty_matrix_ui.r")
 
-main_ui <- function(is_admin = FALSE) {
+main_ui <- function(is_admin = FALSE, user_modules = NULL) {
   # 读取字体大小配置
   table_font_size <- config_get_value("table_font_size", "13")
   input_font_size <- config_get_value("input_font_size", "13")
+  
+  # RBAC 模块可见性检查
+  rbac_modules <- rbac_all_modules()
+  can_access <- function(mod) {
+    if (is_admin || is.null(user_modules)) return(TRUE)
+    if (!mod %in% rbac_modules) return(TRUE)  # 模块不在RBAC管控内，开放
+    return(mod %in% user_modules)
+  }
 
   # 创建导航栏页面
   # navbarPage是Shiny中创建带有标签页的导航栏界面的函数
@@ -208,14 +216,14 @@ main_ui <- function(is_admin = FALSE) {
     ),
     
     # 项目管理标签页（放在工单前面）
-    tabPanel(
+    if (can_access("项目")) tabPanel(
       "项目",
       icon = icon("project-diagram"),
       project_ui()
     ),
 
     # 巡检标签页
-    tabPanel(
+    if (can_access("巡检")) tabPanel(
       "巡检",
       icon = icon("clipboard-check"),
       fluidPage(
@@ -349,7 +357,7 @@ main_ui <- function(is_admin = FALSE) {
     ),
 
     # 工单标签页
-    tabPanel(
+    if (can_access("工单")) tabPanel(
       "工单",
       icon = icon("clipboard-list"),
       fluidPage(
@@ -391,37 +399,21 @@ main_ui <- function(is_admin = FALSE) {
                   $(this).addClass('admin-menu-item');
                 }
               });
-              Shiny.addCustomMessageHandler('toggleAdminMenu', function(message) {
-                if (message.show) {
-                  $('body').addClass('admin-user');
-                } else {
-                  $('body').removeClass('admin-user');
-                }
-              });
-              // 通用按钮禁用/启用
-              Shiny.addCustomMessageHandler('toggleBtn', function(msg) {
-                var b = $('#' + msg.id);
-                b.prop('disabled', msg.disabled);
-                b.css({opacity: msg.disabled ? 0.45 : '', cursor: msg.disabled ? 'not-allowed' : ''});
-              });
-              Shiny.addCustomMessageHandler('runjs', function(msg) {
-                if (window[msg]) window[msg]();
-              });
-              // 快速工单：滚动+聚焦
-              window.scrollToQuickWO = function() {
-                var h4s = document.querySelectorAll('h4');
-                for (var i = 0; i < h4s.length; i++) {
-                  if (h4s[i].innerText.indexOf('快速工单') !== -1) {
-                    h4s[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    break;
-                  }
-                }
-                setTimeout(function() {
-                  var ta = document.querySelector('#quick_work_order_text');
-                  if (ta) ta.focus();
-                }, 300);
-              };
             });
+            // 快速工单：滚动+聚焦
+            window.scrollToQuickWO = function() {
+              var h4s = document.querySelectorAll('h4');
+              for (var i = 0; i < h4s.length; i++) {
+                if (h4s[i].innerText.indexOf('快速工单') !== -1) {
+                  h4s[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  break;
+                }
+              }
+              setTimeout(function() {
+                var ta = document.querySelector('#quick_work_order_text');
+                if (ta) ta.focus();
+              }, 300);
+            };
           "))
         ),
         # 工单统计数据（缩小一半，在一行显示）
@@ -600,7 +592,7 @@ main_ui <- function(is_admin = FALSE) {
                 column(2, uiOutput("work_order_priority_ui")),
                 column(2, textInput("work_order_request_user", "请求用户")),
                 column(2, uiOutput("work_order_category_ui")),
-                column(2, div(style = "margin-top: 20px;", actionButton("add_work_order", "创建工单", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;", disabled = "disabled")))
+                column(2, div(style = "margin-top: 20px;", tags$button(id="add_work_order", type="button", class="btn btn-primary action-button", disabled=NA, style="padding:4px 10px;font-size:12px;", "创建工单")))
               ),
               fluidRow(
                 column(12, textAreaInput("work_order_description", "工单描述", rows = 2))
@@ -623,7 +615,7 @@ main_ui <- function(is_admin = FALSE) {
                 column(10, textAreaInput("quick_work_order_text", "粘贴格式化工单", rows = 4, placeholder = "请粘贴格式化工单内容...")),
                 column(2,
                   div(style = "margin-top: 50px;",
-                    actionButton("create_quick_work_order", "快速创建", class = "btn-success", style = "padding: 8px 16px; font-size: 14px;", disabled = "disabled")
+                    tags$button(id="create_quick_work_order", type="button", class="btn btn-success action-button", disabled=NA, style="padding:8px 16px;font-size:14px;", "快速创建")
                   ),
                   uiOutput("quick_work_order_preview")
                 )
@@ -650,7 +642,7 @@ main_ui <- function(is_admin = FALSE) {
               ),
               uiOutput("batch_work_order_preview"),
               div(style = "margin-top:8px;",
-                actionButton("create_batch_work_order", "批量创建", class = "btn-info", style = "padding: 8px 16px; font-size: 14px;", disabled = "disabled")
+                tags$button(id="create_batch_work_order", type="button", class="btn btn-info action-button", disabled=NA, style="padding:8px 16px;font-size:14px;", "批量创建")
               )
             )
           )
@@ -659,49 +651,49 @@ main_ui <- function(is_admin = FALSE) {
     ),
 
     # 资产标签页
-    tabPanel(
+    if (can_access("资产")) tabPanel(
       "资产",
       icon = icon("laptop"),
       asset_ui()
     ),
 
     # 记事标签页
-    tabPanel(
+    if (can_access("记事")) tabPanel(
       "记事",
       icon = icon("sticky-note"),
       note_ui()
     ),
 
     # 标准化标签页
-    tabPanel(
+    if (can_access("标准化")) tabPanel(
       "标准化",
       icon = icon("cogs"),  # 齿轮图标
       std_ui()
     ),
     
     # 测试标签页（网络巡检）
-    tabPanel(
+    if (can_access("测试")) tabPanel(
       "测试",
       icon = icon("network-wired"),
       network_test_ui()
     ),
 
     # 性能监控标签页
-    tabPanel(
+    if (can_access("性能")) tabPanel(
       "性能",
       icon = icon("heartbeat"),
       sysmon_ui()
     ),
 
     # 日报标签页
-    tabPanel(
+    if (can_access("日报")) tabPanel(
       "日报",
       icon = icon("calendar-day"),
       daily_report_ui()
     ),
 
     # 收集器标签页
-    tabPanel(
+    if (can_access("收集器")) tabPanel(
       "收集器",
       icon = icon("download"),  # 收集器图标
       fluidPage(
@@ -723,14 +715,14 @@ main_ui <- function(is_admin = FALSE) {
     ),
     
     # 集成标签页
-    tabPanel(
+    if (can_access("集成")) tabPanel(
       "集成",
       icon = icon("plug"),
       integration_ui()
     ),
 
     # 数据中心标签页（数据归集）
-    tabPanel(
+    if (can_access("数据")) tabPanel(
       "数据",
       icon = icon("database"),
       data_center_ui()
@@ -744,21 +736,21 @@ main_ui <- function(is_admin = FALSE) {
     # ),
 
     # 岗职矩阵标签页
-    tabPanel(
+    if (can_access("岗职")) tabPanel(
       "岗职",
       icon = icon("sitemap"),
       duty_matrix_ui()
     ),
 
     # 绩效管理标签页
-    tabPanel(
+    if (can_access("绩效")) tabPanel(
       "绩效",
       icon = icon("chart-bar"),
       performance_ui()
     ),
 
     # 模型训练标签页
-    tabPanel(
+    if (can_access("模型")) tabPanel(
       "模型",
       icon = icon("cogs"),  # 齿轮图标
       fluidPage(
@@ -784,7 +776,7 @@ main_ui <- function(is_admin = FALSE) {
     ),
     
     # 数据可视化标签页（含流程监控）
-    tabPanel(
+    if (can_access("可视化")) tabPanel(
       "可视化",
       icon = icon("chart-line"),
       fluidPage(
@@ -827,7 +819,7 @@ main_ui <- function(is_admin = FALSE) {
     ),
     
     # 管理菜单（admin全功能 / user仅个人信息）
-    navbarMenu(
+    if (can_access("管理")) navbarMenu(
       "管理",
       icon = icon("tools"),
       # --- admin 专属 ---
@@ -870,7 +862,7 @@ main_ui <- function(is_admin = FALSE) {
               column(3, numericInput("cfg_table_font_size", "列表表格字体(px)", value = 13, min = 10, max = 20, step = 1)),
               column(3, numericInput("cfg_input_font_size", "输入框/选择框字体(px)", value = 13, min = 10, max = 20, step = 1)),
               column(3, div(style = "margin-top:25px;",
-                actionButton("save_font_config", "保存字体设置", class = "btn-primary btn-sm", icon = icon("save"), disabled = "disabled")))
+                tags$button(id="save_font_config", type="button", class="btn btn-primary btn-sm action-button", disabled=NA, list(icon("save"), "保存字体设置"))))
             )
           ),
           hr(),
@@ -880,7 +872,7 @@ main_ui <- function(is_admin = FALSE) {
               textInput("config_key", "配置键"),
               textInput("config_value", "配置值"),
               textInput("config_desc", "描述"),
-              actionButton("add_config", "添加配置", class = "btn-primary", disabled = "disabled"),
+              tags$button(id="add_config", type="button", class="btn btn-primary action-button", disabled=NA, "添加配置"),
               br(), br(),
               actionButton("refresh_config", "刷新配置", class = "btn-info")
             ),
@@ -944,7 +936,7 @@ main_ui <- function(is_admin = FALSE) {
                     DTOutput("rbac_role_table"),
                     br(),
                     textInput("rbac_new_role_name", NULL, placeholder = "新角色名称"),
-                    actionButton("rbac_add_role", "添加角色", class = "btn-primary btn-sm", icon = icon("plus"), disabled = "disabled")
+                    tags$button(id="rbac_add_role", type="button", class="btn btn-primary btn-sm action-button", disabled=NA, list(icon("plus"), "添加角色"))
                   )
                 ),
                 column(9,
@@ -969,7 +961,7 @@ main_ui <- function(is_admin = FALSE) {
                     h4("角色分配"),
                     uiOutput("rbac_user_roles_ui"),
                     br(),
-                    actionButton("rbac_save_user_roles", "保存角色", class = "btn-success", icon = icon("save"))
+                    tags$button(id="rbac_save_user_roles", type="button", class="btn btn-success action-button", disabled=NA, list(icon("save"), "保存角色"))
                   )
                 )
               )
@@ -1029,7 +1021,7 @@ main_ui <- function(is_admin = FALSE) {
                 passwordInput("self_old_password", "旧密码"),
                 passwordInput("self_new_password", "新密码"),
                 passwordInput("self_new_password_confirm", "确认新密码"),
-                actionButton("self_save_password", "保存密码", class = "btn-primary", icon = icon("save"), disabled = "disabled"),
+                tags$button(id="self_save_password", type="button", class="btn btn-primary action-button", disabled=NA, list(icon("save"), "保存密码")),
                 br(), br(),
                 textOutput("self_password_msg")
               )
@@ -1075,9 +1067,9 @@ admin_tabs_ui <- function() {
             textInput("username", "用户名"),
             passwordInput("password", "密码"),
             selectInput("role", "角色", choices = c("user", "admin")),
-            actionButton("add_user", "添加用户", class = "btn-primary"),
+            tags$button(id="add_user", type="button", class="btn btn-primary action-button", disabled=NA, "添加用户"),
             br(), br(),
-            actionButton("update_user", "修改账号", class = "btn-warning"),
+            tags$button(id="update_user", type="button", class="btn btn-warning action-button", disabled=NA, "修改账号"),
             br(), br(),
             actionButton("toggle_active_user", "禁用/启用用户", class = "btn-danger"),
             br(), br(),
@@ -1101,7 +1093,7 @@ admin_tabs_ui <- function() {
             textInput("config_key", "配置键"),
             textInput("config_value", "配置值"),
             textInput("config_desc", "描述"),
-            actionButton("add_config", "添加配置", class = "btn-primary", disabled = "disabled"),
+            tags$button(id="add_config", type="button", class="btn btn-primary action-button", disabled=NA, "添加配置"),
             br(), br(),
             actionButton("refresh_config", "刷新配置", class = "btn-info")
           ),
@@ -1140,6 +1132,6 @@ admin_tabs_ui <- function() {
           )
         )
       )
-    )
+    ),
   )
 }
