@@ -443,6 +443,51 @@ work_order_get_assignable_users <- function() {
   })
 }
 
+# ★ 批量操作：删除工单
+work_order_batch_delete <- function(ids, current_user = NULL) {
+  if (length(ids) == 0) return(list(success = FALSE, message = "未选中工单"))
+  con <- db_connect()
+  tryCatch({
+    ids_str <- paste(as.integer(ids), collapse = ",")
+    dbExecute(con, sprintf("DELETE FROM work_orders WHERE id IN (%s)", ids_str))
+    dbExecute(con, sprintf("DELETE FROM work_order_comments WHERE work_order_id IN (%s)", ids_str))
+    operator_name <- ifelse(is.null(current_user), "系统", current_user$username[1])
+    log_user_operation("批量删除工单", paste0("工单IDs: ", ids_str, " (", length(ids), "条)"), operator_name)
+    list(success = TRUE, message = sprintf("已删除 %d 条工单", length(ids)))
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+
+# ★ 批量操作：激活工单（状态改为 pending 待处理）
+work_order_batch_reopen <- function(ids, current_user = NULL) {
+  if (length(ids) == 0) return(list(success = FALSE, message = "未选中工单"))
+  con <- db_connect()
+  tryCatch({
+    ids_str <- paste(as.integer(ids), collapse = ",")
+    dbExecute(con, sprintf(
+      "UPDATE work_orders SET status='pending', completed_at=NULL, updated_at=datetime('now','localtime') WHERE id IN (%s)", ids_str))
+    operator_name <- ifelse(is.null(current_user), "系统", current_user$username[1])
+    log_user_operation("批量激活工单", paste0("工单IDs: ", ids_str, " (", length(ids), "条)"), operator_name)
+    list(success = TRUE, message = sprintf("已激活 %d 条工单", length(ids)))
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+
+# ★ 批量操作：关闭工单（状态改为 closed）
+work_order_batch_close <- function(ids, current_user = NULL) {
+  if (length(ids) == 0) return(list(success = FALSE, message = "未选中工单"))
+  con <- db_connect()
+  tryCatch({
+    ids_str <- paste(as.integer(ids), collapse = ",")
+    dbExecute(con, sprintf(
+      "UPDATE work_orders SET status='closed', completed_at=datetime('now','localtime'), updated_at=datetime('now','localtime') WHERE id IN (%s)", ids_str))
+    operator_name <- ifelse(is.null(current_user), "系统", current_user$username[1])
+    log_user_operation("批量关闭工单", paste0("工单IDs: ", ids_str, " (", length(ids), "条)"), operator_name)
+    list(success = TRUE, message = sprintf("已关闭 %d 条工单", length(ids)))
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+
 # 获取工单统计信息
 work_order_get_stats <- function(current_user = NULL) {
   con <- db_connect()
@@ -698,4 +743,228 @@ work_order_find_user_by_name <- function(name) {
   }, finally = {
     db_disconnect(con)
   })
+}
+
+##################
+# ★ 批量补工单：日报文本解析
+#
+# 输入示例：
+#   韩荣昌 2026年6月23日 日报
+#   
+#   1. IT支持与故障处理
+#   ● 处理蔡金萍反馈2号楼4楼打印报错问题...
+#   ● 处理吕嘉俊电脑表格复制变空白的问题...
+#   2. 权限管理与安全
+#   ● 处理赖庆耀新更换的手机临时授权一天...
+#
+# 解析规则（详尽注释，便于后续调整）：
+#   [规则1] 第一行：提取"姓名 日期 日报"格式
+#           姓名 = 第一行中日期之前的中文部分（去尾空格）
+#           日期 = 第一行中的"YYYY年M月D日"格式，转为 SQLite 日期字符串
+#   [规则2] 跳过空行
+#   [规则3] 跳过"数字. 分类标题"行（如"1. IT支持与故障处理"）
+#   [规则4] ● 开头的行 = 一条工单记录
+#   [规则5] ★ 人名提取（从每条●行中取第一个中文人名）：
+#           匹配关键词后的2-3个连续中文字符
+#           关键词列表：处理|新增|指导|为|协助|帮助|告诉|通知|给|帮|安排|协调|配合|受理|回复|跟进
+#           若未匹配到，回退：取●行中第1段2-3汉字（排除常见非人名词）
+#           仍未匹配到则使用处理人姓名作为请求用户
+#   [规则6] 标题 = ●行完整内容（去除前导●和空格）
+#   [规则7] 状态 = "closed"（已关闭）
+#   [规则8] 分类 = "批量工单"
+#   [规则9] 时间 = 日期 + 18:00:00（T18:00:00）
+#   [规则10] 处理人 = 第一行提取的姓名（通过users表查找user_id）
+##################
+work_order_batch_parse <- function(text) {
+  # ── 分割文本为行 ──
+  lines <- strsplit(text, "\n")[[1]]
+  lines <- trimws(lines)
+  lines <- lines[nchar(lines) > 0]
+  if (length(lines) == 0) return(list(success = FALSE, message = "文本为空"))
+
+  # ── 规则1：提取第一行的处理人和日期 ──
+  first_line <- lines[1]
+  date_pattern <- "\\d{4}年\\d{1,2}月\\d{1,2}日"
+  date_match <- regmatches(first_line, regexpr(date_pattern, first_line, perl = TRUE))
+  if (length(date_match) == 0) return(list(success = FALSE, message = "第一行未找到日期，格式应为：姓名 YYYY年M月D日 日报"))
+  date_str <- date_match[1]
+  # 日期前面的部分就是处理人姓名
+  handler_name <- trimws(sub(paste0(date_str, ".*"), "", first_line))
+  if (nchar(handler_name) == 0) handler_name <- "未知"
+  # 将中文日期转为 SQLite 格式 "YYYY-MM-DD"
+  date_parts <- regmatches(date_str, gregexpr("\\d+", date_str, perl = TRUE))[[1]]
+  if (length(date_parts) < 3) return(list(success = FALSE, message = "日期格式解析失败"))
+  formatted_date <- sprintf("%s-%02d-%02d", date_parts[1], as.integer(date_parts[2]), as.integer(date_parts[3]))
+  # 统一时间为 18:00 → 规则9
+  batch_time <- paste0(formatted_date, " 18:00:00")
+
+  # ── 规则3+4：提取●开头的工单行，跳过分类标题行 ──
+  chinese_char <- "[\u4e00-\u9fff]"
+  # ★ 规则5：人名关键词列表（可扩展）
+  #   "处理"匹配"处理张三xxx" → 张三
+  #   "为"匹配"为李四xxx" → 李四（但需小心"为泛微实施人员叶明"这种嵌套情况）
+  #   "给/帮"匹配"给王五xxx" → 王五
+  # ★ 关键词顺序很重要："人员/用户/同事"必须在"为"前面，否则"为泛微实施人员叶明"
+  #   会匹配"为"→"泛微实"而非"人员"→"叶明"
+  name_keywords <- c("处理", "新增", "指导", "协助", "帮助", "告诉", "通知",
+    "给", "帮", "安排", "协调", "配合", "受理", "回复", "跟进",
+    "人员", "用户", "同事",  # 优先于"为"
+    "为")
+  keyword_pattern <- paste(name_keywords, collapse = "|")
+  # 排除词：容易被误判为人名的常见词（可扩展）
+  exclude_names <- c("反馈", "电脑", "打印", "手机", "显示", "监控", "会议", "办公",
+    "设备", "系统", "软件", "硬件", "网络", "服务器", "数据", "文件", "流程",
+    "财务部", "财务", "人事部", "行政部", "保安室", "管理处", "生产线", "研发部", "采购部",
+    "泛微", "直流桩", "直流", "会议室", "打印机", "碳粉", "门禁", "显示器", "安装部署",
+    "问题", "一体机", "一体", "显示屏", "部署", "需求", "项目", "任务", "报告",
+    "实施", "运维", "测试", "开发", "设计", "配置", "调整", "记录",
+    "生产", "安装", "交付", "恢复", "开放", "更换", "新增", "修改",
+    "智能", "平板", "键盘", "鼠标", "网线", "电源", "插座", "线路",
+    "电梯", "厨房", "显示")
+
+  orders <- list()
+  order_lines <- lines[grepl("^●", lines)]
+  if (length(order_lines) == 0) return(list(success = FALSE, message = "未找到●开头的工单行"))
+
+  for (i in seq_along(order_lines)) {
+    full_text <- trimws(sub("^●\\s*", "", order_lines[i]))
+    if (nchar(full_text) < 5) next  # 太短跳过
+
+    # ★ 规则5：提取第一个中文人名
+    #  策略A：逐个关键词匹配（优先2字名，再尝试3字名）
+    #         若匹配到关键词但名字被排除 → 继续试下一个关键词
+    #  策略B：无关键词时才模糊搜索 → 策略C：处理人回退
+    request_user <- ""
+    found_any_keyword <- FALSE
+
+    try_extract_name <- function(txt, kw, nchars) {
+      pat <- paste0(kw, "(", chinese_char, "{", nchars, "})")
+      m <- regexec(pat, txt, perl = TRUE)
+      caps <- regmatches(txt, m)[[1]]
+      if (length(caps) >= 2 && nchar(caps[2]) >= 2 && !(caps[2] %in% exclude_names)) {
+        return(caps[2])
+      }
+      return("")
+    }
+
+    for (kw in name_keywords) {
+      # 优先试2字名（中文名常见2字），再试3字
+      nm <- try_extract_name(full_text, kw, 2)
+      if (nm != "") { request_user <- nm; break }
+      nm <- try_extract_name(full_text, kw, 3)
+      if (nm != "") { request_user <- nm; break }
+      # 检查是否至少匹配到了关键词（名字被排除的情况）
+      m <- regexec(paste0(kw, "(", chinese_char, "{2,3})"), full_text, perl = TRUE)
+      if (length(regmatches(full_text, m)[[1]]) >= 2) found_any_keyword <- TRUE
+    }
+
+    # 策略B：仅当策略A完全没有匹配到任何关键词时，才模糊搜索2字人名
+    # 　　   只用{2}不用{3}，避免跨词边界产生"安装部"这类虚假词组
+    if (request_user == "" && !found_any_keyword) {
+      stripped <- sub(paste0("^(", keyword_pattern, ")\\s*"), "", full_text)
+      all_names <- regmatches(stripped, gregexpr(paste0(chinese_char, "{2}"), stripped, perl = TRUE))[[1]]
+      for (n in all_names) {
+        if (!(n %in% exclude_names)) {
+          request_user <- n
+          break
+        }
+      }
+    }
+
+    # 策略C：最终回退——用处理人姓名
+    if (request_user == "") request_user <- handler_name
+
+    # ── 构建工单数据 ──
+    orders[[length(orders) + 1]] <- list(
+      title       = full_text,
+      description = full_text,
+      category    = "批量工单",
+      priority    = "中",
+      status      = "closed",
+      request_user = request_user,
+      handler_name = handler_name,
+      batch_time  = batch_time
+    )
+  }
+
+  list(
+    success = TRUE,
+    handler_name = handler_name,
+    batch_date  = formatted_date,
+    batch_time  = batch_time,
+    count       = length(orders),
+    orders      = orders
+  )
+}
+
+# ★ 批量创建工单（直接插入已关闭工单）
+work_order_batch_create <- function(parsed, current_user = NULL) {
+  if (!parsed$success) return(parsed)
+  orders <- parsed$orders
+  if (length(orders) == 0) return(list(success = FALSE, message = "无工单可创建"))
+
+  # 查找处理人对应的 user_id
+  handler_id <- work_order_find_user_by_name(parsed$handler_name)
+  if (is.null(handler_id)) {
+    con <- db_connect()
+    handler_row <- tryCatch({
+      dbGetQuery(con, sprintf("SELECT id FROM users WHERE display_name = '%s' AND active = 1 LIMIT 1",
+        gsub("'", "''", parsed$handler_name)))
+    }, error = function(e) data.frame(), finally = db_disconnect(con))
+    if (nrow(handler_row) > 0) handler_id <- handler_row$id[1]
+  }
+  if (is.null(handler_id) && !is.null(current_user)) {
+    handler_id <- current_user$id[1]
+  }
+
+  created_count <- 0
+  errors <- c()
+
+  for (i in seq_along(orders)) {
+    o <- orders[[i]]
+    con <- db_connect()
+    tryCatch({
+      today_str <- format(Sys.Date(), "%Y%m%d")
+      seq_query <- sprintf("SELECT COUNT(*) as cnt FROM work_orders WHERE order_no LIKE 'ITS%s%%'", today_str)
+      seq_result <- dbGetQuery(con, seq_query)
+      seq_num <- seq_result$cnt[1] + 1
+      order_no <- sprintf("ITS%s%03d", today_str, seq_num)
+
+      uid_sql <- if (is.null(handler_id)) "NULL" else as.character(handler_id)
+      title_safe <- gsub("'", "''", o$title)
+      desc_safe <- gsub("'", "''", o$description)
+      req_user_safe <- gsub("'", "''", o$request_user)
+
+      dbExecute(con, sprintf(
+        "INSERT INTO work_orders (order_no, title, description, category, priority, status,
+         request_user, assigned_to, handled_by, created_by,
+         created_at, updated_at, assigned_at, handled_at, completed_at)
+         VALUES ('%s', '%s', '%s', '批量工单', '中', 'closed',
+                 '%s', %s, %s, %s,
+                 '%s', '%s', '%s', '%s', '%s')",
+        order_no, title_safe, desc_safe,
+        req_user_safe, uid_sql, uid_sql, uid_sql,
+        parsed$batch_time, parsed$batch_time, parsed$batch_time, parsed$batch_time, parsed$batch_time
+      ))
+      created_count <- created_count + 1
+    }, error = function(e) {
+      errors <<- c(errors, paste0("第", i, "条:", e$message))
+    }, finally = {
+      db_disconnect(con)
+    })
+  }
+
+  message <- sprintf("批量创建完成：成功 %d 条", created_count)
+  if (length(errors) > 0) {
+    message <- paste0(message, "，失败 ", length(errors), " 条：",
+      paste(errors[1:min(3, length(errors))], collapse = "; "))
+  }
+
+  if (!is.null(current_user) && nrow(current_user) > 0) {
+    log_user_operation("批量补工单",
+      paste0(parsed$handler_name, " ", parsed$batch_date, "日报：", created_count, "条"),
+      current_user$username[1] %||% "系统")
+  }
+
+  list(success = created_count > 0, message = message, count = created_count)
 }

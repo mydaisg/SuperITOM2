@@ -728,7 +728,8 @@ init_work_order_config_options <- function() {
         list(value = "网络问题", label = "网络问题", color = "#5f9ea0", sort = 4, is_default = 0),
         list(value = "系统维护", label = "系统维护", color = "#6a5acd", sort = 5, is_default = 0),
         list(value = "账号权限", label = "账号权限", color = "#9370db", sort = 6, is_default = 0),
-        list(value = "其他", label = "其他", color = "#999", sort = 7, is_default = 0)
+        list(value = "其他", label = "其他", color = "#999", sort = 7, is_default = 0),
+        list(value = "批量工单", label = "批量工单", color = "#17a2b8", sort = 8, is_default = 0)
       )
       for (c in categories) {
         dbExecute(con, sprintf(

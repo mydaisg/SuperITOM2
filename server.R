@@ -57,6 +57,12 @@ server <- function(input, output, session) {
     daily_report_refresh = 0  # 日报刷新触发器
   )
   
+  # 通用按钮状态控制
+  toggle_btn <- function(id, enabled) {
+    session$sendCustomMessage("toggleBtn", list(id = id, disabled = !isTRUE(enabled)))
+  }
+  btn_ok <- function(val) { !is.null(val) && length(val) > 0 && nchar(trimws(paste(val, collapse=""))) > 0 }
+  
   # OLD 架构：renderUI 直接返回 login_ui() 或 main_ui()
   output$app_ui <- renderUI({
     if (!rv$logged_in) {
@@ -284,6 +290,9 @@ server <- function(input, output, session) {
                                grepl(search_term, toupper(all_orders$current_handler)), ]
     }
 
+      # Admin权限标记
+      is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+      
       # 列顺序：工单号、标题、描述、分类、优先级、处理人、状态、请求用户、创建人、时间
       if (nrow(all_orders) > 0) {
         # 工单号链接
@@ -292,20 +301,29 @@ server <- function(input, output, session) {
                            all_orders$order_no)
         order_nos <- sprintf('<a href="#" class="wo-view-link" data-id="%s" style="font-weight:bold;color:#337ab7;">%s</a>', all_orders$id, order_nos)
 
-        # 选择并重命名列（去掉操作列）
+        # 选择并重命名列
         display_data <- data.frame(
           工单号 = order_nos,
-        标题 = all_orders$title,
-        描述 = all_orders$description,
-        分类 = ifelse(is.na(all_orders$category), "未分类", all_orders$category),
-        优先级 = all_orders$priority,
-        处理人 = ifelse(is.na(all_orders$current_handler), "未分配", all_orders$current_handler),
-        状态 = all_orders$status,
-        请求用户 = ifelse(is.na(all_orders$request_user_name), "—", all_orders$request_user_name),
-        创建人 = ifelse(is.na(all_orders$creator_name), "未知", all_orders$creator_name),
-        时间 = all_orders$created_at,
-        stringsAsFactors = FALSE
-      )
+          标题 = all_orders$title,
+          描述 = all_orders$description,
+          分类 = ifelse(is.na(all_orders$category), "未分类", all_orders$category),
+          优先级 = all_orders$priority,
+          处理人 = ifelse(is.na(all_orders$current_handler), "未分配", all_orders$current_handler),
+          状态 = all_orders$status,
+          请求用户 = ifelse(is.na(all_orders$request_user_name), "—", all_orders$request_user_name),
+          创建人 = ifelse(is.na(all_orders$creator_name), "未知", all_orders$creator_name),
+          时间 = all_orders$created_at,
+          stringsAsFactors = FALSE
+        )
+        
+        # ★ Admin权限：添加复选框列（第一列）
+        if (is_admin) {
+          display_data <- cbind(
+            选择 = sprintf('<input type="checkbox" class="wo-batch-cb" value="%d" onchange="this.closest(\'tr\').classList.toggle(\'selected-row\',this.checked)">', all_orders$id),
+            display_data,
+            stringsAsFactors = FALSE
+          )
+        }
       
       # 使用配置的函数获取状态颜色和标签
       display_data$状态 <- sapply(display_data$状态, function(s) {
@@ -322,77 +340,52 @@ server <- function(input, output, session) {
                 color, p)
       })
     } else {
-      display_data <- data.frame(
-        工单号 = character(),
-        标题 = character(),
-        描述 = character(),
-        分类 = character(),
-        优先级 = character(),
-        处理人 = character(),
-        状态 = character(),
-        请求用户 = character(),
-        创建人 = character(),
-        时间 = character(),
-        stringsAsFactors = FALSE
+      base_cols <- list(
+        工单号 = character(), 标题 = character(), 描述 = character(),
+        分类 = character(), 优先级 = character(), 处理人 = character(),
+        状态 = character(), 请求用户 = character(), 创建人 = character(),
+        时间 = character()
       )
+      if (is_admin) base_cols <- c(list(选择 = character()), base_cols)
+      display_data <- as.data.frame(base_cols, stringsAsFactors = FALSE)
     }
+    
+    col_offset <- if (is_admin) 1 else 0  # admin多一列复选框
     
     DT::datatable(
       display_data,
-      escape = FALSE,  # 允许HTML按钮
+      escape = FALSE,
       options = list(
-        pageLength = 50,  # 默认显示50行
+        pageLength = 50,
         paging = TRUE,
-        searching = FALSE,  # 禁用DT内置搜索，使用自定义搜索框
+        searching = FALSE,
         ordering = TRUE,
-        info = FALSE,  # 隐藏底部信息
-        lengthChange = FALSE,  # 隐藏每页显示数选择器
-        dom = 't<"float-left"p>',  # 分页器在底部左侧
+        info = FALSE,
+        lengthChange = FALSE,
+        dom = 't<"float-left"p>',
         columnDefs = list(
-          # 工单号列（可点击链接）
-          list(targets = 0, width = '100px', className = 'dt-center'),
-          # 标题列
-          list(targets = 1, width = '120px', className = 'dt-left'),
-          # 描述列：限制宽度
-          list(targets = 2, width = '150px', className = 'dt-left'),
-          # 分类列
-          list(targets = 3, width = '70px', className = 'dt-center'),
-          # 优先级列
-          list(targets = 4, width = '55px', className = 'dt-center'),
-          # 处理人列
-          list(targets = 5, width = '70px', className = 'dt-center'),
-          # 状态列
-          list(targets = 6, width = '70px', className = 'dt-center'),
-          # 请求用户列
-          list(targets = 7, width = '70px', className = 'dt-center'),
-          # 创建人列
-          list(targets = 8, width = '70px', className = 'dt-center'),
-          # 时间列
-          list(targets = 9, width = '120px', className = 'dt-center')
+          list(targets = col_offset + 0, width = '100px', className = 'dt-center'),
+          list(targets = col_offset + 1, width = '120px', className = 'dt-left'),
+          list(targets = col_offset + 2, width = '150px', className = 'dt-left'),
+          list(targets = col_offset + 3, width = '70px', className = 'dt-center'),
+          list(targets = col_offset + 4, width = '55px', className = 'dt-center'),
+          list(targets = col_offset + 5, width = '70px', className = 'dt-center'),
+          list(targets = col_offset + 6, width = '70px', className = 'dt-center'),
+          list(targets = col_offset + 7, width = '70px', className = 'dt-center'),
+          list(targets = col_offset + 8, width = '70px', className = 'dt-center'),
+          list(targets = col_offset + 9, width = '120px', className = 'dt-center')
         ),
         rowCallback = JS(
-          "function(row, data, index) {
-            // 设置行高，确保一行最多跨三行
-            $('td', row).css({
-              'max-height': '60px',
-              'overflow': 'hidden',
-              'text-overflow': 'ellipsis',
-              'white-space': 'nowrap'
-            });
-            // 描述列允许换行但限制行数
-            $('td:eq(2)', row).css({
-              'white-space': 'normal',
-              'line-height': '1.4em',
-              'max-height': '4.2em'
-            });
+          "function(row, data) {
+            $('td', row).css({'max-height':'60px','overflow':'hidden','text-overflow':'ellipsis','white-space':'nowrap'});
+            $('td:eq(2)', row).css({'white-space':'normal','line-height':'1.4em','max-height':'4.2em'});
           }"
         )
       ),
       callback = JS(
         "table.on('click', 'a.wo-view-link', function(e) {
           e.preventDefault();
-          var woId = $(this).data('id');
-          Shiny.setInputValue('work_order_view_click', woId);
+          Shiny.setInputValue('work_order_view_click', $(this).data('id'));
         });"
       ),
       rownames = FALSE,
@@ -414,6 +407,73 @@ server <- function(input, output, session) {
     } else {
       rv$selected_work_order_id <- NULL
       rv$selected_work_order_detail <- NULL
+    }
+  })
+  
+  # ★ Admin权限标记（控制批量操作栏显示）
+  output$wo_is_admin <- reactive({
+    !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+  })
+  outputOptions(output, "wo_is_admin", suspendWhenHidden = FALSE)
+  
+  # ★ 批量删除工单
+  observeEvent(input$wo_batch_delete, {
+    req(rv$logged_in)
+    ids_str <- input$wo_batch_ids
+    if (is.null(ids_str) || nchar(trimws(ids_str)) == 0) {
+      showNotification("请先勾选工单", type = "warning"); return()
+    }
+    ids <- as.integer(strsplit(ids_str, ",")[[1]])
+    showModal(modalDialog(
+      title = "确认批量删除",
+      sprintf("确定删除 %d 条工单？此操作不可撤销。", length(ids)),
+      footer = tagList(
+        modalButton("取消"),
+        actionButton("wo_batch_delete_confirm", "确认删除", class = "btn-danger")
+      ), easyClose = TRUE
+    ))
+  })
+  observeEvent(input$wo_batch_delete_confirm, {
+    req(rv$logged_in)
+    ids_str <- input$wo_batch_ids
+    ids <- as.integer(strsplit(ids_str, ",")[[1]])
+    removeModal()
+    result <- work_order_batch_delete(ids, rv$current_user)
+    showNotification(result$message, type = if(result$success) "message" else "error")
+    if (result$success) {
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+    }
+  })
+  
+  # ★ 批量激活工单（状态→pending）
+  observeEvent(input$wo_batch_reopen, {
+    req(rv$logged_in)
+    ids_str <- input$wo_batch_ids
+    if (is.null(ids_str) || nchar(trimws(ids_str)) == 0) {
+      showNotification("请先勾选工单", type = "warning"); return()
+    }
+    ids <- as.integer(strsplit(ids_str, ",")[[1]])
+    result <- work_order_batch_reopen(ids, rv$current_user)
+    showNotification(result$message, type = if(result$success) "message" else "error")
+    if (result$success) {
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+      updateTextInput(session, "wo_batch_ids", value = "")
+    }
+  })
+  
+  # ★ 批量关闭工单（状态→closed）
+  observeEvent(input$wo_batch_close, {
+    req(rv$logged_in)
+    ids_str <- input$wo_batch_ids
+    if (is.null(ids_str) || nchar(trimws(ids_str)) == 0) {
+      showNotification("请先勾选工单", type = "warning"); return()
+    }
+    ids <- as.integer(strsplit(ids_str, ",")[[1]])
+    result <- work_order_batch_close(ids, rv$current_user)
+    showNotification(result$message, type = if(result$success) "message" else "error")
+    if (result$success) {
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+      updateTextInput(session, "wo_batch_ids", value = "")
     }
   })
   
@@ -577,16 +637,20 @@ server <- function(input, output, session) {
       can_complete <- wo$status %in% c("processing")
       can_close <- wo$status %in% c("completed")
       
-      # 检查是否为Admin
+      # 检查是否为Admin + RBAC权限
       is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
+      can_edit_wo <- is_admin || rbac_check(rv$current_user, "wo_edit")
+      can_delete_wo <- is_admin || rbac_check(rv$current_user, "wo_delete")
       
       # 构建操作按钮HTML
       action_buttons <- ""
-      if (can_assign || can_start || can_complete || can_close || is_admin) {
+      if (can_assign || can_start || can_complete || can_close || can_edit_wo) {
         action_buttons <- '<div style="margin-bottom: 10px; padding: 10px; background: #f0f7ff; border-radius: 6px;">'
-        # Admin专属修改和删除按钮
-        if (is_admin) {
+        # 修改和删除按钮（Admin或有对应RBAC权限）
+        if (can_edit_wo) {
           action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-warning btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'modal_work_order_edit\', %d, {priority: \'event\'});">修改</button>', wo_id))
+        }
+        if (can_delete_wo) {
           action_buttons <- paste0(action_buttons, sprintf('<button class="btn btn-danger btn-sm" style="margin-right: 5px;" onclick="Shiny.setInputValue(\'delete_work_order_btn\', %d, {priority: \'event\'});">删除</button>', wo_id))
         }
         if (can_assign) {
@@ -851,6 +915,9 @@ server <- function(input, output, session) {
   })
   
   # 处理创建工单按钮点击事件
+  observe({
+    toggle_btn("add_work_order", btn_ok(input$work_order_title) && btn_ok(input$work_order_description))
+  })
   observeEvent(input$add_work_order, {
     req(rv$logged_in)
     req(input$work_order_title, input$work_order_description, input$work_order_priority)
@@ -878,6 +945,9 @@ server <- function(input, output, session) {
   })
 
   # 处理快速工单按钮点击事件
+  observe({
+    toggle_btn("create_quick_work_order", btn_ok(input$quick_work_order_text))
+  })
   observeEvent(input$create_quick_work_order, {
     req(rv$logged_in)
     req(input$quick_work_order_text)
@@ -959,6 +1029,91 @@ server <- function(input, output, session) {
     session$sendCustomMessage("runjs", 'scrollToQuickWO')
   })
   
+  # ★ 批量补工单：存储解析结果供预览和创建共用
+  rv$batch_parsed <- NULL
+  
+  # 解析缓存（输入变化时自动重新解析）
+  observe({
+    req(rv$logged_in)
+    text <- trimws(input$batch_work_order_text %||% "")
+    if (nchar(text) < 10) {
+      rv$batch_parsed <- NULL
+      return()
+    }
+    rv$batch_parsed <- work_order_batch_parse(text)
+  })
+  
+  # 批量补工单：可编辑预览（请求人可修改）
+  output$batch_work_order_preview <- renderUI({
+    parsed <- rv$batch_parsed
+    if (is.null(parsed)) return(NULL)
+    if (!parsed$success) {
+      return(div(style = "margin-top:10px; color:#d9534f; font-size:12px;", parsed$message))
+    }
+    div(style = "margin-top:10px; font-size:12px;",
+      # 摘要行
+      p(style = "color:#337ab7; margin:0 0 6px; font-weight:600;",
+        sprintf("处理人：%s  |  日期：%s  |  共 %d 条工单  |  时间：%s",
+          parsed$handler_name, parsed$batch_date, parsed$count, parsed$batch_time)),
+      # 可编辑表格头
+      div(style = "display:flex; font-weight:600; color:#666; padding:4px 8px; background:#eee; border-radius:4px 4px 0 0;",
+        div(style = "width:30px;", "#"), 
+        div(style = "width:90px;", "请求人"),
+        div(style = "flex:1;", "标题")
+      ),
+      # 可编辑行
+      div(style = "max-height:300px; overflow-y:auto; border:1px solid #ddd; border-top:none; border-radius:0 0 4px 4px;",
+        lapply(seq_along(parsed$orders), function(i) {
+          o <- parsed$orders[[i]]
+          div(style = paste0("display:flex; align-items:center; padding:2px 8px; border-bottom:1px solid #f0f0f0;",
+            if(i %% 2 == 0) "background:#fafafa;" else "background:#fff;"),
+            div(style = "width:30px; color:#999;", i),
+            div(style = "width:90px;",
+              textInput(paste0("batch_req_user_", i), NULL, value = o$request_user, width = "85px")
+            ),
+            div(style = "flex:1; padding-left:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;",
+              o$title)
+          )
+        })
+      )
+    )
+  })
+  
+  # 批量补工单：创建（读取可编辑预览中的修改值）
+  observe({
+    toggle_btn("create_batch_work_order", !is.null(rv$batch_parsed) && rv$batch_parsed$success)
+  })
+  observeEvent(input$create_batch_work_order, {
+    req(rv$logged_in)
+    parsed <- rv$batch_parsed
+    if (is.null(parsed) || !parsed$success) {
+      showNotification("请先粘贴日报文本并确认预览无误", type = "warning")
+      return()
+    }
+    
+    # ★ 从可编辑输入框读取用户修改后的请求人
+    for (i in seq_along(parsed$orders)) {
+      edited <- input[[paste0("batch_req_user_", i)]]
+      if (!is.null(edited) && nchar(trimws(edited)) > 0) {
+        parsed$orders[[i]]$request_user <- trimws(edited)
+      }
+    }
+    
+    removeModal()  # just in case
+    withProgress(message = "正在批量创建工单...", value = 0, {
+      result <- work_order_batch_create(parsed, rv$current_user)
+      incProgress(1)
+    })
+    
+    showNotification(result$message, type = if(result$success) "message" else "error")
+    
+    if (result$success) {
+      updateTextAreaInput(session, "batch_work_order_text", value = "")
+      rv$batch_parsed <- NULL
+      rv$work_order_refresh_trigger <- rv$work_order_refresh_trigger + 1
+    }
+  })
+  
   # 处理刷新工单按钮点击事件
   observeEvent(input$refresh_work_orders, {
     req(rv$logged_in)
@@ -1023,16 +1178,16 @@ server <- function(input, output, session) {
     }
   })
   
-  # 处理弹窗内修改工单按钮点击事件（Admin专属）
+  # 处理弹窗内修改工单按钮点击事件（Admin或有wo_edit权限）
   observeEvent(input$modal_work_order_edit, {
     req(rv$logged_in)
     wo_id <- input$modal_work_order_edit
     req(wo_id)
     
-    # 检查是否为Admin
+    # 检查RBAC权限（Admin或拥有wo_edit权限）
     is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
-    if (!is_admin) {
-      showNotification("只有Admin才能修改工单", type = "error")
+    if (!is_admin && !rbac_check(rv$current_user, "wo_edit")) {
+      showNotification("没有修改工单的权限", type = "error")
       return()
     }
     
@@ -1485,6 +1640,14 @@ server <- function(input, output, session) {
   })
   
   # 处理添加用户按钮点击事件
+  observe({
+    ok <- btn_ok(input$username) && btn_ok(input$password) && btn_ok(input$role)
+    toggle_btn("add_user", ok)
+  })
+  observe({
+    ok <- btn_ok(input$selected_user_id) && btn_ok(input$username) && btn_ok(input$role)
+    toggle_btn("update_user", ok)
+  })
   observeEvent(input$add_user, {
     # 检查登录状态和admin权限
     req(rv$logged_in)
@@ -1642,6 +1805,8 @@ server <- function(input, output, session) {
   })
   
   # 处理添加配置按钮点击事件
+  observe({ toggle_btn("add_config", btn_ok(input$config_key) && btn_ok(input$config_value)) })
+  observe({ toggle_btn("save_font_config", btn_ok(input$cfg_table_font_size) && btn_ok(input$cfg_input_font_size)) })
   observeEvent(input$add_config, {
     # 检查登录状态和admin权限
     req(rv$logged_in)
@@ -1718,11 +1883,9 @@ server <- function(input, output, session) {
   output$rbac_perm_table <- renderUI({
     rbac_refresh(); req(rv$logged_in)
     perms <- rbac_permission_get_all()
-    # 处理空 component
+    # 处理空 component（未归类的权限归入"基础"）
     perms$component <- ifelse(is.na(perms$component) | perms$component == "", "(通用)", perms$component)
     modules <- unique(perms$module)
-    # 生成唯一ID前缀
-    safe_id <- function(x) gsub("[^\\w]", "_", x, perl = TRUE)
     tagList(
       tags$style(HTML("
         .rbac-mod-hdr { background:#e8f0fe; padding:6px 12px; margin:6px 0 2px; cursor:pointer; border-radius:4px; font-weight:700; font-size:14px; user-select:none; border:1px solid #c8daf5; }
@@ -1732,18 +1895,19 @@ server <- function(input, output, session) {
         .rbac-ops { display:flex; flex-wrap:wrap; gap:4px; padding:2px 0 2px 24px; }
         .rbac-op { background:#fff; border:1px solid #ddd; border-radius:3px; padding:2px 8px; font-size:11px; font-family:monospace; }
       ")),
-      lapply(modules, function(mod) {
+      lapply(seq_along(modules), function(mi) {
+        mod <- modules[mi]
         mod_perms <- perms[perms$module == mod, ]
-        mod_id <- safe_id(mod)
         components <- unique(mod_perms$component)
         tags$div(
           tags$div(class = "rbac-mod-hdr", onclick = sprintf(
-            "var el=document.getElementById('rbac-mod-%s'); el.style.display=el.style.display==='none'?'block':'none';", mod_id
+            "var el=document.getElementById('rbac-mod-m%d'); el.style.display=el.style.display==='none'?'block':'none';", mi
           ), paste0("📁 ", mod, " (", nrow(mod_perms), "项)")),
-          tags$div(id = paste0("rbac-mod-", mod_id), style = "display:block; padding-left:12px;",
-            lapply(components, function(comp) {
+          tags$div(id = paste0("rbac-mod-m", mi), style = "display:block; padding-left:12px;",
+            lapply(seq_along(components), function(ci) {
+              comp <- components[ci]
               comp_perms <- mod_perms[mod_perms$component == comp, ]
-              comp_id <- paste0(mod_id, "_", safe_id(comp))
+              comp_id <- paste0("m", mi, "c", ci)
               tags$div(
                 tags$div(class = "rbac-comp-hdr", onclick = sprintf(
                   "var el=document.getElementById('rbac-comp-%s'); el.style.display=el.style.display==='none'?'flex':'none';", comp_id
@@ -1788,11 +1952,10 @@ server <- function(input, output, session) {
     all_perms <- rbac_permission_get_all()
     all_perms$component <- ifelse(is.na(all_perms$component) | all_perms$component == "", "(通用)", all_perms$component)
     modules <- unique(all_perms$module)
-    safe_id <- function(x) gsub("[^\\w]", "_", x, perl = TRUE)
 
     tagList(
       h5(paste("为角色 [", role$name[1], "] 配置权限")),
-      # 快速模式：selectInput 搜索（也带上 component）
+      # 快速模式：selectInput 搜索
       wellPanel(
         tags$b("快速搜索添加："),
         selectInput("rbac_role_perms_select", NULL,
@@ -1800,13 +1963,16 @@ server <- function(input, output, session) {
           selected = current_perms, multiple = TRUE, width = "100%", selectize = TRUE),
         tags$p(style = "color:#999;font-size:10px;", "输入关键字搜索权限，支持多选（勾选=有此权限）")
       ),
-      # 树形勾选模式：模块→部件→操作
-      h5("按模块/部件勾选："),
-      # JS同步checkbox到selectInput
+      # 树形勾选模式 + 保存按钮同行
+      div(style = "display:flex; align-items:center; gap:10px; margin-bottom:6px;",
+        h5("按模块/部件勾选：", style="margin:0;"),
+        actionButton("rbac_save_perms", "保存权限", class = "btn-success", icon = icon("save"))
+      ),
+      # JS同步checkbox到selectInput（使用命名空间避免冲突）
       tags$script(HTML('
-        $(document).off("change.rbac").on("change.rbac", "input[name=\"rbac_perm_codes\"]", function() {
+        $(document).off("change.rbac").on("change.rbac", "input.rp-tree-cb", function() {
           var vals = [];
-          $("input[name=\"rbac_perm_codes\"]:checked").each(function(){ vals.push($(this).val()); });
+          $("input.rp-tree-cb:checked").each(function(){ vals.push($(this).val()); });
           var sel = $("#rbac_role_perms_select")[0].selectize;
           if (sel) { sel.clear(); vals.forEach(function(v){ sel.addItem(v, true); }); }
         });
@@ -1818,52 +1984,56 @@ server <- function(input, output, session) {
         .rp-comp-hdr:hover { background:#e0e0e0; }
         .rp-op-row { display:flex; flex-wrap:wrap; gap:4px; padding:2px 0 2px 40px; }
       ")),
-      lapply(modules, function(mod) {
+      lapply(seq_along(modules), function(mi) {
+        mod <- modules[mi]
         mod_perms <- all_perms[all_perms$module == mod, ]
-        mod_id <- safe_id(mod)
+        # ★ 使用数字索引保证唯一性，避免中文模块名碰撞
+        mod_idx <- mi
         mod_all_checked <- all(mod_perms$code %in% current_perms)
         components <- unique(mod_perms$component)
         tags$div(style = "margin-bottom:4px; border:1px solid #d0d0d0; border-radius:4px; overflow:hidden;",
           tags$div(class = "rp-mod-hdr",
             tags$input(type = "checkbox",
-              class = paste0("rp-mod-cb-", mod_id),
+              class = paste0("rp-mod-cb-", mod_idx),
               onclick = sprintf("
-                var cbs = document.querySelectorAll('.rp-cb-%s');
-                cbs.forEach(function(cb){ cb.checked = this.checked; cb.dispatchEvent(new Event('change',{bubbles:true})); });
-              ", mod_id),
+                var self=this, cbs=document.querySelectorAll('.rp-cb-m%d');
+                for(var i=0;i<cbs.length;i++){cbs[i].checked=self.checked;cbs[i].dispatchEvent(new Event('change',{bubbles:true}));}
+              ", mod_idx),
               checked = if(mod_all_checked) NA else NULL),
             tags$span(onclick = sprintf(
-              "var el=document.getElementById('rp-mod-body-%s'); el.style.display=el.style.display==='none'?'block':'none';", mod_id
+              "var el=document.getElementById('rp-mod-body-m%d'); el.style.display=el.style.display==='none'?'block':'none';", mod_idx
             ), style = "flex:1;", paste0("📁 ", mod, " (", nrow(mod_perms), "项)"))
           ),
-          tags$div(id = paste0("rp-mod-body-", mod_id), style = "display:block;",
-            lapply(components, function(comp) {
+          tags$div(id = paste0("rp-mod-body-m", mod_idx), style = "display:block;",
+            lapply(seq_along(components), function(ci) {
+              comp <- components[ci]
               comp_perms <- mod_perms[mod_perms$component == comp, ]
-              comp_id <- paste0(mod_id, "_", safe_id(comp))
+              comp_idx <- paste0("m", mod_idx, "c", ci)
               comp_all_checked <- all(comp_perms$code %in% current_perms)
               tags$div(
                 tags$div(class = "rp-comp-hdr",
                   tags$input(type = "checkbox",
-                    class = paste0("rp-mod-cb-", mod_id, " rp-comp-cb-", comp_id),
+                    class = paste0("rp-mod-cb-", mod_idx, " rp-comp-cb-", comp_idx),
                     onclick = sprintf("
-                      var cbs = document.querySelectorAll('.rp-cb-%s');
-                      cbs.forEach(function(cb){ cb.checked = this.checked; cb.dispatchEvent(new Event('change',{bubbles:true})); });
-                      var modCB = document.querySelector('.rp-mod-cb-%s');
-                      var allCBs = document.querySelectorAll('.rp-cb-%s');
-                      modCB.checked = true;
-                      allCBs.forEach(function(cb){ if(!cb.checked) modCB.checked = false; });
-                    ", comp_id, mod_id, mod_id),
+                      var self=this, cbs=document.querySelectorAll('.rp-cb-%s');
+                      for(var i=0;i<cbs.length;i++){cbs[i].checked=self.checked;cbs[i].dispatchEvent(new Event('change',{bubbles:true}));}
+                      // 更新模块级复选框
+                      var modCB=document.querySelector('.rp-mod-cb-%d');
+                      var allCBs=document.querySelectorAll('.rp-cb-m%d');
+                      modCB.checked=true;
+                      for(var i=0;i<allCBs.length;i++){if(!allCBs[i].checked){modCB.checked=false;break;}}
+                    ", comp_idx, mod_idx, mod_idx),
                     checked = if(comp_all_checked) NA else NULL),
                   tags$span(onclick = sprintf(
-                    "var el=document.getElementById('rp-comp-body-%s'); el.style.display=el.style.display==='none'?'flex':'none';", comp_id
+                    "var el=document.getElementById('rp-comp-body-%s'); el.style.display=el.style.display==='none'?'flex':'none';", comp_idx
                   ), style = "flex:1;", paste0("▸ ", comp))
                 ),
-                tags$div(id = paste0("rp-comp-body-", comp_id), class = "rp-op-row", style = "display:flex;",
+                tags$div(id = paste0("rp-comp-body-", comp_idx), class = "rp-op-row", style = "display:flex;",
                   lapply(seq_len(nrow(comp_perms)), function(i) {
                     p <- comp_perms[i, ]
                     tags$label(style = "font-size:11px; white-space:nowrap;",
                       tags$input(type = "checkbox",
-                        class = paste0("rp-cb-", mod_id, " rp-cb-", comp_id),
+                        class = paste0("rp-cb-m", mod_idx, " rp-cb-", comp_idx, " rp-tree-cb"),
                         name = "rbac_perm_codes", value = p$code,
                         checked = if(p$code %in% current_perms) NA else NULL),
                       p$name)
@@ -1888,6 +2058,8 @@ server <- function(input, output, session) {
   })
 
   # 添加角色（刷新列表）
+  observe({ toggle_btn("rbac_add_role", btn_ok(input$rbac_new_role_name)) })
+  observe({ toggle_btn("rbac_save_perms", !is.null(selected_role_id())) })
   observeEvent(input$rbac_add_role, {
     req(rv$logged_in, input$rbac_new_role_name)
     result <- rbac_role_add(input$rbac_new_role_name)
@@ -1959,6 +2131,10 @@ server <- function(input, output, session) {
   })
 
   # 修改密码
+  observe({
+    ok <- btn_ok(input$self_old_password) && btn_ok(input$self_new_password) && btn_ok(input$self_new_password_confirm)
+    toggle_btn("self_save_password", ok)
+  })
   observeEvent(input$self_save_password, {
     req(rv$logged_in, rv$current_user)
     old_pw <- trimws(input$self_old_password %||% "")

@@ -398,6 +398,12 @@ main_ui <- function(is_admin = FALSE) {
                   $('body').removeClass('admin-user');
                 }
               });
+              // 通用按钮禁用/启用
+              Shiny.addCustomMessageHandler('toggleBtn', function(msg) {
+                var b = $('#' + msg.id);
+                b.prop('disabled', msg.disabled);
+                b.css({opacity: msg.disabled ? 0.45 : '', cursor: msg.disabled ? 'not-allowed' : ''});
+              });
               Shiny.addCustomMessageHandler('runjs', function(msg) {
                 if (window[msg]) window[msg]();
               });
@@ -463,6 +469,23 @@ main_ui <- function(is_admin = FALSE) {
                   column(2, div(style = "margin-top: 20px;", actionButton("show_create_work_order", "新建工单", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;"))),
                   column(2, div(style = "margin-top: 20px;", actionButton("show_quick_work_order", "快速创建", class = "btn-success", style = "padding: 4px 10px; font-size: 12px;"))),
                   column(1, div(style = "margin-top: 20px;", actionButton("refresh_work_orders", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
+                ),
+                # ★ Admin批量操作栏
+                conditionalPanel(
+                  condition = "output.wo_is_admin",
+                  div(style = "background:#fef3e8; padding:6px 10px; margin-bottom:4px; border-radius:4px; border:1px solid #f0c36d; display:flex; align-items:center; gap:8px;",
+                    tags$b("批量操作：", style="font-size:12px; color:#e67e22;"),
+                    tags$input(type="checkbox", id="wo_select_all", onclick="$('.wo-batch-cb').prop('checked',this.checked).trigger('change')", style="margin:0;"),
+                    tags$label("全选", `for`="wo_select_all", style="font-size:12px; margin:0 6px 0 2px;"),
+                    actionButton("wo_batch_delete", "批量删除", class = "btn-danger btn-sm", icon = icon("trash"),
+                      onclick = "$('#wo_batch_ids').val($('.wo-batch-cb:checked').map(function(){return this.value}).get().join(',')).trigger('change')"),
+                    actionButton("wo_batch_reopen", "批量激活", class = "btn-warning btn-sm", icon = icon("play"),
+                      onclick = "$('#wo_batch_ids').val($('.wo-batch-cb:checked').map(function(){return this.value}).get().join(',')).trigger('change')"),
+                    actionButton("wo_batch_close", "批量关闭", class = "btn-default btn-sm", icon = icon("stop"),
+                      onclick = "$('#wo_batch_ids').val($('.wo-batch-cb:checked').map(function(){return this.value}).get().join(',')).trigger('change')"),
+                    tags$span(style="font-size:11px; color:#999;", HTML("先勾选工单前的复选框，再点操作"))
+                  ),
+                  tags$div(style="display:none;", textInput("wo_batch_ids", NULL, value = ""))
                 ),
                 DTOutput("work_order_table")
               ),
@@ -570,14 +593,14 @@ main_ui <- function(is_admin = FALSE) {
         # 第四行：创建工单（放在最下面）
         fluidRow(
           column(12,
-            wellPanel(
+            wellPanel(style = "background:#f0f7ff;",
               h4("创建新工单"),
               fluidRow(
                 column(4, textInput("work_order_title", "工单标题")),
                 column(2, uiOutput("work_order_priority_ui")),
                 column(2, textInput("work_order_request_user", "请求用户")),
                 column(2, uiOutput("work_order_category_ui")),
-                column(2, div(style = "margin-top: 20px;", actionButton("add_work_order", "创建工单", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;")))
+                column(2, div(style = "margin-top: 20px;", actionButton("add_work_order", "创建工单", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;", disabled = "disabled")))
               ),
               fluidRow(
                 column(12, textAreaInput("work_order_description", "工单描述", rows = 2))
@@ -589,7 +612,7 @@ main_ui <- function(is_admin = FALSE) {
         # 快速工单（粘贴格式化工单文本）
         fluidRow(
           column(12,
-            wellPanel(
+            wellPanel(style = "background:#f0faf5;",
               h4("快速工单"),
               p("粘贴以下格式的文本，自动解析并创建工单：", style = "color: #666; font-size: 12px;"),
               pre('IT服务请求 20260512 1110：
@@ -600,10 +623,34 @@ main_ui <- function(is_admin = FALSE) {
                 column(10, textAreaInput("quick_work_order_text", "粘贴格式化工单", rows = 4, placeholder = "请粘贴格式化工单内容...")),
                 column(2,
                   div(style = "margin-top: 50px;",
-                    actionButton("create_quick_work_order", "快速创建", class = "btn-success", style = "padding: 8px 16px; font-size: 14px;")
+                    actionButton("create_quick_work_order", "快速创建", class = "btn-success", style = "padding: 8px 16px; font-size: 14px;", disabled = "disabled")
                   ),
                   uiOutput("quick_work_order_preview")
                 )
+              )
+            )
+          )
+        ),
+        # 批量补工单（粘贴日报文本，支持编辑请求人后创建）
+        fluidRow(
+          column(12,
+            wellPanel(style = "background:#f0f9fa;",
+              h4("批量补工单"),
+              p("粘贴日报文本，自动拆解为多条工单。可在预览中修改「请求人」后再创建。", style = "color: #666; font-size: 12px;"),
+              pre('韩荣昌 2026年6月23日 日报
+
+1. IT支持与故障处理
+● 处理蔡金萍反馈2号楼4楼打印报错问题...
+● 处理吕嘉俊电脑表格复制变空白的问题...
+
+2. 权限管理与安全
+● 处理赖庆耀新更换的手机临时授权一天...', style = "font-size: 11px; background: #f5f5f5; padding: 8px;"),
+              fluidRow(
+                column(12, textAreaInput("batch_work_order_text", "粘贴日报文本", rows = 5, placeholder = "第一行：姓名 日期 日报\n后续：● 开头的行为工单条目..."))
+              ),
+              uiOutput("batch_work_order_preview"),
+              div(style = "margin-top:8px;",
+                actionButton("create_batch_work_order", "批量创建", class = "btn-info", style = "padding: 8px 16px; font-size: 14px;", disabled = "disabled")
               )
             )
           )
@@ -796,9 +843,9 @@ main_ui <- function(is_admin = FALSE) {
               textInput("display_name", "显示名称"),
               passwordInput("password", "密码"),
               selectInput("role", "角色", choices = c("user", "admin")),
-              actionButton("add_user", "添加用户", class = "btn-primary"),
+              actionButton("add_user", "添加用户", class = "btn-primary", disabled = "disabled"),
               br(), br(),
-              actionButton("update_user", "修改账号", class = "btn-warning"),
+              actionButton("update_user", "修改账号", class = "btn-warning", disabled = "disabled"),
               br(), br(),
               actionButton("toggle_active_user", "禁用/启用用户", class = "btn-danger"),
               br(), br(),
@@ -823,7 +870,7 @@ main_ui <- function(is_admin = FALSE) {
               column(3, numericInput("cfg_table_font_size", "列表表格字体(px)", value = 13, min = 10, max = 20, step = 1)),
               column(3, numericInput("cfg_input_font_size", "输入框/选择框字体(px)", value = 13, min = 10, max = 20, step = 1)),
               column(3, div(style = "margin-top:25px;",
-                actionButton("save_font_config", "保存字体设置", class = "btn-primary btn-sm", icon = icon("save"))))
+                actionButton("save_font_config", "保存字体设置", class = "btn-primary btn-sm", icon = icon("save"), disabled = "disabled")))
             )
           ),
           hr(),
@@ -833,7 +880,7 @@ main_ui <- function(is_admin = FALSE) {
               textInput("config_key", "配置键"),
               textInput("config_value", "配置值"),
               textInput("config_desc", "描述"),
-              actionButton("add_config", "添加配置", class = "btn-primary"),
+              actionButton("add_config", "添加配置", class = "btn-primary", disabled = "disabled"),
               br(), br(),
               actionButton("refresh_config", "刷新配置", class = "btn-info")
             ),
@@ -897,15 +944,13 @@ main_ui <- function(is_admin = FALSE) {
                     DTOutput("rbac_role_table"),
                     br(),
                     textInput("rbac_new_role_name", NULL, placeholder = "新角色名称"),
-                    actionButton("rbac_add_role", "添加角色", class = "btn-primary btn-sm", icon = icon("plus"))
+                    actionButton("rbac_add_role", "添加角色", class = "btn-primary btn-sm", icon = icon("plus"), disabled = "disabled")
                   )
                 ),
                 column(9,
                   wellPanel(
                     h4("权限配置"),
-                    uiOutput("rbac_role_perms_ui"),
-                    br(),
-                    actionButton("rbac_save_perms", "保存权限", class = "btn-success", icon = icon("save"))
+                    uiOutput("rbac_role_perms_ui")
                   )
                 )
               )
@@ -984,7 +1029,7 @@ main_ui <- function(is_admin = FALSE) {
                 passwordInput("self_old_password", "旧密码"),
                 passwordInput("self_new_password", "新密码"),
                 passwordInput("self_new_password_confirm", "确认新密码"),
-                actionButton("self_save_password", "保存密码", class = "btn-primary", icon = icon("save")),
+                actionButton("self_save_password", "保存密码", class = "btn-primary", icon = icon("save"), disabled = "disabled"),
                 br(), br(),
                 textOutput("self_password_msg")
               )
@@ -1056,7 +1101,7 @@ admin_tabs_ui <- function() {
             textInput("config_key", "配置键"),
             textInput("config_value", "配置值"),
             textInput("config_desc", "描述"),
-            actionButton("add_config", "添加配置", class = "btn-primary"),
+            actionButton("add_config", "添加配置", class = "btn-primary", disabled = "disabled"),
             br(), br(),
             actionButton("refresh_config", "刷新配置", class = "btn-info")
           ),

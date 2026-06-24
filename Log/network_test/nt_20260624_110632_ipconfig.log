@@ -1,0 +1,40 @@
+========================================
+       网络测试报告 (V3)
+========================================
+开始时间: 2026-06-24 11:06:31
+测试目标: (本机网络配置)
+========================================
+
+== 网卡信息 ==
+$ ipconfig /all
+
+
+Windows IP Configuration
+
+   Host Name . . . . . . . . . . . . : DWTCNSGZRD002
+   Primary Dns Suffix  . . . . . . . : lvcc.org
+   Node Type . . . . . . . . . . . . : Hybrid
+   IP Routing Enabled. . . . . . . . : No
+   WINS Proxy Enabled. . . . . . . . : No
+   DNS Suffix Search List. . . . . . : lvcc.org
+
+Ethernet adapter 以太网:
+
+   Connection-specific DNS Suffix  . : 
+   Description . . . . . . . . . . . : Realtek PCIe GbE Family Controller
+   Physical Address. . . . . . . . . : 00-68-EB-97-70-EF
+   DHCP Enabled. . . . . . . . . . . : Yes
+   Autoconfiguration Enabled . . . . : Yes
+   IPv4 Address. . . . . . . . . . . : 10.3.3.131(Preferred) 
+   Subnet Mask . . . . . . . . . . . : 255.255.254.0
+   Lease Obtained. . . . . . . . . . : 2026年6月21日 8:31:39
+   Lease Expires . . . . . . . . . . : 2026年6月24日 20:31:33
+   Default Gateway . . . . . . . . . : 10.3.3.254
+   DHCP Server . . . . . . . . . . . : 10.3.3.254
+   DNS Servers . . . . . . . . . . . : 10.10.50.253
+                                       223.5.5.5
+   NetBIOS over Tcpip. . . . . . . . : Enabled
+========================================
+结束时间: 2026-06-24 11:06:32
+========================================
+

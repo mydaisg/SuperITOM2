@@ -643,6 +643,25 @@ duty_matrix_server <- function(input, output, session, rv) {
   })
 
   ##################
+  # 按钮禁用/启用控制
+  ##################
+  observe({
+    session$sendCustomMessage("toggleBtn", list(id="duty_add_position", disabled=!nzchar(trimws(input$duty_new_position_name %||% ""))))
+  })
+  observe({
+    ok <- !is.null(input$duty_new_staff_user) && input$duty_new_staff_user != ""
+    session$sendCustomMessage("toggleBtn", list(id="duty_add_staff", disabled=!ok))
+  })
+  observe({
+    session$sendCustomMessage("toggleBtn", list(id="duty_add_item", disabled=!nzchar(trimws(input$duty_new_item_name %||% ""))))
+  })
+  observe({
+    ok <- !is.null(input$duty_new_sub_item_parent) && input$duty_new_sub_item_parent != "" &&
+          nzchar(trimws(input$duty_new_sub_item_name %||% ""))
+    session$sendCustomMessage("toggleBtn", list(id="duty_add_sub_item", disabled=!ok))
+  })
+
+  ##################
   # 创建岗位
   ##################
   observeEvent(input$duty_add_position, {
