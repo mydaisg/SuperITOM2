@@ -114,26 +114,31 @@ duty_matrix_ui <- function() {
       # 创建区（紧凑内联）
       wellPanel(
         h5(icon("plus-circle")," 快速创建"),
+        tags$style(HTML("
+          .duty-create-row { display:flex; gap:6px; align-items:flex-end; flex-wrap:wrap; }
+          .duty-create-row .shiny-input-container { margin-bottom:0; }
+          .duty-create-row .btn { margin-bottom:0; }
+        ")),
         fluidRow(
           column(4,
-            tags$div(style="display:flex; gap:4px;",
+            tags$div(class="duty-create-row",
               textInput("duty_new_position_name", NULL, placeholder = "岗位名称"),
-              actionButton("duty_add_position", NULL, icon=icon("plus"), class="btn-primary btn-sm", style="margin-top:22px;")
+              actionButton("duty_add_position", NULL, icon=icon("plus"), class="btn-primary btn-sm")
             )
           ),
           column(4,
-            tags$div(style="display:flex; gap:4px;",
+            tags$div(class="duty-create-row",
               selectInput("duty_new_staff_user", NULL, choices = c("(选择系统用户)" = ""), width="160px"),
               selectInput("duty_new_staff_position", NULL, choices = c("(无)" = ""), width="120px"),
-              actionButton("duty_add_staff", NULL, icon=icon("plus"), class="btn-primary btn-sm", style="margin-top:22px;")
+              actionButton("duty_add_staff", NULL, icon=icon("plus"), class="btn-primary btn-sm")
             )
           ),
           column(4,
-            tags$div(style="display:flex; gap:4px;",
+            tags$div(class="duty-create-row",
               textInput("duty_new_item_name", NULL, placeholder = "职责名称"),
               textInput("duty_new_item_cat", NULL, placeholder = "分类", width="90px"),
               numericInput("duty_new_item_sort", NULL, value = 0, min = 0, max = 999, width = "60px"),
-              actionButton("duty_add_item", NULL, icon=icon("plus"), class="btn-primary btn-sm", style="margin-top:22px;")
+              actionButton("duty_add_item", NULL, icon=icon("plus"), class="btn-primary btn-sm")
             )
           )
         ),
@@ -141,12 +146,12 @@ duty_matrix_ui <- function() {
         h5(icon("level-down-alt")," 添加二级任务", style="font-size:12px; color:#666;"),
         fluidRow(
           column(6,
-            tags$div(style="display:flex; gap:4px; align-items:flex-start;",
+            tags$div(class="duty-create-row",
               selectInput("duty_new_sub_item_parent", NULL, choices = c("(选择上级职责)" = ""), width="170px"),
               textInput("duty_new_sub_item_name", NULL, placeholder = "二级任务名称", width="140px"),
               textInput("duty_new_sub_item_cat", NULL, placeholder = "分类", width="90px"),
               numericInput("duty_new_sub_item_sort", NULL, value = 0, min = 0, max = 999, width = "60px"),
-              actionButton("duty_add_sub_item", NULL, icon=icon("plus"), class="btn-success btn-sm", style="margin-top:22px;")
+              actionButton("duty_add_sub_item", NULL, icon=icon("plus"), class="btn-success btn-sm")
             )
           )
         )
