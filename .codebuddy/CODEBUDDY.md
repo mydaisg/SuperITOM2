@@ -122,6 +122,7 @@ library(jsonlite)      # JSON解析（config/config_loader.r 中）
 | 文件 | 大小 | 说明 |
 |------|------|------|
 | `update_datacenter_templates.r` | 6 KB | 数据中心巡检模板更新脚本（手动运行） |
+| `module_inventory.r` | ~7 KB | ★ 全站模块清单（管理→模块清单页面数据源） |
 
 ## 模块加载顺序（server.R，18个 source）
 
@@ -328,9 +329,11 @@ IT服务请求 20260512 1110：
 ## 新增功能步骤
 1. Script/ 目录下创建 `*_ui.r` 和 `*_server.r` 文件
 2. 在 server.R 末尾添加 `source()` 加载新文件
-3. 在 main_ui.r 对应位置添加 tabPanel/navbarMenu
-4. 使用 reactiveVal 触发器控制刷新
-5. 使用 `module_server(id, rv)` 模式（目前仅 data_center 使用 moduleServer）
+3. 在 main_ui.r 对应位置添加 `if (can_access("模块名")) tabPanel(...)` 
+4. ★ 同步更新 `Script/module_inventory.r`（模块基本信息、权限码、关键函数）
+5. ★ 在 `rbac_permissions` 表 INSERT 新权限码
+6. 使用 reactiveVal 触发器控制刷新
+7. 保存/添加按钮使用灰化模式：`tags$button(disabled=NA)` + `observe({ toggle_btn(...) })`
 
 ## STD PowerShell脚本
 | 文件 | 说明 |

@@ -2370,6 +2370,18 @@ server <- function(input, output, session) {
 
   # 流程超时检测已移除（新审批模块为同步流转）
 
+  # ========== 模块清单（刷新按钮触发重新渲染） ==========
+  rv$mi_refresh <- 0
+  observeEvent(input$mi_refresh_btn, {
+    req(rv$logged_in)
+    rv$mi_refresh <- rv$mi_refresh + 1
+    showNotification("模块清单已刷新（文件时间戳已更新）", type = "message")
+  })
+  output$module_inventory_ui <- renderUI({
+    rv$mi_refresh
+    module_inventory_ui()
+  })
+
 }
 
 # 总结：

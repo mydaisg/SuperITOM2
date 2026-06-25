@@ -1001,7 +1001,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
         "模块清单",
         icon = icon("sitemap"),
         fluidPage(
-          module_inventory_ui()
+          uiOutput("module_inventory_ui")
         )
       ),
       # --- 所有用户可见 ---
