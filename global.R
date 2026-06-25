@@ -5,6 +5,7 @@ library(RSQLite)
 library(DBI)
 library(ggplot2)
 library(plotly)
+library(DiagrammeR)
 
 # 加载配置管理器（必须在其他 source 之前，因为后续模块可能依赖配置）
 source("config/config_loader.r")

@@ -998,6 +998,13 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
         )
       ),
       if (is_admin) tabPanel(
+        "系统架构",
+        icon = icon("project-diagram"),
+        fluidPage(
+          system_architecture_ui()
+        )
+      ),
+      if (is_admin) tabPanel(
         "模块清单",
         icon = icon("sitemap"),
         fluidPage(

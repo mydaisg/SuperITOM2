@@ -33,6 +33,7 @@ source("Script/asset_server.r")      # 资产模块服务端
 source("Script/duty_matrix_management.r") # 岗职模块数据层
 source("Script/duty_matrix_server.r")     # 岗职模块服务端
 source("Script/module_inventory.r")       # 模块清单（全站映射参考）
+source("Script/system_architecture.r")    # 系统架构可视化
 
 # 定义server函数
 # 这是Shiny应用的服务器逻辑核心
@@ -2381,6 +2382,10 @@ server <- function(input, output, session) {
     rv$mi_refresh
     module_inventory_ui()
   })
+
+  # 系统架构图已改用预渲染 SVG（见 Script/system_architecture.r），无需服务端渲染
+
+
 
 }
 

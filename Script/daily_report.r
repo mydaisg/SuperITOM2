@@ -362,7 +362,7 @@ daily_report_server <- function(input, output, session, rv) {
 
     # 为每个用户生成日报卡片
     cards_html <- ""
-    text_report <- sprintf("=== 工作日报 %s ===\n\n", as.character(data$date))
+    text_report <- ""
 
     for (ui in 1:nrow(users)) {
       u <- users[ui, ]
@@ -524,64 +524,75 @@ daily_report_server <- function(input, output, session, rv) {
           %s%s%s%s
         </div>', initial, uname, wo_count, task_count, note_count, wo_html, task_html, log_html, note_html))
 
-      # 纯文本日报
-      text_report <- paste0(text_report, sprintf("【%s】\n", uname))
+      # 纯文本日报 — 新格式
+      total_items <- wo_count + task_count + log_count + note_count
+      tomorrow <- format(as.Date(data$date) + 1, "%Y-%m-%d")
+      text_report <- paste0(text_report,
+        sprintf("工作日志 %s (%d条) %s\n", as.character(data$date), total_items, uname))
+      
       if (wo_count > 0) {
-        text_report <- paste0(text_report, "  [工单]\n")
+        text_report <- paste0(text_report, "\n工单\n")
         for (wi in 1:nrow(user_wo)) {
           w <- user_wo[wi, ]
           status_cn <- switch(as.character(w$status),
             "pending" = "待处理", "assigned" = "已派发", "processing" = "处理中",
             "completed" = "已完成", "closed" = "已关闭", w$status)
-          text_report <- paste0(text_report, sprintf("    - [%s] %s %s\n",
-            status_cn, ifelse(is.na(w$order_no), "", w$order_no), w$title))
+          order_no <- ifelse(is.na(w$order_no), "-", w$order_no)
+          text_report <- paste0(text_report, sprintf("%s、 %s %s [%s]\n", dr_cn_number(wi), order_no, w$title, status_cn))
         }
       }
       if (task_count > 0) {
-        text_report <- paste0(text_report, "  [任务]\n")
+        text_report <- paste0(text_report, "\n任务\n")
         for (ti in 1:nrow(user_tasks)) {
           tk <- user_tasks[ti, ]
           status_cn <- switch(as.character(tk$status),
             "pending" = "待处理", "in_progress" = "进行中",
             "completed" = "已完成", "blocked" = "已阻塞", tk$status)
-          text_report <- paste0(text_report, sprintf("    - [%s] %s %s (%s)\n",
-            status_cn, ifelse(is.na(tk$task_no), "", tk$task_no), tk$task_name,
-            ifelse(is.na(tk$project_name), "", tk$project_name)))
+          task_no <- ifelse(is.na(tk$task_no), "-", tk$task_no)
+          text_report <- paste0(text_report, sprintf("%s、 %s %s [%s]\n", dr_cn_number(ti), task_no, tk$task_name, status_cn))
+        }
+      }
+      if (log_count > 0) {
+        text_report <- paste0(text_report, "\n反馈日志\n")
+        for (li in 1:nrow(user_logs)) {
+          lg <- user_logs[li, ]
+          text_report <- paste0(text_report, sprintf("[%s] %s\n", lg$task_no %||% "-", lg$content %||% ""))
         }
       }
       if (note_count > 0) {
-        text_report <- paste0(text_report, "  [记事]\n")
+        text_report <- paste0(text_report, "\n")
         note_by_no <- split(user_notes, user_notes$note_no)
         gi <- 0
         for (gn in names(note_by_no)) {
-          gi <- gi + 1; grp <- note_by_no[[gn]]
+          gi <- gi + 1
+          grp <- note_by_no[[gn]]
           tops <- grp[is.na(grp$parent_id) | grp$parent_id == 0, , drop = FALSE]
           reps <- grp[!(is.na(grp$parent_id) | grp$parent_id == 0), , drop = FALSE]
-          text_report <- paste0(text_report, sprintf("    %s、 %s %s\n", dr_cn_number(gi), gn, grp$note_title[1] %||% ""))
-          ni <- 0
-          txt_render_replies <- function(pid, prefix, depth) {
+          text_report <- paste0(text_report, sprintf("%s、 %s\n", dr_cn_number(gi), grp$note_title[1] %||% ""))
+          txt_render_replies <- function(pid, depth) {
             sub <- reps[reps$parent_id == pid, , drop = FALSE]
             if (nrow(sub) == 0) return("")
+            indent <- paste(rep("  ", depth), collapse="")
             txt <- ""
             for (si in seq_len(nrow(sub))) {
               sc <- sub[si, ]
-              lab <- sprintf("%s.%d", prefix, si)
-              indent <- paste(rep("  ", depth), collapse="")
-              txt <- paste0(txt, sprintf("%s      %s %s\n", indent, lab, sc$content))
-              txt <- paste0(txt, txt_render_replies(sc$id, lab, depth + 1))
+              txt <- paste0(txt, sprintf("%s%d、 %s\n", indent, si, sc$content))
+              txt <- paste0(txt, txt_render_replies(sc$id, depth + 1))
             }
             txt
           }
           for (ti in seq_len(nrow(tops))) {
-            ni <- ni + 1; tc <- tops[ti, ]
-            text_report <- paste0(text_report, sprintf("      %d、 %s\n", ni, tc$content))
+            tc <- tops[ti, ]
+            text_report <- paste0(text_report, sprintf("%d、 %s\n", ti, tc$content))
             if (nrow(reps) > 0) {
-              text_report <- paste0(text_report, txt_render_replies(tc$id, as.character(ni), 0))
+              text_report <- paste0(text_report, txt_render_replies(tc$id, 1))
             }
           }
+          text_report <- paste0(text_report, "\n")
         }
       }
-      text_report <- paste0(text_report, "\n")
+      # 明日计划
+      text_report <- paste0(text_report, sprintf("\n明日计划 %s\n重点跟进：\n\n", tomorrow))
     }
 
     # Admin 派发汇总（底部展示所有被派发记事的评论）

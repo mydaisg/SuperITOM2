@@ -3,6 +3,7 @@ source("Script/system_settings.r")
 
 ui <- fluidPage(
   tags$head(
+    tags$script(src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"),
     tags$script(HTML("
       $(document).on('shiny:connected', function(event) {
         var savedUserId = localStorage.getItem('itom2_user_id');

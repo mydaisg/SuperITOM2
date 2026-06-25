@@ -46,6 +46,7 @@ library(DBI)           # 数据库接口
 library(ggplot2)       # 静态图表
 library(plotly)        # 交互式图表
 library(jsonlite)      # JSON解析（config/config_loader.r 中）
+library(DiagrammeR)    # ★ 系统架构图（Graphviz/DOT，本地渲染，无CDN）
 ```
 
 ## 文件清单（Script/ 目录 25 个 .r 文件）
@@ -123,6 +124,7 @@ library(jsonlite)      # JSON解析（config/config_loader.r 中）
 |------|------|------|
 | `update_datacenter_templates.r` | 6 KB | 数据中心巡检模板更新脚本（手动运行） |
 | `module_inventory.r` | ~7 KB | ★ 全站模块清单（管理→模块清单页面数据源） |
+| `system_architecture.r` | ~7 KB | ★ 系统架构图（管理→系统架构，DiagrammeR/Graphviz DOT） |
 
 ## 模块加载顺序（server.R，18个 source）
 
