@@ -174,8 +174,8 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
       });
     ")),
     
-    # 首页标签页
-    tabPanel(
+    # 首页标签页（RBAC管控）
+    if (can_access("首页")) tabPanel(
       "首页",  # 标签页标题
       icon = icon("home"),  # 标签页图标
       fluidPage(
@@ -703,7 +703,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
             textInput("collector_name", "收集器名称"),
             selectInput("collector_type", "收集器类型", choices = c("系统信息", "网络信息", "应用信息", "数据库信息")),
             textAreaInput("collector_config", "收集器配置"),
-            actionButton("add_collector", "添加收集器", class = "btn-primary"),
+            tags$button(id="add_collector", type="button", class="btn btn-primary action-button", disabled=NA, "添加收集器"),
             br(), br(),
             actionButton("refresh_collectors", "刷新收集器", class = "btn-info")
           ),
@@ -760,7 +760,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
             textInput("model_name", "模型名称"),
             selectInput("model_type", "模型类型", choices = c("线性回归", "决策树", "随机森林", "神经网络", "SVM")),
             textAreaInput("model_params", "模型参数"),
-            actionButton("train_model", "训练模型", class = "btn-primary"),
+            tags$button(id="train_model", type="button", class="btn btn-primary action-button", disabled=NA, "训练模型"),
             br(), br(),
             actionButton("refresh_models", "刷新模型", class = "btn-info")
           ),
@@ -818,8 +818,8 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
       )
     ),
     
-    # 管理菜单（admin全功能 / user仅个人信息）
-    if (can_access("管理")) navbarMenu(
+    # 管理菜单（admin全功能 / user仅个人信息，始终可见）
+    navbarMenu(
       "管理",
       icon = icon("tools"),
       # --- admin 专属 ---
@@ -995,6 +995,13 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
               verbatimTextOutput("git_result")
             )
           )
+        )
+      ),
+      if (is_admin) tabPanel(
+        "模块清单",
+        icon = icon("sitemap"),
+        fluidPage(
+          module_inventory_ui()
         )
       ),
       # --- 所有用户可见 ---

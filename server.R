@@ -32,6 +32,7 @@ source("Script/asset_management.r")  # 资产模块数据层
 source("Script/asset_server.r")      # 资产模块服务端
 source("Script/duty_matrix_management.r") # 岗职模块数据层
 source("Script/duty_matrix_server.r")     # 岗职模块服务端
+source("Script/module_inventory.r")       # 模块清单（全站映射参考）
 
 # 定义server函数
 # 这是Shiny应用的服务器逻辑核心
@@ -1488,6 +1489,11 @@ server <- function(input, output, session) {
     )
   })
   
+  # 添加收集器按钮：只有填写了名称和类型才启用
+  observe({
+    ok <- btn_ok(input$collector_name) && btn_ok(input$collector_type)
+    toggle_btn("add_collector", ok)
+  })
   # 处理添加收集器按钮点击事件
   observeEvent(input$add_collector, {
     # 检查登录状态
@@ -1536,6 +1542,10 @@ server <- function(input, output, session) {
     })
   })
   
+  # 训练模型按钮：填写了名称才启用
+  observe({
+    toggle_btn("train_model", btn_ok(input$model_name))
+  })
   # 处理模型训练按钮点击事件
   observeEvent(input$train_model, {
     # 检查登录状态
@@ -1887,15 +1897,18 @@ server <- function(input, output, session) {
     perms <- rbac_permission_get_all()
     # 处理空 component（未归类的权限归入"基础"）
     perms$component <- ifelse(is.na(perms$component) | perms$component == "", "(通用)", perms$component)
-    modules <- unique(perms$module)
+    # 按实际导航栏顺序排列模块
+    nav_order <- c("首页","项目","巡检","工单","资产","记事","标准化","测试",
+                   "性能","日报","收集器","集成","数据","岗职","绩效","模型","可视化","管理")
+    modules <- intersect(nav_order, unique(perms$module))
     tagList(
       tags$style(HTML("
         .rbac-mod-hdr { background:#e8f0fe; padding:6px 12px; margin:6px 0 2px; cursor:pointer; border-radius:4px; font-weight:700; font-size:14px; user-select:none; border:1px solid #c8daf5; }
         .rbac-mod-hdr:hover { background:#d4e4fc; }
-        .rbac-comp-hdr { background:#f5f5f5; padding:4px 10px; margin:2px 0; cursor:pointer; border-radius:3px; font-weight:600; font-size:12px; user-select:none; border:1px solid #e0e0e0; }
+        .rbac-comp-hdr { background:#f5f5f5; padding:4px 10px; margin:2px 0; cursor:pointer; border-radius:3px; font-weight:600; font-size:14px; user-select:none; border:1px solid #e0e0e0; }
         .rbac-comp-hdr:hover { background:#e8e8e8; }
         .rbac-ops { display:flex; flex-wrap:wrap; gap:4px; padding:2px 0 2px 24px; }
-        .rbac-op { background:#fff; border:1px solid #ddd; border-radius:3px; padding:2px 8px; font-size:11px; font-family:monospace; }
+        .rbac-op { background:#fff; border:1px solid #ddd; border-radius:3px; padding:3px 10px; font-size:13px; font-family:monospace; }
       ")),
       lapply(seq_along(modules), function(mi) {
         mod <- modules[mi]
@@ -1957,7 +1970,10 @@ server <- function(input, output, session) {
     current_perms <- rbac_role_perms_get(selected_role_id())
     all_perms <- rbac_permission_get_all()
     all_perms$component <- ifelse(is.na(all_perms$component) | all_perms$component == "", "(通用)", all_perms$component)
-    modules <- unique(all_perms$module)
+    # 按实际导航栏顺序排列模块
+    navbar_order <- c("首页","项目","巡检","工单","资产","记事","标准化","测试",
+                      "性能","日报","收集器","集成","数据","岗职","绩效","模型","可视化","管理")
+    modules <- intersect(navbar_order, unique(all_perms$module))
 
     tagList(
       h5(paste("为角色 [", role$name[1], "] 配置权限")),
@@ -1986,19 +2002,15 @@ server <- function(input, output, session) {
         });
       ')),
       tags$style(HTML("
-        .rp-mod-hdr { background:#e8f0fe; padding:5px 10px; margin:4px 0 0; cursor:pointer; border-radius:4px; font-weight:700; font-size:13px; user-select:none; border:1px solid #c8daf5; display:flex; align-items:center; gap:8px; }
+        .rp-mod-hdr { background:#e8f0fe; padding:6px 12px; margin:4px 0 0; cursor:pointer; border-radius:4px; font-weight:700; font-size:14px; user-select:none; border:1px solid #c8daf5; display:flex; align-items:center; gap:8px; }
         .rp-mod-hdr:hover { background:#d4e4fc; }
-        .rp-comp-hdr { background:#f0f0f0; padding:3px 10px; margin:1px 0; cursor:pointer; border-radius:3px; font-weight:600; font-size:12px; user-select:none; display:flex; align-items:center; gap:8px; }
-        .rp-comp-hdr:hover { background:#e0e0e0; }
-        .rp-op-row { display:flex; flex-wrap:wrap; gap:4px; padding:2px 0 2px 40px; }
+        .rp-op-row { display:flex; flex-wrap:wrap; gap:4px; padding:4px 4px 4px 24px; }
       ")),
       lapply(seq_along(modules), function(mi) {
         mod <- modules[mi]
         mod_perms <- all_perms[all_perms$module == mod, ]
-        # ★ 使用数字索引保证唯一性，避免中文模块名碰撞
         mod_idx <- mi
         mod_all_checked <- all(mod_perms$code %in% current_perms)
-        components <- unique(mod_perms$component)
         tags$div(style = "margin-bottom:4px; border:1px solid #d0d0d0; border-radius:4px; overflow:hidden;",
           tags$div(class = "rp-mod-hdr",
             tags$input(type = "checkbox",
@@ -2012,42 +2024,15 @@ server <- function(input, output, session) {
               "var el=document.getElementById('rp-mod-body-m%d'); el.style.display=el.style.display==='none'?'block':'none';", mod_idx
             ), style = "flex:1;", paste0("📁 ", mod, " (", nrow(mod_perms), "项)"))
           ),
-          tags$div(id = paste0("rp-mod-body-m", mod_idx), style = "display:block;",
-            lapply(seq_along(components), function(ci) {
-              comp <- components[ci]
-              comp_perms <- mod_perms[mod_perms$component == comp, ]
-              comp_idx <- paste0("m", mod_idx, "c", ci)
-              comp_all_checked <- all(comp_perms$code %in% current_perms)
-              tags$div(
-                tags$div(class = "rp-comp-hdr",
-                  tags$input(type = "checkbox",
-                    class = paste0("rp-mod-cb-", mod_idx, " rp-comp-cb-", comp_idx),
-                    onclick = sprintf("
-                      var self=this, cbs=document.querySelectorAll('.rp-cb-%s');
-                      for(var i=0;i<cbs.length;i++){cbs[i].checked=self.checked;cbs[i].dispatchEvent(new Event('change',{bubbles:true}));}
-                      // 更新模块级复选框
-                      var modCB=document.querySelector('.rp-mod-cb-%d');
-                      var allCBs=document.querySelectorAll('.rp-cb-m%d');
-                      modCB.checked=true;
-                      for(var i=0;i<allCBs.length;i++){if(!allCBs[i].checked){modCB.checked=false;break;}}
-                    ", comp_idx, mod_idx, mod_idx),
-                    checked = if(comp_all_checked) NA else NULL),
-                  tags$span(onclick = sprintf(
-                    "var el=document.getElementById('rp-comp-body-%s'); el.style.display=el.style.display==='none'?'flex':'none';", comp_idx
-                  ), style = "flex:1;", paste0("▸ ", comp))
-                ),
-                tags$div(id = paste0("rp-comp-body-", comp_idx), class = "rp-op-row", style = "display:flex;",
-                  lapply(seq_len(nrow(comp_perms)), function(i) {
-                    p <- comp_perms[i, ]
-                    tags$label(style = "font-size:11px; white-space:nowrap;",
-                      tags$input(type = "checkbox",
-                        class = paste0("rp-cb-m", mod_idx, " rp-cb-", comp_idx, " rp-tree-cb"),
-                        name = "rbac_perm_codes", value = p$code,
-                        checked = if(p$code %in% current_perms) NA else NULL),
-                      p$name)
-                  })
-                )
-              )
+          tags$div(id = paste0("rp-mod-body-m", mod_idx), class = "rp-op-row", style = "display:flex;",
+            lapply(seq_len(nrow(mod_perms)), function(i) {
+              p <- mod_perms[i, ]
+              tags$label(style = "font-size:13px; white-space:nowrap;",
+                tags$input(type = "checkbox",
+                  class = paste0("rp-cb-m", mod_idx, " rp-tree-cb"),
+                  name = "rbac_perm_codes", value = p$code,
+                  checked = if(p$code %in% current_perms) NA else NULL),
+                p$name)
             })
           )
         )

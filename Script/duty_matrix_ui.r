@@ -123,14 +123,14 @@ duty_matrix_ui <- function() {
           column(4,
             tags$div(class="duty-create-row",
               textInput("duty_new_position_name", NULL, placeholder = "岗位名称"),
-              actionButton("duty_add_position", NULL, icon=icon("plus"), class="btn-primary btn-sm", disabled = "disabled")
+              tags$button(id="duty_add_position", type="button", class="btn btn-primary btn-sm action-button", disabled=NA, list(icon("plus")))
             )
           ),
           column(4,
             tags$div(class="duty-create-row",
               selectInput("duty_new_staff_user", NULL, choices = c("(选择系统用户)" = ""), width="160px"),
               selectInput("duty_new_staff_position", NULL, choices = c("(无)" = ""), width="120px"),
-              actionButton("duty_add_staff", NULL, icon=icon("plus"), class="btn-primary btn-sm", disabled = "disabled")
+              tags$button(id="duty_add_staff", type="button", class="btn btn-primary btn-sm action-button", disabled=NA, list(icon("plus")))
             )
           ),
           column(4,
@@ -138,7 +138,7 @@ duty_matrix_ui <- function() {
               textInput("duty_new_item_name", NULL, placeholder = "职责名称"),
               textInput("duty_new_item_cat", NULL, placeholder = "分类", width="90px"),
               numericInput("duty_new_item_sort", NULL, value = 0, min = 0, max = 999, width = "60px"),
-              actionButton("duty_add_item", NULL, icon=icon("plus"), class="btn-primary btn-sm", disabled = "disabled")
+              tags$button(id="duty_add_item", type="button", class="btn btn-primary btn-sm action-button", disabled=NA, list(icon("plus")))
             )
           )
         ),
@@ -151,7 +151,7 @@ duty_matrix_ui <- function() {
               textInput("duty_new_sub_item_name", NULL, placeholder = "二级任务名称", width="140px"),
               textInput("duty_new_sub_item_cat", NULL, placeholder = "分类", width="90px"),
               numericInput("duty_new_sub_item_sort", NULL, value = 0, min = 0, max = 999, width = "60px"),
-              actionButton("duty_add_sub_item", NULL, icon=icon("plus"), class="btn-success btn-sm", disabled = "disabled")
+              tags$button(id="duty_add_sub_item", type="button", class="btn btn-success btn-sm action-button", disabled=NA, list(icon("plus")))
             )
           )
         )

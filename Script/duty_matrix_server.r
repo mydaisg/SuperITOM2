@@ -153,7 +153,7 @@ duty_matrix_server <- function(input, output, session, rv) {
           sub_name_cell <- tags$td(style="font-size:11px; font-style:italic; text-align:left; padding-left:28px; color:#7b5ea7;",
             paste0("└ ", sub$name))
           rows[[length(rows)+1]] <- do.call(tags$tr, c(list(sub_name_cell, class = "duty-sub-row",
-            `data-parent-did` = item$id), sub_cells))
+            `data-parent-did` = item$id, style = "display:none;"), sub_cells))
         }
       }
     }
