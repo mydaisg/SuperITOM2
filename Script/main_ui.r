@@ -48,7 +48,10 @@ source("Script/asset_ui.r")
 # 加载岗职模块
 source("Script/duty_matrix_ui.r")
 
-main_ui <- function(is_admin = FALSE, user_modules = NULL) {
+# RBAC 管理函数（权限检查需要）
+source("Script/rbac_management.r")
+
+main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) {
   # 读取字体大小配置
   table_font_size <- config_get_value("table_font_size", "13")
   input_font_size <- config_get_value("input_font_size", "13")
@@ -59,6 +62,11 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
     if (is_admin || is.null(user_modules)) return(TRUE)
     if (!mod %in% rbac_modules) return(TRUE)  # 模块不在RBAC管控内，开放
     return(mod %in% user_modules)
+  }
+  
+  # RBAC 管理子页签权限检查（admin角色/拥有对应权限码）
+  can_admin <- function(code) {
+    is_admin || rbac_check(current_user, code)
   }
 
   # 创建导航栏页面
@@ -361,7 +369,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
       "工单",
       icon = icon("clipboard-list"),
       fluidPage(
-        # 自定义导航栏选中态样式 + admin菜单控制 + 字体大小配置
+        # 字体大小动态配置 + 工单专属JS
         tags$head(
           tags$style(HTML(sprintf("
             /* 全局列表字体大小配置 */
@@ -371,28 +379,13 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
             .dataTables_wrapper table.dataTable thead th {
               font-size: %spx !important;
             }
-            /* 输入框和选择框字体大小配置 */
+            /* 表单控件字体大小（覆盖全局默认14px，使用系统设置值） */
             .form-control, .selectize-input, .selectize-dropdown {
               font-size: %spx !important;
             }
-            .navbar-default .navbar-nav > .active > a,
-            .navbar-default .navbar-nav > .active > a:hover,
-            .navbar-default .navbar-nav > .active > a:focus {
-              background-color: #337ab7 !important;
-              color: #fff !important;
-              font-weight: bold;
-              border: none;
-              box-shadow: 0 -3px 0 #1a5276 inset;
-            }
-            .navbar-default .navbar-nav > li > a:hover,
-            .navbar-default .navbar-nav > li > a:focus {
-              background-color: #d6e9f8 !important;
-            }
-            /* 管理菜单用服务端 is_admin 控制显示，不再需要CSS隐藏 */
           ", table_font_size, table_font_size, input_font_size))),
           tags$script(HTML("
             $(document).on('shiny:connected', function(event) {
-              // 给管理菜单添加标识class
               $('.navbar-nav > li.dropdown').each(function() {
                 var link = $(this).find('a.dropdown-toggle');
                 if (link.length && link.text().indexOf('管理') >= 0) {
@@ -400,7 +393,6 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
                 }
               });
             });
-            // 快速工单：滚动+聚焦
             window.scrollToQuickWO = function() {
               var h4s = document.querySelectorAll('h4');
               for (var i = 0; i < h4s.length; i++) {
@@ -823,7 +815,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
       "管理",
       icon = icon("tools"),
       # --- admin 专属 ---
-      if (is_admin) tabPanel(
+      if (can_admin("admin_users")) tabPanel(
         "用户管理",
         icon = icon("users"),
         fluidPage(
@@ -849,7 +841,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
           )
         )
       ),
-      if (is_admin) tabPanel(
+      if (can_admin("admin_system")) tabPanel(
         "系统设置",
         icon = icon("cogs"),
         fluidPage(
@@ -882,7 +874,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
           )
         )
       ),
-      if (is_admin) tabPanel(
+      if (can_admin("admin_options")) tabPanel(
         "选项配置",
         icon = icon("sliders-h"),
         fluidPage(
@@ -917,7 +909,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
           )
         )
       ),
-      if (is_admin) tabPanel(
+      if (can_admin("admin_rbac")) tabPanel(
         "授权管理",
         icon = icon("shield-alt"),
         fluidPage(
@@ -969,7 +961,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
           )
         )
       ),
-      if (is_admin) tabPanel(
+      if (can_admin("admin_github")) tabPanel(
         "GitHub",
         icon = icon("github"),
         fluidPage(
@@ -997,14 +989,14 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL) {
           )
         )
       ),
-      if (is_admin) tabPanel(
+      if (can_admin("admin_architecture")) tabPanel(
         "系统架构",
         icon = icon("project-diagram"),
         fluidPage(
           system_architecture_ui()
         )
       ),
-      if (is_admin) tabPanel(
+      if (can_admin("admin_inventory")) tabPanel(
         "模块清单",
         icon = icon("sitemap"),
         fluidPage(

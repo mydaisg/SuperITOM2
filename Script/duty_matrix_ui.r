@@ -3,6 +3,13 @@
 duty_matrix_ui <- function() {
   tagList(
     tags$script(HTML("
+      // RBAC 级别标签选择器 — 按钮组（保留兼容旧的标签按钮）
+      $(document).on('click','.duty-level-btn',function(e){
+        e.stopPropagation();
+        $('.duty-level-btn').removeClass('active').css({border:'1px solid transparent',opacity:'0.55'});
+        $(this).addClass('active').css({border:'2px solid #333',opacity:'1'});
+        Shiny.setInputValue($(this).data('target'), $(this).data('val'), {priority:'event'});
+      });
       $(document).on('click','.duty-cell',function(e){
         e.stopPropagation();
         var sdid = $(this).data('sdid');
@@ -99,8 +106,31 @@ duty_matrix_ui <- function() {
       /* 二级卡片 */
       .duty-sub-card { background:#faf5ff; border-radius:6px; padding:8px 10px; margin-bottom:4px; margin-left:12px; border-left:3px solid #c8b6e0; }
       .duty-sub-card .tag { font-size:10px; }
+      /* RBAC 级别标签选择器 */
+      .duty-level-btn {
+        padding:6px 16px; border-radius:20px; cursor:pointer; font-size:13px; font-weight:500;
+        border:1px solid transparent; margin:0 4px 8px 0; display:inline-block;
+        transition:all 0.15s; opacity:0.55; user-select:none;
+      }
+      .duty-level-btn:hover { opacity:0.8; }
+      .duty-level-btn.active { opacity:1 !important; border:2px solid #333 !important; }
+      .duty-level-btn.owner { background:#d4edda; color:#155724; }
+      .duty-level-btn.exec  { background:#d1ecf1; color:#0c5460; }
+      .duty-level-btn.know  { background:#fff3cd; color:#856404; }
+      /* 岗职矩阵内 selectize 微调（继承全局 Material Design，仅调字号） */
+      .duty-matrix-wrapper .selectize-input,
+      .duty-create-row .selectize-input,
+      .modal-body .selectize-input {
+        font-size:13px !important; min-height:36px !important;
+      }
+      .duty-matrix-wrapper .selectize-dropdown,
+      .duty-create-row .selectize-dropdown,
+      .modal-body .selectize-dropdown {
+        font-size:13px !important;
+      }
     ")),
     fluidPage(
+      tags$div(class="duty-matrix-wrapper",
       div(style="text-align:center;margin:8px 0 4px;",
         h2(icon("sitemap")," 岗职矩阵"),
         p(style="color:#7f8c8d;font-size:12px;","岗位职责矩阵 | 人员×职责项 | RBAC级别")
@@ -128,8 +158,8 @@ duty_matrix_ui <- function() {
           ),
           column(4,
             tags$div(class="duty-create-row",
-              selectInput("duty_new_staff_user", NULL, choices = c("(选择系统用户)" = ""), width="160px"),
-              selectInput("duty_new_staff_position", NULL, choices = c("(无)" = ""), width="120px"),
+              selectInput("duty_new_staff_user", NULL, choices = c("(选择系统用户)" = ""), width="170px"),
+              selectInput("duty_new_staff_position", NULL, choices = c("(无)" = ""), width="130px"),
               tags$button(id="duty_add_staff", type="button", class="btn btn-primary btn-sm action-button", disabled=NA, list(icon("plus")))
             )
           ),
@@ -147,7 +177,7 @@ duty_matrix_ui <- function() {
         fluidRow(
           column(6,
             tags$div(class="duty-create-row",
-              selectInput("duty_new_sub_item_parent", NULL, choices = c("(选择上级职责)" = ""), width="170px"),
+              selectInput("duty_new_sub_item_parent", NULL, choices = c("(选择上级职责)" = ""), width="180px"),
               textInput("duty_new_sub_item_name", NULL, placeholder = "二级任务名称", width="140px"),
               textInput("duty_new_sub_item_cat", NULL, placeholder = "分类", width="90px"),
               numericInput("duty_new_sub_item_sort", NULL, value = 0, min = 0, max = 999, width = "60px"),
@@ -161,7 +191,8 @@ duty_matrix_ui <- function() {
         column(4, uiOutput("duty_staff_cards")),
         column(4, uiOutput("duty_item_cards"))
       )
-    )
-  )
+    )  # end duty-matrix-wrapper
+  )  # end fluidPage
+  )  # end tagList
 }
 

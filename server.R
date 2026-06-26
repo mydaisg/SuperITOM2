@@ -73,7 +73,7 @@ server <- function(input, output, session) {
       message("[RENDER] 调用 main_ui()")
       is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
       user_modules <- rbac_get_user_modules(rv$current_user)
-      main_ui(is_admin = is_admin, user_modules = user_modules)
+      main_ui(is_admin = is_admin, user_modules = user_modules, current_user = rv$current_user)
     }
   })
 
@@ -84,11 +84,13 @@ server <- function(input, output, session) {
     rv$inspection_refresh_trigger <- if(is.null(rv$inspection_refresh_trigger)) 1 else rv$inspection_refresh_trigger + 1
   }
 
-  # 控制admin菜单显示/隐藏
+  # 控制admin菜单显示/隐藏（admin角色 或 拥有任意admin_权限的非admin用户）
   observe({
     req(rv$logged_in)
     is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
-    session$sendCustomMessage(type = "toggleAdminMenu", message = list(show = is_admin))
+    has_admin_perm <- !is_admin && !is.null(rv$current_user) && nrow(rv$current_user) > 0 &&
+      any(grepl("^admin_", rbac_get_user_perms(rv$current_user$id[1])))
+    session$sendCustomMessage(type = "toggleAdminMenu", message = list(show = is_admin || has_admin_perm))
   })
 
   # OLD 登录模式：直接设置 rv$logged_in，renderUI 自动切换到 main_ui()
@@ -2340,7 +2342,7 @@ server <- function(input, output, session) {
   std_server(input, output, session)
 
   # 测试模块逻辑（网络巡检）
-  network_test_server(input, output, session)
+  network_test_server(input, output, session, rv)
 
   # 数据中心模块逻辑（数据归集）
   data_center_server("data_center", rv)

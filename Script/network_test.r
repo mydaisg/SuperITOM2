@@ -124,6 +124,20 @@ network_test_ui <- function() {
           actionButton("nt_run_email_ptr", "PTR反向解析", class = "btn-default btn-block",
             icon = icon("exchange-alt")),
           hr(),
+          h4("应用系统测试"),
+          div(style = "margin-bottom:4px;",
+            textInput("nt_app_name", "服务器描述", value = "LVCC协同平台-前端服务器", placeholder = "例如：协同平台前端"),
+            textInput("nt_app_domain", "域名", value = "ecs.Lvcchong.com", placeholder = "ecs.Lvcchong.com"),
+            textInput("nt_app_ip", "IP地址", value = "117.162.0.171", placeholder = "117.162.0.171"),
+            textInput("nt_app_url", "URL", value = "http://ecs.Lvcchong.com:20600", placeholder = "http://ecs.Lvcchong.com:20600"),
+            numericInput("nt_app_port", "端口", value = 20600, min = 1, max = 65535)
+          ),
+          # 预设按钮
+          actionButton("nt_run_app_ecs", "协同平台-前端", class = "btn-success btn-block",
+            icon = icon("server")),
+          actionButton("nt_run_app_custom", "自定义测试 (使用上方参数)", class = "btn-default btn-block",
+            icon = icon("play")),
+          hr(),
           h4("测试配置"),
           textInput("nt_target", "测试目标（域名/IP）", value = "qq.com"),
           textInput("nt_domain", "AD域名（可选）", value = "lvcc.org"),
@@ -223,7 +237,7 @@ network_test_ui <- function() {
 }
 
 # Server部分
-network_test_server <- function(input, output, session) {
+network_test_server <- function(input, output, session, rv = NULL) {
 
   # 日志保存目录
   nt_log_dir <- file.path(getwd(), "Log", "network_test")
@@ -560,6 +574,10 @@ network_test_server <- function(input, output, session) {
         }
         results
       },
+      "app_system" = {
+        # 仅用于报告头（已在主进程 enc2utf8），不处理系统命令
+        task$label
+      },
       paste("未知任务类型:", task$type)
     )
   }
@@ -673,8 +691,10 @@ network_test_server <- function(input, output, session) {
     nt_test_name(if (!is.null(tag) && tag != "") tag else target_display)
     # 确保所有中文 label 在 callr 序列化前已是 UTF-8
     for (i in seq_along(cmd_list)) {
-      cmd_list[[i]]$label <- enc2utf8(cmd_list[[i]]$label)
+      if (!is.null(cmd_list[[i]]$label)) cmd_list[[i]]$label <- enc2utf8(cmd_list[[i]]$label)
       if (!is.null(cmd_list[[i]]$label_prefix)) cmd_list[[i]]$label_prefix <- enc2utf8(cmd_list[[i]]$label_prefix)
+      if (!is.null(cmd_list[[i]]$desc)) cmd_list[[i]]$desc <- enc2utf8(cmd_list[[i]]$desc)
+      if (!is.null(cmd_list[[i]]$url)) cmd_list[[i]]$url <- enc2utf8(cmd_list[[i]]$url)
     }
     nt_queue(cmd_list)
     nt_running(TRUE)
@@ -862,6 +882,72 @@ network_test_server <- function(input, output, session) {
     .start_test(list(list(type="email_ptr", domain=domain)), sprintf("PTR: %s", domain), tag = "email_ptr")
   })
 
+  # ========== 应用系统测试 ==========
+
+  # 协同平台-前端 (预设)
+  observeEvent(input$nt_run_app_ecs, {
+    desc <- "LVCC协同平台-前端服务器"
+    domain <- "ecs.Lvcchong.com"
+    ip <- "117.162.0.171"
+    port <- 20600L
+    url <- "http://ecs.Lvcchong.com:20600"
+    header_label <- enc2utf8(paste0(
+      sprintf("========================================\n"),
+      sprintf("  应用系统连通性测试\n"),
+      sprintf("========================================\n"),
+      sprintf("服务器描述  : %s\n", desc),
+      sprintf("URL         : %s\n", url),
+      sprintf("域名        : %s\n", domain),
+      sprintf("IP地址      : %s\n", ip),
+      sprintf("测试端口    : %d\n", port),
+      sprintf("测试时间    : %s\n", format(Sys.time(), "%Y-%m-%d %H:%M:%S")),
+      sprintf("========================================\n\n")
+    ))
+    cmd_list <- list(
+      list(type = "app_system", label = header_label),
+      .build_cmd_nslookup(domain),
+      list(label = sprintf("Ping测试 - %s", ip), cmd = sprintf("ping %s -n 4", ip), type = "system"),
+      list(label = sprintf("TCP端口测试 - %s:%d", domain, port), ip = domain, port = port, type = "port")
+    )
+    .start_test(cmd_list, desc, tag = "app_ecs_frontend")
+  })
+
+  # 自定义应用测试 (使用上方参数)
+  observeEvent(input$nt_run_app_custom, {
+    desc <- trimws(input$nt_app_name)
+    domain <- trimws(input$nt_app_domain)
+    ip <- trimws(input$nt_app_ip)
+    port <- as.integer(input$nt_app_port)
+    url <- trimws(input$nt_app_url)
+    if (is.null(domain) || domain == "") {
+      showNotification("请输入域名", type = "error"); return()
+    }
+    if (is.na(port) || port < 1) {
+      showNotification("请输入有效端口号", type = "error"); return()
+    }
+    if (is.null(desc) || desc == "") desc <- domain
+    if (is.null(url) || url == "") url <- sprintf("http://%s:%d", domain, port)
+    header_label <- enc2utf8(paste0(
+      sprintf("========================================\n"),
+      sprintf("  应用系统连通性测试\n"),
+      sprintf("========================================\n"),
+      sprintf("服务器描述  : %s\n", desc),
+      sprintf("URL         : %s\n", url),
+      sprintf("域名        : %s\n", domain),
+      sprintf("IP地址      : %s\n", ip),
+      sprintf("测试端口    : %d\n", port),
+      sprintf("测试时间    : %s\n", format(Sys.time(), "%Y-%m-%d %H:%M:%S")),
+      sprintf("========================================\n\n")
+    ))
+    cmd_list <- list(
+      list(type = "app_system", label = header_label),
+      .build_cmd_nslookup(domain),
+      list(label = sprintf("Ping测试 - %s", ip), cmd = sprintf("ping %s -n 4", ip), type = "system"),
+      list(label = sprintf("TCP端口测试 - %s:%d", domain, port), ip = domain, port = port, type = "port")
+    )
+    .start_test(cmd_list, desc, tag = "app_custom")
+  })
+
   # 清空
   observeEvent(input$nt_clear, {
     if (nt_running()) {
@@ -876,6 +962,11 @@ network_test_server <- function(input, output, session) {
     if (is.null(current_text) || current_text == "") return(FALSE)
     if (!dir.exists(nt_log_dir)) dir.create(nt_log_dir, recursive = TRUE)
     ts <- format(Sys.time(), "%Y%m%d_%H%M%S")
+    # 用户名
+    user_part <- ""
+    if (!is.null(rv) && !is.null(rv$current_user) && nrow(rv$current_user) > 0) {
+      user_part <- paste0("_", gsub("[^a-zA-Z0-9._-]", "_", rv$current_user$username[1]))
+    }
     # 文件名后缀：tag 优先（英文简称），否则用 nt_target
     if (!is.null(test_name_hint) && test_name_hint != "") {
       name_safe <- gsub("[^a-zA-Z0-9._-]", "_", test_name_hint)
@@ -884,7 +975,7 @@ network_test_server <- function(input, output, session) {
       target <- trimws(input$nt_target)
       name_safe <- gsub("[^a-zA-Z0-9._-]", "_", target)
     }
-    filename <- sprintf("nt_%s_%s.log", ts, name_safe)
+    filename <- sprintf("nt_%s%s_%s.log", ts, user_part, name_safe)
     filepath <- file.path(nt_log_dir, filename)
     # 用 UTF-8 编码写入，避免乱码
     current_text <- enc2utf8(current_text)

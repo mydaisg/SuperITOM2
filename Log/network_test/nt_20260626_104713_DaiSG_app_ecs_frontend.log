@@ -1,0 +1,61 @@
+========================================
+       网络测试报告 (V3)
+========================================
+开始时间: 2026-06-26 10:47:05
+测试目标: LVCC协同平台-前端服务器
+========================================
+========================================
+  应用系统连通性测试
+========================================
+服务器描述  : LVCC协同平台-前端服务器
+URL         : http://ecs.Lvcchong.com:20600
+域名        : ecs.Lvcchong.com
+IP地址      : 117.162.0.171
+测试端口    : 20600
+测试时间    : 2026-06-26 10:47:05
+========================================
+
+== DNS瑙ｆ瀽: ecs.Lvcchong.com ==
+Server:  UnKnown
+Address:  10.10.50.253
+
+Name:    ecs.Lvcchong.com
+Address:  117.162.0.171
+
+
+== Ping娴嬭瘯: 117.162.0.171 ==
+
+Pinging 117.162.0.171 with 32 bytes of data:
+Reply from 117.162.0.171: bytes=32 time=13ms TTL=51
+Reply from 117.162.0.171: bytes=32 time=13ms TTL=51
+Reply from 117.162.0.171: bytes=32 time=13ms TTL=51
+Reply from 117.162.0.171: bytes=32 time=13ms TTL=51
+
+Ping statistics for 117.162.0.171:
+    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 13ms, Maximum = 13ms, Average = 13ms
+
+== 绔彛娴嬭瘯: ecs.Lvcchong.com:20600 (Test-NetConnection) ==
+$ powershell -Command "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Test-NetConnection -ComputerName ecs.Lvcchong.com -Port 20600 | Format-List; Get-Date -Format 'yyyy-MM-dd HH:mm:ss'"
+
+
+
+ComputerName     : ecs.Lvcchong.com
+RemoteAddress    : 117.162.0.171
+RemotePort       : 20600
+InterfaceAlias   : 以太网
+SourceAddress    : 10.3.3.131
+TcpTestSucceeded : True
+
+
+
+2026-06-26 10:47:13
+
+========================================
+  Test Complete
+========================================
+========================================
+结束时间: 2026-06-26 10:47:13
+========================================
+
