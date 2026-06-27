@@ -799,12 +799,12 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
         titlePanel("数据可视化"),
         sidebarLayout(
           sidebarPanel(
-            selectInput("viz_type", "图表类型", choices = c("折线图", "柱状图", "散点图", "饼图", "热力图")),
-            selectInput("viz_data", "数据源", choices = c("ITOM数据", "模型数据", "流程监控")),
+            selectInput("viz_type", "图表类型", choices = c("词云图", "柱状图", "折线图", "散点图", "饼图", "热力图"), selected = "词云图"),
+            selectInput("viz_data", "数据源", choices = c("记事数据", "ITOM数据", "模型数据", "流程监控"), selected = "记事数据"),
             actionButton("generate_viz", "生成图表", class = "btn-primary")
           ),
           mainPanel(
-            plotlyOutput("viz_plot")
+            uiOutput("viz_plot")
           )
         )
       )

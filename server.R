@@ -64,7 +64,23 @@ server <- function(input, output, session) {
     session$sendCustomMessage("toggleBtn", list(id = id, disabled = !isTRUE(enabled)))
   }
   btn_ok <- function(val) { !is.null(val) && length(val) > 0 && nchar(trimws(paste(val, collapse=""))) > 0 }
-  
+
+  # 可视化渲染器：词云→ggplot, 其他→plotly
+  viz_render <- function(viz_type, viz_data) {
+    if (viz_type == "词云图") {
+      # 先渲染 ggplot
+      output$viz_ggplot <- renderPlot({
+        viz_generate(viz_type, viz_data)
+      }, bg = "transparent")
+      renderUI({ plotOutput("viz_ggplot", height = "500px") })
+    } else {
+      output$viz_plotly <- renderPlotly({
+        viz_generate(viz_type, viz_data)
+      })
+      renderUI({ plotlyOutput("viz_plotly", height = "500px") })
+    }
+  }
+
   # OLD 架构：renderUI 直接返回 login_ui() 或 main_ui()
   output$app_ui <- renderUI({
     if (!rv$logged_in) {
@@ -1598,18 +1614,12 @@ server <- function(input, output, session) {
   
   # 处理生成可视化按钮点击事件
   observeEvent(input$generate_viz, {
-    # 检查登录状态
     req(rv$logged_in)
-    # 更新可视化图表输出
-    output$viz_plot <- renderPlotly({
-      viz_generate(input$viz_type, input$viz_data)
-    })
+    output$viz_plot <- viz_render(input$viz_type, input$viz_data)
   })
 
   # 初始渲染可视化图表
-  output$viz_plot <- renderPlotly({
-    viz_generate(input$viz_type, input$viz_data)
-  })
+  output$viz_plot <- viz_render("词云图", "记事数据")
 
   # 可视化页 - 流程监控指标
   output$viz_mtr_complete_rate <- renderText({ "0%" })
