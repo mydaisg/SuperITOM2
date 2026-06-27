@@ -216,14 +216,16 @@ duty_matrix_server <- function(input, output, session, rv) {
     def_level <- if(cur_level != "") cur_level else "执行"
     showModal(modalDialog(
       title = title, size = "s",
-      selectizeInput("duty_modal_level", "RBAC级别", 
-        choices = c("负责人","执行","知晓"), 
-        selected = def_level, width="100%",
-        options = list(
-          render = I("{option:function(item,escape){var c=item.value==='负责人'?'#d4edda':(item.value==='执行'?'#d1ecf1':'#fff3cd');var t=item.value==='负责人'?'#155724':(item.value==='执行'?'#0c5460':'#856404');return'<div style=background:'+c+';color:'+t+';padding:6px 14px;border-radius:20px;font-size:13px;font-weight:500;margin:2px;display:inline-block>'+escape(item.text)+'</div>';},item:function(item,escape){var c=item.value==='负责人'?'#d4edda':(item.value==='执行'?'#d1ecf1':'#fff3cd');var t=item.value==='负责人'?'#155724':(item.value==='执行'?'#0c5460':'#856404');return'<div style=background:'+c+';color:'+t+';padding:4px 10px;border-radius:20px;font-size:13px;font-weight:500;display:inline-block>'+escape(item.text)+'</div>';}}")
-        )
+      div(class = "duty-modal",
+        selectizeInput("duty_modal_level", "RBAC级别", 
+          choices = c("负责人","执行","知晓"), 
+          selected = def_level, width="100%",
+          options = list(
+            render = I("{option:function(item,escape){var txt=item.text||item.value||'';var c=item.value==='负责人'?'#d4edda':(item.value==='执行'?'#d1ecf1':'#fff3cd');var t=item.value==='负责人'?'#155724':(item.value==='执行'?'#0c5460':'#856404');return'<div style=background:'+c+';color:'+t+';padding:6px 14px;border-radius:20px;font-size:13px;font-weight:500;margin:2px;display:inline-block>'+escape(txt)+'</div>';},item:function(item,escape){var txt=item.text||item.value||'';var c=item.value==='负责人'?'#d4edda':(item.value==='执行'?'#d1ecf1':'#fff3cd');var t=item.value==='负责人'?'#155724':(item.value==='执行'?'#0c5460':'#856404');return'<div style=background:'+c+';color:'+t+';padding:4px 10px;border-radius:20px;font-size:13px;font-weight:500;display:inline-block>'+escape(txt)+'</div>';}}")
+          )
+        ),
+        textAreaInput("duty_modal_comment","备注",rows=2,value=cur_comment)
       ),
-      textAreaInput("duty_modal_comment","备注",rows=2,value=cur_comment),
       footer = tagList(
         actionButton("duty_modal_save","保存",class="btn-primary"),
         if(nrow(cur)>0) actionButton("duty_modal_delete","删除",class="btn-danger") else "",
@@ -493,13 +495,15 @@ duty_matrix_server <- function(input, output, session, rv) {
     choices <- stats::setNames(items$id, items$name)
     showModal(modalDialog(
       title = paste("添加职责到", st$name[1]),
-      selectizeInput("duty_card_add_duty_item", "一级职责项", choices = c("(选择)" = "", choices), width="100%",
-        options = list(placeholder = "选择一级职责...", render = .tag_render_js)),
-      selectizeInput("duty_card_add_duty_sub", "二级任务 (可选)", choices = c("— 不指定二级 —" = ""), width="100%",
-        options = list(placeholder = "可选二级任务...", render = .tag_render_js)),
-      selectizeInput("duty_card_add_duty_level", "RBAC级别", choices = c("负责人","执行","知晓"), selected="执行", width="100%",
-        options = list(
-          render = I("{option:function(item,escape){var c=item.value==='负责人'?'#d4edda':(item.value==='执行'?'#d1ecf1':'#fff3cd');var t=item.value==='负责人'?'#155724':(item.value==='执行'?'#0c5460':'#856404');return'<div style=background:'+c+';color:'+t+';padding:6px 14px;border-radius:20px;font-size:13px;font-weight:500;margin:2px;display:inline-block>'+escape(item.text)+'</div>';},item:function(item,escape){var c=item.value==='负责人'?'#d4edda':(item.value==='执行'?'#d1ecf1':'#fff3cd');var t=item.value==='负责人'?'#155724':(item.value==='执行'?'#0c5460':'#856404');return'<div style=background:'+c+';color:'+t+';padding:4px 10px;border-radius:20px;font-size:13px;font-weight:500;display:inline-block>'+escape(item.text)+'</div>';}}")
+      div(class = "duty-modal",
+        selectizeInput("duty_card_add_duty_item", "一级职责项", choices = c("(选择)" = "", choices), width="100%",
+          options = list(placeholder = "选择一级职责...", render = .tag_render_js)),
+        selectizeInput("duty_card_add_duty_sub", "二级任务 (可选)", choices = c("— 不指定二级 —" = ""), width="100%",
+          options = list(placeholder = "可选二级任务...", render = .tag_render_js)),
+        selectizeInput("duty_card_add_duty_level", "RBAC级别", choices = c("负责人","执行","知晓"), selected="执行", width="100%",
+          options = list(
+            render = I("{option:function(item,escape){var txt=item.text||item.value||'';var c=item.value==='负责人'?'#d4edda':(item.value==='执行'?'#d1ecf1':'#fff3cd');var t=item.value==='负责人'?'#155724':(item.value==='执行'?'#0c5460':'#856404');return'<div style=background:'+c+';color:'+t+';padding:6px 14px;border-radius:20px;font-size:13px;font-weight:500;margin:2px;display:inline-block>'+escape(txt)+'</div>';},item:function(item,escape){var txt=item.text||item.value||'';var c=item.value==='负责人'?'#d4edda':(item.value==='执行'?'#d1ecf1':'#fff3cd');var t=item.value==='负责人'?'#155724':(item.value==='执行'?'#0c5460':'#856404');return'<div style=background:'+c+';color:'+t+';padding:4px 10px;border-radius:20px;font-size:13px;font-weight:500;display:inline-block>'+escape(txt)+'</div>';}}")
+          )
         )
       ),
       footer = tagList(modalButton("取消"), actionButton("duty_card_add_duty_confirm","确定",class="btn-primary")),

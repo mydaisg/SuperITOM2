@@ -188,6 +188,10 @@ ui <- fluidPage(
         border-bottom-style: dashed !important;
       }
 
+      /* ── 弹窗拖拽光标 ── */
+      .modal .modal-header { cursor: grab !important; user-select: none !important; }
+      .modal .modal-header.modal-dragging { cursor: grabbing !important; }
+
       /* ── 通知居中显示 ── */
       #shiny-notification-panel {
         top: 50% !important;
@@ -245,6 +249,32 @@ ui <- fluidPage(
         }
       });
 
+      // ========== 全站弹窗拖拽（拖标题栏即可移动） ==========
+      (function initGlobalModalDrag(){
+        var $dlg = null, dragging = false, offX = 0, offY = 0;
+        $(function(){
+          $(document).on('mousedown','.modal-dialog .modal-header',function(e){
+            $dlg = $(this).closest('.modal-dialog');
+            if (!$dlg.length) return;
+            dragging = true;
+            var rect = $dlg[0].getBoundingClientRect();
+            offX = e.clientX - rect.left;
+            offY = e.clientY - rect.top;
+            $dlg.css({position:'fixed',left:rect.left+'px',top:rect.top+'px',margin:'0',transform:'none'});
+            $(this).addClass('modal-dragging');
+            e.preventDefault();
+          });
+          $(document).on('mousemove',function(e){
+            if (!dragging || !$dlg) return;
+            $dlg.css({left:(e.clientX-offX)+'px', top:(e.clientY-offY)+'px'});
+          });
+          $(document).on('mouseup',function(){
+            if ($dlg) $dlg.find('.modal-header').removeClass('modal-dragging');
+            dragging = false; $dlg = null;
+          });
+        });
+      })();
+
       // ========== 下拉选项彩色药丸 + 色圆点 ==========
       var selPalette = [
         { dot: '#4CAF50', bg: '#e8f5e9', border: '#a5d6a7' },
@@ -267,7 +297,9 @@ ui <- fluidPage(
       }
 
       function selDecorate(opt) {
+        // 跳过已被自定义 render 装饰过的选项（有内联背景色）
         if (opt.querySelector('.sel-dot')) return;
+        if (opt.style.background && opt.style.background !== '' && opt.style.background !== '#f8f9fb') return;
         var c = selColor(opt.textContent.replace(/[✓✔\\s]+$/g, '').trim());
         var dot = document.createElement('span');
         dot.className = 'sel-dot';
