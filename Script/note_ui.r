@@ -17,7 +17,7 @@ note_ui <- function() {
       });
       $(document).on('click','.note-del-btn',function(e){
         e.stopPropagation();
-        if(confirm('删除？')) Shiny.setInputValue('note_del_click',$(this).data('id'),{priority:'event'});
+        Shiny.setInputValue('note_del_click',$(this).data('id'),{priority:'event'});
       });
       $(document).on('click','.note-report-btn',function(e){
         e.stopPropagation();

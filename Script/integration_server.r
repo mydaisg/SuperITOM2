@@ -81,10 +81,34 @@ integration_server <- function(input, output, session, rv) {
     showNotification(result$message, type=if(result$success)"message" else "error")
   })
 
-  # 删除
+  # 删除（Modal 确认 + 显示详情）
   observeEvent(input$integ_del_btn, {
     req(rv$logged_in, integ_selected_id())
+    intg <- integration_get_by_id(integ_selected_id())
+    if (is.null(intg) || nrow(intg) == 0) return()
+    showModal(modalDialog(
+      title = "确认删除集成",
+      tags$div(style = "font-size:13px;",
+        tags$p(tags$b("即将删除以下集成配置，操作不可恢复：")),
+        tags$table(class = "table table-bordered table-sm", style = "font-size:12px;",
+          tags$thead(tags$tr(tags$th("属性"), tags$th("值"))),
+          tags$tbody(
+            tags$tr(tags$td("名称"), tags$td(tags$b(intg$name[1] %||% "—"))),
+            tags$tr(tags$td("URL"), tags$td(intg$base_url[1] %||% "—")),
+            tags$tr(tags$td("方法"), tags$td(intg$method[1] %||% "—")),
+            tags$tr(tags$td("描述"), tags$td(intg$description[1] %||% "—"))
+          )
+        )
+      ),
+      footer = tagList(modalButton("取消"),
+        actionButton("integ_del_confirm", "确认删除", class = "btn-danger")),
+      size = "s", easyClose = TRUE
+    ))
+  })
+  observeEvent(input$integ_del_confirm, {
+    req(integ_selected_id())
     result <- integration_delete(integ_selected_id())
+    removeModal()
     integ_selected_id(NULL)
     integ_refresh(integ_refresh()+1)
     showNotification(result$message, type="warning")

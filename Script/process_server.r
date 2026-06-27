@@ -218,7 +218,35 @@ process_server <- function(input, output, session, rv) {
   })
 
   observeEvent(input$appr_del_tpl_click, {
-    appr_tpl_delete(as.integer(input$appr_del_tpl_click))
+    req(rv$logged_in)
+    tid <- as.integer(input$appr_del_tpl_click)
+    tpl <- appr_tpl_get(tid)
+    if (is.null(tpl) || nrow(tpl) == 0) return()
+    showModal(modalDialog(
+      title = "确认删除审批模板",
+      tags$div(style = "font-size:13px;",
+        tags$p(tags$b("即将删除以下审批模板：")),
+        tags$table(class = "table table-bordered table-sm", style = "font-size:12px;",
+          tags$thead(tags$tr(tags$th("属性"), tags$th("值"))),
+          tags$tbody(
+            tags$tr(tags$td("名称"), tags$td(tags$b(tpl$name[1] %||% "—"))),
+            tags$tr(tags$td("分类"), tags$td(tpl$category[1] %||% "—")),
+            tags$tr(tags$td("状态"), tags$td(tpl$status[1] %||% "—")),
+            tags$tr(tags$td("描述"), tags$td(tpl$description[1] %||% "—"))
+          )
+        ),
+        tags$p(style = "color:#d9534f;margin-top:8px;", "此操作不可恢复。")
+      ),
+      footer = tagList(modalButton("取消"),
+        actionButton("appr_del_tpl_confirm", "确认删除", class = "btn-danger")),
+      size = "s", easyClose = TRUE
+    ))
+  })
+  observeEvent(input$appr_del_tpl_confirm, {
+    req(rv$logged_in)
+    tid <- as.integer(input$appr_del_tpl_click)
+    appr_tpl_delete(tid)
+    removeModal()
     appr_trigger(appr_trigger()+1)
     showNotification("已删除",type="message")
   })

@@ -85,6 +85,59 @@ rbac_role_delete <- function(id) {
   finally = { db_disconnect(con) })
 }
 
+# 获取角色下的用户列表
+rbac_role_get_users <- function(role_id) {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, sprintf(
+      "SELECT u.id, u.username, COALESCE(NULLIF(u.display_name,''), u.username) as display_name, u.role, u.active
+       FROM rbac_user_roles ur JOIN users u ON ur.user_id = u.id
+       WHERE ur.role_id = %d ORDER BY u.username", as.integer(role_id)))
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+# 获取角色详情（角色信息+权限数+用户列表，用于删除确认）
+rbac_role_get_detail <- function(role_id) {
+  con <- db_connect()
+  tryCatch({
+    role <- dbGetQuery(con, sprintf("SELECT * FROM rbac_roles WHERE id = %d", as.integer(role_id)))
+    if (nrow(role) == 0) return(NULL)
+    user_cnt <- dbGetQuery(con, sprintf("SELECT COUNT(*) as cnt FROM rbac_user_roles WHERE role_id = %d", as.integer(role_id)))$cnt[1]
+    perm_cnt <- dbGetQuery(con, sprintf("SELECT COUNT(*) as cnt FROM rbac_role_permissions WHERE role_id = %d", as.integer(role_id)))$cnt[1]
+    list(role = role, user_count = user_cnt, perm_count = perm_cnt)
+  }, finally = { db_disconnect(con) })
+}
+
+# 批量删除角色（带用户检查）
+rbac_role_batch_delete <- function(ids) {
+  ids <- as.integer(ids)
+  if (length(ids) == 0) return(list(success = FALSE, message = "请选择要删除的角色"))
+  con <- db_connect()
+  tryCatch({
+    # 检查每个角色下是否有用户
+    blocked <- character(0)
+    for (id in ids) {
+      user_cnt <- dbGetQuery(con, sprintf(
+        "SELECT COUNT(*) as cnt FROM rbac_user_roles WHERE role_id = %d", id))$cnt[1]
+      if (user_cnt > 0) {
+        role_name <- dbGetQuery(con, sprintf("SELECT name FROM rbac_roles WHERE id = %d", id))$name[1]
+        blocked <- c(blocked, sprintf("[%s] %s (ID=%d, %d个用户)",
+          role_name, role_name, id, user_cnt))
+      }
+    }
+    if (length(blocked) > 0) {
+      return(list(success = FALSE, message = paste(c("以下角色仍有用户关联，无法删除：", blocked), collapse = "\n  ")))
+    }
+    # 执行删除
+    for (id in ids) {
+      dbExecute(con, sprintf("DELETE FROM rbac_role_permissions WHERE role_id = %d", id))
+      dbExecute(con, sprintf("DELETE FROM rbac_roles WHERE id = %d", id))
+    }
+    list(success = TRUE, message = sprintf("已删除 %d 个角色", length(ids)))
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+
 ##################
 # 角色权限 CRUD
 ##################

@@ -9,7 +9,6 @@ asset_ui <- function() {
       });
       $(document).on('click','.asset-del-btn',function(e){
         e.stopPropagation();
-        if(!confirm('确定删除此资产？')) return;
         Shiny.setInputValue('asset_del_click',$(this).data('id'),{priority:'event'});
       });
     ")),

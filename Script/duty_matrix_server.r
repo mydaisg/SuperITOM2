@@ -248,6 +248,27 @@ duty_matrix_server <- function(input, output, session, rv) {
   })
 
   observeEvent(input$duty_modal_delete, {
+    showModal(modalDialog(
+      title = "确认清除矩阵格子",
+      tags$div(style = "font-size:13px;",
+        tags$p("确定要清除此矩阵格子的 RBAC 级别设置吗？"),
+        tags$table(class = "table table-bordered table-sm", style = "font-size:12px;margin-top:8px;",
+          tags$thead(tags$tr(tags$th("属性", style="width:80px;"), tags$th("值"))),
+          tags$tbody(
+            tags$tr(tags$td("类型"), tags$td(if(isTRUE(rv$duty_modal_is_sub)) "二级任务分配" else "一级职责分配")),
+            tags$tr(tags$td("当前级别"), tags$td(tags$b(def_level))),
+            tags$tr(tags$td("操作"), tags$td(tags$span(style="color:#d9534f;", "清除 → 变为空")))
+          )
+        ),
+        tags$p(style = "color:#d9534f;margin-top:8px;font-size:12px;", "此操作不可恢复，格子将恢复为 \"—\" 空状态。")
+      ),
+      footer = tagList(
+        modalButton("取消"),
+        actionButton("duty_modal_delete_confirm", "确认清除", class = "btn-danger")
+      ), size = "s", easyClose = TRUE
+    ))
+  })
+  observeEvent(input$duty_modal_delete_confirm, {
     if (isTRUE(rv$duty_modal_is_sub)) {
       duty_sub_matrix_delete(rv$duty_modal_sid, rv$duty_modal_pid, rv$duty_modal_sdid)
     } else {
@@ -537,24 +558,97 @@ duty_matrix_server <- function(input, output, session, rv) {
   })
 
   ##################
-  # 卡片按钮：从岗位移除人员 / 从人员移除职责
+  # 卡片按钮：从岗位移除人员 / 从人员移除职责（Modal 确认）
   ##################
   observeEvent(input$duty_card_rm_staff, {
     req(rv$logged_in, is_admin())
-    duty_staff_update(as.integer(input$duty_card_rm_staff$sid), position_id = NULL)
-    refresh()
+    sid <- as.integer(input$duty_card_rm_staff$sid)
+    pid <- as.integer(input$duty_card_rm_staff$pid)
+    st <- duty_staff_get_all(); sr <- st[st$id == sid, ]
+    pos <- duty_position_get_all(); pr <- pos[pos$id == pid, ]
+    showModal(modalDialog(
+      title = "确认移除",
+      tags$div(style = "font-size:13px;",
+        tags$p("将人员从岗位中移除（仅取消岗位关联，不删除人员）："),
+        tags$table(class = "table table-bordered table-sm", style = "font-size:12px;margin-top:8px;",
+          tags$tbody(
+            tags$tr(tags$td(style="font-weight:600;width:60px;","人员"), tags$td(tags$b(sr$name[1] %||% "?"))),
+            tags$tr(tags$td(style="font-weight:600;","岗位"), tags$td(pr$name[1] %||% "?"))
+          )
+        )
+      ),
+      footer = tagList(modalButton("取消"),
+        actionButton("duty_rm_staff_confirm", "确认移除", class = "btn-warning")),
+      size = "s", easyClose = TRUE
+    ))
   })
+  observeEvent(input$duty_rm_staff_confirm, {
+    duty_staff_update(as.integer(input$duty_card_rm_staff$sid), position_id = NULL)
+    removeModal(); refresh()
+    showNotification("已移除", type = "message")
+  })
+
   observeEvent(input$duty_card_rm_duty, {
     req(rv$logged_in, is_admin())
+    sid <- as.integer(input$duty_card_rm_duty$sid)
+    pid <- as.integer(input$duty_card_rm_duty$pid)
+    did <- as.integer(input$duty_card_rm_duty$did)
+    st <- duty_staff_get_all(); sr <- st[st$id == sid, ]
+    it <- duty_item_get_all(); ir <- it[it$id == did, ]
+    showModal(modalDialog(
+      title = "确认移除职责",
+      tags$div(style = "font-size:13px;",
+        tags$p("将删除此职责分配："),
+        tags$table(class = "table table-bordered table-sm", style = "font-size:12px;margin-top:8px;",
+          tags$tbody(
+            tags$tr(tags$td(style="font-weight:600;width:60px;","人员"), tags$td(tags$b(sr$name[1] %||% "?"))),
+            tags$tr(tags$td(style="font-weight:600;","职责"), tags$td(ir$name[1] %||% "?"))
+          )
+        ),
+        tags$p(style = "color:#d9534f;font-size:12px;margin-top:8px;", "此操作不可恢复。")
+      ),
+      footer = tagList(modalButton("取消"),
+        actionButton("duty_rm_duty_confirm", "确认删除", class = "btn-danger")),
+      size = "s", easyClose = TRUE
+    ))
+  })
+  observeEvent(input$duty_rm_duty_confirm, {
     duty_matrix_delete(
       as.integer(input$duty_card_rm_duty$sid),
       as.integer(input$duty_card_rm_duty$pid),
       as.integer(input$duty_card_rm_duty$did))
-    refresh()
+    removeModal(); refresh()
+    showNotification("已删除", type = "message")
   })
+
   # 移除二级任务分配
   observeEvent(input$duty_card_rm_sub_duty, {
     req(rv$logged_in, is_admin())
+    sid <- as.integer(input$duty_card_rm_sub_duty$sid)
+    pid <- as.integer(input$duty_card_rm_sub_duty$pid)
+    sdid <- as.integer(input$duty_card_rm_sub_duty$sdid)
+    st <- duty_staff_get_all(); sr <- st[st$id == sid, ]
+    all_subs <- tryCatch(duty_sub_item_get_all_with_parent(), error = function(e) data.frame())
+    subr <- all_subs[all_subs$id == sdid, ]
+    showModal(modalDialog(
+      title = "确认移除二级任务",
+      tags$div(style = "font-size:13px;",
+        tags$p("将删除此二级任务分配："),
+        tags$table(class = "table table-bordered table-sm", style = "font-size:12px;margin-top:8px;",
+          tags$tbody(
+            tags$tr(tags$td(style="font-weight:600;width:60px;","人员"), tags$td(tags$b(sr$name[1] %||% "?"))),
+            tags$tr(tags$td(style="font-weight:600;","二级任务"), tags$td(subr$name[1] %||% "?")),
+            if (nrow(subr) > 0) tags$tr(tags$td(style="font-weight:600;","上级"), tags$td(subr$parent_name[1] %||% "—"))
+          )
+        ),
+        tags$p(style = "color:#d9534f;font-size:12px;margin-top:8px;", "此操作不可恢复。")
+      ),
+      footer = tagList(modalButton("取消"),
+        actionButton("duty_rm_sub_duty_confirm", "确认删除", class = "btn-danger")),
+      size = "s", easyClose = TRUE
+    ))
+  })
+  observeEvent(input$duty_rm_sub_duty_confirm, {
     duty_sub_matrix_delete(
       as.integer(input$duty_card_rm_sub_duty$sid),
       as.integer(input$duty_card_rm_sub_duty$pid),
@@ -616,12 +710,87 @@ duty_matrix_server <- function(input, output, session, rv) {
   observeEvent(input$duty_card_del, {
     req(rv$logged_in, is_admin())
     tp <- input$duty_card_del$type; did <- as.integer(input$duty_card_del$id)
+    rv$duty_card_del_type <- tp; rv$duty_card_del_id <- did
+    # 收集要删除项的所有属性 + 子记录数
+    type_cn <- ""; rows <- list(); has_child <- FALSE; child_rows <- list()
+    if (tp == "position") {
+      type_cn <- "岗位"
+      p <- duty_position_get_all(); pr <- p[p$id == did, ]
+      if (nrow(pr) == 0) return()
+      staff <- duty_staff_get_all(); scnt <- sum(staff$position_id == did, na.rm = TRUE)
+      mcnt <- sum(duty_matrix_get()$position_id == did, na.rm = TRUE)
+      rows <- list(list("名称", pr$name[1]), list("描述", pr$description[1] %||% "—"), list("ID", as.character(did)))
+      if (scnt > 0) child_rows <- list(list("👥 关联人员", as.character(scnt)))
+      if (mcnt > 0) child_rows <- c(child_rows, list(list("📋 职责分配", as.character(mcnt))))
+      has_child <- scnt + mcnt > 0
+    } else if (tp == "staff") {
+      type_cn <- "人员"
+      st <- duty_staff_get_all(); sr <- st[st$id == did, ]
+      if (nrow(sr) == 0) return()
+      pos <- duty_position_get_all(); pn <- pos[pos$id == sr$position_id[1], ]
+      mat <- duty_matrix_get(); mcnt <- sum(mat$staff_id == did, na.rm = TRUE)
+      smat <- tryCatch(duty_sub_matrix_get(), error = function(e) data.frame())
+      scnt <- if (nrow(smat) > 0) sum(smat$staff_id == did, na.rm = TRUE) else 0
+      rows <- list(list("姓名", sr$name[1]), list("部门", sr$department[1] %||% "—"),
+                   list("邮箱", sr$email[1] %||% "—"),
+                   list("岗位", pn$name[1] %||% "未分配"), list("ID", as.character(did)))
+      if (mcnt + scnt > 0) child_rows <- list(list("📋 职责分配", as.character(mcnt + scnt)))
+      has_child <- mcnt + scnt > 0
+    } else if (tp == "item") {
+      type_cn <- "职责项"
+      it <- duty_item_get_all(); ir <- it[it$id == did, ]
+      if (nrow(ir) == 0) return()
+      mat <- duty_matrix_get(); mcnt <- sum(mat$duty_item_id == did, na.rm = TRUE)
+      subs <- tryCatch(duty_sub_item_get_by_item(did), error = function(e) data.frame())
+      rows <- list(list("名称", ir$name[1]), list("分类", ir$category[1] %||% "—"),
+                   list("描述", ir$description[1] %||% "—"),
+                   list("排序", as.character(ir$sort_order[1] %||% 0)), list("ID", as.character(did)))
+      if (mcnt > 0) child_rows <- list(list("📋 职责分配", as.character(mcnt)))
+      if (nrow(subs) > 0) child_rows <- c(child_rows, list(list("📎 二级任务", as.character(nrow(subs)))))
+      has_child <- mcnt > 0 || nrow(subs) > 0
+    } else if (tp == "subitem") {
+      type_cn <- "二级任务"
+      all_subs <- tryCatch(duty_sub_item_get_all_with_parent(), error = function(e) data.frame())
+      sr <- all_subs[all_subs$id == did, ]
+      if (nrow(sr) == 0) return()
+      smat <- tryCatch(duty_sub_matrix_get(), error = function(e) data.frame())
+      scnt <- if (nrow(smat) > 0) sum(smat$duty_sub_item_id == did, na.rm = TRUE) else 0
+      rows <- list(list("名称", sr$name[1]), list("上级职责", sr$parent_name[1] %||% "—"),
+                   list("分类", sr$category[1] %||% "—"),
+                   list("ID", as.character(did)))
+      if (scnt > 0) child_rows <- list(list("📋 二级分配", as.character(scnt)))
+      has_child <- scnt > 0
+    }
+    # 构建属性表
+    attr_html <- paste0(sapply(rows, function(r) sprintf('<tr><td style="font-weight:600;width:80px;">%s</td><td>%s</td></tr>', r[[1]], r[[2]])), collapse = "")
+    child_html <- if (has_child) paste0(
+      '<tr><td colspan="2" style="padding:6px 0;"><div class="alert alert-warning" style="font-size:12px;margin:0;padding:6px 10px;">⚠ 以下关联数据将<b>一并删除</b>：</div></td></tr>',
+      paste0(sapply(child_rows, function(r) sprintf('<tr style="background:#fff8e6;"><td style="font-weight:600;width:80px;">%s</td><td style="color:#d9534f;font-weight:bold;">%s</td></tr>', r[[1]], r[[2]])), collapse = "")) else ""
+    table_html <- sprintf(
+      '<table class="table table-bordered table-sm" style="font-size:12px;margin-top:8px;"><tbody>%s%s</tbody></table>', attr_html, child_html)
+    showModal(modalDialog(
+      title = sprintf("确认删除%s", type_cn),
+      tags$div(style = "font-size:13px;",
+        tags$p(sprintf("即将删除以下%s，操作不可恢复：", type_cn)),
+        HTML(table_html)
+      ),
+      footer = tagList(modalButton("取消"),
+        actionButton("duty_card_del_confirm", "确认删除", class = "btn-danger")),
+      size = "s", easyClose = TRUE
+    ))
+  })
+  observeEvent(input$duty_card_del_confirm, {
+    req(rv$logged_in, is_admin())
+    tp <- rv$duty_card_del_type; did <- rv$duty_card_del_id
+    if (is.null(tp) || is.null(did)) return()
     result <- switch(tp,
       "position" = duty_position_delete(did),
       "staff" = duty_staff_delete(did),
       "item" = duty_item_delete(did),
       "subitem" = duty_sub_item_delete(did))
-    refresh(); showNotification(result$message, type=if(result$success)"message" else "error")
+    removeModal(); refresh()
+    showNotification(result$message, type = if(result$success) "message" else "error")
+    rv$duty_card_del_type <- NULL; rv$duty_card_del_id <- NULL
   })
 
   ##################
@@ -654,11 +823,69 @@ duty_matrix_server <- function(input, output, session, rv) {
   })
 
   ##################
-  # 编辑弹窗：删除
+  # 编辑弹窗：删除（表格确认 + 子记录警告）
   ##################
   observeEvent(input$duty_edit_delete, {
     req(rv$logged_in, is_admin())
     tp <- rv$duty_edit_type; eid <- rv$duty_edit_id
+    if (is.null(tp) || is.null(eid)) return()
+    rv$duty_edit_del_tp <- tp; rv$duty_edit_del_id <- eid
+    # 收集属性
+    type_cn <- ""; rows <- list(); child_html <- ""
+    if (tp == "position") {
+      type_cn <- "岗位"
+      p <- duty_position_get_all(); pr <- p[p$id == eid, ]
+      if (nrow(pr) == 0) return()
+      staff <- duty_staff_get_all(); scnt <- sum(staff$position_id == eid, na.rm = TRUE)
+      mcnt <- sum(duty_matrix_get()$position_id == eid, na.rm = TRUE)
+      rows <- list(list("名称", pr$name[1]), list("描述", pr$description[1] %||% "—"))
+      if (scnt + mcnt > 0) child_html <- sprintf('<div class="alert alert-warning" style="font-size:12px;margin:8px 0;padding:6px 10px;">⚠ 关联：%d 人员 + %d 职责分配，将一并删除</div>', scnt, mcnt)
+    } else if (tp == "staff") {
+      type_cn <- "人员"
+      st <- duty_staff_get_all(); sr <- st[st$id == eid, ]
+      if (nrow(sr) == 0) return()
+      mat <- duty_matrix_get(); mcnt <- sum(mat$staff_id == eid, na.rm = TRUE)
+      smat <- tryCatch(duty_sub_matrix_get(), error = function(e) data.frame())
+      scnt <- if (nrow(smat) > 0) sum(smat$staff_id == eid, na.rm = TRUE) else 0
+      rows <- list(list("姓名", sr$name[1]), list("部门", sr$department[1] %||% "—"),
+                   list("邮箱", sr$email[1] %||% "—"))
+      if (mcnt + scnt > 0) child_html <- sprintf('<div class="alert alert-warning" style="font-size:12px;margin:8px 0;padding:6px 10px;">⚠ %d 个职责分配将一并删除</div>', mcnt + scnt)
+    } else if (tp == "item") {
+      type_cn <- "职责项"
+      it <- duty_item_get_all(); ir <- it[it$id == eid, ]
+      if (nrow(ir) == 0) return()
+      mat <- duty_matrix_get(); mcnt <- sum(mat$duty_item_id == eid, na.rm = TRUE)
+      subs <- tryCatch(duty_sub_item_get_by_item(eid), error = function(e) data.frame())
+      rows <- list(list("名称", ir$name[1]), list("分类", ir$category[1] %||% "—"),
+                   list("描述", ir$description[1] %||% "—"))
+      if (mcnt > 0 || nrow(subs) > 0) child_html <- sprintf('<div class="alert alert-warning" style="font-size:12px;margin:8px 0;padding:6px 10px;">⚠ %d 分配 + %d 子任务将一并删除</div>', mcnt, nrow(subs))
+    } else if (tp == "subitem") {
+      type_cn <- "二级任务"
+      all_subs <- tryCatch(duty_sub_item_get_all_with_parent(), error = function(e) data.frame())
+      sr <- all_subs[all_subs$id == eid, ]
+      if (nrow(sr) == 0) return()
+      smat <- tryCatch(duty_sub_matrix_get(), error = function(e) data.frame())
+      scnt <- if (nrow(smat) > 0) sum(smat$duty_sub_item_id == eid, na.rm = TRUE) else 0
+      rows <- list(list("名称", sr$name[1]), list("上级", sr$parent_name[1] %||% "—"))
+      if (scnt > 0) child_html <- sprintf('<div class="alert alert-warning" style="font-size:12px;margin:8px 0;padding:6px 10px;">⚠ %d 个二级分配将一并删除</div>', scnt)
+    }
+    attr_html <- paste0(sapply(rows, function(r) sprintf('<tr><td style="font-weight:600;width:80px;">%s</td><td>%s</td></tr>', r[[1]], r[[2]])), collapse = "")
+    table_html <- sprintf('<table class="table table-bordered table-sm" style="font-size:12px;margin-top:8px;"><tbody>%s</tbody></table>', attr_html)
+    showModal(modalDialog(
+      title = sprintf("确认删除%s", type_cn),
+      tags$div(style = "font-size:13px;",
+        tags$p(sprintf("即将删除此%s，操作不可恢复：", type_cn)),
+        HTML(table_html),
+        HTML(child_html)
+      ),
+      footer = tagList(modalButton("取消"),
+        actionButton("duty_edit_delete_confirm", "确认删除", class = "btn-danger")),
+      size = "s", easyClose = TRUE
+    ))
+  })
+  observeEvent(input$duty_edit_delete_confirm, {
+    req(rv$logged_in, is_admin())
+    tp <- rv$duty_edit_del_tp; eid <- rv$duty_edit_del_id
     if (is.null(tp) || is.null(eid)) return()
     result <- switch(tp,
       "position" = duty_position_delete(eid),
@@ -667,6 +894,7 @@ duty_matrix_server <- function(input, output, session, rv) {
       "subitem" = duty_sub_item_delete(eid))
     removeModal(); refresh()
     showNotification(result$message, type = if(result$success) "message" else "error")
+    rv$duty_edit_del_tp <- NULL; rv$duty_edit_del_id <- NULL
   })
 
   ##################

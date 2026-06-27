@@ -277,6 +277,8 @@ note_delete <- function(id, current_user = NULL) {
   con <- db_connect()
   tryCatch({
     if (!note_check_ownership(id, current_user, con)) return(list(success = FALSE, message = "无权操作此记事"))
+    dbExecute(con, sprintf("DELETE FROM note_comments WHERE note_id = %d", as.integer(id)))
+    dbExecute(con, sprintf("DELETE FROM note_dispatches WHERE note_id = %d", as.integer(id)))
     dbExecute(con, sprintf("DELETE FROM notes WHERE id = %d", as.integer(id)))
     list(success = TRUE, message = "已删除")
   }, error = function(e) list(success = FALSE, message = paste("删除失败:", e$message)),

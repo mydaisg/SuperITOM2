@@ -57,12 +57,10 @@ duty_matrix_ui <- function() {
       });
       $(document).on('click','.duty-card-del-btn',function(e){
         e.stopPropagation();
-        if(!confirm('确定删除？')) return;
         Shiny.setInputValue('duty_card_del',{type:$(this).data('type'),id:$(this).data('id')},{priority:'event'});
       });
       $(document).on('click','.duty-card-rm-staff',function(e){
         e.stopPropagation();
-        if(!confirm('从岗位移除该人员？')) return;
         Shiny.setInputValue('duty_card_rm_staff',{sid:$(this).data('sid'),pid:$(this).data('pid')},{priority:'event'});
       });
       $(document).on('click','.duty-card-rm-duty',function(e){

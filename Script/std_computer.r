@@ -196,29 +196,50 @@ std_server <- function(input, output, session) {
     })
   })
   
-  # 删除计算机
+  # 删除计算机（Modal 确认 + 显示详情）
   observeEvent(input$std_delete, {
     selected_row <- input$std_hosts_table_rows_selected
     hosts_data <- std_hosts_data()
     
-    if (length(selected_row) > 0 && !is.null(hosts_data) && nrow(hosts_data) >= selected_row) {
-      tryCatch({
-        host_id <- hosts_data[selected_row, "id"]
-        con <- db_connect()
-        on.exit(db_disconnect(con))
-        dbExecute(con, "DELETE FROM std_hosts WHERE id = ?", list(host_id))
-        
-        # 刷新列表
-        std_refresh(std_refresh() + 1)
-        
-        # 显示成功通知
-        showNotification("计算机删除成功", type = "message")
-      }, error = function(e) {
-        showNotification(paste("删除计算机失败:", e$message), type = "error")
-      })
-    } else {
-      showNotification("请先选择要删除的计算机", type = "error")
+    if (length(selected_row) == 0 || is.null(hosts_data) || nrow(hosts_data) < selected_row) {
+      showNotification("请先选择要删除的计算机", type = "warning"); return()
     }
+    host <- hosts_data[selected_row, ]
+    showModal(modalDialog(
+      title = "确认删除计算机",
+      tags$div(
+        style = "font-size:13px;",
+        tags$p(tags$b("即将删除以下计算机，操作不可恢复：")),
+        tags$table(class = "table table-bordered table-sm", style = "font-size:12px;",
+          tags$thead(tags$tr(tags$th("属性"), tags$th("值"))),
+          tags$tbody(
+            tags$tr(tags$td("计算机名"), tags$td(tags$b(host$computer_name %||% "—"))),
+            tags$tr(tags$td("IP 地址"), tags$td(host$ip_address %||% "—")),
+            tags$tr(tags$td("操作系统"), tags$td(host$os %||% "—")),
+            tags$tr(tags$td("用户名"), tags$td(host$username %||% "—")),
+            tags$tr(tags$td("ID"), tags$td(as.character(host$id)))
+          )
+        )
+      ),
+      footer = tagList(modalButton("取消"),
+        actionButton("std_delete_confirm", "确认删除", class = "btn-danger")),
+      size = "s", easyClose = TRUE
+    ))
+    rv$std_del_host_id <- host$id
+  })
+  observeEvent(input$std_delete_confirm, {
+    req(rv$std_del_host_id)
+    tryCatch({
+      con <- db_connect()
+      on.exit(db_disconnect(con))
+      dbExecute(con, "DELETE FROM std_hosts WHERE id = ?", list(rv$std_del_host_id))
+      std_refresh(std_refresh() + 1)
+      showNotification("计算机已删除", type = "message")
+    }, error = function(e) {
+      showNotification(paste("删除失败:", e$message), type = "error")
+    })
+    removeModal()
+    rv$std_del_host_id <- NULL
   })
   
   # 测试连通性

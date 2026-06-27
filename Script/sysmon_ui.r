@@ -5,7 +5,7 @@ sysmon_ui <- function() {
     tags$script(HTML("
       $(document).on('click','.sysmon-del-btn',function(e){
         e.stopPropagation();
-        if(confirm('确定移除？')) Shiny.setInputValue('sysmon_del',$(this).data('id'),{priority:'event'});
+        Shiny.setInputValue('sysmon_del',$(this).data('id'),{priority:'event'});
       });
       $(document).on('click','.sysmon-check-btn',function(e){
         e.stopPropagation();

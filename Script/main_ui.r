@@ -927,7 +927,12 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
                     h4("角色列表"),
                     DTOutput("rbac_role_table"),
                     br(),
+                    div(style = "display:flex; gap:6px; align-items:center; margin-bottom:6px;",
+                      tags$button(id="rbac_edit_role", type="button", class="btn btn-warning btn-sm action-button", disabled=NA, list(icon("pencil"), "编辑")),
+                      tags$button(id="rbac_delete_roles", type="button", class="btn btn-danger btn-sm action-button", disabled=NA, list(icon("trash"), "删除选中"))
+                    ),
                     textInput("rbac_new_role_name", NULL, placeholder = "新角色名称"),
+                    textInput("rbac_new_role_desc", NULL, placeholder = "描述(可选)"),
                     tags$button(id="rbac_add_role", type="button", class="btn btn-primary btn-sm action-button", disabled=NA, list(icon("plus"), "添加角色"))
                   )
                 ),

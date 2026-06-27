@@ -6,7 +6,7 @@ process_ui <- function() {
       $(document).on('click','.appr-start-btn',function(e){e.preventDefault();Shiny.setInputValue('appr_start_click',$(this).data('id'),{priority:'event'});});
       $(document).on('click','.appr-detail-btn',function(e){e.preventDefault();Shiny.setInputValue('appr_detail_click',$(this).data('id'),{priority:'event'});});
       $(document).on('click','.appr-publish-btn',function(e){e.preventDefault();Shiny.setInputValue('appr_publish_click',$(this).data('id'),{priority:'event'});});
-      $(document).on('click','.appr-del-tpl-btn',function(e){e.preventDefault();if(confirm('确定删除此模板？'))Shiny.setInputValue('appr_del_tpl_click',$(this).data('id'),{priority:'event'});});
+      $(document).on('click','.appr-del-tpl-btn',function(e){e.preventDefault();Shiny.setInputValue('appr_del_tpl_click',$(this).data('id'),{priority:'event'});});
       $(document).on('click','.appr-withdraw-btn',function(e){e.preventDefault();if(confirm('确定撤销此审批？'))Shiny.setInputValue('appr_withdraw_click',$(this).data('id'),{priority:'event'});});
       $(document).on('click','.appr-urge-btn',function(e){e.preventDefault();Shiny.setInputValue('appr_urge_click',$(this).data('id'),{priority:'event'});});
     ")),

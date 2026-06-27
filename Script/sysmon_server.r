@@ -174,7 +174,33 @@ sysmon_server <- function(input, output, session, rv) {
 
   observeEvent(input$sysmon_del, {
     req(rv$logged_in)
-    sysmon_host_delete(as.integer(input$sysmon_del))
+    hid <- as.integer(input$sysmon_del)
+    h <- sysmon_host_get(hid)
+    if (is.null(h) || nrow(h) == 0) return()
+    showModal(modalDialog(
+      title = "确认移除监控主机",
+      tags$div(style = "font-size:13px;",
+        tags$p(tags$b("即将移除以下监控主机（仅标记失效，数据保留）：")),
+        tags$table(class = "table table-bordered table-sm", style = "font-size:12px;",
+          tags$thead(tags$tr(tags$th("属性"), tags$th("值"))),
+          tags$tbody(
+            tags$tr(tags$td("主机名"), tags$td(tags$b(h$hostname[1] %||% "—"))),
+            tags$tr(tags$td("IP"), tags$td(h$ip[1] %||% "—")),
+            tags$tr(tags$td("OS"), tags$td(h$os_type[1] %||% "—")),
+            tags$tr(tags$td("端口"), tags$td(as.character(h$port[1] %||% "—")))
+          )
+        )
+      ),
+      footer = tagList(modalButton("取消"),
+        actionButton("sysmon_del_confirm", "确认移除", class = "btn-warning")),
+      size = "s", easyClose = TRUE
+    ))
+  })
+  observeEvent(input$sysmon_del_confirm, {
+    req(rv$logged_in)
+    hid <- as.integer(input$sysmon_del)
+    sysmon_host_delete(hid)
+    removeModal()
     sysmon_trigger(sysmon_trigger()+1)
     showNotification("已移除",type="message")
   })

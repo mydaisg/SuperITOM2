@@ -1087,7 +1087,40 @@ note_server <- function(input, output, session, rv) {
   })
   observeEvent(input$note_del_click, {
     req(rv$logged_in)
-    result <- note_delete(as.integer(input$note_del_click), rv$current_user)
+    nid <- as.integer(input$note_del_click)
+    note <- note_get_by_id(nid, rv$current_user)
+    if (is.null(note) || nrow(note) == 0) return()
+    cmt_cnt <- tryCatch({
+      con <- db_connect()
+      on.exit(db_disconnect(con))
+      dbGetQuery(con, sprintf("SELECT COUNT(*) as cnt FROM note_comments WHERE note_id = %d", nid))$cnt[1]
+    }, error = function(e) 0)
+    showModal(modalDialog(
+      title = "确认删除记事",
+      tags$div(style = "font-size:13px;",
+        tags$p(tags$b("即将删除以下记事，操作不可恢复：")),
+        tags$table(class = "table table-bordered table-sm", style = "font-size:12px;",
+          tags$thead(tags$tr(tags$th("属性"), tags$th("值"))),
+          tags$tbody(
+            tags$tr(tags$td("编号"), tags$td(tags$b(note$note_no[1] %||% "—"))),
+            tags$tr(tags$td("标题"), tags$td(note$title[1] %||% "—")),
+            tags$tr(tags$td("重要性"), tags$td(as.character(note$importance[1] %||% "—"))),
+            tags$tr(tags$td("状态"), tags$td(as.character(note$status[1] %||% "—"))),
+            tags$tr(tags$td("评论数"), tags$td(as.character(cmt_cnt)))
+          )
+        ),
+        if (cmt_cnt > 0) tags$div(class = "alert alert-warning", style = "font-size:12px;margin-top:8px;",
+          tags$b("⚠"), sprintf(" 该记事下有 %d 条评论，将一并删除。", cmt_cnt))
+      ),
+      footer = tagList(modalButton("取消"),
+        actionButton("note_del_confirm", "确认删除", class = "btn-danger")),
+      size = "s", easyClose = TRUE
+    ))
+  })
+  observeEvent(input$note_del_confirm, {
+    req(rv$logged_in)
+    nid <- as.integer(input$note_del_click)
+    result <- note_delete(nid, rv$current_user)
     removeModal()
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "error"))

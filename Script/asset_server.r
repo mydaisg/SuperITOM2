@@ -185,11 +185,40 @@ asset_server <- function(input, output, session, rv) {
   })
   
   ##################
-  # 删除
+  # 删除（Modal 确认 + 显示资产详情）
   ##################
   observeEvent(input$asset_del_click, {
     req(rv$logged_in)
-    result <- asset_delete(as.integer(input$asset_del_click))
+    aid <- as.integer(input$asset_del_click)
+    a <- asset_get_by_id(aid)
+    if (is.null(a) || nrow(a) == 0) return()
+    showModal(modalDialog(
+      title = "确认删除资产",
+      tags$div(style = "font-size:13px;",
+        tags$p(tags$b("即将删除以下资产，操作不可恢复：")),
+        tags$table(class = "table table-bordered table-sm", style = "font-size:12px;",
+          tags$thead(tags$tr(tags$th("属性"), tags$th("值"))),
+          tags$tbody(
+            tags$tr(tags$td("资产编号"), tags$td(tags$b(a$asset_no[1] %||% "—"))),
+            tags$tr(tags$td("主机名"), tags$td(a$hostname[1] %||% "—")),
+            tags$tr(tags$td("IP 地址"), tags$td(a$ip_address[1] %||% "—")),
+            tags$tr(tags$td("操作系统"), tags$td(a$os[1] %||% "—")),
+            tags$tr(tags$td("位置"), tags$td(a$location[1] %||% "—")),
+            tags$tr(tags$td("部门"), tags$td(a$department[1] %||% "—")),
+            tags$tr(tags$td("状态"), tags$td(a$status[1] %||% "—"))
+          )
+        )
+      ),
+      footer = tagList(modalButton("取消"),
+        actionButton("asset_del_confirm", "确认删除", class = "btn-danger")),
+      size = "s", easyClose = TRUE
+    ))
+  })
+  observeEvent(input$asset_del_confirm, {
+    req(rv$logged_in)
+    aid <- as.integer(input$asset_del_click)
+    result <- asset_delete(aid)
+    removeModal()
     asset_trigger(asset_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "error"))
   })

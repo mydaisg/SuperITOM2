@@ -1944,24 +1944,35 @@ server <- function(input, output, session) {
     )
   })
 
-  # 角色列表（带刷新）
+  # 角色列表（带刷新，多选支持批量删除）
   output$rbac_role_table <- DT::renderDT({
     rbac_refresh(); req(rv$logged_in)
     roles <- rbac_role_get_all()
-    DT::datatable(roles, rownames = FALSE, selection = "single",
+    DT::datatable(roles, rownames = FALSE, selection = "multiple",
       colnames = c("ID", "角色名称", "描述"),
       options = list(pageLength = 10, dom = 't'))
   })
 
   selected_role_id <- reactiveVal(NULL)
-  rbac_role_perms_initial <- reactiveVal(character(0))  # 记录权限初始状态
-  
+  selected_role_ids <- reactiveVal(integer(0))  # 多选角色 ID 列表
+  rbac_role_perms_initial <- reactiveVal(character(0))
+
   observeEvent(input$rbac_role_table_rows_selected, {
     roles <- rbac_role_get_all()
-    if (length(input$rbac_role_table_rows_selected) > 0) {
-      rid <- roles$id[input$rbac_role_table_rows_selected]
-      selected_role_id(rid)
-      rbac_role_perms_initial(as.character(rbac_role_perms_get(rid)))
+    sel_rows <- input$rbac_role_table_rows_selected
+    if (length(sel_rows) > 0) {
+      sids <- roles$id[sel_rows]
+      selected_role_ids(as.integer(sids))
+      # 单选时更新权限面板
+      if (length(sel_rows) == 1) {
+        selected_role_id(sids[1])
+        rbac_role_perms_initial(as.character(rbac_role_perms_get(sids[1])))
+      } else {
+        selected_role_id(NULL)
+      }
+    } else {
+      selected_role_ids(integer(0))
+      selected_role_id(NULL)
     }
   })
 
@@ -1980,6 +1991,26 @@ server <- function(input, output, session) {
 
     tagList(
       h5(paste("为角色 [", role$name[1], "] 配置权限")),
+      # ★ 成员列表
+      {
+        role_users <- rbac_role_get_users(selected_role_id())
+        if (nrow(role_users) > 0) {
+          tags$div(style = "background:#f0faf5; border:1px solid #c3e6cb; border-radius:6px; padding:8px 12px; margin-bottom:10px;",
+            tags$div(style = "font-size:12px; color:#155724; font-weight:600; margin-bottom:4px;",
+              paste0("👥 成员 (", nrow(role_users), "人)")),
+            tags$div(style = "display:flex; flex-wrap:wrap; gap:4px;",
+              lapply(seq_len(nrow(role_users)), function(i) {
+                u <- role_users[i, ]
+                tags$span(style = "font-size:11px; background:#d4edda; color:#155724; padding:2px 8px; border-radius:10px; white-space:nowrap;",
+                  u$display_name[1] %||% u$username[1])
+              })
+            )
+          )
+        } else {
+          tags$div(style = "background:#fdfdff; border:1px dashed #ccc; border-radius:6px; padding:8px 12px; margin-bottom:10px;",
+            tags$span(style = "font-size:12px; color:#999;", "👤 暂无成员"))
+        }
+      },
       # 快速模式：selectInput 搜索
       wellPanel(
         tags$b("快速搜索添加："),
@@ -2056,8 +2087,10 @@ server <- function(input, output, session) {
     showNotification(result$message, type = if(result$success) "message" else "error")
   })
 
-  # 添加角色（刷新列表）
+  # ── 角色按钮启用控制 ──
   observe({ toggle_btn("rbac_add_role", btn_ok(input$rbac_new_role_name)) })
+  observe({ toggle_btn("rbac_edit_role", length(selected_role_ids()) == 1) })
+  observe({ toggle_btn("rbac_delete_roles", length(selected_role_ids()) > 0) })
   # 保存权限：初始灰色，权限变更后才启用
   observe({
     cur <- input$rbac_role_perms_select
@@ -2066,11 +2099,107 @@ server <- function(input, output, session) {
     changed <- !setequal(as.character(cur), as.character(init))
     toggle_btn("rbac_save_perms", changed)
   })
+
+  # ── 添加角色 ──
   observeEvent(input$rbac_add_role, {
     req(rv$logged_in, input$rbac_new_role_name)
-    result <- rbac_role_add(input$rbac_new_role_name)
+    desc <- trimws(input$rbac_new_role_desc %||% "")
+    result <- rbac_role_add(input$rbac_new_role_name, desc)
     if (result$success) {
       updateTextInput(session, "rbac_new_role_name", value = "")
+      updateTextInput(session, "rbac_new_role_desc", value = "")
+      rbac_refresh(rbac_refresh() + 1)
+    }
+    showNotification(result$message, type = if(result$success) "message" else "error")
+  })
+
+  # ── 编辑角色 ──
+  observeEvent(input$rbac_edit_role, {
+    req(rv$logged_in, length(selected_role_ids()) == 1)
+    rid <- selected_role_ids()[1]
+    roles <- rbac_role_get_all()
+    role <- roles[roles$id == rid, ]
+    if (nrow(role) == 0) return()
+    showModal(modalDialog(
+      title = paste("编辑角色 —", role$name[1]),
+      textInput("rbac_edit_role_name", "角色名称", value = role$name[1]),
+      textInput("rbac_edit_role_desc", "描述", value = role$description[1] %||% ""),
+      footer = tagList(
+        modalButton("取消"),
+        actionButton("rbac_edit_role_save", "保存", class = "btn-primary")
+      ), size = "s", easyClose = TRUE
+    ))
+  })
+  observeEvent(input$rbac_edit_role_save, {
+    req(rv$logged_in, input$rbac_edit_role_name, length(selected_role_ids()) == 1)
+    rid <- selected_role_ids()[1]
+    desc <- trimws(input$rbac_edit_role_desc %||% "")
+    result <- rbac_role_update(rid, input$rbac_edit_role_name, desc)
+    if (result$success) {
+      removeModal()
+      rbac_refresh(rbac_refresh() + 1)
+    }
+    showNotification(result$message, type = if(result$success) "message" else "error")
+  })
+
+  # ── 批量删除角色（含确认弹窗） ──
+  observeEvent(input$rbac_delete_roles, {
+    req(rv$logged_in, length(selected_role_ids()) > 0)
+    sids <- selected_role_ids()
+    details <- lapply(sids, function(rid) rbac_role_get_detail(rid))
+    has_blocked <- FALSE
+    rows_html <- ""
+    for (d in details) {
+      if (is.null(d)) next
+      r <- d$role
+      blocked <- d$user_count > 0
+      if (blocked) has_blocked <- TRUE
+      # 有用户→橙红警告 / 无用户→绿色可删
+      if (blocked) {
+        row_style <- "background:#fff0f0; border-left:4px solid #d9534f;"
+        user_style <- "color:#d9534f;font-weight:bold;font-size:13px;"
+        badge_html  <- '<span style="background:#d9534f;color:#fff;padding:1px 8px;border-radius:10px;font-size:10px;font-weight:bold;">不可删</span>'
+      } else {
+        row_style <- "background:#f0faf0; border-left:4px solid #5cb85c;"
+        user_style <- ""
+        badge_html  <- '<span style="background:#5cb85c;color:#fff;padding:1px 8px;border-radius:10px;font-size:10px;font-weight:bold;">可删除</span>'
+      }
+      rows_html <- paste0(rows_html, sprintf(
+        '<tr style="%s">
+          <td>%d</td><td><b>%s</b>  %s</td><td>%s</td>
+          <td style="text-align:center;">%d</td>
+          <td style="text-align:center;%s">%d</td>
+        </tr>',
+        row_style, r$id[1], r$name[1], badge_html, r$description[1] %||% "—",
+        d$perm_count, user_style, d$user_count
+      ))
+    }
+    table_html <- sprintf(
+      '<table class="table table-bordered table-sm" style="font-size:12px;">
+        <thead><tr><th>ID</th><th>名称</th><th>描述</th><th style="text-align:center;">权限数</th><th style="text-align:center;">用户数</th></tr></thead>
+        <tbody>%s</tbody></table>', rows_html)
+    footer_btns <- tagList(
+      modalButton("取消"),
+      if (!has_blocked) actionButton("rbac_delete_roles_confirm", "确认删除", class = "btn-danger")
+    )
+    showModal(modalDialog(
+      title = sprintf("确认批量删除 %d 个角色", length(sids)),
+      HTML(paste0(
+        if (has_blocked) '<div class="alert alert-danger" style="font-size:12px;margin-bottom:12px;padding:8px 12px;">⛔ 红色标记角色下仍有用户，<b>无法删除</b>。请先在用户授权中移除关联后重试。</div>' else '<div class="alert alert-success" style="font-size:12px;margin-bottom:12px;padding:8px 12px;">✅ 所选角色均无用户关联，可安全删除。</div>',
+        '<p style="font-size:13px;margin-bottom:4px;color:#666;">图例：<span style="background:#f0faf0;border:1px solid #5cb85c;padding:2px 8px;border-radius:4px;">🟢 可删除</span> <span style="background:#fff0f0;border:1px solid #d9534f;padding:2px 8px;border-radius:4px;margin-left:6px;">🔴 不可删</span></p>',
+        table_html
+      )),
+      footer = footer_btns,
+      size = "m", easyClose = TRUE
+    ))
+  })
+  observeEvent(input$rbac_delete_roles_confirm, {
+    req(rv$logged_in, length(selected_role_ids()) > 0)
+    result <- rbac_role_batch_delete(selected_role_ids())
+    removeModal()
+    if (result$success) {
+      selected_role_ids(integer(0))
+      selected_role_id(NULL)
       rbac_refresh(rbac_refresh() + 1)
     }
     showNotification(result$message, type = if(result$success) "message" else "error")
