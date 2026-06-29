@@ -642,7 +642,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       )
     ),
 
-    # 资产标签页
+    # 资产标签页（含工位图子标签）
     if (can_access("资产")) tabPanel(
       "资产",
       icon = icon("laptop"),

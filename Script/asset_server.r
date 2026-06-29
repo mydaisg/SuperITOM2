@@ -30,6 +30,7 @@ asset_server <- function(input, output, session, rv) {
       )
     )
   })
+  outputOptions(output, "asset_stats", suspendWhenHidden = FALSE)
   
   ##################
   # 资产表格
@@ -42,11 +43,11 @@ asset_server <- function(input, output, session, rv) {
     
     # 搜索过滤
     kw <- trimws(input$asset_search)
-    if (!is.null(kw) && kw != "") {
+    if (length(kw) > 0 && kw != "") {
       items <- items[grepl(kw, items$hostname, ignore.case = TRUE) | grepl(kw, items$ip_address %||% "", ignore.case = TRUE), ]
     }
     sf <- input$asset_status_filter
-    if (!is.null(sf) && sf != "全部") items <- items[items$status == sf, ]
+    if (length(sf) > 0 && sf != "全部") items <- items[items$status == sf, ]
     
     display <- data.frame(
       资产编号 = items$asset_no,
@@ -70,6 +71,7 @@ asset_server <- function(input, output, session, rv) {
       options = list(pageLength = 20, autoWidth = TRUE, dom = "ltip",
         columnDefs = list(list(targets = 9, orderable = FALSE))))
   })
+  outputOptions(output, "asset_table", suspendWhenHidden = FALSE)
   
   ##################
   # 刷新

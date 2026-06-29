@@ -5,155 +5,145 @@
 # UI部分
 network_test_ui <- function() {
   fluidPage(
-    # 自定义颜色样式
-    tags$head(
-      tags$style(HTML("
-        .nt-result {
-          font-family: 'Consolas', 'Courier New', monospace;
-          font-size: 13px;
-          line-height: 1.6;
-          background-color: #1e1e1e;
-          color: #d4d4d4;
-          padding: 15px;
-          border-radius: 5px;
-          white-space: pre-wrap;
-          word-wrap: break-word;
-          min-height: 200px;
-        }
-        .nt-header {
-          color: #569cd6;
-          font-weight: bold;
-        }
-        .nt-cmd {
-          color: #9cdcfe;
-        }
-        .nt-success {
-          color: #4ec9b0;
-          font-weight: bold;
-        }
-        .nt-error {
-          color: #f48771;
-          font-weight: bold;
-        }
-        .nt-warning {
-          color: #cca700;
-          font-weight: bold;
-        }
-        .nt-info {
-          color: #4fc1ff;
-        }
-        .nt-succeeded {
-          color: #6a9955;
-          font-weight: bold;
-        }
-        .nt-failed {
-          color: #f14c4c;
-          font-weight: bold;
-        }
-        .nt-ttl {
-          color: #b5cea8;
-        }
-        .nt-time {
-          color: #ce9178;
-        }
-        .nt-separator {
-          color: #808080;
-        }
-        .nt-separator-bold {
-          color: #c586c0;
-          font-weight: bold;
-        }
-        .nt-green-bold {
-          color: rgb(0, 255, 0);
-          font-weight: bold;
-        }
-        .nt-red-bold {
-          color: rgb(255, 0, 0);
-          font-weight: bold;
-        }
-      "))
-    ),
+    tags$head(tags$style(HTML("
+      /* ---------- 左右独立滚动 ---------- */
+      .nt-left-panel  { height: 80vh; overflow-y: auto; padding-right: 4px; }
+      .nt-right-panel { height: 80vh; overflow-y: auto; }
+      /* ---------- 结果输出暗色终端 ---------- */
+      .nt-result {
+        font-family: 'Consolas','Courier New',monospace; font-size:13px; line-height:1.6;
+        background:#1e1e1e; color:#d4d4d4; padding:15px; border-radius:5px;
+        white-space:pre-wrap; word-wrap:break-word; min-height:200px;
+      }
+      /* ---------- 颜色语义类 ---------- */
+      .nt-header        { color:#569cd6; font-weight:bold; }
+      .nt-cmd           { color:#9cdcfe; }
+      .nt-success       { color:#4ec9b0; font-weight:bold; }
+      .nt-error         { color:#f48771; font-weight:bold; }
+      .nt-warning       { color:#cca700; font-weight:bold; }
+      .nt-info          { color:#4fc1ff; }
+      .nt-succeeded     { color:#6a9955; font-weight:bold; }
+      .nt-failed        { color:#f14c4c; font-weight:bold; }
+      .nt-ttl           { color:#b5cea8; }
+      .nt-time          { color:#ce9178; }
+      .nt-separator     { color:#808080; }
+      .nt-separator-bold{ color:#c586c0; font-weight:bold; }
+      .nt-green-bold    { color:rgb(0,255,0); font-weight:bold; }
+      .nt-red-bold      { color:rgb(255,0,0); font-weight:bold; }
+      /* ---------- 左侧按钮网格（紧凑2列，适量字号） ---------- */
+      .nt-btn-grid       { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+      .nt-btn-grid .btn  { font-size:12px; padding:5px 8px; white-space:nowrap; }
+      .nt-btn-grid3      { display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; }
+      .nt-btn-grid3 .btn { font-size:12px; padding:4px 6px; white-space:nowrap; }
+      /* ---------- 折叠区样式 ---------- */
+      .nt-details summary { cursor:pointer; padding:6px 8px; font-weight:600; font-size:13px; background:#f8f9fa; border-radius:4px; margin-bottom:4px; outline:none; }
+      .nt-details[open] summary { background:#e9ecef; }
+      .nt-details { border:1px solid #dee2e6; border-radius:6px; padding:6px 10px 10px; margin-bottom:8px; }
+    "))),
     titlePanel("网络测试"),
     br(),
     fluidRow(
+      # ========== 左侧：测试面板（独立滚动，collapsible + 网格布局） ==========
       column(3,
-        wellPanel(
-          h4("测试项目"),
-          actionButton("nt_run_all", "全部测试", class = "btn-primary btn-block",
-            icon = icon("play-circle")),
-          br(),
-          actionButton("nt_run_ipconfig", "网卡信息 (ipconfig /all)", class = "btn-default btn-block",
-            icon = icon("network-wired")),
-          actionButton("nt_run_ping", "连通性测试 (ping)", class = "btn-default btn-block",
-            icon = icon("satellite-dish")),
-          actionButton("nt_run_nslookup", "DNS解析 (nslookup)", class = "btn-default btn-block",
-            icon = icon("search")),
-          actionButton("nt_run_nltest", "域控检测 (nltest)", class = "btn-default btn-block",
-            icon = icon("server")),
-          actionButton("nt_run_tracert", "路由追踪 (tracert)", class = "btn-default btn-block",
-            icon = icon("route")),
-          actionButton("nt_run_curl", "HTTP测试 (curl)", class = "btn-default btn-block",
-            icon = icon("globe")),
-          hr(),
-          h4("文件服务器"),
-          actionButton("nt_run_fileserver1", "文件服务器 #1 (10.10.50.50)", class = "btn-default btn-block",
-            icon = icon("folder")),
-          actionButton("nt_run_fileserver2", "文件服务器 #2 (10.10.50.150)", class = "btn-default btn-block",
-            icon = icon("folder")),
-          hr(),
-          h4("邮箱测试"),
-          actionButton("nt_run_email_all", "邮箱诊断", class = "btn-warning btn-block",
-            icon = icon("envelope")),
-          br(),
-          actionButton("nt_run_email_mx", "MX记录查询", class = "btn-default btn-block",
-            icon = icon("server")),
-          actionButton("nt_run_email_a", "A记录(邮件子域)", class = "btn-default btn-block",
-            icon = icon("globe")),
-          actionButton("nt_run_email_smtp", "SMTP端口(25/465/587)", class = "btn-default btn-block",
-            icon = icon("plug")),
-          actionButton("nt_run_email_pop3", "POP3端口(110/995)", class = "btn-default btn-block",
-            icon = icon("inbox")),
-          actionButton("nt_run_email_imap", "IMAP端口(143/993)", class = "btn-default btn-block",
-            icon = icon("cloud-download-alt")),
-          actionButton("nt_run_email_spf", "SPF记录检查", class = "btn-default btn-block",
-            icon = icon("shield-alt")),
-          actionButton("nt_run_email_dkim", "DKIM记录检查", class = "btn-default btn-block",
-            icon = icon("key")),
-          actionButton("nt_run_email_dmarc", "DMARC记录检查", class = "btn-default btn-block",
-            icon = icon("flag")),
-          actionButton("nt_run_email_ptr", "PTR反向解析", class = "btn-default btn-block",
-            icon = icon("exchange-alt")),
-          hr(),
-          h4("应用系统测试"),
-          div(style = "margin-bottom:4px;",
-            textInput("nt_app_name", "服务器描述", value = "LVCC协同平台-前端服务器", placeholder = "例如：协同平台前端"),
-            textInput("nt_app_domain", "域名", value = "ecs.Lvcchong.com", placeholder = "ecs.Lvcchong.com"),
-            textInput("nt_app_ip", "IP地址", value = "117.162.0.171", placeholder = "117.162.0.171"),
-            textInput("nt_app_url", "URL", value = "http://ecs.Lvcchong.com:20600", placeholder = "http://ecs.Lvcchong.com:20600"),
-            numericInput("nt_app_port", "端口", value = 20600, min = 1, max = 65535)
-          ),
-          # 预设按钮
-          actionButton("nt_run_app_ecs", "协同平台-前端", class = "btn-success btn-block",
-            icon = icon("server")),
-          actionButton("nt_run_app_custom", "自定义测试 (使用上方参数)", class = "btn-default btn-block",
-            icon = icon("play")),
-          hr(),
-          h4("测试配置"),
-          textInput("nt_target", "测试目标（域名/IP）", value = "qq.com"),
-          textInput("nt_domain", "AD域名（可选）", value = "lvcc.org"),
-          textInput("nt_http_target", "HTTP测试目标", value = "www.baidu.com"),
-          textInput("nt_email_domain", "邮箱域名", value = "CNLVCC.Com"),
-          numericInput("nt_ping_count", "Ping 次数", value = 4, min = 1, max = 20)
+        div(class = "nt-left-panel",
+          wellPanel(style = "padding:10px;",
+            actionButton("nt_run_all", "全部测试",
+              class = "btn-primary btn-block", icon = icon("play-circle"),
+              style = "margin-bottom:10px;font-weight:bold;"),
+            # ── 基础测试 ──
+            tags$details(class = "nt-details", open = NA,
+              tags$summary("🌐 基础网络测试"),
+              div(class = "nt-btn-grid",
+                actionButton("nt_run_ipconfig","网卡信息", class="btn-default btn-sm",
+                  icon=icon("network-wired")),
+                actionButton("nt_run_ping","Ping",    class="btn-default btn-sm",
+                  icon=icon("satellite-dish")),
+                actionButton("nt_run_nslookup","DNS", class="btn-default btn-sm",
+                  icon=icon("search")),
+                actionButton("nt_run_nltest","域控",   class="btn-default btn-sm",
+                  icon=icon("server")),
+                actionButton("nt_run_tracert","路由",  class="btn-default btn-sm",
+                  icon=icon("route")),
+                actionButton("nt_run_curl","HTTP测试", class="btn-default btn-sm",
+                  icon=icon("globe"))
+              )
+            ),
+            # ── 文件服务器 ──
+            tags$details(class = "nt-details",
+              tags$summary("📁 文件服务器"),
+              div(class = "nt-btn-grid",
+                actionButton("nt_run_fileserver1","10.10.50.50", class="btn-default btn-sm",
+                  icon=icon("folder")),
+                actionButton("nt_run_fileserver2","10.10.50.150", class="btn-default btn-sm",
+                  icon=icon("folder"))
+              )
+            ),
+            # ── 邮箱测试 ──
+            tags$details(class = "nt-details",
+              tags$summary("📧 邮箱诊断"),
+              actionButton("nt_run_email_all","全部邮箱诊断",
+                class="btn-warning btn-block btn-sm", icon=icon("envelope"),
+                style="margin-bottom:6px;"),
+              div(class = "nt-btn-grid3",
+                actionButton("nt_run_email_mx","MX",    class="btn-default btn-sm"),
+                actionButton("nt_run_email_a","A记录",   class="btn-default btn-sm"),
+                actionButton("nt_run_email_smtp","SMTP", class="btn-default btn-sm"),
+                actionButton("nt_run_email_pop3","POP3", class="btn-default btn-sm"),
+                actionButton("nt_run_email_imap","IMAP", class="btn-default btn-sm"),
+                actionButton("nt_run_email_spf","SPF",   class="btn-default btn-sm"),
+                actionButton("nt_run_email_dkim","DKIM", class="btn-default btn-sm"),
+                actionButton("nt_run_email_dmarc","DMARC",class="btn-default btn-sm"),
+                actionButton("nt_run_email_ptr","PTR",   class="btn-default btn-sm")
+              )
+            ),
+            # ── 应用系统测试 ──
+            tags$details(class = "nt-details",
+              tags$summary("🖥 应用系统测试"),
+              tags$div(style = "font-size:11px;margin-bottom:6px;",
+                textInput("nt_app_name","描述",  value="LVCC协同平台-前端服务器", placeholder="服务器描述"),
+                tags$div(style="display:flex;gap:4px;",
+                  textInput("nt_app_domain","域名", value="ecs.Lvcchong.com",   placeholder="域名", width="50%"),
+                  textInput("nt_app_ip","IP",        value="117.162.0.171",    placeholder="IP",  width="50%")
+                ),
+                tags$div(style="display:flex;gap:4px;",
+                  textInput("nt_app_url","URL",      value="http://ecs.Lvcchong.com:20600", placeholder="URL", width="65%"),
+                  numericInput("nt_app_port","端口", value=20600, min=1, max=65535, width="35%")
+                )
+              ),
+              div(class = "nt-btn-grid",
+                actionButton("nt_run_app_ecs","协同平台前端",   class="btn-success btn-sm"),
+                actionButton("nt_run_app_custom","自定义测试",  class="btn-default btn-sm")
+              )
+            ),
+            # ── 测试配置 ──
+            tags$details(class = "nt-details",
+              tags$summary("⚙ 测试配置"),
+              tags$div(style = "font-size:11px;",
+                tags$div(style="display:flex;gap:4px;",
+                  textInput("nt_target",    "Ping/DNS目标", value="qq.com", width="50%"),
+                  textInput("nt_domain",    "AD域",         value="lvcc.org", width="50%")
+                ),
+                tags$div(style="display:flex;gap:4px;",
+                  textInput("nt_http_target","HTTP目标",    value="www.baidu.com", width="50%"),
+                  textInput("nt_email_domain","邮箱域",     value="CNLVCC.Com",   width="50%")
+                ),
+                numericInput("nt_ping_count","Ping次数", value=4, min=1, max=20, width="50%")
+              )
+            )
+          )
         )
       ),
+      # ========== 右侧：结果面板（独立滚动） ==========
       column(9,
-        div(style = "margin-bottom:10px;",
-          actionButton("nt_save_log", "保存日志", class = "btn-info btn-sm", icon = icon("save")),
-          actionButton("nt_load_log", "历史日志", class = "btn-default btn-sm", icon = icon("folder-open")),
-          actionButton("nt_clear", "清空结果", class = "btn-default btn-sm", icon = icon("trash"))
-        ),
-        h4("测试结果"),
-        div(class = "nt-result", htmlOutput("nt_output"))
+        div(class = "nt-right-panel",
+          div(style = "margin-bottom:8px;display:flex;align-items:center;gap:6px;",
+            h4(style="margin:0;flex:1;","测试结果"),
+            actionButton("nt_save_log","保存",  class="btn-info btn-sm",    icon=icon("save")),
+            actionButton("nt_load_log","历史",  class="btn-default btn-sm", icon=icon("folder-open")),
+            actionButton("nt_clear",    "清空", class="btn-default btn-sm", icon=icon("trash"))
+          ),
+          div(class = "nt-result", htmlOutput("nt_output"))
+        )
       )
     )
   )

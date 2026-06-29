@@ -30,6 +30,8 @@ source("Script/note_management.r")   # 记事模块数据层
 source("Script/note_server.r")       # 记事模块服务端
 source("Script/asset_management.r")  # 资产模块数据层
 source("Script/asset_server.r")      # 资产模块服务端
+source("Script/seat_map_management.r")  # 工位图模块数据层
+source("Script/seat_map_server.r")      # 工位图模块服务端
 source("Script/duty_matrix_management.r") # 岗职模块数据层
 source("Script/duty_matrix_server.r")     # 岗职模块服务端
 source("Script/module_inventory.r")       # 模块清单（全站映射参考）
@@ -2506,6 +2508,9 @@ server <- function(input, output, session) {
   
   # 资产模块逻辑
   asset_server(input, output, session, rv)
+
+  # 工位图模块逻辑
+  seat_map_server(input, output, session, rv)
 
   # 岗职模块逻辑
   duty_matrix_server(input, output, session, rv)

@@ -133,21 +133,25 @@ MODULE_INVENTORY <- list(
   ),
   list(
     module = "资产", icon = "laptop",
-    frontend = "资产标签页 → asset_ui()",
-    source = c("Script/asset_management.r", "Script/asset_server.r", "Script/asset_ui.r"),
-    tables = "assets",
+    frontend = "资产标签页 → tabsetPanel(资产列表, 工位图) → asset_ui()",
+    source = c("Script/asset_management.r", "Script/asset_server.r", "Script/asset_ui.r",
+               "Script/seat_map_management.r", "Script/seat_map_server.r"),
+    tables = "assets, seat_buildings, seat_floors, seat_zones, seats",
     perms = list(
-      list(code="asset_view",   name="查看资产"),
-      list(code="asset_manage", name="管理资产")
+      list(code="asset_view",      name="查看资产"),
+      list(code="asset_manage",    name="管理资产"),
+      list(code="seat_map_view",   name="查看工位图"),
+      list(code="seat_map_manage", name="管理工位")
     ),
     key_funcs = c(
       "asset_generate_number() — 资产编号生成",
-      "asset_get_all() — 获取所有资产",
-      "asset_get_by_id() — 获取单条资产",
-      "asset_add() — 新增资产",
-      "asset_update() — 更新资产",
-      "asset_delete() — 删除资产",
-      "asset_scan() — 快速导入(从目标主机system2采集信息)"
+      "asset_get_all/add/update/delete() — 资产CRUD",
+      "building_get_all/add/update/delete() — 楼栋CRUD",
+      "floor_get_all/add/update/delete() — 楼层CRUD",
+      "zone_get_all/add/update/delete() — 区域CRUD",
+      "seat_get_all/add/update/delete() — 工位CRUD",
+      "seat_batch_generate() — 批量生成工位",
+      "seat_floor_snapshot() — 楼层快照(工位图渲染)"
     )
   ),
   list(

@@ -1155,6 +1155,71 @@ migrate_database <- function() {
       cat("数据库迁移完成：已创建 integrations 表\n")
     }
 
+    # ===============================================
+    # 工位图模块（seat_map）
+    # ===============================================
+    if (!"seat_buildings" %in% tables) {
+      dbExecute(con, "CREATE TABLE seat_buildings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 seat_buildings 表\n")
+    }
+    if (!"seat_floors" %in% tables) {
+      dbExecute(con, "CREATE TABLE seat_floors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        building_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        floor_number INTEGER,
+        description TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (building_id) REFERENCES seat_buildings(id)
+      )")
+      cat("数据库迁移完成：已创建 seat_floors 表\n")
+    }
+    if (!"seat_zones" %in% tables) {
+      dbExecute(con, "CREATE TABLE seat_zones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        floor_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        zone_type TEXT NOT NULL DEFAULT 'open_desk',
+        row_start INTEGER DEFAULT 1,
+        col_start INTEGER DEFAULT 1,
+        row_span INTEGER DEFAULT 1,
+        col_span INTEGER DEFAULT 1,
+        description TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (floor_id) REFERENCES seat_floors(id)
+      )")
+      cat("数据库迁移完成：已创建 seat_zones 表\n")
+    }
+    if (!"seats" %in% tables) {
+      dbExecute(con, "CREATE TABLE seats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        floor_id INTEGER NOT NULL,
+        zone_id INTEGER,
+        seat_code TEXT NOT NULL,
+        row_num INTEGER NOT NULL,
+        col_num INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'vacant_no_pc',
+        user_id INTEGER,
+        asset_id INTEGER,
+        description TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (floor_id) REFERENCES seat_floors(id),
+        FOREIGN KEY (zone_id) REFERENCES seat_zones(id),
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (asset_id) REFERENCES assets(id)
+      )")
+      cat("数据库迁移完成：已创建 seats 表\n")
+    }
+
   }, error = function(e) {
     cat("数据库迁移失败:", e$message, "\n")
   }, finally = {
