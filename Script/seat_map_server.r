@@ -2,22 +2,24 @@
 
 seat_map_server <- function(input, output, session, rv) {
 
-  sm_trigger <- reactiveVal(0)
-  refresh <- function() { sm_trigger(sm_trigger() + 1) }
+  sm_trigger <- reactiveVal(0)        # 工位变更
+  sm_struct_trigger <- reactiveVal(0) # 楼栋/楼层/区域变更
+  refresh       <- function() { sm_trigger(sm_trigger() + 1); sm_struct_trigger(sm_struct_trigger() + 1) }
+  refresh_seats <- function() { sm_trigger(sm_trigger() + 1) }
 
   ##################
   # 楼栋列表
   ##################
   sm_buildings <- reactive({
-    sm_trigger(); req(rv$logged_in)
+    sm_struct_trigger(); req(rv$logged_in)
     building_get_all()
   })
 
   ##################
-  # 楼层列表（依赖楼栋选择）
+  # 楼层列表（依赖楼栋选择 + 结构变更）
   ##################
   sm_floors <- reactive({
-    sm_trigger(); req(rv$logged_in)
+    sm_struct_trigger(); req(rv$logged_in)
     bid <- input$sm_building
     if (is.null(bid) || bid == "") return(data.frame())
     floor_get_all(bid)
@@ -39,20 +41,25 @@ seat_map_server <- function(input, output, session, rv) {
   observe({
     req(input$asset_tabs == "seat")
     bld <- sm_buildings()
-    req(nrow(bld) >= 0)
     choices <- if (nrow(bld) > 0) setNames(as.character(bld$id), bld$name) else c("\u2014 \u8BF7\u5148\u6DFB\u52A0\u697C\u680B \u2014" = "")
-    selected <- input$sm_building
-    if (is.null(selected) || !selected %in% as.character(bld$id)) selected <- if (nrow(bld) > 0) as.character(bld$id[1]) else ""
-    updateSelectizeInput(session, "sm_building", choices = choices, selected = selected, server = TRUE)
+    cur <- isolate(input$sm_building)
+    sel <- if (length(cur)==0 || is.null(cur) || !cur %in% as.character(bld$id)) {
+      if (nrow(bld) > 0) as.character(bld$id[1]) else "" } else cur
+    if (!identical(cur, sel) || !identical(names(isolate(input$sm_building_choices)), names(choices))) {
+      updateSelectizeInput(session, "sm_building", choices = choices, selected = sel, server = TRUE)
+    }
   })
 
   observe({
-    req(input$asset_tabs == "seat")
+    req(input$asset_tabs == "seat", length(isolate(input$sm_building)) > 0)
     floors <- sm_floors()
     choices <- if (nrow(floors) > 0) setNames(as.character(floors$id), floors$name) else c("\u2014 \u5148\u9009\u697C\u680B \u2014" = "")
-    selected <- input$sm_floor
-    if (is.null(selected) || !selected %in% as.character(floors$id)) selected <- if (nrow(floors) > 0) as.character(floors$id[1]) else ""
-    updateSelectizeInput(session, "sm_floor", choices = choices, selected = selected, server = TRUE)
+    cur <- isolate(input$sm_floor)
+    sel <- if (length(cur)==0 || is.null(cur) || !cur %in% as.character(floors$id)) {
+      if (nrow(floors) > 0) as.character(floors$id[1]) else "" } else cur
+    if (!identical(cur, sel)) {
+      updateSelectizeInput(session, "sm_floor", choices = choices, selected = sel, server = TRUE)
+    }
   })
 
   ##################
@@ -97,8 +104,8 @@ seat_map_server <- function(input, output, session, rv) {
           "vacant_no_pc" = "sm-vacant-no-pc",
           "vacant_with_pc" = "sm-vacant-with-pc",
           "sm-vacant-no-pc")
-        name_display <- s$user_name[1] %||% ""
-        host_display <- s$asset_hostname[1] %||% ""
+        name_display <- if (is.null(s$user_name[1]) || is.na(s$user_name[1])) "" else s$user_name[1]
+        host_display <- if (is.null(s$asset_hostname[1]) || is.na(s$asset_hostname[1])) "" else s$asset_hostname[1]
         cells <- c(cells, list(
           tags$div(class = paste("sm-cell", status_css),
             style = sprintf("grid-row:%d; grid-column:%d;",
@@ -190,7 +197,7 @@ seat_map_server <- function(input, output, session, rv) {
       status = input$sm_edit_status,
       user_id = uid, asset_id = aid,
       description = input$sm_edit_desc)
-    if (result$success) { removeModal(); refresh() }
+    if (result$success) { removeModal(); refresh_seats() }
     showNotification(result$message, type = if(result$success) "message" else "error")
   })
 
@@ -222,7 +229,7 @@ seat_map_server <- function(input, output, session, rv) {
   observeEvent(input$sm_del_seat_confirm, {
     req(rv$logged_in, input$sm_seat_click)
     result <- seat_delete(as.integer(input$sm_seat_click$id))
-    removeModal(); refresh()
+    removeModal(); refresh_seats()
     showNotification(result$message, type = "message")
   })
 
@@ -322,7 +329,7 @@ seat_map_server <- function(input, output, session, rv) {
     zid <- input$sm_new_seat_zone; if (is.null(zid) || zid == "") zid <- NA
     result <- seat_add(input$sm_floor, zid, input$sm_new_seat_code,
       input$sm_new_seat_row, input$sm_new_seat_col, input$sm_new_seat_status)
-    if (result$success) { removeModal(); refresh() }
+    if (result$success) { removeModal(); refresh_seats() }
     showNotification(result$message, type = if(result$success) "message" else "error")
   })
 
@@ -357,7 +364,7 @@ seat_map_server <- function(input, output, session, rv) {
     result <- seat_batch_generate(input$sm_floor, zid, input$sm_batch_prefix,
       input$sm_batch_start_row, input$sm_batch_start_col,
       input$sm_batch_rows, input$sm_batch_cols, input$sm_batch_start_num)
-    if (result$success) { removeModal(); refresh() }
+    if (result$success) { removeModal(); refresh_seats() }
     showNotification(result$message, type = if(result$success) "message" else "error")
   })
 

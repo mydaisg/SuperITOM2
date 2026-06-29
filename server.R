@@ -1630,147 +1630,331 @@ server <- function(input, output, session) {
   output$viz_mtr_running <- renderText({ "0" })
   output$viz_mtr_today <- renderText({ "暂无" })
   
-  # 处理用户刷新按钮点击事件
-  observeEvent(input$refresh_users, {
-    # 检查登录状态和admin权限
-    req(rv$logged_in)
-    req(!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
-    # 更新用户表格输出
-    output$user_table <- renderDT({
-      DT::datatable(
-        user_get_all(),  # 获取所有用户
-        colnames = c("ID", "用户名", "显示名称", "角色", "状态", "创建时间", "更新时间"),
-        options = list(pageLength = 10, scrollX = TRUE),
-        rownames = FALSE,
-        selection = list(mode = 'single', target = 'row', selected = integer(0))
-      )
-    })
-  })
-  
-  # 处理用户表格点击事件
-  observeEvent(input$user_table_rows_selected, {
-    # 检查登录状态
-    req(rv$logged_in)
-    # 获取选中的用户信息
-    selected_rows <- input$user_table_rows_selected
-    if (length(selected_rows) > 0) {
-      # 获取用户数据
-      users <- user_get_all()
-      selected_user <- users[selected_rows, ]
-      # 将用户信息填充到输入框中
-      updateTextInput(session, "selected_user_id", value = selected_user$id)
-      updateTextInput(session, "username", value = selected_user$username)
-      updateTextInput(session, "display_name", value = ifelse(is.na(selected_user$display_name), "", selected_user$display_name))
-      updateTextInput(session, "password", value = "")
-      updateSelectInput(session, "role", selected = selected_user$role)
+  # ====================================
+  # 组织架构模块
+  # ====================================
+  org_trigger <- reactiveVal(0)
+  org_refresh <- function() { org_trigger(org_trigger() + 1) }
+  org_selected_dept <- reactiveVal(NULL)
+
+  # 彩虹色板（给每个一级部门分配颜色，子节点继承）
+  org_rainbow <- c("#2196F3","#E91E63","#4CAF50","#FF9800","#9C27B0",
+                   "#00BCD4","#FF5722","#607D8B","#795548","#3F51B5",
+                   "#009688","#F44336","#8BC34A","#CDDC39","#FFC107")
+
+  # 给部门分配颜色（基于其顶级祖先的 ID hash）
+  org_dept_color <- function(dept_id, depts) {
+    # 找到顶级祖先
+    root_id <- dept_id
+    for(.i in 1:10) {  # 最多上溯10层
+      row <- which(depts$id == root_id)
+      if (length(row)==0) break
+      pid <- depts$parent_id[row[1]]
+      if (is.na(pid) || pid==0) break
+      root_id <- pid
     }
-  })
-  
-  # 处理添加用户按钮点击事件
-  observe({
-    ok <- btn_ok(input$username) && btn_ok(input$password) && btn_ok(input$role)
-    toggle_btn("add_user", ok)
-  })
-  observe({
-    ok <- btn_ok(input$selected_user_id) && btn_ok(input$username) && btn_ok(input$role)
-    toggle_btn("update_user", ok)
-  })
-  observeEvent(input$add_user, {
-    # 检查登录状态和admin权限
-    req(rv$logged_in)
-    req(!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
-    # 确保必要输入存在
-    req(input$username, input$password, input$role)
-    # 调用user_add函数添加用户，传递当前用户信息
-    result <- user_add(input$username, input$password, input$role, input$display_name, rv$current_user)
-    # 显示操作结果通知
-    showNotification(result$message, type = ifelse(result$success, "message", "error"))
-    # 刷新用户表格
-    output$user_table <- renderDT({
-      DT::datatable(
-        user_get_all(),
-        colnames = c("ID", "用户名", "显示名称", "角色", "状态", "创建时间", "更新时间"),
-        options = list(pageLength = 10, scrollX = TRUE),
-        rownames = FALSE,
-        selection = list(mode = 'single', target = 'row', selected = integer(0))
+    org_rainbow[(abs(root_id) %% length(org_rainbow)) + 1]
+  }
+
+  # 扁平两层组织架构图
+  org_build_node <- function(d, color, active) {
+    users <- tryCatch(dept_users(d$id), error=function(e)data.frame())
+    border <- if(active) "outline:3px solid #333; outline-offset:2px;" else ""
+    tags$div(
+      tags$div(class="org-node", `data-id`=d$id,
+        style=sprintf("background:%s; color:white; %s", color, border),
+        onclick=sprintf("Shiny.setInputValue('org_select_dept',%d,{priority:'event'})", d$id),
+        tags$div(class="nm", d$name),
+        tags$div(class="ct", sprintf("序%d · %d人", d$sort_order[1] %||% 0, nrow(users)))
       )
-    })
-    # 清空输入框
-    updateTextInput(session, "selected_user_id", value = "")
-    updateTextInput(session, "username", value = "")
-    updateTextInput(session, "display_name", value = "")
-    updateTextInput(session, "password", value = "")
-    updateSelectInput(session, "role", selected = "user")
-  })
-  
-  # 处理修改账号按钮点击事件
-  observeEvent(input$update_user, {
-    # 检查登录状态和admin权限
-    req(rv$logged_in)
-    req(!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
-    # 确保必要输入存在
-    req(input$selected_user_id, input$username, input$role)
-    # 调用user_update函数更新用户信息，传递当前用户信息和密码
-    result <- user_update(input$selected_user_id, input$username, input$role, input$password, input$display_name, rv$current_user)
-    # 显示操作结果通知
-    showNotification(result$message, type = ifelse(result$success, "message", "error"))
-    # 刷新用户表格
-    output$user_table <- renderDT({
-      DT::datatable(
-        user_get_all(),
-        colnames = c("ID", "用户名", "显示名称", "角色", "状态", "创建时间", "更新时间"),
-        options = list(pageLength = 10, scrollX = TRUE),
-        rownames = FALSE,
-        selection = list(mode = 'single', target = 'row', selected = integer(0))
+    )
+  }
+
+  # 组织架构图
+  output$org_chart <- renderUI({
+    org_trigger(); req(rv$logged_in)
+    depts <- dept_get_all()
+    if (nrow(depts) == 0) return(tags$div(style="text-align:center;padding:40px;color:#999;", icon("sitemap","fa-3x"), tags$p("暂无部门")))
+
+    # 找出所有一级部门（parent_id 为空）
+    l1 <- depts[is.na(depts$parent_id), , drop = FALSE]
+    if ("sort_order" %in% names(l1)) l1 <- l1[order(l1$sort_order, l1$name), , drop = FALSE]
+
+    # 当前选中的部门（可能是一级或二级）
+    sel_id <- org_selected_dept()
+
+    # 确定展示的二级部门：选中部门的直接子级
+    l2 <- data.frame()
+    l2_parent_name <- ""
+    if (!is.null(sel_id)) {
+      l2 <- depts[!is.na(depts$parent_id) & depts$parent_id == sel_id, , drop = FALSE]
+      if ("sort_order" %in% names(l2)) l2 <- l2[order(l2$sort_order, l2$name), , drop = FALSE]
+      # 如果选中的本身就是二级，找到它的一级父级，只展父级的所有二级
+      if(nrow(l2) == 0) {
+        p_row <- which(depts$id == sel_id)
+        if (length(p_row) > 0 && !is.na(depts$parent_id[p_row[1]])) {
+          grandpa <- depts$parent_id[p_row[1]]
+          l2 <- depts[!is.na(depts$parent_id) & depts$parent_id == grandpa, , drop = FALSE]
+          if ("sort_order" %in% names(l2)) l2 <- l2[order(l2$sort_order, l2$name), , drop = FALSE]
+        }
+      }
+    }
+
+    # 一级行
+    l1_row <- if (nrow(l1) > 0)
+      tagList(
+        tags$div(class="org-row-label", "一级部门"),
+        tags$div(class="org-row",
+          lapply(seq_len(nrow(l1)), function(i) {
+            d <- l1[i, ]
+            color <- org_dept_color(d$id, depts)
+            org_build_node(d, color, !is.null(sel_id) && sel_id == d$id)
+          })
+        )
       )
-    })
-    # 清空输入框
-    updateTextInput(session, "selected_user_id", value = "")
-    updateTextInput(session, "username", value = "")
-    updateTextInput(session, "display_name", value = "")
-    updateTextInput(session, "password", value = "")
-    updateSelectInput(session, "role", selected = "user")
-  })
-  
-  # 处理禁用/启用用户按钮点击事件
-  observeEvent(input$toggle_active_user, {
-    # 检查登录状态和admin权限
-    req(rv$logged_in)
-    req(!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin")
-    # 确保必要输入存在
-    req(input$selected_user_id)
-    # 调用user_toggle_active函数切换用户状态，传递当前用户信息
-    result <- user_toggle_active(input$selected_user_id, rv$current_user)
-    # 显示操作结果通知
-    showNotification(result$message, type = ifelse(result$success, "message", "error"))
-    # 刷新用户表格
-    output$user_table <- renderDT({
-      DT::datatable(
-        user_get_all(),
-        colnames = c("ID", "用户名", "显示名称", "角色", "状态", "创建时间", "更新时间"),
-        options = list(pageLength = 10, scrollX = TRUE),
-        rownames = FALSE,
-        selection = list(mode = 'single', target = 'row', selected = integer(0))
+    else ""
+
+    # 二级行（仅当选中）
+    l2_row <- if (nrow(l2) > 0) {
+      l2_colors <- sapply(l2$id, function(id) org_dept_color(id, depts))
+      tagList(
+        tags$div(class="org-row-label", "二级部门"),
+        tags$div(class="org-row",
+          lapply(seq_len(nrow(l2)), function(i) {
+            d <- l2[i, ]
+            uid <- d$id
+            users <- tryCatch(dept_users(uid), error=function(e)data.frame())
+            tags$div(style="display:flex; flex-direction:column; align-items:center;",
+              tags$div(class="org-connector"),
+              org_build_node(d, l2_colors[i], !is.null(sel_id) && sel_id == uid),
+              # 人员标签（叶节点才有）
+              if (nrow(users) > 0) tags$div(class="org-user-list",
+                lapply(head(seq_len(nrow(users)), 15), function(j) {
+                  u <- users[j, ]
+                  tags$span(class="org-user-tag", u$display_label[1])
+                })
+              )
+            )
+          })
+        )
       )
-    })
-    # 清空输入框
-    updateTextInput(session, "selected_user_id", value = "")
-    updateTextInput(session, "username", value = "")
-    updateTextInput(session, "display_name", value = "")
-    updateTextInput(session, "password", value = "")
-    updateSelectInput(session, "role", selected = "user")
+    } else ""
+
+    tagList(l1_row, l2_row)
   })
-  
-  # 初始渲染用户表格
-  output$user_table <- renderDT({
-    DT::datatable(
-      user_get_all(),
-      colnames = c("ID", "用户名", "显示名称", "角色", "状态", "创建时间", "更新时间"),
-      options = list(pageLength = 10, scrollX = TRUE),
-      rownames = FALSE,
-      selection = list(mode = 'single', target = 'row', selected = integer(0))
+
+  # 点击部门 → 选中
+  observeEvent(input$org_select_dept, {
+    org_selected_dept(as.integer(input$org_select_dept))
+  })
+
+  # 选中信息
+  output$org_selected_info <- renderUI({
+    did <- org_selected_dept()
+    if (is.null(did)) return("")
+    depts <- dept_get_all(); d <- depts[depts$id == did, ]
+    if (nrow(d) == 0) return("")
+    users <- dept_users(did)
+    dept_path <- dept_get_tree()
+    dp <- dept_path[dept_path$id == did, ]
+    path_str <- if (nrow(dp) > 0) dp$path[1] else d$name[1]
+    tags$span(
+      "已选：", tags$b(path_str),
+      sprintf(" · %d人", nrow(users)),
+      actionButton("org_deselect", "×", class="btn-xs btn-default", style="margin-left:4px; padding:0 6px;")
     )
   })
+
+  observeEvent(input$org_deselect, { org_selected_dept(NULL) })
+
+  # 人员列表（选中部门则筛选，用于编辑/移入移出）
+  org_users <- reactive({
+    org_trigger(); req(rv$logged_in)
+    did <- org_selected_dept()
+    if (!is.null(did)) return(dept_users(did))
+    user_get_all()
+  })
+
+  # 添加部门
+  observeEvent(input$org_add_dept, {
+    req(rv$logged_in)
+    depts <- dept_get_all(); dept_choices <- c("(顶级)"="", setNames(as.character(depts$id), depts$name))
+    showModal(modalDialog(title="添加部门", size="s", easyClose=TRUE,
+      textInput("org_new_dept_name", "部门名称 *", placeholder="例如：研发中心"),
+      selectizeInput("org_new_dept_parent", "上级部门", choices=dept_choices, width="100%"),
+      numericInput("org_new_dept_sort", "显示序号", value=0, min=0, max=999, step=1),
+      textInput("org_new_dept_desc", "描述"),
+      footer=tagList(modalButton("取消"), actionButton("org_add_dept_confirm", "添加", class="btn-success"))))
+  })
+  observeEvent(input$org_add_dept_confirm, {
+    req(rv$logged_in, input$org_new_dept_name)
+    pid <- input$org_new_dept_parent; if (is.null(pid)||pid=="") pid <- NA
+    result <- dept_add(input$org_new_dept_name, pid, sort_order=input$org_new_dept_sort, description=input$org_new_dept_desc %||% "")
+    if (result$success) { removeModal(); org_refresh() }
+    showNotification(result$message, type=if(result$success) "message" else "error")
+  })
+
+  # 编辑部门
+  observeEvent(input$org_edit_dept, {
+    req(rv$logged_in, org_selected_dept())
+    did <- org_selected_dept(); depts <- dept_get_all(); d <- depts[depts$id==did, ]
+    if (nrow(d)==0) return()
+    dept_choices <- c("(顶级)"="", setNames(as.character(depts$id[depts$id!=did]), depts$name[depts$id!=did]))
+    showModal(modalDialog(title=paste("编辑部门", d$name[1]), size="s", easyClose=TRUE,
+      textInput("org_edit_dept_name", "名称", value=d$name[1]),
+      selectizeInput("org_edit_dept_parent", "上级部门", choices=dept_choices,
+        selected=as.character(d$parent_id[1] %||% ""), width="100%"),
+      numericInput("org_edit_dept_sort", "显示序号", value=d$sort_order[1] %||% 0, min=0, max=999, step=1),
+      textInput("org_edit_dept_desc", "描述", value=d$description[1] %||% ""),
+      footer=tagList(modalButton("取消"), actionButton("org_edit_dept_confirm", "保存", class="btn-primary"))))
+  })
+  observeEvent(input$org_edit_dept_confirm, {
+    req(rv$logged_in, org_selected_dept())
+    pid <- input$org_edit_dept_parent; if (is.null(pid)||pid=="") pid <- NA
+    result <- dept_update(org_selected_dept(), name=input$org_edit_dept_name, parent_id=pid,
+      sort_order=input$org_edit_dept_sort, description=input$org_edit_dept_desc)
+    if (result$success) { removeModal(); org_refresh() }
+    showNotification(result$message, type=if(result$success) "message" else "error")
+  })
+
+  # 删除部门
+  observeEvent(input$org_del_dept, {
+    req(rv$logged_in, org_selected_dept())
+    did <- org_selected_dept(); depts <- dept_get_all(); d <- depts[depts$id==did, ]
+    if (nrow(d)==0) return()
+    showModal(modalDialog(title="确认删除部门",
+      tags$div(style="font-size:13px;",
+        tags$p(tags$b(sprintf("确定删除部门 [%s] 吗？", d$name[1]))),
+        tags$p(style="color:#d9534f; font-size:12px;", "有子部门或人员时，无法删除。")),
+      footer=tagList(modalButton("取消"), actionButton("org_del_dept_confirm", "确认删除", class="btn-danger")),
+      size="s", easyClose=TRUE))
+  })
+  observeEvent(input$org_del_dept_confirm, {
+    req(rv$logged_in, org_selected_dept())
+    result <- dept_delete(org_selected_dept())
+    if (result$success) { removeModal(); org_selected_dept(NULL); org_refresh() }
+    showNotification(result$message, type=if(result$success) "message" else "error")
+  })
+
+  # 添加人员弹窗
+  observeEvent(input$org_add_user, {
+    req(rv$logged_in)
+    did <- org_selected_dept(); depts <- dept_get_all()
+    dept_choices <- c("(无)"="", setNames(as.character(depts$id), depts$path))
+    showModal(modalDialog(title="添加人员", size="s", easyClose=TRUE,
+      textInput("org_new_user_name", "用户名 *"),
+      textInput("org_new_user_dn", "显示名称"),
+      passwordInput("org_new_user_pw", "密码 *"),
+      selectInput("org_new_user_role", "角色", choices=c("user","admin","it_desk","it_engineer","sys_engineer")),
+      selectizeInput("org_new_user_dept", "所属部门", choices=dept_choices,
+        selected=as.character(did %||% ""), width="100%"),
+      footer=tagList(modalButton("取消"), actionButton("org_add_user_confirm", "添加", class="btn-primary"))))
+  })
+  observeEvent(input$org_add_user_confirm, {
+    req(rv$logged_in, input$org_new_user_name, input$org_new_user_pw)
+    did <- input$org_new_user_dept; if (is.null(did)||did=="") did <- NA
+    result <- user_add(input$org_new_user_name, input$org_new_user_pw, input$org_new_user_role,
+      input$org_new_user_dn, did, rv$current_user)
+    if (result$success) { removeModal(); org_refresh() }
+    showNotification(result$message, type=if(result$success) "message" else "error")
+  })
+
+  # 移入人员（弹窗选择）
+  observeEvent(input$org_move_user, {
+    req(rv$logged_in, org_selected_dept())
+    all_users <- user_get_all()
+    if (nrow(all_users)==0) { showNotification("暂无人员",type="warning"); return() }
+    uc <- setNames(as.character(all_users$id), sprintf("%s (%s)", all_users$display_name %||% all_users$username, all_users$username))
+    showModal(modalDialog(title="选择要移入的人员", size="m", easyClose=TRUE,
+      selectizeInput("org_move_user_sel","人员", choices=uc, multiple=TRUE, width="100%",
+        options=list(placeholder="搜索人员...")),
+      footer=tagList(modalButton("取消"),
+        actionButton("org_move_user_confirm","移入",class="btn-primary"))))
+  })
+  observeEvent(input$org_move_user_confirm, {
+    req(rv$logged_in, org_selected_dept(), input$org_move_user_sel)
+    for (uid in input$org_move_user_sel) user_set_department(as.integer(uid), org_selected_dept())
+    removeModal(); org_refresh()
+    showNotification(sprintf("已移入 %d 人", length(input$org_move_user_sel)), type="message")
+  })
+
+  # 移出人员（弹窗选择当前部门人员）
+  observeEvent(input$org_remove_user, {
+    req(rv$logged_in, org_selected_dept())
+    users <- dept_users(org_selected_dept())
+    if (nrow(users)==0) { showNotification("该部门暂无人员",type="warning"); return() }
+    uc <- setNames(as.character(users$id), sprintf("%s (%s)", users$display_label, users$username))
+    showModal(modalDialog(title="选择要移出的人员", size="m", easyClose=TRUE,
+      selectizeInput("org_remove_user_sel","人员", choices=uc, multiple=TRUE, width="100%",
+        options=list(placeholder="选择人员...")),
+      footer=tagList(modalButton("取消"),
+        actionButton("org_remove_user_confirm","移出",class="btn-warning"))))
+  })
+  observeEvent(input$org_remove_user_confirm, {
+    req(rv$logged_in, input$org_remove_user_sel)
+    for (uid in input$org_remove_user_sel) user_set_department(as.integer(uid), NA)
+    removeModal(); org_refresh()
+    showNotification(sprintf("已移出 %d 人", length(input$org_remove_user_sel)), type="message")
+  })
+
+  # 编辑人员（弹窗选择 → 再编辑）
+  observeEvent(input$org_edit_user, {
+    req(rv$logged_in)
+    all_users <- user_get_all()
+    if (nrow(all_users)==0) { showNotification("暂无人员",type="warning"); return() }
+    uc <- setNames(as.character(all_users$id), sprintf("%s [%s] — %s", all_users$display_name %||% all_users$username, all_users$username, all_users$department_name %||% "无部门"))
+    showModal(modalDialog(title="选择要编辑的人员", size="l", easyClose=TRUE,
+      selectizeInput("org_edit_user_sel","人员", choices=uc, width="100%",
+        options=list(placeholder="搜索人员...")),
+      footer=tagList(modalButton("取消"),
+        actionButton("org_edit_user_next","下一步",class="btn-primary"))))
+  })
+  observeEvent(input$org_edit_user_next, {
+    req(input$org_edit_user_sel)
+    uid <- as.integer(input$org_edit_user_sel)
+    # 关闭选择弹窗，打开编辑弹窗
+    removeModal()
+    rv$org_edit_uid <- uid
+    session$sendCustomMessage("orgTriggerEdit", uid)
+  })
+
+  # 编辑人员弹窗（从 org_edit_user 或直接触发）
+  org_show_edit_modal <- function(uid) {
+    all_users <- user_get_all(); u <- all_users[all_users$id == uid, ]
+    if (nrow(u)==0) return()
+    depts <- dept_get_all()
+    dept_choices <- c("(无)"="", setNames(as.character(depts$id), depts$path))
+    has_did <- !is.null(u$department_id) && !is.na(u$department_id)
+    showModal(modalDialog(title="编辑人员", size="s", easyClose=TRUE,
+      textInput("org_edit_user_name", "用户名 *", value=u$username[1]),
+      textInput("org_edit_user_dn", "显示名称", value=u$display_name[1] %||% ""),
+      passwordInput("org_edit_user_pw", "新密码（留空不修改）"),
+      selectInput("org_edit_user_role", "角色",
+        choices=c("user","admin","it_desk","it_engineer","sys_engineer"),
+        selected=u$role[1]),
+      selectizeInput("org_edit_user_dept", "所属部门", choices=dept_choices,
+        selected=if(has_did) as.character(u$department_id[1]) else "", width="100%"),
+      footer=tagList(modalButton("取消"),
+        actionButton("org_edit_user_confirm", "保存", class="btn-primary"))))
+  }
+
+  observeEvent(rv$org_edit_uid, {
+    if (!is.null(rv$org_edit_uid)) org_show_edit_modal(rv$org_edit_uid)
+  })
+
+  observeEvent(input$org_edit_user_confirm, {
+    req(rv$logged_in, input$org_edit_user_name)
+    uid <- rv$org_edit_uid; rv$org_edit_uid <- NULL
+    did <- input$org_edit_user_dept; if (is.null(did)||did=="") did <- NA
+    pw <- input$org_edit_user_pw; if (is.null(pw)||pw=="") pw <- NULL
+    result <- user_update(uid, input$org_edit_user_name, input$org_edit_user_role,
+      password=pw, display_name=input$org_edit_user_dn, department_id=did, current_user=rv$current_user)
+    if (result$success) { removeModal(); org_refresh() }
+    showNotification(result$message, type=if(result$success) "message" else "error")
+  })
+
+  # 刷新
+  observeEvent(input$org_refresh, { org_refresh() })
   
   # 处理配置刷新按钮点击事件
   observeEvent(input$refresh_config, {

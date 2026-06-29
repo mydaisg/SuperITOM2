@@ -1220,6 +1220,29 @@ migrate_database <- function() {
       cat("数据库迁移完成：已创建 seats 表\n")
     }
 
+    # ===============================================
+    # 组织架构模块（departments 树形结构）
+    # ===============================================
+    if (!"departments" %in% tables) {
+      dbExecute(con, "CREATE TABLE departments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        parent_id INTEGER,
+        sort_order INTEGER DEFAULT 0,
+        description TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (parent_id) REFERENCES departments(id)
+      )")
+      cat("数据库迁移完成：已创建 departments 表\n")
+    }
+    # 给 users 表添加 department_id 列
+    columns <- dbGetQuery(con, "PRAGMA table_info(users)")
+    if (!"department_id" %in% columns$name) {
+      dbExecute(con, "ALTER TABLE users ADD COLUMN department_id INTEGER REFERENCES departments(id)")
+      cat("数据库迁移完成：users 表已添加 department_id 列\n")
+    }
+
   }, error = function(e) {
     cat("数据库迁移失败:", e$message, "\n")
   }, finally = {

@@ -816,27 +816,37 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       icon = icon("tools"),
       # --- admin 专属 ---
       if (can_admin("admin_users")) tabPanel(
-        "用户管理",
-        icon = icon("users"),
+        "组织架构",
+        icon = icon("sitemap"),
         fluidPage(
-          titlePanel("用户管理"),
-          sidebarLayout(
-            sidebarPanel(
-              tags$div(textInput("selected_user_id", "", value = ""), style = "display: none;"),
-              textInput("username", "用户名"),
-              textInput("display_name", "显示名称"),
-              passwordInput("password", "密码"),
-              selectInput("role", "角色", choices = c("user", "admin")),
-              actionButton("add_user", "添加用户", class = "btn-primary", disabled = "disabled"),
-              br(), br(),
-              actionButton("update_user", "修改账号", class = "btn-warning", disabled = "disabled"),
-              br(), br(),
-              actionButton("toggle_active_user", "禁用/启用用户", class = "btn-danger"),
-              br(), br(),
-              actionButton("refresh_users", "刷新用户", class = "btn-info")
-            ),
-            mainPanel(
-              DTOutput("user_table")
+          titlePanel("组织架构"),
+          tags$style(HTML("
+            .org-chart-outer { width:100%; height:72vh; overflow:auto; border:1px solid #e0e0e0; border-radius:8px; background:#fafbfc; }
+            .org-chart-wrap { padding:20px 30px; }
+            .org-row        { display:flex; justify-content:center; gap:16px; flex-wrap:wrap; margin-bottom:30px; }
+            .org-row-label  { width:100%; text-align:center; font-size:12px; color:#888; margin-bottom:8px; }
+            .org-node       { border-radius:8px; padding:10px 16px; min-width:110px; text-align:center; cursor:pointer;
+              transition:all 0.2s; box-shadow:0 2px 6px rgba(0,0,0,0.08); position:relative; }
+            .org-node:hover { transform:translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,0.15); }
+            .org-node.active { outline:3px solid #333; outline-offset:2px; }
+            .org-node .nm   { font-size:13px; font-weight:700; }
+            .org-node .ct   { font-size:10px; opacity:0.8; margin-top:2px; }
+            .org-user-list  { display:flex; flex-wrap:wrap; justify-content:center; gap:3px; margin-top:6px; max-width:180px; }
+            .org-user-tag   { font-size:9px; background:rgba(255,255,255,0.3); padding:2px 8px; border-radius:10px; }
+            .org-connector  { width:2px; height:20px; background:#bbb; margin:0 auto 4px auto; }
+          ")),
+          div(style = "margin-bottom:10px; display:flex; gap:6px;",
+            actionButton("org_add_dept","",icon=icon("plus"),class="btn-sm btn-success",title="添加部门"),
+            actionButton("org_edit_dept","",icon=icon("pencil"),class="btn-sm btn-default",title="编辑部门"),
+            actionButton("org_del_dept","",icon=icon("trash"),class="btn-sm btn-danger",title="删除部门"),
+            actionButton("org_add_user","",icon=icon("user-plus"),class="btn-sm btn-primary",title="添加人员"),
+            actionButton("org_edit_user","",icon=icon("pencil"),class="btn-sm btn-default",title="编辑人员"),
+            actionButton("org_refresh","",icon=icon("sync"),class="btn-sm btn-default",title="刷新"),
+            tags$span(style="margin-left:12px; font-size:13px; color:#555;", uiOutput("org_selected_info"))
+          ),
+          div(class="org-chart-outer",
+            div(class="org-chart-wrap",
+              uiOutput("org_chart")
             )
           )
         )
@@ -1066,33 +1076,6 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
 # 定义admin专用标签页
 admin_tabs_ui <- function() {
   tagList(
-    # 用户管理标签页
-    tabPanel(
-      "用户管理",
-      icon = icon("users"),
-      fluidPage(
-        titlePanel("用户管理"),
-        sidebarLayout(
-          sidebarPanel(
-            tags$div(textInput("selected_user_id", "", value = ""), style = "display: none;"),
-            textInput("username", "用户名"),
-            passwordInput("password", "密码"),
-            selectInput("role", "角色", choices = c("user", "admin")),
-            tags$button(id="add_user", type="button", class="btn btn-primary action-button", disabled=NA, "添加用户"),
-            br(), br(),
-            tags$button(id="update_user", type="button", class="btn btn-warning action-button", disabled=NA, "修改账号"),
-            br(), br(),
-            actionButton("toggle_active_user", "禁用/启用用户", class = "btn-danger"),
-            br(), br(),
-            actionButton("refresh_users", "刷新用户", class = "btn-info")
-          ),
-          mainPanel(
-            DTOutput("user_table")
-          )
-        )
-      )
-    ),
-    
     # 系统设置标签页
     tabPanel(
       "系统设置",
