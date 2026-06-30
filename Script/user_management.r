@@ -84,9 +84,11 @@ dept_delete <- function(id) {
 dept_users <- function(dept_id) {
   con <- db_connect()
   tryCatch({
+    cols <- dbGetQuery(con, "PRAGMA table_info(users)")$name
+    sel_gender <- if ("gender" %in% cols) "u.gender" else "'M' as gender"
     dbGetQuery(con, sprintf(
-      "SELECT u.*, COALESCE(NULLIF(u.display_name,''), u.username) as display_label
-       FROM users u WHERE u.department_id = %d ORDER BY u.username", as.integer(dept_id)))
+      "SELECT u.*, COALESCE(NULLIF(u.display_name,''), u.username) as display_label, %s
+       FROM users u WHERE u.department_id = %d ORDER BY u.username", sel_gender, as.integer(dept_id)))
   }, error = function(e) data.frame(), finally = { db_disconnect(con) })
 }
 
@@ -102,17 +104,49 @@ user_set_department <- function(user_id, dept_id) {
   finally = { db_disconnect(con) })
 }
 
+# 递归获取部门及其所有子部门的 ID 列表
+dept_get_descendant_ids <- function(dept_id) {
+  ids <- as.integer(dept_id)
+  depts <- dept_get_all()
+  queue <- list(dept_id)
+  while (length(queue) > 0) {
+    pid <- queue[[1]]; queue <- queue[-1]
+    children <- depts[!is.na(depts$parent_id) & depts$parent_id == pid, , drop = FALSE]
+    if (nrow(children) > 0) {
+      ids <- c(ids, as.integer(children$id))
+      queue <- c(queue, as.list(children$id))
+    }
+  }
+  unique(ids)
+}
+
+# 递归获取部门下所有人员（含子部门）
+dept_users_recursive <- function(dept_id) {
+  ids <- dept_get_descendant_ids(dept_id)
+  if (length(ids) == 0) return(data.frame())
+  con <- db_connect()
+  tryCatch({
+    id_str <- paste(as.integer(ids), collapse=",")
+    dbGetQuery(con, sprintf(
+      "SELECT u.*, COALESCE(NULLIF(u.display_name,''), u.username) as display_label
+       FROM users u WHERE u.department_id IN (%s) ORDER BY u.username", id_str))
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
 user_get_all <- function() {
   con <- db_connect()
   tryCatch({
     columns <- dbGetQuery(con, "PRAGMA table_info(users)")
     has_dn <- "display_name" %in% columns$name
     has_did <- "department_id" %in% columns$name
+    has_gd <- "gender" %in% columns$name
     base <- "SELECT u.id, u.username, u.role, u.active, u.created_at, u.updated_at"
     if (has_dn) base <- paste0(base, ", COALESCE(NULLIF(u.display_name,''), u.username) as display_name")
     else base <- paste0(base, ", u.username as display_name")
     if (has_did) base <- paste0(base, ", u.department_id, d.name as department_name, d2.name as parent_dept_name")
     else base <- paste0(base, ", NULL as department_id, NULL as department_name, NULL as parent_dept_name")
+    if (has_gd) base <- paste0(base, ", u.gender")
+    else base <- paste0(base, ", 'M' as gender")
     base <- paste0(base, " FROM users u")
     if (has_did) base <- paste0(base, " LEFT JOIN departments d ON u.department_id = d.id LEFT JOIN departments d2 ON d.parent_id = d2.id")
     result <- dbGetQuery(con, paste0(base, " ORDER BY u.created_at DESC"))
@@ -133,7 +167,7 @@ user_check_permission <- function(current_user, required_role = "admin") {
   return(list(success = TRUE))
 }
 
-user_add <- function(username, password, role = "user", display_name = NULL, department_id = NA, current_user = NULL) {
+user_add <- function(username, password, role = "user", display_name = NULL, department_id = NA, gender = "M", current_user = NULL) {
   permission <- user_check_permission(current_user)
   if (!permission$success) return(permission)
   con <- db_connect()
@@ -141,14 +175,17 @@ user_add <- function(username, password, role = "user", display_name = NULL, dep
     columns <- dbGetQuery(con, "PRAGMA table_info(users)")
     hdn <- "display_name" %in% columns$name
     hdid <- "department_id" %in% columns$name
+    hgd <- "gender" %in% columns$name
     did_str <- if (hdid && !is.na(department_id) && department_id != "") as.character(as.integer(department_id)) else "NULL"
-    if (hdn && !is.null(display_name) && display_name != "") {
-      if (hdid) query <- sprintf("INSERT INTO users (username, display_name, password, role, active, department_id) VALUES ('%s','%s','%s','%s',1,%s)", username, display_name, password, role, did_str)
-      else query <- sprintf("INSERT INTO users (username, display_name, password, role, active) VALUES ('%s','%s','%s','%s',1)", username, display_name, password, role)
-    } else {
-      if (hdid) query <- sprintf("INSERT INTO users (username, password, role, active, department_id) VALUES ('%s','%s','%s',1,%s)", username, password, role, did_str)
-      else query <- sprintf("INSERT INTO users (username, password, role, active) VALUES ('%s','%s','%s',1)", username, password, role)
-    }
+    gender_str <- if (!is.null(gender) && gender %in% c("M","F")) gender else "M"
+    cols <- c("username","password","role","active")
+    vals <- c(sprintf("'%s'", gsub("'","''",username)),
+              sprintf("'%s'", gsub("'","''",password)),
+              sprintf("'%s'", role), "1")
+    if (hdn) { cols <- c(cols, "display_name"); vals <- c(vals, if (!is.null(display_name) && display_name != "") sprintf("'%s'", gsub("'","''",display_name)) else "NULL") }
+    if (hdid) { cols <- c(cols, "department_id"); vals <- c(vals, did_str) }
+    if (hgd)  { cols <- c(cols, "gender");       vals <- c(vals, sprintf("'%s'", gender_str)) }
+    query <- sprintf("INSERT INTO users (%s) VALUES (%s)", paste(cols, collapse=","), paste(vals, collapse=","))
     dbExecute(con, query)
     
     # 记录日志
@@ -200,7 +237,7 @@ user_delete <- function(id, current_user = NULL) {
   })
 }
 
-user_update <- function(id, username, role, password = NULL, display_name = NULL, department_id = NULL, current_user = NULL) {
+user_update <- function(id, username, role, password = NULL, display_name = NULL, department_id = NULL, gender = NULL, current_user = NULL) {
   permission <- user_check_permission(current_user)
   if (!permission$success) return(permission)
   id <- as.integer(id)
@@ -209,10 +246,12 @@ user_update <- function(id, username, role, password = NULL, display_name = NULL
     columns <- dbGetQuery(con, "PRAGMA table_info(users)")
     has_dn <- "display_name" %in% columns$name
     has_did <- "department_id" %in% columns$name
+    has_gd <- "gender" %in% columns$name
     sets <- sprintf("username='%s', role='%s'", gsub("'","''",username), role)
     if (!is.null(password) && password != "") sets <- paste0(sets, sprintf(", password='%s'", gsub("'","''",password)))
     if (has_dn) sets <- paste0(sets, if (!is.null(display_name) && display_name != "") sprintf(", display_name='%s'", gsub("'","''",display_name)) else ", display_name=NULL")
     if (has_did && !is.null(department_id)) sets <- paste0(sets, sprintf(", department_id=%s", if(is.na(department_id)||department_id==""||department_id=="NA") "NULL" else as.character(as.integer(department_id))))
+    if (has_gd && !is.null(gender) && gender %in% c("M","F")) sets <- paste0(sets, sprintf(", gender='%s'", gender))
     sets <- paste0(sets, ", updated_at=datetime('now','localtime')")
     dbExecute(con, sprintf("UPDATE users SET %s WHERE id=%d", sets, id))
     

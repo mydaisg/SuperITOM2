@@ -249,6 +249,99 @@ ui <- fluidPage(
         }
       });
 
+      // ========== 部门树点击高亮（避免重新渲染导致一级部门收缩） ==========
+      function rbacDeptHighlight(id, bg) {
+        document.querySelectorAll('#rbac_u_dept_tree [data-dept-id]').forEach(function(el) {
+          el.style.background = '';
+          el.style.fontWeight = '';
+        });
+        var sel = document.querySelector('#rbac_u_dept_tree [data-dept-id=' + id + ']');
+        if (sel) {
+          sel.style.background = bg;
+          sel.style.fontWeight = (id === '-1') ? 'bold' : '700';
+        }
+        Shiny.setInputValue('rbac_u_dept_sel', parseInt(id), {priority: 'event'});
+      }
+
+      // ========== 防止浏览器自动填充搜索框（干扰使用） ==========
+      $(function() {
+        // 对所有 text 输入框关闭浏览器自动填充
+        var inputs = document.querySelectorAll('input[type=text]');
+        inputs.forEach(function(inp) { 
+          inp.setAttribute('autocomplete', 'off'); 
+          // Chrome ignores autocomplete=off, use new-password to trick it
+          inp.setAttribute('autocomplete', 'new-password');
+        });
+        // 延迟清除浏览器偷偷填入的值（包括登录名等历史记录）
+        setTimeout(function() {
+          ['rbac_u_search', 'work_order_search', 'asset_search', 'note_search_input'].forEach(function(id) {
+            var inp = document.getElementById(id);
+            if (inp) {
+              // 如果输入框有值但我们没有主动填入（有 placeholder 说明是搜索框）
+              if (inp.value && inp.placeholder) {
+                inp.value = '';
+                inp.dispatchEvent(new Event('input', {bubbles: true}));
+              }
+            }
+          });
+        }, 400);
+        // 再次清除 —— 浏览器可能稍后才填充
+        setTimeout(function() {
+          ['rbac_u_search', 'work_order_search', 'asset_search', 'note_search_input'].forEach(function(id) {
+            var inp = document.getElementById(id);
+            if (inp && inp.value && inp.placeholder) {
+              inp.value = '';
+              inp.dispatchEvent(new Event('input', {bubbles: true}));
+            }
+          });
+        }, 1200);
+      });
+
+      // ========== 组织架构：Xmind 思维导图交互 ==========
+      // Mermaid 节点点击回调：Mermaid 10.x 调用 nodeClickCallback(nodeId)
+      window.orgNodeClick = function(nodeId) {
+        if (!nodeId) return;
+        Shiny.setInputValue('org_mindmap_click', nodeId, {priority: 'event'});
+        // 高亮点击的节点
+        setTimeout(function() {
+          var svg = document.querySelector('#org_mindmap_container svg');
+          if (!svg) return;
+          svg.querySelectorAll('.node-highlight').forEach(function(n) { n.classList.remove('node-highlight'); });
+          // Mermaid 给节点生成的 g id 通常是 flowchart-Nxxx-X，直接匹配前缀
+          svg.querySelectorAll('g.node').forEach(function(g) {
+            if (g.id && g.id.indexOf(nodeId) >= 0) {
+              g.classList.add('node-highlight');
+            }
+          });
+        }, 200);
+      };
+
+      // 搜索框：Enter 触发搜索
+      $(document).on('keypress', '#org_search_input', function(e) {
+        if (e.which === 13) {
+          e.preventDefault();
+          Shiny.setInputValue('org_search_trigger', Date.now(), {priority: 'event'});
+        }
+      });
+      // 搜索框：输入时显隐 X 按钮
+      $(document).on('input', '#org_search_input', function() {
+        var v = $(this).val();
+        $('#org_search_clear').toggle(v && v.length > 0);
+      });
+      // 搜索框：点放大镜图标
+      $(document).on('click', '#org_search_btn', function() {
+        Shiny.setInputValue('org_search_trigger', Date.now(), {priority: 'event'});
+      });
+      // 搜索框：点 X 清除
+      $(document).on('click', '#org_search_clear', function() {
+        $('#org_search_input').val('').trigger('input');
+        Shiny.setInputValue('org_search_clear_btn', Date.now(), {priority: 'event'});
+      });
+      // R 端主动清除搜索框
+      Shiny.addCustomMessageHandler('orgClearSearch', function() {
+        $('#org_search_input').val('').trigger('input');
+      });
+
       // ========== 全站弹窗拖拽（拖标题栏即可移动） ==========
       (function initGlobalModalDrag(){
         var $dlg = null, dragging = false, offX = 0, offY = 0;

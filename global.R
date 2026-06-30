@@ -45,6 +45,10 @@ migrate_database <- function() {
       dbExecute(con, "ALTER TABLE users ADD COLUMN display_name TEXT")
       cat("数据库迁移完成：已添加 display_name 列到 users 表\n")
     }
+    if (!"gender" %in% columns$name) {
+      dbExecute(con, "ALTER TABLE users ADD COLUMN gender TEXT DEFAULT 'M'")
+      cat("数据库迁移完成：已添加 gender 列到 users 表\n")
+    }
 
     # 迁移2：项目管理相关表
     tables <- dbGetQuery(con, "SELECT name FROM sqlite_master WHERE type='table'")$name
@@ -199,6 +203,20 @@ migrate_database <- function() {
       dbExecute(con, "INSERT INTO system_config (config_key, config_value, description) VALUES ('table_font_size', '13', '列表表格字体大小(px)')")
       dbExecute(con, "INSERT INTO system_config (config_key, config_value, description) VALUES ('input_font_size', '13', '输入框和选择框字体大小(px)')")
       cat("数据库迁移完成：已添加字体大小配置项\n")
+    }
+
+    # 迁移：彩虹色配置默认值
+    existing_rainbow <- dbGetQuery(con, "SELECT config_key FROM system_config WHERE config_key = 'rainbow_colors'")
+    if (nrow(existing_rainbow) == 0) {
+      default_rainbow <- jsonlite::toJSON(c(
+        "#2196F3","#4CAF50","#FF9800","#9C27B0","#00BCD4",
+        "#FFC107","#3F51B5","#009688","#795548","#607D8B",
+        "#8BC34A","#673AB7","#03A9F4","#CDDC39","#1E88E5",
+        "#43A047","#00ACC1","#FFB300","#5C6BC0","#26A69A"
+      ), auto_unbox = TRUE)
+      dbExecute(con, sprintf("INSERT INTO system_config (config_key, config_value, description) VALUES ('rainbow_colors', '%s', '全局彩虹色配置(JSON数组)')",
+        gsub("'","''",as.character(default_rainbow))))
+      cat("数据库迁移完成：已添加 20 色彩虹色配置\n")
     }
 
     # 迁移：添加工单配置默认值

@@ -1614,10 +1614,20 @@ server <- function(input, output, session) {
     )
   })
   
+  # 显示当前图表类型的算法代码
+  output$viz_code <- renderUI({
+    req(rv$logged_in)
+    viz_highlight_r(viz_get_algorithm_code(input$viz_type, input$viz_data))
+  })
+
   # 处理生成可视化按钮点击事件
   observeEvent(input$generate_viz, {
     req(rv$logged_in)
-    output$viz_plot <- viz_render(input$viz_type, input$viz_data)
+    withProgress(message = '正在生成图表', value = 0, {
+      incProgress(0.3, detail = '准备数据...')
+      output$viz_plot <- viz_render(input$viz_type, input$viz_data)
+      incProgress(1, detail = '完成')
+    })
   })
 
   # 初始渲染可视化图表
@@ -1631,147 +1641,413 @@ server <- function(input, output, session) {
   output$viz_mtr_today <- renderText({ "暂无" })
   
   # ====================================
-  # 组织架构模块
+  # 组织架构模块 — Xmind 思维导图风格
   # ====================================
   org_trigger <- reactiveVal(0)
   org_refresh <- function() { org_trigger(org_trigger() + 1) }
-  org_selected_dept <- reactiveVal(NULL)
+  org_selected_dept <- reactiveVal(NULL)      # 当前选中的部门/人员 ID
+  org_selected_type <- reactiveVal(NULL)      # "dept" 或 "user"
+  org_collapsed <- reactiveVal(integer(0))   # 已折叠的部门 ID 集合
 
-  # 彩虹色板（给每个一级部门分配颜色，子节点继承）
-  org_rainbow <- c("#2196F3","#E91E63","#4CAF50","#FF9800","#9C27B0",
-                   "#00BCD4","#FF5722","#607D8B","#795548","#3F51B5",
-                   "#009688","#F44336","#8BC34A","#CDDC39","#FFC107")
-
-  # 给部门分配颜色（基于其顶级祖先的 ID hash）
+  # 部门色板 —— 从全局彩虹色配置读取
   org_dept_color <- function(dept_id, depts) {
-    # 找到顶级祖先
+    colors <- config_get_rainbow()
+    if (length(colors) == 0) return("#2196F3")
     root_id <- dept_id
-    for(.i in 1:10) {  # 最多上溯10层
+    for(.i in 1:10) {
       row <- which(depts$id == root_id)
       if (length(row)==0) break
       pid <- depts$parent_id[row[1]]
       if (is.na(pid) || pid==0) break
       root_id <- pid
     }
-    org_rainbow[(abs(root_id) %% length(org_rainbow)) + 1]
+    colors[((abs(root_id) - 1) %% length(colors)) + 1]
   }
 
-  # 扁平两层组织架构图
-  org_build_node <- function(d, color, active) {
-    users <- tryCatch(dept_users(d$id), error=function(e)data.frame())
-    border <- if(active) "outline:3px solid #333; outline-offset:2px;" else ""
-    tags$div(
-      tags$div(class="org-node", `data-id`=d$id,
-        style=sprintf("background:%s; color:white; %s", color, border),
-        onclick=sprintf("Shiny.setInputValue('org_select_dept',%d,{priority:'event'})", d$id),
-        tags$div(class="nm", d$name),
-        tags$div(class="ct", sprintf("序%d · %d人", d$sort_order[1] %||% 0, nrow(users)))
-      )
-    )
+  # 清理 Mermaid 标签中的特殊字符
+  org_clean_label <- function(s) {
+    if (is.null(s) || is.na(s)) return("")
+    s <- as.character(s)
+    s <- gsub('"', "'", s)
+    s <- gsub("[\\{\\}\\[\\]\\|\\<\\>]", "", s)
+    s <- gsub("\\s+", " ", s)
+    trimws(s)
   }
 
-  # 组织架构图
-  output$org_chart <- renderUI({
-    org_trigger(); req(rv$logged_in)
-    depts <- dept_get_all()
-    if (nrow(depts) == 0) return(tags$div(style="text-align:center;padding:40px;color:#999;", icon("sitemap","fa-3x"), tags$p("暂无部门")))
+  # 递归人员计数（含子部门）
+  org_count_users_recursive <- function(dept_id, depts, users_by_dept) {
+    # 当前部门
+    cur <- users_by_dept[[as.character(dept_id)]]
+    cnt <- if (is.null(cur)) 0 else nrow(cur)
+    # 所有子部门
+    kids <- depts[!is.na(depts$parent_id) & depts$parent_id == dept_id, , drop = FALSE]
+    if (nrow(kids) > 0) {
+      for (i in seq_len(nrow(kids))) {
+        cnt <- cnt + org_count_users_recursive(kids$id[i], depts, users_by_dept)
+      }
+    }
+    cnt
+  }
 
-    # 找出所有一级部门（parent_id 为空）
+  # 构建 Mermaid flowchart LR 语法（Xmind 风格）
+  # collapsed_ids: 已折叠的部门 ID 集合（不渲染其下级）
+  # hide_zero: 是否隐藏无子部门且无人员的"0部门"（默认隐藏）
+  org_build_mermaid <- function(depts, users, collapsed_ids = integer(0), search_kw = NULL, hide_zero = TRUE) {
+    if (nrow(depts) == 0) return("flowchart LR\n  N_ROOT[LVCC ITOM]")
+
     l1 <- depts[is.na(depts$parent_id), , drop = FALSE]
     if ("sort_order" %in% names(l1)) l1 <- l1[order(l1$sort_order, l1$name), , drop = FALSE]
 
-    # 当前选中的部门（可能是一级或二级）
-    sel_id <- org_selected_dept()
+    # 用户表索引
+    users_by_dept <- list()
+    if (nrow(users) > 0 && "department_id" %in% names(users)) {
+      valid <- !is.na(users$department_id)
+      if (any(valid)) users_by_dept <- split(users[valid, , drop = FALSE], users$department_id[valid])
+    }
 
-    # 确定展示的二级部门：选中部门的直接子级
-    l2 <- data.frame()
-    l2_parent_name <- ""
-    if (!is.null(sel_id)) {
-      l2 <- depts[!is.na(depts$parent_id) & depts$parent_id == sel_id, , drop = FALSE]
-      if ("sort_order" %in% names(l2)) l2 <- l2[order(l2$sort_order, l2$name), , drop = FALSE]
-      # 如果选中的本身就是二级，找到它的一级父级，只展父级的所有二级
-      if(nrow(l2) == 0) {
-        p_row <- which(depts$id == sel_id)
-        if (length(p_row) > 0 && !is.na(depts$parent_id[p_row[1]])) {
-          grandpa <- depts$parent_id[p_row[1]]
-          l2 <- depts[!is.na(depts$parent_id) & depts$parent_id == grandpa, , drop = FALSE]
-          if ("sort_order" %in% names(l2)) l2 <- l2[order(l2$sort_order, l2$name), , drop = FALSE]
+    # 中文字符按 2、英文/数字按 1 计算等宽
+    nchar_label <- function(s) {
+      s <- as.character(s)
+      n <- 0
+      for (ch in strsplit(s, "")[[1]]) {
+        if (grepl("[A-Za-z0-9 ]", ch)) n <- n + 1 else n <- n + 2
+      }
+      n
+    }
+
+    # 深度 1 的部门需要区分颜色（轮询），不与已有色重复
+    color_picker <- new.env()
+    assign("used", character(0), envir = color_picker)
+    pick_color <- function() {
+      used <- get0("used", envir = color_picker, ifnotfound = character(0))
+      rainbow <- config_get_rainbow()
+      for (c in rainbow) {
+        if (!(c %in% used)) {
+          assign("used", c(used, c), envir = color_picker)
+          return(c)
+        }
+      }
+      # 用完了，循环
+      c <- rainbow[(length(used) %% length(rainbow)) + 1]
+      assign("used", c(used, c), envir = color_picker)
+      c
+    }
+
+    lines <- character(0)
+    lines <- c(lines, "flowchart LR")
+    lines <- c(lines, '  N_ROOT["LVCC ITOM"]')
+    lines <- c(lines, '  style N_ROOT fill:#337ab7,color:#fff,stroke:#1a5276,stroke-width:2px')
+
+    # 第一遍：先按 sort_order 排序收集所有非零部门（每个深度分别排）
+    # 过滤空叶子部门：仅当既无子部门又无人员时隐藏
+    is_empty_leaf <- function(dept_id) {
+      kids <- depts[!is.na(depts$parent_id) & depts$parent_id == dept_id, , drop = FALSE]
+      u <- users_by_dept[[as.character(dept_id)]]
+      nrow(kids) == 0 && (is.null(u) || nrow(u) == 0)
+    }
+    if (FALSE && hide_zero) {  # 暂时禁用：会误杀有意义的顶级部门
+      l1 <- l1[!sapply(l1$id, is_empty_leaf), , drop = FALSE]
+    }
+
+    # 收集各层节点名用于宽度对齐
+    layer_labels <- list()
+    collect_layer <- function(parent_id, depth) {
+      if (depth == 1) {
+        kids <- l1
+      } else {
+        kids <- depts[!is.na(depts$parent_id) & depts$parent_id == parent_id, , drop = FALSE]
+        if ("sort_order" %in% names(kids)) kids <- kids[order(kids$sort_order, kids$name), , drop = FALSE]
+        if (hide_zero) kids <- kids[!sapply(kids$id, is_empty_leaf), , drop = FALSE]
+      }
+      if (nrow(kids) == 0) return()
+      if (is.null(layer_labels[[as.character(depth)]])) layer_labels[[as.character(depth)]] <<- character(0)
+      for (i in seq_len(nrow(kids))) {
+        kd <- kids[i, ]
+        nm <- org_clean_label(kd$name)
+        if (nchar(nm) == 0) nm <- sprintf("Dept-%d", kd$id)
+        # ★ 人数不显示，节点只显示名称
+        layer_labels[[as.character(depth)]] <<- c(layer_labels[[as.character(depth)]], nm)
+        if (parent_id %in% collapsed_ids) next
+        collect_layer(kd$id, depth + 1)
+      }
+    }
+    collect_layer(NA, 1)
+
+    # 每层最宽宽度（用于加 padding 空格统一宽度）
+    layer_max_width <- list()
+    for (d in names(layer_labels)) {
+      ws <- sapply(layer_labels[[d]], nchar_label)
+      layer_max_width[[d]] <- max(ws, na.rm = TRUE)
+    }
+    pad_label <- function(s, depth) {
+      maxw <- layer_max_width[[as.character(depth)]]
+      if (is.null(maxw)) return(s)
+      curw <- nchar_label(s)
+      pad_n <- max(0, maxw - curw)
+      if (pad_n > 0) {
+        paste0(s, paste0(rep("　", pad_n), collapse=""))
+      } else {
+        s
+      }
+    }
+
+    # linkStyle 计数器
+    link_env <- new.env()
+    assign("idx", 0, envir = link_env)
+    link_index <- function() {
+      v <- get0("idx", envir = link_env, ifnotfound = 0)
+      v
+    }
+    link_inc <- function() {
+      v <- get0("idx", envir = link_env, ifnotfound = 0)
+      assign("idx", v + 1, envir = link_env)
+    }
+
+    # 递归构建节点
+    build_branch <- function(dept_row, parent_id, depth) {
+      nid  <- sprintf("D%d", dept_row$id)
+      name <- org_clean_label(dept_row$name)
+      if (nchar(name) == 0) name <- sprintf("Dept-%d", dept_row$id)
+
+      # ★ 人员计数（暂不显示在节点内，可用于后续显示）
+      user_count <- org_count_users_recursive(dept_row$id, depts, users_by_dept)
+
+      # 同层 pad 宽度
+      label <- pad_label(name, depth)
+      label <- gsub("[\\[\\]\\(\\)\\{\\}\\|\\<\\>]", "", label)
+
+      # 节点颜色：L1 用同深度不重复色板（pick_color 已保证不重复）
+      # L2/L3 沿用 L1 颜色但用白底
+      if (depth == 1) {
+        color <- pick_color()
+      } else {
+        # 继承父节点色，但用白底（颜色由 build_branch 闭包外传入，这里从父继承）
+        color <- attr(dept_row, "color") %||% "#999"
+      }
+
+      # 节点样式：L1=实心彩色，L2/L3=白底
+      if (depth == 1) {
+        lines <<- c(lines, sprintf('  %s["%s"]', nid, label))
+        lines <<- c(lines, sprintf('  style %s fill:%s,color:#fff,stroke:%s,stroke-width:2px', nid, color, color))
+      } else {
+        lines <<- c(lines, sprintf('  %s["%s"]', nid, label))
+        lines <<- c(lines, sprintf('  style %s fill:#ffffff,color:#333,stroke:%s,stroke-width:1.5px', nid, color))
+      }
+
+      # ★ 连接线：从父节点最右边出去
+      # 用 `A --- B`（无箭头）做 L1 连接，L2 起用 `A -->|...| B`（有箭头）
+      # 用 Mermaid 10 语法：A -- text --- B
+      if (depth == 1) {
+        # N_ROOT --- D1（无箭头）
+        lines <<- c(lines, sprintf('  %s --- %s', parent_id, nid))
+      } else {
+        # 父节点 --> 当前（带箭头从最右边出去）
+        lines <<- c(lines, sprintf('  %s --> %s', parent_id, nid))
+      }
+      lines <<- c(lines, sprintf('  linkStyle %d stroke:%s,stroke-width:1.5px',
+        link_index(), color))
+      link_inc()
+
+      # click 指令
+      lines <<- c(lines, sprintf('  click %s orgNodeClick', nid))
+
+      # 折叠态 → 不渲染下级
+      if (dept_row$id %in% collapsed_ids) {
+        return()
+      }
+
+      # 子部门
+      kids <- depts[!is.na(depts$parent_id) & depts$parent_id == dept_row$id, , drop = FALSE]
+      if (nrow(kids) > 0 && depth < 3) {
+        if ("sort_order" %in% names(kids)) kids <- kids[order(kids$sort_order, kids$name), , drop = FALSE]
+        if (hide_zero) kids <- kids[!sapply(kids$id, is_empty_leaf), , drop = FALSE]
+        for (ki in seq_len(nrow(kids))) {
+          attr(kids[ki, ], "color") <- color  # 继承父色
+          build_branch(kids[ki, ], nid, depth + 1)
         }
       }
     }
 
-    # 一级行
-    l1_row <- if (nrow(l1) > 0)
-      tagList(
-        tags$div(class="org-row-label", "一级部门"),
-        tags$div(class="org-row",
-          lapply(seq_len(nrow(l1)), function(i) {
-            d <- l1[i, ]
-            color <- org_dept_color(d$id, depts)
-            org_build_node(d, color, !is.null(sel_id) && sel_id == d$id)
-          })
-        )
+    for (i in seq_len(nrow(l1))) {
+      d <- l1[i, ]
+      tryCatch(
+        build_branch(d, "N_ROOT", 1),
+        error = function(e) {}
       )
-    else ""
+    }
 
-    # 二级行（仅当选中）
-    l2_row <- if (nrow(l2) > 0) {
-      l2_colors <- sapply(l2$id, function(id) org_dept_color(id, depts))
-      tagList(
-        tags$div(class="org-row-label", "二级部门"),
-        tags$div(class="org-row",
-          lapply(seq_len(nrow(l2)), function(i) {
-            d <- l2[i, ]
-            uid <- d$id
-            users <- tryCatch(dept_users(uid), error=function(e)data.frame())
-            tags$div(style="display:flex; flex-direction:column; align-items:center;",
-              tags$div(class="org-connector"),
-              org_build_node(d, l2_colors[i], !is.null(sel_id) && sel_id == uid),
-              # 人员标签（叶节点才有）
-              if (nrow(users) > 0) tags$div(class="org-user-list",
-                lapply(head(seq_len(nrow(users)), 15), function(j) {
-                  u <- users[j, ]
-                  tags$span(class="org-user-tag", u$display_label[1])
-                })
-              )
-            )
-          })
-        )
-      )
-    } else ""
+    paste(lines, collapse = "\n")
+  }
 
-    tagList(l1_row, l2_row)
+  # 搜索词 reactive
+  org_search_kw <- reactiveVal("")
+
+  # 思维导图渲染
+  output$org_mindmap <- renderUI({
+    org_trigger(); req(rv$logged_in)
+    depts <- dept_get_all()
+    if (nrow(depts) == 0) return(tags$div(style="text-align:center;padding:40px;color:#999;", "暂无部门数据，请先添加部门"))
+
+    users <- user_get_all()
+    kw <- org_search_kw()
+    collapsed <- org_collapsed()
+    mermaid_code <- org_build_mermaid(depts, users, collapsed, kw)
+
+    tagList(
+      tags$pre(class = "mermaid", id = "org_mermaid", style = "background:transparent; border:none;", mermaid_code),
+      tags$script(HTML(sprintf("
+        setTimeout(function() {
+          if (typeof mermaid !== 'undefined') {
+            mermaid.run({nodes: document.querySelectorAll('#org_mermaid')}).then(function() {
+              // 渲染完成后，绑定每个节点的折叠/展开事件
+              var svg = document.querySelector('#org_mindmap_container svg');
+              if (svg) {
+                // 给 D 前缀的部门节点绑定点击折叠（click callback 已经触发选中）
+                // 这里再附加 dblclick 编辑
+                svg.querySelectorAll('g.node').forEach(function(g) {
+                  if (g.id && g.id.indexOf('flowchart-D') >= 0) {
+                    g.style.cursor = 'pointer';
+                    g.addEventListener('dblclick', function(e) {
+                      var m = g.id.match(/flowchart-D(\\d+)/);
+                      if (m) {
+                        Shiny.setInputValue('org_dblclick_dept', parseInt(m[1]), {priority:'event'});
+                      }
+                      e.stopPropagation();
+                    });
+                  }
+                });
+              }
+            });
+          }
+        }, 100);
+      ")))
+    )
   })
 
-  # 点击部门 → 选中
-  observeEvent(input$org_select_dept, {
-    org_selected_dept(as.integer(input$org_select_dept))
+  # 思维导图节点点击 → 选中（部门同时切换折叠/展开）
+  observeEvent(input$org_mindmap_click, {
+    req(rv$logged_in)
+    node_id <- input$org_mindmap_click
+    if (is.null(node_id) || nchar(node_id) == 0) return()
+    prefix <- substr(node_id, 1, 1)
+    id_str <- substr(node_id, 2, nchar(node_id))
+    id <- suppressWarnings(as.integer(id_str))
+    if (is.na(id)) return()
+    if (prefix == "U") {
+      # 用户节点：只选中，不折叠
+      org_selected_type("user")
+      org_selected_dept(id)
+    } else {
+      # 部门节点：选中 + 切换折叠
+      org_selected_type("dept")
+      org_selected_dept(id)
+      cur <- org_collapsed()
+      if (is.null(cur)) cur <- integer(0)
+      if (id %in% cur) {
+        org_collapsed(setdiff(cur, id))
+      } else {
+        org_collapsed(c(cur, id))
+      }
+    }
+  })
+
+  # 双击部门 → 弹出编辑
+  observeEvent(input$org_dblclick_dept, {
+    req(rv$logged_in)
+    did <- as.integer(input$org_dblclick_dept)
+    if (is.na(did)) return()
+    org_selected_dept(did)
+    org_selected_type("dept")
+    # 调用已有的编辑弹窗公共函数
+    if (exists("org_show_edit_dept_modal")) {
+      org_show_edit_dept_modal(did)
+    }
+  })
+
+  # 搜索：回车 或 点放大镜
+  observeEvent(input$org_search_trigger, {
+    kw <- trimws(input$org_search_input)
+    org_search_kw(kw)
+    if (nchar(kw) > 0) {
+      showNotification(sprintf("搜索：%s", kw), type = "message", duration = 2)
+    }
+  })
+
+  # 清除搜索
+  observeEvent(input$org_search_clear_btn, {
+    org_search_kw("")
+    # 通过 JS 清空输入框
+    session$sendCustomMessage("orgClearSearch", list())
   })
 
   # 选中信息
   output$org_selected_info <- renderUI({
     did <- org_selected_dept()
-    if (is.null(did)) return("")
-    depts <- dept_get_all(); d <- depts[depts$id == did, ]
+    if (is.null(did)) return(tags$span(style="color:#999;", "点击思维导图节点查看详情 · 单击展开/折叠 · 双击编辑"))
+
+    stype <- org_selected_type()
+    if (!is.null(stype) && stype == "user") {
+      users <- user_get_all()
+      u <- users[users$id == did, , drop = FALSE]
+      if (nrow(u) == 0) return("")
+      dl <- u$display_name[1]
+      uname <- if (!is.null(dl) && !is.na(dl) && dl != "") dl else u$username[1]
+      return(tags$span(
+        icon("user"), tags$b(uname),
+        sprintf(" · %s", u$role[1]),
+        actionButton("org_deselect", "×", class="btn-xs btn-default", style="margin-left:4px; padding:0 6px;")
+      ))
+    }
+
+    depts <- dept_get_all()
+    d <- depts[depts$id == did, , drop = FALSE]
     if (nrow(d) == 0) return("")
-    users <- dept_users(did)
+    # 递归人员计数（含子部门）
+    users <- user_get_all()
+    users_by_dept <- list()
+    if (nrow(users) > 0 && "department_id" %in% names(users)) {
+      valid <- !is.na(users$department_id)
+      if (any(valid)) users_by_dept <- split(users[valid, , drop = FALSE], users$department_id[valid])
+    }
+    ucount <- org_count_users_recursive(did, depts, users_by_dept)
     dept_path <- dept_get_tree()
-    dp <- dept_path[dept_path$id == did, ]
+    dp <- dept_path[dept_path$id == did, , drop = FALSE]
     path_str <- if (nrow(dp) > 0) dp$path[1] else d$name[1]
+    collapsed <- !is.null(org_collapsed()) && did %in% org_collapsed()
     tags$span(
-      "已选：", tags$b(path_str),
-      sprintf(" · %d人", nrow(users)),
+      icon("building"), tags$b(path_str),
+      sprintf(" · %d人", ucount),
+      tags$span(style=sprintf("margin-left:6px; font-size:11px; color:%s;", if(collapsed) "#d9534f" else "#5cb85c"),
+        if(collapsed) "[已折叠]" else "[已展开]"),
       actionButton("org_deselect", "×", class="btn-xs btn-default", style="margin-left:4px; padding:0 6px;")
     )
   })
 
-  observeEvent(input$org_deselect, { org_selected_dept(NULL) })
+  observeEvent(input$org_deselect, { org_selected_dept(NULL); org_selected_type(NULL) })
 
-  # 人员列表（选中部门则筛选，用于编辑/移入移出）
+  # 全部展开
+  observeEvent(input$org_expand_all, {
+    org_collapsed(integer(0))
+  })
+
+  # 全部折叠：把所有有子部门的部门 ID 加入折叠集合
+  observeEvent(input$org_collapse_all, {
+    depts <- dept_get_all()
+    if (nrow(depts) == 0) return()
+    parent_ids <- unique(depts$parent_id[!is.na(depts$parent_id)])
+    org_collapsed(as.integer(parent_ids))
+  })
+
+  # 人员列表（选中部门则筛选）
   org_users <- reactive({
     org_trigger(); req(rv$logged_in)
     did <- org_selected_dept()
-    if (!is.null(did)) return(dept_users(did))
+    stype <- org_selected_type()
+    if (!is.null(did) && (is.null(stype) || stype == "dept")) return(dept_users(did))
+    if (!is.null(did) && stype == "user") {
+      users <- user_get_all()
+      return(users[users$id == did, , drop = FALSE])
+    }
     user_get_all()
   })
 
@@ -1779,9 +2055,13 @@ server <- function(input, output, session) {
   observeEvent(input$org_add_dept, {
     req(rv$logged_in)
     depts <- dept_get_all(); dept_choices <- c("(顶级)"="", setNames(as.character(depts$id), depts$name))
+    # 默认为选中部门的上级（即选中的部门）
+    default_parent <- ""
+    sel <- org_selected_dept(); stype <- org_selected_type()
+    if (!is.null(sel) && (is.null(stype) || stype == "dept")) default_parent <- as.character(sel)
     showModal(modalDialog(title="添加部门", size="s", easyClose=TRUE,
       textInput("org_new_dept_name", "部门名称 *", placeholder="例如：研发中心"),
-      selectizeInput("org_new_dept_parent", "上级部门", choices=dept_choices, width="100%"),
+      selectizeInput("org_new_dept_parent", "上级部门", choices=dept_choices, selected=default_parent, width="100%"),
       numericInput("org_new_dept_sort", "显示序号", value=0, min=0, max=999, step=1),
       textInput("org_new_dept_desc", "描述"),
       footer=tagList(modalButton("取消"), actionButton("org_add_dept_confirm", "添加", class="btn-success"))))
@@ -1795,10 +2075,10 @@ server <- function(input, output, session) {
   })
 
   # 编辑部门
-  observeEvent(input$org_edit_dept, {
-    req(rv$logged_in, org_selected_dept())
-    did <- org_selected_dept(); depts <- dept_get_all(); d <- depts[depts$id==did, ]
-    if (nrow(d)==0) return()
+  # 编辑部门弹窗（公共函数，工具栏按钮和 L2 双击共用）
+  org_show_edit_dept_modal <- function(did) {
+    depts <- dept_get_all(); d <- depts[depts$id == did, ]
+    if (nrow(d) == 0) return()
     dept_choices <- c("(顶级)"="", setNames(as.character(depts$id[depts$id!=did]), depts$name[depts$id!=did]))
     showModal(modalDialog(title=paste("编辑部门", d$name[1]), size="s", easyClose=TRUE,
       textInput("org_edit_dept_name", "名称", value=d$name[1]),
@@ -1807,6 +2087,19 @@ server <- function(input, output, session) {
       numericInput("org_edit_dept_sort", "显示序号", value=d$sort_order[1] %||% 0, min=0, max=999, step=1),
       textInput("org_edit_dept_desc", "描述", value=d$description[1] %||% ""),
       footer=tagList(modalButton("取消"), actionButton("org_edit_dept_confirm", "保存", class="btn-primary"))))
+  }
+
+  observeEvent(input$org_edit_dept, {
+    req(rv$logged_in, org_selected_dept())
+    org_show_edit_dept_modal(org_selected_dept())
+  })
+
+  # L2 双击 → 选中并弹出编辑
+  observeEvent(input$org_dblclick_l2, {
+    req(rv$logged_in)
+    did <- as.integer(input$org_dblclick_l2)
+    org_selected_dept(did)
+    org_show_edit_dept_modal(did)
   })
   observeEvent(input$org_edit_dept_confirm, {
     req(rv$logged_in, org_selected_dept())
@@ -1845,6 +2138,7 @@ server <- function(input, output, session) {
       textInput("org_new_user_name", "用户名 *"),
       textInput("org_new_user_dn", "显示名称"),
       passwordInput("org_new_user_pw", "密码 *"),
+      radioButtons("org_new_user_gender", "性别", choices=c("男"="M","女"="F"), selected="M", inline=TRUE),
       selectInput("org_new_user_role", "角色", choices=c("user","admin","it_desk","it_engineer","sys_engineer")),
       selectizeInput("org_new_user_dept", "所属部门", choices=dept_choices,
         selected=as.character(did %||% ""), width="100%"),
@@ -1853,8 +2147,9 @@ server <- function(input, output, session) {
   observeEvent(input$org_add_user_confirm, {
     req(rv$logged_in, input$org_new_user_name, input$org_new_user_pw)
     did <- input$org_new_user_dept; if (is.null(did)||did=="") did <- NA
+    gender <- input$org_new_user_gender; if (is.null(gender) || gender=="") gender <- "M"
     result <- user_add(input$org_new_user_name, input$org_new_user_pw, input$org_new_user_role,
-      input$org_new_user_dn, did, rv$current_user)
+      input$org_new_user_dn, did, gender, rv$current_user)
     if (result$success) { removeModal(); org_refresh() }
     showNotification(result$message, type=if(result$success) "message" else "error")
   })
@@ -1897,17 +2192,25 @@ server <- function(input, output, session) {
     showNotification(sprintf("已移出 %d 人", length(input$org_remove_user_sel)), type="message")
   })
 
-  # 编辑人员（弹窗选择 → 再编辑）
+  # 编辑人员：选中用户时直接编辑，否则弹窗选择
   observeEvent(input$org_edit_user, {
     req(rv$logged_in)
-    all_users <- user_get_all()
-    if (nrow(all_users)==0) { showNotification("暂无人员",type="warning"); return() }
-    uc <- setNames(as.character(all_users$id), sprintf("%s [%s] — %s", all_users$display_name %||% all_users$username, all_users$username, all_users$department_name %||% "无部门"))
-    showModal(modalDialog(title="选择要编辑的人员", size="l", easyClose=TRUE,
-      selectizeInput("org_edit_user_sel","人员", choices=uc, width="100%",
-        options=list(placeholder="搜索人员...")),
-      footer=tagList(modalButton("取消"),
-        actionButton("org_edit_user_next","下一步",class="btn-primary"))))
+    did <- org_selected_dept(); stype <- org_selected_type()
+    if (!is.null(did) && !is.null(stype) && stype == "user") {
+      # 直接编辑选中的用户
+      rv$org_edit_uid <- did
+    } else {
+      all_users <- user_get_all()
+      if (nrow(all_users)==0) { showNotification("暂无人员",type="warning"); return() }
+      dl <- all_users$display_name
+      dl[is.na(dl) | dl==""] <- all_users$username
+      uc <- setNames(as.character(all_users$id), sprintf("%s [%s] — %s", dl, all_users$username, all_users$department_name %||% "无部门"))
+      showModal(modalDialog(title="选择要编辑的人员", size="l", easyClose=TRUE,
+        selectizeInput("org_edit_user_sel","人员", choices=uc, width="100%",
+          options=list(placeholder="搜索人员...")),
+        footer=tagList(modalButton("取消"),
+          actionButton("org_edit_user_next","下一步",class="btn-primary"))))
+    }
   })
   observeEvent(input$org_edit_user_next, {
     req(input$org_edit_user_sel)
@@ -1925,10 +2228,12 @@ server <- function(input, output, session) {
     depts <- dept_get_all()
     dept_choices <- c("(无)"="", setNames(as.character(depts$id), depts$path))
     has_did <- !is.null(u$department_id) && !is.na(u$department_id)
+    cur_gender <- if (!is.null(u$gender) && !is.na(u$gender[1]) && u$gender[1] %in% c("M","F")) u$gender[1] else "M"
     showModal(modalDialog(title="编辑人员", size="s", easyClose=TRUE,
       textInput("org_edit_user_name", "用户名 *", value=u$username[1]),
       textInput("org_edit_user_dn", "显示名称", value=u$display_name[1] %||% ""),
       passwordInput("org_edit_user_pw", "新密码（留空不修改）"),
+      radioButtons("org_edit_user_gender", "性别", choices=c("男"="M","女"="F"), selected=cur_gender, inline=TRUE),
       selectInput("org_edit_user_role", "角色",
         choices=c("user","admin","it_desk","it_engineer","sys_engineer"),
         selected=u$role[1]),
@@ -1947,8 +2252,9 @@ server <- function(input, output, session) {
     uid <- rv$org_edit_uid; rv$org_edit_uid <- NULL
     did <- input$org_edit_user_dept; if (is.null(did)||did=="") did <- NA
     pw <- input$org_edit_user_pw; if (is.null(pw)||pw=="") pw <- NULL
+    gender <- input$org_edit_user_gender; if (is.null(gender) || gender=="") gender <- "M"
     result <- user_update(uid, input$org_edit_user_name, input$org_edit_user_role,
-      password=pw, display_name=input$org_edit_user_dn, department_id=did, current_user=rv$current_user)
+      password=pw, display_name=input$org_edit_user_dn, department_id=did, gender=gender, current_user=rv$current_user)
     if (result$success) { removeModal(); org_refresh() }
     showNotification(result$message, type=if(result$success) "message" else "error")
   })
@@ -2014,7 +2320,152 @@ server <- function(input, output, session) {
       showNotification(paste("保存失败:", e$message), type = "error")
     }, finally = { db_disconnect(con) })
   })
-  
+
+  # ========== 彩虹色配置管理 ==========
+  # 色块渲染
+  output$cfg_rainbow_swatches <- renderUI({
+    colors <- config_get_rainbow()
+    lapply(seq_along(colors), function(i) {
+      c <- colors[i]
+      tags$div(
+        title = sprintf("#%d: %s (点击编辑)", i, c),
+        style = sprintf(
+          "width:32px;height:32px;border-radius:6px;background:%s;cursor:pointer;border:2px solid %s;position:relative;transition:transform 0.15s;",
+          c, c
+        ),
+        onclick = sprintf("Shiny.setInputValue('cfg_rainbow_click_idx', %d, {priority:'event'})", i),
+        tags$span(style = paste0(
+          "position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);font-size:9px;color:#666;white-space:nowrap;"
+        ), i)
+      )
+    })
+  })
+
+  # 单击色块 → 弹出颜色选择器
+  observeEvent(input$cfg_rainbow_click_idx, {
+    req(rv$logged_in)
+    idx <- as.integer(input$cfg_rainbow_click_idx)
+    colors <- config_get_rainbow()
+    if (idx < 1 || idx > length(colors)) return()
+    cur <- colors[idx]
+    showModal(modalDialog(
+      title = sprintf("编辑彩虹色 #%d", idx),
+      size = "s", easyClose = TRUE,
+      tags$div(style = "display:flex; align-items:center; gap:12px;",
+        tags$input(id = "cfg_rainbow_picker", type = "color", value = cur,
+          style = "width:60px; height:40px; border:none; cursor:pointer;"),
+        tags$div(style = sprintf("width:80px; height:40px; border-radius:6px; background:%s;", cur),
+          textInput("cfg_rainbow_hex", NULL, value = gsub("#","",cur),
+            placeholder = "HEX", width = "80px"))
+      ),
+      tags$p(style = "font-size:11px; color:#888; margin-top:8px;",
+        "选色后点保存。也可删除此颜色（需保留至少1个）。"),
+      footer = tagList(
+        actionButton("cfg_rainbow_del", "删除", class = "btn-danger btn-sm"),
+        modalButton("取消"),
+        actionButton("cfg_rainbow_save", "保存", class = "btn-primary btn-sm")
+      )
+    ))
+    # 存当前编辑的 idx
+    rv$cfg_rainbow_edit_idx <- idx
+  })
+
+  # 颜色选择器变化 → 同步 hex 文本框
+  observeEvent(input$cfg_rainbow_picker, {
+    updateTextInput(session, "cfg_rainbow_hex", value = gsub("#", "", input$cfg_rainbow_picker))
+  })
+
+  # 保存编辑的颜色
+  observeEvent(input$cfg_rainbow_save, {
+    req(rv$logged_in, rv$cfg_rainbow_edit_idx)
+    idx <- rv$cfg_rainbow_edit_idx
+    colors <- config_get_rainbow()
+    if (idx < 1 || idx > length(colors)) { removeModal(); return() }
+    hex <- trimws(toupper(input$cfg_rainbow_hex))
+    if (!grepl("^[0-9A-F]{6}$", hex)) {
+      showNotification("无效颜色值，需要 6 位 HEX", type = "error"); return()
+    }
+    colors[idx] <- paste0("#", hex)
+    r <- config_set_rainbow(colors)
+    removeModal()
+    if (r$success) {
+      showNotification(sprintf("#%d 颜色已更新 → %s", idx, colors[idx]), type = "message")
+    } else {
+      showNotification(r$message, type = "error")
+    }
+  })
+
+  # 删除颜色
+  observeEvent(input$cfg_rainbow_del, {
+    req(rv$logged_in, rv$cfg_rainbow_edit_idx)
+    idx <- rv$cfg_rainbow_edit_idx
+    colors <- config_get_rainbow()
+    if (length(colors) <= 1) {
+      showNotification("至少保留 1 个颜色", type = "warning"); return()
+    }
+    colors <- colors[-idx]
+    r <- config_set_rainbow(colors)
+    removeModal()
+    if (r$success) {
+      showNotification(sprintf("已删除 #%d，剩余 %d 色", idx, length(colors)), type = "message")
+    } else {
+      showNotification(r$message, type = "error")
+    }
+  })
+
+  # 追加新颜色
+  observeEvent(input$cfg_rainbow_add, {
+    req(rv$logged_in)
+    colors <- config_get_rainbow()
+    showModal(modalDialog(
+      title = "追加彩虹色",
+      size = "s", easyClose = TRUE,
+      tags$div(style = "display:flex; align-items:center; gap:12px;",
+        tags$input(id = "cfg_rainbow_picker", type = "color", value = "#2196F3",
+          style = "width:60px; height:40px; border:none; cursor:pointer;"),
+        textInput("cfg_rainbow_hex", NULL, value = "2196F3", placeholder = "HEX", width = "80px")
+      ),
+      footer = tagList(
+        modalButton("取消"),
+        actionButton("cfg_rainbow_add_confirm", "追加", class = "btn-success btn-sm")
+      )
+    ))
+  })
+  observeEvent(input$cfg_rainbow_add_confirm, {
+    req(rv$logged_in)
+    hex <- trimws(toupper(input$cfg_rainbow_hex))
+    if (!grepl("^[0-9A-F]{6}$", hex)) {
+      showNotification("无效颜色值", type = "error"); return()
+    }
+    colors <- config_get_rainbow()
+    colors <- c(colors, paste0("#", hex))
+    r <- config_set_rainbow(colors)
+    removeModal()
+    if (r$success) {
+      showNotification(sprintf("已追加 → 共 %d 色", length(colors)), type = "message")
+    } else {
+      showNotification(r$message, type = "error")
+    }
+  })
+
+  # 恢复默认
+  observeEvent(input$cfg_rainbow_reset, {
+    req(rv$logged_in)
+    showModal(modalDialog(
+      title = "恢复默认彩虹色", size = "s",
+      "将重置为 20 个默认颜色，覆盖当前自定义。",
+      footer = tagList(
+        modalButton("取消"),
+        actionButton("cfg_rainbow_reset_confirm", "确认重置", class = "btn-warning btn-sm")
+      )
+    ))
+  })
+  observeEvent(input$cfg_rainbow_reset_confirm, {
+    config_set_rainbow(.RAINBOW_DEFAULT)
+    removeModal()
+    showNotification("彩虹色已恢复默认 20 色", type = "message")
+  })
+
   # 处理添加配置按钮点击事件
   observe({ toggle_btn("add_config", btn_ok(input$config_key) && btn_ok(input$config_value)) })
   observe({ toggle_btn("save_font_config", btn_ok(input$cfg_table_font_size) && btn_ok(input$cfg_input_font_size)) })
@@ -2089,6 +2540,232 @@ server <- function(input, output, session) {
   # ========== RBAC 授权管理（admin专用） ==========
   source("Script/rbac_management.r")
   rbac_refresh <- reactiveVal(0)
+  rbac_u_trigger <- reactiveVal(0)
+  rbac_u_dept_filter <- reactiveVal(NULL)
+
+  ##################
+  # 用户管理 Tab
+  ##################
+  # 递归获取部门及所有子部门的人员总数
+  .rbac_u_count_recursive <- function(dept_id) {
+    ids <- dept_get_descendant_ids(dept_id)
+    if (length(ids) == 0) return(0)
+    con <- db_connect()
+    tryCatch({
+      dbGetQuery(con, sprintf("SELECT COUNT(*) as n FROM users WHERE department_id IN (%s)",
+        paste(as.integer(ids), collapse=",")))$n[1]
+    }, error=function(e)0, finally={db_disconnect(con)})
+  }
+
+  # 部门筛选（selectInput 层级下拉，替代旧版自定义 HTML 树）
+  output$rbac_u_dept_tree <- renderUI({
+    rbac_u_trigger(); req(rv$logged_in)
+    depts <- dept_get_all()
+    if (nrow(depts) == 0) return(tags$div(style="color:#999;font-size:13px;padding:8px;", "暂无部门"))
+
+    l1 <- depts[is.na(depts$parent_id), , drop = FALSE]
+    if ("sort_order" %in% names(l1)) l1 <- l1[order(l1$sort_order, l1$name), , drop = FALSE]
+
+    all_count <- nrow(user_get_all())
+    sel <- isolate(rbac_u_dept_filter())
+    selected <- if (is.null(sel)) "-1" else as.character(sel)
+
+    # 构建层级 optgroup 选项
+    choices <- list()
+    choices[["— 全部部门"]] <- "-1"
+
+    for (i in seq_len(nrow(l1))) {
+      d <- l1[i, ]
+      kids <- depts[!is.na(depts$parent_id) & depts$parent_id == d$id, , drop = FALSE]
+      if ("sort_order" %in% names(kids)) kids <- kids[order(kids$sort_order, kids$name), , drop = FALSE]
+
+      rec_count <- if (nrow(kids) > 0) .rbac_u_count_recursive(d$id) else nrow(tryCatch(dept_users(d$id), error=function(e)data.frame()))
+      group_name <- sprintf("%s（%d人）", d$name, rec_count)
+
+      if (nrow(kids) > 0) {
+        sub <- list()
+        sub[[sprintf("  [全部] %s", d$name)]] <- as.character(d$id)
+        for (j in seq_len(nrow(kids))) {
+          k <- kids[j, ]
+          kcount <- nrow(tryCatch(dept_users(k$id), error=function(e)data.frame()))
+          sub[[sprintf("  ├ %s（%d人）", k$name, kcount)]] <- as.character(k$id)
+        }
+        choices[[group_name]] <- sub
+      } else {
+        choices[[group_name]] <- as.character(d$id)
+      }
+    }
+
+    selectInput("rbac_u_dept_sel", NULL, choices = choices, selected = selected, width = "100%")
+  })
+
+  # 部门选择变更 → 筛选用户列表
+  observeEvent(input$rbac_u_dept_sel, {
+    val <- input$rbac_u_dept_sel
+    if (is.null(val) || val == "" || val == "-1") {
+      rbac_u_dept_filter(NULL)
+    } else {
+      rbac_u_dept_filter(as.integer(val))
+    }
+  }, ignoreInit = TRUE)
+
+  # 用户数据（含递归部门筛选）
+  rbac_u_data <- reactive({
+    rbac_u_trigger(); rbac_refresh(); req(rv$logged_in)
+    users <- user_get_all()
+    # 部门筛选（一级包含子部门）
+    did <- rbac_u_dept_filter()
+    if (!is.null(did)) {
+      ids <- dept_get_descendant_ids(did)
+      users <- users[!is.na(users$department_id) & users$department_id %in% ids, , drop = FALSE]
+    }
+    # 角色
+    rf <- input$rbac_u_filter_role
+    if (length(rf) > 0 && rf != "") users <- users[users$role == rf, , drop = FALSE]
+    # 搜索
+    kw <- trimws(input$rbac_u_search)
+    if (length(kw) > 0 && kw != "") {
+      users <- users[grepl(tolower(kw), tolower(paste(users$username, users$display_name))), , drop = FALSE]
+    }
+    users
+  })
+
+  # 进入用户管理 Tab 时强制清空筛选
+  observeEvent(input$rbac_u_refresh, {
+    rbac_u_dept_filter(NULL)
+    updateSelectizeInput(session, "rbac_u_filter_role", selected = "")
+    updateTextInput(session, "rbac_u_search", value = "")
+    rbac_u_trigger(rbac_u_trigger() + 1)
+  })
+
+  output$rbac_u_table <- DT::renderDT({
+    users <- rbac_u_data()
+    if (nrow(users) == 0) return(DT::datatable(data.frame(提示="无匹配用户"), options=list(dom="t")))
+    disp <- data.frame(
+      ID = users$id,
+      用户名 = users$username,
+      显示名 = users$display_name %||% "",
+      角色 = users$role,
+      部门 = users$department_name %||% "—",
+      状态 = sapply(users$active, function(a) if(a==1) '<span style="color:#5cb85c;">启用</span>' else '<span style="color:#d9534f;">禁用</span>'),
+      stringsAsFactors = FALSE, check.names = FALSE
+    )
+    DT::datatable(disp, escape = FALSE, rownames = FALSE, selection = "single",
+      options = list(pageLength = 25, dom = "ltip"))
+  })
+
+  # 添加用户
+  observeEvent(input$rbac_u_add, {
+    req(rv$logged_in)
+    depts <- dept_get_all()
+    dc <- c("(无)"="", setNames(as.character(depts$id), depts$path))
+    showModal(modalDialog(title="添加用户", size="s", easyClose=TRUE,
+      textInput("rbac_u_new_uname", "用户名 *"),
+      textInput("rbac_u_new_dname", "显示名称"),
+      passwordInput("rbac_u_new_pw", "密码 *"),
+      radioButtons("rbac_u_new_gender", "性别", choices=c("男"="M","女"="F"), selected="M", inline=TRUE),
+      selectInput("rbac_u_new_role", "角色", choices=c("user","admin","it_desk","it_engineer","sys_engineer")),
+      selectizeInput("rbac_u_new_dept", "所属部门", choices=dc, width="100%"),
+      footer=tagList(modalButton("取消"), actionButton("rbac_u_add_confirm","添加",class="btn-primary"))))
+  })
+  observeEvent(input$rbac_u_add_confirm, {
+    req(rv$logged_in, input$rbac_u_new_uname, input$rbac_u_new_pw)
+    did <- input$rbac_u_new_dept; if(is.null(did)||did=="") did <- NA
+    gender <- input$rbac_u_new_gender; if(is.null(gender)||gender=="") gender <- "M"
+    result <- user_add(input$rbac_u_new_uname, input$rbac_u_new_pw, input$rbac_u_new_role, input$rbac_u_new_dname, did, gender, rv$current_user)
+    if(result$success) { removeModal(); rbac_u_trigger(rbac_u_trigger()+1) }
+    showNotification(result$message, type=if(result$success)"message" else "error")
+  })
+
+  # 编辑用户
+  observeEvent(input$rbac_u_edit, {
+    req(rv$logged_in)
+    sel <- input$rbac_u_table_rows_selected
+    if(length(sel)==0) { showNotification("请先选择用户", type="warning"); return() }
+    users <- rbac_u_data(); u <- users[sel, ]
+    depts <- dept_get_all()
+    dc <- c("(无)"="", setNames(as.character(depts$id), depts$path))
+    has_did <- !is.null(u$department_id) && !is.na(u$department_id)
+    showModal(modalDialog(title="编辑用户", size="s", easyClose=TRUE,
+      textInput("rbac_u_edit_uname", "用户名 *", value=u$username[1]),
+      textInput("rbac_u_edit_dname", "显示名称", value=u$display_name[1] %||% ""),
+      passwordInput("rbac_u_edit_pw", "新密码（留空不修改）"),
+      radioButtons("rbac_u_edit_gender", "性别", choices=c("男"="M","女"="F"),
+        selected=if(!is.null(u$gender)&&!is.na(u$gender[1])&&u$gender[1]%in%c("M","F")) u$gender[1] else "M", inline=TRUE),
+      selectInput("rbac_u_edit_role", "角色", choices=c("user","admin","it_desk","it_engineer","sys_engineer"), selected=u$role[1]),
+      selectizeInput("rbac_u_edit_dept", "所属部门", choices=dc,
+        selected=if(has_did) as.character(u$department_id[1]) else "", width="100%"),
+      footer=tagList(modalButton("取消"), actionButton("rbac_u_edit_confirm","保存",class="btn-primary"))))
+  })
+  observeEvent(input$rbac_u_edit_confirm, {
+    req(rv$logged_in, input$rbac_u_edit_uname)
+    sel <- input$rbac_u_table_rows_selected
+    if(length(sel)==0) return()
+    users <- rbac_u_data(); uid <- users$id[sel]
+    did <- input$rbac_u_edit_dept; if(is.null(did)||did=="") did <- NA
+    pw <- input$rbac_u_edit_pw; if(is.null(pw)||pw=="") pw <- NULL
+    gender <- input$rbac_u_edit_gender; if(is.null(gender)||gender=="") gender <- "M"
+    result <- user_update(uid, input$rbac_u_edit_uname, input$rbac_u_edit_role, password=pw, display_name=input$rbac_u_edit_dname, department_id=did, gender=gender, current_user=rv$current_user)
+    if(result$success) { removeModal(); rbac_u_trigger(rbac_u_trigger()+1) }
+    showNotification(result$message, type=if(result$success)"message" else "error")
+  })
+
+  # 删除用户
+  observeEvent(input$rbac_u_del, {
+    req(rv$logged_in)
+    sel <- input$rbac_u_table_rows_selected
+    if(length(sel)==0) { showNotification("请先选择用户", type="warning"); return() }
+    users <- rbac_u_data(); u <- users[sel, ]
+    showModal(modalDialog(title="确认删除用户",
+      tags$div(style="font-size:13px;",
+        tags$p(tags$b(sprintf("确定删除用户 [%s] 吗？", u$username[1]))),
+        tags$p(style="color:#d9534f;font-size:12px;","此操作不可恢复。")),
+      footer=tagList(modalButton("取消"), actionButton("rbac_u_del_confirm","确认删除",class="btn-danger")),
+      size="s", easyClose=TRUE))
+  })
+  observeEvent(input$rbac_u_del_confirm, {
+    req(rv$logged_in)
+    sel <- input$rbac_u_table_rows_selected
+    if(length(sel)==0) return()
+    users <- rbac_u_data(); uid <- users$id[sel]
+    result <- user_delete(uid, rv$current_user)
+    removeModal(); rbac_u_trigger(rbac_u_trigger()+1)
+    showNotification(result$message, type=if(result$success)"message" else "error")
+  })
+
+  # 初始化密码
+  observeEvent(input$rbac_u_rpw, {
+    req(rv$logged_in)
+    sel <- input$rbac_u_table_rows_selected
+    if(length(sel)==0) { showNotification("请先选择用户", type="warning"); return() }
+    users <- rbac_u_data(); u <- users[sel, ]
+    showModal(modalDialog(title="初始化密码",
+      tags$p(sprintf("将 [%s] 的密码重置为默认密码 '123456'？", u$username[1])),
+      tags$p(style="color:#d9534f;font-size:12px;","建议用户登录后立即修改密码。"),
+      footer=tagList(modalButton("取消"), actionButton("rbac_u_rpw_confirm","确认重置",class="btn-warning")),
+      size="s", easyClose=TRUE))
+  })
+  observeEvent(input$rbac_u_rpw_confirm, {
+    req(rv$logged_in)
+    sel <- input$rbac_u_table_rows_selected
+    if(length(sel)==0) return()
+    users <- rbac_u_data(); uid <- users$id[sel]
+    result <- user_update(uid, users$username[sel], users$role[sel], password="123456", current_user=rv$current_user)
+    removeModal(); rbac_u_trigger(rbac_u_trigger()+1)
+    showNotification(result$message, type=if(result$success)"message" else "error")
+  })
+
+  # 禁用/启用
+  observeEvent(input$rbac_u_act, {
+    req(rv$logged_in)
+    sel <- input$rbac_u_table_rows_selected
+    if(length(sel)==0) { showNotification("请先选择用户", type="warning"); return() }
+    users <- rbac_u_data(); u <- users[sel, ]
+    result <- user_toggle_active(u$id[1], rv$current_user)
+    rbac_u_trigger(rbac_u_trigger()+1)
+    showNotification(result$message, type=if(result$success)"message" else "error")
+  })
+
 
   # 权限清单：三级可折叠模块→部件→操作
   output$rbac_perm_table <- renderUI({
@@ -2407,7 +3084,7 @@ server <- function(input, output, session) {
     users <- rbac_user_get_all()
     DT::datatable(users[, c("id","username","display_name","role")], rownames = FALSE, selection = "single",
       colnames = c("ID","用户名","显示名","原角色"),
-      options = list(pageLength = 15, dom = 't'))
+      options = list(pageLength = 25, dom = 't'))
   })
 
   selected_user_id <- reactiveVal(NULL)

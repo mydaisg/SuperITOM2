@@ -2,6 +2,126 @@
 # 数据源：记事模块 ｜ 图表类型：词云图 + 原有图表
 
 ##################
+# R 代码语法高亮（轻量版，复用 high_light.r 风格）
+##################
+viz_highlight_r <- function(code_lines) {
+  code <- paste(code_lines, collapse = "\n")
+  code <- gsub("&", "&amp;", code)
+  code <- gsub("<", "&lt;", code)
+  code <- gsub(">", "&gt;", code)
+  lines <- strsplit(code, "\n")[[1]]
+  result <- sapply(lines, function(line) {
+    if (grepl("^\\s*#", line)) {
+      return(sprintf('<span style="color:#6a737d;font-style:italic;">%s</span>', line))
+    }
+    for (kw in c("function","if","else","for","while","return","NULL","TRUE","FALSE","NA","in","next","break"))
+      line <- gsub(sprintf("\\b%s\\b", kw), sprintf('<span style="color:#d73a49;font-weight:600;">%s</span>', kw), line)
+    line <- gsub('("[^"]*")', '<span style="color:#22863a;">\\1</span>', line)
+    line <- gsub('(\\b\\d+\\.?\\d*\\b)', '<span style="color:#005cc5;">\\1</span>', line)
+    for (fn in c("library","ggplot","ggplot2","aes","geom_bar","geom_line","geom_point","geom_tile","geom_text",
+                 "labs","theme_minimal","theme_void","theme","scale_fill_gradient","scale_fill_manual",
+                 "scale_size_identity","scale_color_identity","coord_polar","coord_fixed",
+                 "element_text","element_blank","margin","set.seed","sample","runif","seq","seq_len",
+                 "nchar","nrow","paste","paste0","sprintf","as.data.frame","as.integer","as.character","order",
+                 "data.frame","c","list","head","min","max","sum","abs","sqrt","rescale","log1p"))
+      line <- gsub(sprintf("\\b%s\\b", fn), sprintf('<span style="color:#6f42c1;font-weight:500;">%s</span>', fn), line)
+    line <- gsub('(&lt;-)', '<span style="font-weight:700;">&lt;-</span>', line)
+    line
+  })
+  code <- paste(result, collapse = "\n")
+  HTML(paste0(
+    '<pre style="background:#f6f8fa;border-radius:4px;padding:12px;overflow-x:auto;font-size:11px;line-height:1.5;max-height:280px;overflow-y:auto;margin:0;">',
+    '<code style="font-family:Consolas,Monaco,monospace;color:#24292e;">', code, '</code></pre>'))
+}
+
+##################
+# 各图表类型的示范算法代码
+##################
+viz_get_algorithm_code <- function(viz_type, data_source) {
+  if (viz_type == "词云图") {
+    return(c(
+      "# 词云图：中文二元组+三元组分词 → 螺旋布局",
+      "# 1. 采集数据（记事标题+正文+评论）",
+      "text <- paste(c(notes$title, notes$content, cmt), collapse=\" \")",
+      "",
+      "# 2. 中文 bigram + trigram 分词",
+      "ch <- gsub(\"[^\\\u4e00-\\\u9fff]\", \"\", text)",
+      "bigrams <- paste0(chars[-n], chars[-1])",
+      "trigrams <- paste0(chars[-(1:2)], chars[-1], chars[-(1:2)])",
+      "",
+      "# 3. 过滤停用词 → 词频排序",
+      "freq <- as.data.frame(table(words))",
+      "freq <- freq[order(-freq$freq), ]",
+      "",
+      "# 4. 螺旋坐标 (Archimedean spiral)",
+      "theta <- seq(0, 10*pi, length.out=n)",
+      "r <- 0.03 + 0.11 * sqrt(seq_len(n))",
+      "freq$x <- r * cos(theta)",
+      "freq$y <- r * sin(theta)",
+      "",
+      "# 5. ggplot2 渲染",
+      "ggplot(freq, aes(x,y,label=word)) +",
+      "  geom_text(aes(angle=angle), fontface=\"bold\") +",
+      "  theme_void() + coord_fixed()"
+    ))
+  } else if (viz_type == "柱状图") {
+    c(
+      "# 柱状图：分类汇总 → geom_bar",
+      "data <- data.frame(",
+      "  category = c(\"服务器\",\"网络\",\"应用\"),",
+      "  value    = c(120, 85, 63))",
+      "ggplot(data, aes(category, value, fill=category)) +",
+      "  geom_bar(stat=\"identity\") +",
+      "  labs(title=\"分类统计\", x=\"\", y=\"数量\") +",
+      "  theme_minimal()"
+    )
+  } else if (viz_type == "折线图") {
+    c(
+      "# 折线图：时间序列 → geom_line + geom_point",
+      "data <- data.frame(",
+      "  date  = seq(as.Date(\"2024-01-01\"), by=\"day\", length.out=30),",
+      "  value = cumsum(rnorm(30, 5, 2)))",
+      "ggplot(data, aes(date, value)) +",
+      "  geom_line(color=\"steelblue\", size=1) +",
+      "  geom_point(color=\"steelblue\", size=2) +",
+      "  labs(title=\"趋势图\", x=\"日期\", y=\"值\") +",
+      "  theme_minimal()"
+    )
+  } else if (viz_type == "散点图") {
+    c(
+      "# 散点图：双变量分布 → geom_point",
+      "data <- data.frame(",
+      "  x = rnorm(100, 50, 10),",
+      "  y = rnorm(100, 50, 10),",
+      "  g = sample(c(\"A\",\"B\",\"C\"), 100, replace=TRUE))",
+      "ggplot(data, aes(x, y, color=g)) +",
+      "  geom_point(size=3, alpha=0.7) +",
+      "  labs(title=\"散点分布\") + theme_minimal()"
+    )
+  } else if (viz_type == "饼图") {
+    c(
+      "# 饼图：柱状图 + 极坐标变换",
+      "agg <- aggregate(value ~ category, data, sum)",
+      "ggplot(agg, aes(x=\"\", y=value, fill=category)) +",
+      "  geom_bar(stat=\"identity\", width=1) +",
+      "  coord_polar(\"y\") +",
+      "  labs(title=\"占比分布\") + theme_void()"
+    )
+  } else if (viz_type == "热力图") {
+    c(
+      "# 热力图：矩阵 → geom_tile + 渐变色",
+      "mat <- matrix(data$value, nrow=5, ncol=6)",
+      "df  <- as.data.frame(as.table(mat))",
+      "colnames(df) <- c(\"row\", \"col\", \"val\")",
+      "ggplot(df, aes(col, row, fill=val)) +",
+      "  geom_tile() +",
+      "  scale_fill_gradient(low=\"blue\", high=\"red\") +",
+      "  labs(title=\"热力图\") + theme_minimal()"
+    )
+  } else { character(0) }
+}
+
+##################
 # 中文/英文分词 + 词频统计
 ##################
 viz_tokenize <- function(text) {

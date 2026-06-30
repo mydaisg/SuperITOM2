@@ -797,11 +797,21 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
         ),
         hr(),
         titlePanel("数据可视化"),
+        tags$style(HTML("
+          .viz-code-toggle { cursor:pointer; color:#337ab7; font-size:12px; display:inline-block; user-select:none; }
+          .viz-code-toggle:hover { text-decoration:underline; }
+        ")),
         sidebarLayout(
           sidebarPanel(
             selectInput("viz_type", "图表类型", choices = c("词云图", "柱状图", "折线图", "散点图", "饼图", "热力图"), selected = "词云图"),
             selectInput("viz_data", "数据源", choices = c("记事数据", "ITOM数据", "模型数据", "流程监控"), selected = "记事数据"),
-            actionButton("generate_viz", "生成图表", class = "btn-primary")
+            actionButton("generate_viz", "生成图表", class = "btn-primary"),
+            hr(),
+            tags$a("▸ 算法 / 代码", class="viz-code-toggle",
+              onclick="var b=document.getElementById('viz_code_block');b.style.display=b.style.display==='none'?'block':'none';this.textContent=(b.style.display==='none'?'▸':'▾')+' 算法 / 代码';"),
+            div(id="viz_code_block", style="display:none;",
+              htmlOutput("viz_code", style = "margin-top:6px;")
+            )
           ),
           mainPanel(
             uiOutput("viz_plot")
@@ -821,33 +831,48 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
         fluidPage(
           titlePanel("组织架构"),
           tags$style(HTML("
-            .org-chart-outer { width:100%; height:72vh; overflow:auto; border:1px solid #e0e0e0; border-radius:8px; background:#fafbfc; }
-            .org-chart-wrap { padding:20px 30px; }
-            .org-row        { display:flex; justify-content:center; gap:16px; flex-wrap:wrap; margin-bottom:30px; }
-            .org-row-label  { width:100%; text-align:center; font-size:12px; color:#888; margin-bottom:8px; }
-            .org-node       { border-radius:8px; padding:10px 16px; min-width:110px; text-align:center; cursor:pointer;
-              transition:all 0.2s; box-shadow:0 2px 6px rgba(0,0,0,0.08); position:relative; }
-            .org-node:hover { transform:translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,0.15); }
-            .org-node.active { outline:3px solid #333; outline-offset:2px; }
-            .org-node .nm   { font-size:13px; font-weight:700; }
-            .org-node .ct   { font-size:10px; opacity:0.8; margin-top:2px; }
-            .org-user-list  { display:flex; flex-wrap:wrap; justify-content:center; gap:3px; margin-top:6px; max-width:180px; }
-            .org-user-tag   { font-size:9px; background:rgba(255,255,255,0.3); padding:2px 8px; border-radius:10px; }
-            .org-connector  { width:2px; height:20px; background:#bbb; margin:0 auto 4px auto; }
+            /* ── Xmind 风格思维导图容器 ── */
+            .org-mindmap-wrap { width:100%; height:68vh; overflow:auto; border:1px solid #e0e0e0; border-radius:8px; background:#fafbfc; padding:16px; }
+            .org-mindmap-wrap svg { max-width:none; }
+            /* ── 搜索栏 ── */
+            .org-search-bar { display:flex; align-items:center; max-width:360px; border:1px solid #cfd8dc; border-radius:20px; padding:0 4px 0 14px; background:#fff; transition:border-color 0.2s; margin-bottom:10px; }
+            .org-search-bar:focus-within { border-color:#4f8ef7; box-shadow:0 0 0 2px rgba(79,142,247,0.15); }
+            .org-search-input { border:none; outline:none; flex:1; padding:7px 4px; font-size:13px; background:transparent; min-width:0; }
+            .org-search-icon, .org-search-clear { display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:50%; cursor:pointer; color:#90a4ae; transition:all 0.2s; font-size:13px; flex-shrink:0; }
+            .org-search-icon:hover { color:#4f8ef7; background:#e3f2fd; }
+            .org-search-clear:hover { color:#d9534f; background:#fde8e8; }
+            /* ── 选中节点高亮 ── */
+            .org-mindmap-wrap .node-highlight rect,
+            .org-mindmap-wrap .node-highlight circle,
+            .org-mindmap-wrap .node-highlight ellipse,
+            .org-mindmap-wrap .node-highlight polygon { stroke:#4f8ef7 !important; stroke-width:3px !important; }
+            /* ── 搜索高亮 ── */
+            .org-mindmap-wrap .node-search-match rect,
+            .org-mindmap-wrap .node-search-match circle,
+            .org-mindmap-wrap .node-search-match ellipse { fill:#fff9c4 !important; stroke:#ffc107 !important; stroke-width:2px !important; }
           ")),
-          div(style = "margin-bottom:10px; display:flex; gap:6px;",
+          div(style = "display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;",
+            # 搜索框（带放大镜和X）
+            tags$div(class="org-search-bar",
+              tags$input(id="org_search_input", type="text", class="org-search-input",
+                placeholder="搜索部门或人员...", autocomplete="off"),
+              tags$span(id="org_search_btn", class="org-search-icon", title="搜索",
+                tags$i(class="fa fa-search")),
+              tags$span(id="org_search_clear", class="org-search-clear", style="display:none;", title="清除",
+                tags$i(class="fa fa-times"))
+            ),
             actionButton("org_add_dept","",icon=icon("plus"),class="btn-sm btn-success",title="添加部门"),
-            actionButton("org_edit_dept","",icon=icon("pencil"),class="btn-sm btn-default",title="编辑部门"),
+            actionButton("org_edit_dept","",icon=icon("building"),class="btn-sm btn-warning",title="编辑部门"),
             actionButton("org_del_dept","",icon=icon("trash"),class="btn-sm btn-danger",title="删除部门"),
             actionButton("org_add_user","",icon=icon("user-plus"),class="btn-sm btn-primary",title="添加人员"),
-            actionButton("org_edit_user","",icon=icon("pencil"),class="btn-sm btn-default",title="编辑人员"),
+            actionButton("org_edit_user","",icon=icon("id-badge"),class="btn-sm btn-info",title="编辑人员"),
+            actionButton("org_expand_all","",icon=icon("expand-arrows-alt"),class="btn-sm btn-default",title="全部展开"),
+            actionButton("org_collapse_all","",icon=icon("compress-arrows-alt"),class="btn-sm btn-default",title="全部折叠"),
             actionButton("org_refresh","",icon=icon("sync"),class="btn-sm btn-default",title="刷新"),
-            tags$span(style="margin-left:12px; font-size:13px; color:#555;", uiOutput("org_selected_info"))
+            tags$span(style="margin-left:6px; font-size:13px; color:#555;", uiOutput("org_selected_info"))
           ),
-          div(class="org-chart-outer",
-            div(class="org-chart-wrap",
-              uiOutput("org_chart")
-            )
+          div(class="org-mindmap-wrap", id="org_mindmap_container",
+            uiOutput("org_mindmap")
           )
         )
       ),
@@ -866,6 +891,21 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
               column(3, div(style = "margin-top:25px;",
                 tags$button(id="save_font_config", type="button", class="btn btn-primary btn-sm action-button", disabled=NA, list(icon("save"), "保存字体设置"))))
             )
+          ),
+          hr(),
+          # 彩虹色配置
+          wellPanel(
+            h4("全局彩虹色", style="margin-top:0;"),
+            p(style="color:#666; font-size:12px;", "配置 20 个全局颜色（组织架构等模块调用此顺序）。点击色块可编辑，拖拽排序可调顺序。"),
+            div(style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:8px;",
+              uiOutput("cfg_rainbow_swatches"),
+              div(style="margin-left:8px;",
+                actionButton("cfg_rainbow_add","",icon=icon("plus"),class="btn-xs btn-success",title="追加颜色"),
+                actionButton("cfg_rainbow_reset","",icon=icon("undo"),class="btn-xs btn-warning",title="恢复默认20色")
+              )
+            ),
+            div(style="display:none;", textInput("cfg_rainbow_edit_idx", NULL), textInput("cfg_rainbow_edit_color", NULL)),
+            div(id="cfg_rainbow_msg", style="font-size:12px; color:#999; margin-top:4px;")
           ),
           hr(),
           # 通用配置管理
@@ -925,10 +965,37 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
         fluidPage(
           titlePanel("RBAC 授权管理"),
           tabsetPanel(
-            tabPanel("权限清单",
+            # ── Tab 1：用户管理 ──
+            tabPanel("用户管理",
               br(),
-              uiOutput("rbac_perm_table")
+              fluidRow(
+                column(3,
+                  wellPanel(
+                    h4("部门筛选"),
+                    div(style="margin-bottom:6px;",
+                      actionButton("rbac_u_refresh","",icon=icon("sync"),class="btn-xs btn-default",title="刷新"),
+                      tags$small(" 选择部门查看人员")
+                    ),
+                    uiOutput("rbac_u_dept_tree")
+                  )
+                ),
+                column(9,
+                  div(style="display:flex; gap:4px; margin-bottom:8px; align-items:center; flex-wrap:wrap;",
+                    actionButton("rbac_u_add",  "", icon=icon("plus"),         class="btn-sm btn-success", title="添加用户"),
+                    actionButton("rbac_u_edit", "", icon=icon("pencil"),       class="btn-sm btn-default", title="编辑用户"),
+                    actionButton("rbac_u_del",  "", icon=icon("trash"),        class="btn-sm btn-danger",  title="删除用户"),
+                    actionButton("rbac_u_rpw",  "", icon=icon("key"),          class="btn-sm btn-warning", title="初始化密码"),
+                    actionButton("rbac_u_act",  "", icon=icon("toggle-on"),    class="btn-sm btn-default", title="禁用/启用"),
+                    div(style="width:180px;", selectizeInput("rbac_u_filter_role", NULL,
+                      choices=c("全部角色"="","admin","user","it_desk","it_engineer","sys_engineer"),
+                      width="100%", options=list(placeholder="角色筛选..."))),
+                    div(style="width:160px;", textInput("rbac_u_search", NULL, placeholder="搜索用户名/显示名...", width="100%"))
+                  ),
+                  DTOutput("rbac_u_table")
+                )
+              )
             ),
+            # ── Tab 2：角色管理 ──
             tabPanel("角色管理",
               br(),
               fluidRow(
@@ -954,7 +1021,13 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
                 )
               )
             ),
-            tabPanel("用户授权",
+            # ── Tab 3：权限清单 ──
+            tabPanel("权限清单",
+              br(),
+              uiOutput("rbac_perm_table")
+            ),
+            # ── Tab 4：授权管理（原用户授权）──
+            tabPanel("授权管理",
               br(),
               fluidRow(
                 column(4,
