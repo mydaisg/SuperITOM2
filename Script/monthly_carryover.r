@@ -18,6 +18,7 @@ carryover_extract_ym <- function(title) {
 
 # 从标题中的年月替换为新的年月（title 中的 (2026年6月) → (2026年7月)）
 carryover_replace_ym <- function(title, new_ym) {
+  if (is.null(title) || length(title) == 0) return("")
   parts <- strsplit(new_ym, "-")[[1]]
   new_yr  <- as.integer(parts[1])
   new_mo  <- as.integer(parts[2])
@@ -29,7 +30,7 @@ carryover_replace_ym <- function(title, new_ym) {
 carryover_list_notes <- function(year_month = NULL) {
   con <- db_connect()
   tryCatch({
-    notes <- dbGetQuery(con, "SELECT id, note_no, title, status, importance, 
+    notes <- dbGetQuery(con, "SELECT id, note_no, title, content, status, importance, 
       reminder_at, due_at, created_at, created_by, reported_to_daily
       FROM notes WHERE title IS NOT NULL AND title != '' ORDER BY created_at DESC")
     # 筛选标题匹配的（统一转为字符向量，避免 sapply 返回列表导致 DT 列名异常）
@@ -45,13 +46,18 @@ carryover_list_notes <- function(year_month = NULL) {
   }, error = function(e) data.frame(), finally = { db_disconnect(con) })
 }
 
-# 获取上个月且未完成的记事清单（用于结账确认）
+# 获取所有有标题月份的未完成记事中最早的月份（即"最旧未结账月"）
+carryover_get_prev_ym <- function() {
+  notes <- carryover_list_notes()
+  pending <- notes[notes$status != "completed", , drop = FALSE]
+  if (nrow(pending) == 0) return(NULL)
+  sort(unique(pending$ym))[1]
+}
+
+# 获取上个月且未完成的记事清单（基于标题月份中最旧的未结账月）
 carryover_prev_month_pending <- function() {
-  today <- Sys.Date()
-  prev_month <- as.integer(format(today, "%m")) - 1L
-  prev_year  <- as.integer(format(today, "%Y"))
-  if (prev_month == 0L) { prev_month <- 12L; prev_year <- prev_year - 1L }
-  ym <- sprintf("%04d-%02d", prev_year, prev_month)
+  ym <- carryover_get_prev_ym()
+  if (is.null(ym)) return(data.frame())
   notes <- carryover_list_notes(ym)
   notes[notes$status != "completed", , drop = FALSE]
 }
@@ -79,13 +85,10 @@ carryover_close_notes <- function(note_ids, operator) {
   finally = { db_disconnect(con) })
 }
 
-# 获取可用于生成下月的模板（取上月的记事，按标题去重）
+# 获取可用于生成下月的模板（取最旧未结账月份的记事，按标题去重）
 carryover_current_month_templates <- function() {
-  today <- Sys.Date()
-  prev_month <- as.integer(format(today, "%m")) - 1L
-  prev_year  <- as.integer(format(today, "%Y"))
-  if (prev_month == 0L) { prev_month <- 12L; prev_year <- prev_year - 1L }
-  ym <- sprintf("%04d-%02d", prev_year, prev_month)
+  ym <- carryover_get_prev_ym()
+  if (is.null(ym)) return(data.frame())
   notes <- carryover_list_notes(ym)
   # 取最近每类标题的第一条（去重）
   notes[!duplicated(notes$title), , drop = FALSE]
@@ -129,7 +132,10 @@ carryover_generate_next_month <- function(note_ids, operator, from_ym = NULL) {
       orig <- dbGetQuery(con, sprintf(
         "SELECT title, content, created_by FROM notes WHERE id=%d", nid))
       if (nrow(orig) == 0) next
-      new_title <- carryover_replace_ym(orig$title[1], sprintf("%04d-%02d", dates$year, dates$month))
+      target_ym <- sprintf("%04d-%02d", dates$year, dates$month)
+      new_title <- carryover_replace_ym(orig$title[1], target_ym)
+      # 同步替换 content 中的标题月份，避免标题与内容不一致
+      new_content <- carryover_replace_ym(orig$content[1] %||% "", target_ym)
       new_no <- note_generate_number()
       dbExecute(con, sprintf(
         "INSERT INTO notes (note_no, title, content, status, importance,
@@ -138,7 +144,7 @@ carryover_generate_next_month <- function(note_ids, operator, from_ym = NULL) {
          '%s', '%s', %d, '%s')",
         new_no,
         gsub("'","''",new_title),
-        gsub("'","''",orig$content[1] %||% ""),
+        gsub("'","''",new_content),
         dates$reminder_at, dates$due_at,
         orig$created_by[1] %||% 1,
         dates$created_at))

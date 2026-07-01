@@ -583,3 +583,16 @@ note_is_dispatched_user <- function(note_id, user_id, con = NULL) {
   }, error = function(e) FALSE, finally = { if (own_con) db_disconnect(con) })
 }
 
+# 获取评论总数和今日新增数
+note_comment_count_today <- function() {
+  con <- db_connect()
+  tryCatch({
+    today <- format(Sys.Date(), "%Y-%m-%d")
+    total <- dbGetQuery(con, "SELECT COUNT(*) AS cnt FROM note_comments")$cnt[1]
+    today_cnt <- dbGetQuery(con, sprintf("SELECT COUNT(*) AS cnt FROM note_comments WHERE created_at LIKE '%s%%'", today))$cnt[1]
+    list(total = total %||% 0L, today = today_cnt %||% 0L)
+  }, error = function(e) list(total = 0L, today = 0L),
+  finally = { db_disconnect(con) })
+}
+
+

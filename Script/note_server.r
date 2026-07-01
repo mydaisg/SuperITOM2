@@ -202,11 +202,17 @@ note_server <- function(input, output, session, rv) {
     }
 
     # 已完成列专用：按月分组，本月展开，往月收缩
+    # 优先按标题中 (YYYY年M月) 的月份归类，无标题月份则回退到 updated_at
     build_done_col <- function(items) {
       subset <- items[items$status == "completed", ]
       if (nrow(subset) == 0) return(tagList())
       now_month <- format(Sys.Date(), "%Y-%m")
-      subset$month <- substr(subset$updated_at, 1, 7)
+      subset$month <- sapply(subset$title, function(t) {
+        m <- carryover_extract_ym(t)
+        if (is.null(m)) NA_character_ else m
+      })
+      na_idx <- is.na(subset$month)
+      subset$month[na_idx] <- substr(subset$updated_at[na_idx], 1, 7)
       months <- unique(subset$month)
       months <- sort(months, decreasing = TRUE)
 
@@ -323,28 +329,38 @@ note_server <- function(input, output, session, rv) {
     pending_top <- if (nrow(pending_subset) > 4) pending_subset[1:4, , drop = FALSE] else pending_subset
     pending_rest <- if (nrow(pending_subset) > 4) pending_subset[5:nrow(pending_subset), , drop = FALSE] else data.frame()
     
-    # 统计栏（统一白底+彩色数字）
+    # 统计栏（统一白底+彩色数字，右下角 +n 表示今日新增）
+    today_prefix <- format(Sys.Date(), "%Y-%m-%d")
+    today_total <- sum(substr(items$created_at, 1, 10) == today_prefix, na.rm = TRUE)
+    today_pending <- sum(items$status == "pending" & substr(items$created_at, 1, 10) == today_prefix, na.rm = TRUE)
+    today_in_progress <- sum(items$status == "in_progress" & substr(items$created_at, 1, 10) == today_prefix, na.rm = TRUE)
+    today_completed <- sum(items$status == "completed" & substr(items$created_at, 1, 10) == today_prefix, na.rm = TRUE)
+    comment_cnt <- note_comment_count_today()
     reminder_count <- sum(!is.na(items$reminder_at) & items$reminder_at != "" & as.POSIXct(items$reminder_at) <= Sys.time(), na.rm = TRUE)
     due_count <- sum(!is.na(items$due_at) & items$due_at != "" & as.POSIXct(items$due_at) < Sys.time(), na.rm = TRUE)
+
+    stat_box <- function(num, today_num, label, color, extra_class = "") {
+      today_html <- if (today_num > 0) sprintf('<span style="font-size:9px; color:%s; opacity:0.75; margin-left:3px;">+%d</span>', color, today_num) else ""
+      tags$div(class = paste("note-stat-box", extra_class), style = "flex:1;",
+        tags$div(class = "stat-num", style = sprintf("color:%s; position:relative;", color),
+          num, HTML(today_html)
+        ),
+        tags$div(class = "stat-lbl", label)
+      )
+    }
 
     stats_bar <- tags$div(style = "display:flex; gap:10px; margin-bottom:10px;",
       tags$div(class = "note-stat-box", style = "flex:1; cursor:pointer;",
         onclick = sprintf("Shiny.setInputValue('note_filter_click','%s',{priority:'event'})", if(flt=="") "reminder" else ""),
-        tags$div(class = "stat-num", style = paste("color:#6c3bbf;", if(flt=="reminder") "background:#ede2ff;border-radius:4px;" else ""), nrow(items)),
+        tags$div(class = "stat-num", style = paste("color:#6c3bbf;", if(flt=="reminder") "background:#ede2ff;border-radius:4px;" else ""), nrow(items),
+          if (today_total > 0) tags$span(style = "font-size:9px; color:#6c3bbf; opacity:0.75; margin-left:3px;", sprintf("+%d", today_total)) else ""
+        ),
         tags$div(class = "stat-lbl", "全部")
       ),
-      tags$div(class = "note-stat-box", style = "flex:1;",
-        tags$div(class = "stat-num", style = "color:#6c3bbf;", pending_count),
-        tags$div(class = "stat-lbl", "待处理")
-      ),
-      tags$div(class = "note-stat-box", style = "flex:1;",
-        tags$div(class = "stat-num", style = "color:#2563eb;", sum(items$status == "in_progress", na.rm = TRUE)),
-        tags$div(class = "stat-lbl", "进行中")
-      ),
-      tags$div(class = "note-stat-box", style = "flex:1;",
-        tags$div(class = "stat-num", style = "color:#0d7d3a;", sum(items$status == "completed", na.rm = TRUE)),
-        tags$div(class = "stat-lbl", "已完成")
-      ),
+      stat_box(pending_count, today_pending, "待处理", "#6c3bbf"),
+      stat_box(sum(items$status == "in_progress", na.rm = TRUE), today_in_progress, "进行中", "#2563eb"),
+      stat_box(sum(items$status == "completed", na.rm = TRUE), today_completed, "已完成", "#0d7d3a"),
+      stat_box(comment_cnt$total, comment_cnt$today, "评论", "#0891b2"),
       if (reminder_count > 0) tags$div(class = "note-stat-box", style = "flex:1; cursor:pointer;",
         onclick = sprintf("Shiny.setInputValue('note_filter_click','%s',{priority:'event'})", if(flt=="reminder") "" else "reminder"),
         tags$div(class = "stat-num", style = paste("color:#f59e0b;", if(flt=="reminder") "background:#fef3c7;border-radius:4px;" else ""),
@@ -360,27 +376,16 @@ note_server <- function(input, output, session, rv) {
     )
     
     tagList(
-      # 一行：统计 | 搜索 | 简约
+      # 一行：统计 | 简约
       tags$div(style = "display:flex; gap:10px; align-items:center; margin-bottom:10px;",
         tags$div(style = "flex:1;", stats_bar),
-        tags$div(style = "display:flex; gap:4px; align-items:center; flex-shrink:0;",
-          if (kw != "") tags$span(style = "font-size:10px; color:#999; white-space:nowrap;",
-            sprintf("「%s」%d条", kw, nrow(items))),
-          textInput("note_search_input", NULL, width = "140px",
-            placeholder = "搜索标题/评论…"),
-          actionButton("note_search_btn", NULL, icon = icon("search"),
-            class = "btn-sm btn-primary"),
-          if (kw != "") actionButton("note_search_clear_btn", NULL, icon = icon("times"),
-            class = "btn-sm btn-default")
-        ),
         tags$button(class = "btn btn-sm btn-outline-secondary",
           onclick = "Shiny.setInputValue('note_toggle_compact', Math.random(), {priority:'event'})",
           if (compact) "📋 详细" else "📋 简约")
       ),
-      # 快速关键字栏（TOP10标题关键词 | TOP5高频搜索）
+      # 搜索框 + 关键字标签（同一行，搜索框在左）
       if (nrow(items) > 0) {
         cat_kw <- note_keywords_cache()
-        # 历史搜索频次 → 取 TOP5（排除已出现在标题关键字中的）
         freq <- note_search_freq()
         if (length(freq) > 0) {
           freq_sorted <- sort(unlist(freq), decreasing = TRUE)
@@ -399,15 +404,30 @@ note_server <- function(input, output, session, rv) {
         if (length(hist_kw) > 0) {
           hists <- paste(sapply(hist_kw, function(x) kw_btn(x, "kw-hist")), collapse = "")
         } else hists <- ""
-        if (cats != "" || hists != "") {
-          tags$div(style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;",
-            tags$div(style = "display:flex; gap:4px; flex-wrap:wrap; align-items:center;",
-              if (cats != "") tags$span(style="font-size:10px;color:#999;margin-right:2px;","分类:"),
-              if (cats != "") HTML(cats)),
-            tags$div(style = "display:flex; gap:4px; flex-wrap:wrap; align-items:center;",
-              if (hists != "") tags$span(style="font-size:10px;color:#999;margin-right:2px;","高频:"),
-              if (hists != "") HTML(hists)))
-        }
+        tags$div(style = "display:flex; align-items:center; gap:6px; margin-bottom:6px;",
+          # 搜索框（最左，紧凑样式）
+          tags$style("#note_search_input { height: 26px !important; font-size: 12px; padding: 2px 6px; width: 290px !important; vertical-align: middle; }
+                    #note_search_input + .form-control-feedback { display: none; }
+                    .btn-xs { display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; }
+                    .btn-xs .fa { font-size: 12px; line-height: 1; }"),
+          tags$div(style = "display:flex; align-items:center; gap:3px; flex-shrink:0; margin-right:2px;",
+            if (kw != "") tags$span(style = "font-size:9px; color:#999; white-space:nowrap;",
+              sprintf("「%s」%d条", kw, nrow(items))),
+            textInput("note_search_input", NULL, width = "290px",
+              placeholder = "搜索标题/评论"),
+            actionButton("note_search_btn", NULL, icon = icon("search"),
+              class = "btn-xs btn-primary", style = "height:26px;"),
+            if (kw != "") actionButton("note_search_clear_btn", NULL, icon = icon("times"),
+              class = "btn-xs btn-default", style = "height:26px;")
+          ),
+          # 关键字标签（flex:1 占剩余空间）
+          tags$div(style = "display:flex; gap:4px; flex-wrap:wrap; align-items:center; flex:1;",
+            if (cats != "") tags$span(style="font-size:10px;color:#999;margin-right:2px;","分类:"),
+            if (cats != "") HTML(cats),
+            if (hists != "") tags$span(style="font-size:10px;color:#999;margin-left:4px;margin-right:2px;","高频:"),
+            if (hists != "") HTML(hists)
+          )
+        )
       },
       tags$div(class = "trello-board",
         tags$div(class = "trello-col pending",
@@ -518,6 +538,24 @@ note_server <- function(input, output, session, rv) {
     kw <- note_search_term()
     if (!is.null(kw) && kw != "") {
       updateTextInput(session, "note_search_input", value = kw)
+    }
+  })
+
+  # 拦截搜索框回车键 = 点击搜索
+  observeEvent(input$note_search_input_keyup, {
+    if (isTRUE(input$note_search_input_keyup$key == "Enter")) {
+      kw <- trimws(input$note_search_input_keyup$value %||% "")
+      note_search_term(kw)
+      note_pending_page(1)
+      if (kw != "") {
+        hist <- note_search_history()
+        hist <- unique(c(kw, hist))
+        if (length(hist) > 15) hist <- hist[1:15]
+        note_search_history(hist)
+        freq <- note_search_freq()
+        freq[[kw]] <- (freq[[kw]] %||% 0L) + 1L
+        note_search_freq(freq)
+      }
     }
   })
 

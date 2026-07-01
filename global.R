@@ -1261,6 +1261,23 @@ migrate_database <- function() {
       cat("数据库迁移完成：users 表已添加 department_id 列\n")
     }
 
+    # 迁移：开发日志表 (dev_logs)
+    if (!"dev_logs" %in% tables) {
+      dbExecute(con, "CREATE TABLE dev_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        module TEXT NOT NULL DEFAULT '',
+        title TEXT NOT NULL,
+        requirement TEXT,
+        solution TEXT,
+        result TEXT,
+        code_snippet TEXT,
+        files_changed TEXT,
+        created_by TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 dev_logs 表\n")
+    }
+
   }, error = function(e) {
     cat("数据库迁移失败:", e$message, "\n")
   }, finally = {

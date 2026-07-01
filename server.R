@@ -37,6 +37,8 @@ source("Script/duty_matrix_server.r")     # 岗职模块服务端
 source("Script/module_inventory.r")       # 模块清单（全站映射参考）
 source("Script/system_architecture.r")    # 系统架构可视化
 source("Script/monthly_carryover.r")      # 月度数据结转
+source("Script/dev_log_management.r")     # 开发日志数据层
+source("Script/dev_log_server.r")         # 开发日志模块
 
 # 定义server函数
 # 这是Shiny应用的服务器逻辑核心
@@ -3377,6 +3379,9 @@ server <- function(input, output, session) {
   # 岗职模块逻辑
   duty_matrix_server(input, output, session, rv)
 
+  # 开发日志模块
+  dev_log_server(input, output, session, rv)
+
   # 流程超时检测已移除（新审批模块为同步流转）
 
   # ========== 数据结转模块 ==========
@@ -3402,10 +3407,13 @@ server <- function(input, output, session) {
   output$carryover_prev_month_label <- renderUI({
     req(rv$carryover_prev_notes)
     n <- nrow(rv$carryover_prev_notes)
-    if (n == 0) return(tags$span(style="color:#5cb85c;", "上月无未完成记事"))
-    # 计算年月
+    if (n == 0) {
+      ym <- carryover_get_prev_ym()
+      if (is.null(ym)) return(tags$span(style="color:#5cb85c;", "没有待处理的记事"))
+      return(tags$span(style="color:#5cb85c;", sprintf("%s 月 所有记事已完成", ym)))
+    }
     ym <- rv$carryover_prev_notes$ym[1]
-    tags$span(sprintf("%s 共 %d 条未完成", ym %||% "上月", n))
+    tags$span(sprintf("%s 月 共 %d 条未完成", ym, n))
   })
 
   output$carryover_prev_table <- DT::renderDT({

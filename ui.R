@@ -295,7 +295,43 @@ ui <- fluidPage(
             }
           });
         }, 1200);
+        // 第三次清除（应对 Chrome 慢的密码管理器 / 自动填充）
+        var guardCount = 0;
+        var guardTimer = setInterval(function() {
+          guardCount++;
+          var inp = document.getElementById('note_search_input');
+          if (inp && inp.placeholder && inp.value) {
+            // 拿到当前 R 端通过 updateTextInput 设置的值（最新搜索词）
+            var saved = inp.dataset.savedKw || '';
+            // 如果当前显示的值 = localStorage 用户名/ID/admin 等，清除
+            var u = window.localStorage.getItem('itom2_username') || '';
+            var uid = window.localStorage.getItem('itom2_user_id') || '';
+            if (inp.value !== saved && (inp.value === u || inp.value === uid ||
+                inp.value === 'admin' || inp.value === 'DaiSG')) {
+              inp.value = saved;
+              inp.dispatchEvent(new Event('input', {bubbles: true}));
+            }
+          }
+          if (guardCount >= 5) clearInterval(guardTimer);
+        }, 600);
       });
+
+      // 记事搜索框回车触发搜索
+      $(document).on('keyup', '#note_search_input', function(e) {
+        if (e.key === 'Enter') {
+          Shiny.setInputValue('note_search_input_keyup',
+            {value: this.value, key: 'Enter'}, {priority: 'event'});
+        }
+      });
+      // 记事搜索框：设置 data-savedKw 让 JS 知道真实值
+      $(document).on('input change', '#note_search_input', function() {
+        this.dataset.savedKw = this.value;
+      });
+      // 初始设值
+      setTimeout(function() {
+        var inp = document.getElementById('note_search_input');
+        if (inp) inp.dataset.savedKw = inp.value;
+      }, 500);
 
       // ========== 组织架构：Xmind 思维导图交互 ==========
       // Mermaid 节点点击回调：Mermaid 10.x 调用 nodeClickCallback(nodeId)

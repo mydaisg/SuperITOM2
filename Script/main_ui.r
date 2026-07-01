@@ -1060,10 +1060,10 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
             # ── Tab 1：记事结转 ──
             tabPanel("记事结转",
               br(),
-              h4(icon("clipboard-list"), "1. 上月末完成记事 — 确认结账"),
-              p(style="color:#999; font-size:12px;", "勾选要结转到“已完成”的记事，确认后执行。"),
+              h4(icon("clipboard-list"), "1. 待结账记事 — 确认结账"),
+              p(style="color:#999; font-size:12px;", "自动检测最早未完成月份。勾选要结转到\"已完成\"的记事，确认后执行。"),
               fluidRow(
-                column(2, actionButton("carryover_load_prev", "加载上月清单", icon=icon("search"), class="btn-info btn-sm")),
+                column(2, actionButton("carryover_load_prev", "加载待结账清单", icon=icon("search"), class="btn-info btn-sm")),
                 column(2, actionButton("carryover_select_all", "全选", class="btn-default btn-sm")),
                 column(2, actionButton("carryover_deselect_all", "取消全选", class="btn-default btn-sm")),
                 column(3, div(style="margin-top:4px; font-size:12px; color:#999;", uiOutput("carryover_prev_month_label")))
@@ -1132,6 +1132,21 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
         icon = icon("sitemap"),
         fluidPage(
           uiOutput("module_inventory_ui")
+        )
+      ),
+      if (can_admin("admin_dev_log")) tabPanel(
+        "开发日志",
+        icon = icon("history"),
+        fluidPage(
+          titlePanel("开发日志"),
+          p(style = "color:#666; font-size:13px;", "自动记录每次开发的需求、方案、结果和关键代码。"),
+          uiOutput("dl_stats"),
+          fluidRow(
+            column(4, selectInput("dl_filter_module", "按模块筛选", choices = c("全部模块" = ""))),
+            column(2, div(style = "margin-top:25px;", actionButton("dl_refresh", "刷新", icon = icon("sync"), class = "btn-sm btn-primary")))
+          ),
+          hr(),
+          uiOutput("dl_list")
         )
       ),
       # --- 所有用户可见 ---

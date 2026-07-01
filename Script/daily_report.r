@@ -240,11 +240,13 @@ daily_report_ui <- function() {
     ")),
     fluidRow(
       column(2, dateInput("dr_date", "选择日期", value = Sys.Date(), language = "zh-CN")),
-      column(3, div(style = "margin-top:25px;",
+      column(4, div(style = "margin-top:25px;",
         actionButton("dr_today", "今天", class = "btn-default btn-sm"),
         actionButton("dr_yesterday", "昨天", class = "btn-default btn-sm"),
         actionButton("dr_this_week", "本周", class = "btn-default btn-sm"),
-        actionButton("dr_last_week", "上周", class = "btn-default btn-sm"))),
+        actionButton("dr_last_week", "上周", class = "btn-default btn-sm"),
+        actionButton("dr_this_month", "本月", class = "btn-info btn-sm"),
+        actionButton("dr_last_month", "上月", class = "btn-info btn-sm"))),
       column(2, selectInput("dr_user_filter", "筛选人员",
         choices = c("全部人员" = "all"))),
       column(2, div(style = "margin-top:25px;",
@@ -278,22 +280,42 @@ daily_report_ui <- function() {
 
 daily_report_server <- function(input, output, session, rv) {
 
+  # 月报模式（NULL=日报，list(start,end,label)或字符标签）
+  dr_month_mode <- reactiveVal(NULL)
+
   # 快捷日期按钮
   observeEvent(input$dr_today, {
+    dr_month_mode(NULL)
     updateDateInput(session, "dr_date", value = Sys.Date())
   })
   observeEvent(input$dr_yesterday, {
+    dr_month_mode(NULL)
     updateDateInput(session, "dr_date", value = Sys.Date() - 1)
   })
   observeEvent(input$dr_this_week, {
+    dr_month_mode(NULL)
     d <- Sys.Date()
     monday <- d - as.integer(format(d, "%u")) + 1
     updateDateInput(session, "dr_date", value = monday)
   })
   observeEvent(input$dr_last_week, {
+    dr_month_mode(NULL)
     d <- Sys.Date() - 7
     monday <- d - as.integer(format(d, "%u")) + 1
     updateDateInput(session, "dr_date", value = monday)
+  })
+  observeEvent(input$dr_this_month, {
+    d <- as.Date(format(Sys.Date(), "%Y-%m-01"))
+    dr_month_mode(list(start = d, end = seq(d, by = "month", length.out = 2)[2] - 1,
+                       label = format(d, "%Y年%m月")))
+    updateDateInput(session, "dr_date", value = d)
+  })
+  observeEvent(input$dr_last_month, {
+    d <- as.Date(format(Sys.Date(), "%Y-%m-01")) - 1
+    d <- as.Date(format(d, "%Y-%m-01"))
+    dr_month_mode(list(start = d, end = seq(d, by = "month", length.out = 2)[2] - 1,
+                       label = format(d, "%Y年%m月")))
+    updateDateInput(session, "dr_date", value = d)
   })
 
   # 初始化用户筛选下拉
@@ -319,25 +341,44 @@ daily_report_server <- function(input, output, session, rv) {
   # 日报数据
   dr_data <- reactiveVal(NULL)
 
-  # 生成日报
+  # 生成日报（支持日/月模式）
   observeEvent(list(input$dr_refresh, input$dr_date, input$dr_user_filter, rv$daily_report_refresh), {
     req(rv$logged_in, input$dr_date)
 
+    mm <- dr_month_mode()
     report_date <- input$dr_date
-    work_orders <- daily_report_get_work_orders(report_date)
-    tasks <- daily_report_get_tasks(report_date)
-    task_logs <- daily_report_get_task_logs(report_date)
-    note_comments <- daily_report_get_note_comments(report_date)
-    users <- daily_report_get_users()
-
-    dr_data(list(
-      date = report_date,
-      work_orders = work_orders,
-      tasks = tasks,
-      task_logs = task_logs,
-      note_comments = note_comments,
-      users = users
-    ))
+    if (!is.null(mm)) {
+      # 月报模式：逐日查询合并
+      dates <- seq(mm$start, mm$end, by = "day")
+      work_orders <- do.call(rbind, lapply(dates, daily_report_get_work_orders))
+      tasks <- do.call(rbind, lapply(dates, daily_report_get_tasks))
+      task_logs <- do.call(rbind, lapply(dates, daily_report_get_task_logs))
+      note_comments <- do.call(rbind, lapply(dates, daily_report_get_note_comments))
+      # 去重（跨天可能有重复）
+      if (!is.null(work_orders) && nrow(work_orders) > 0) work_orders <- work_orders[!duplicated(work_orders$id), ]
+      if (!is.null(tasks) && nrow(tasks) > 0) tasks <- tasks[!duplicated(tasks$id), ]
+      if (!is.null(note_comments) && nrow(note_comments) > 0) note_comments <- note_comments[!duplicated(note_comments$id), ]
+      dr_data(list(
+        date = report_date, month_label = mm$label, month_dates = dates, month_mode = TRUE,
+        work_orders = work_orders %||% data.frame(),
+        tasks = tasks %||% data.frame(),
+        task_logs = task_logs %||% data.frame(),
+        note_comments = note_comments %||% data.frame(),
+        users = daily_report_get_users()
+      ))
+    } else {
+      # 日模式
+      work_orders <- daily_report_get_work_orders(report_date)
+      tasks <- daily_report_get_tasks(report_date)
+      task_logs <- daily_report_get_task_logs(report_date)
+      note_comments <- daily_report_get_note_comments(report_date)
+      dr_data(list(
+        date = report_date, month_mode = FALSE,
+        work_orders = work_orders, tasks = tasks,
+        task_logs = task_logs, note_comments = note_comments,
+        users = daily_report_get_users()
+      ))
+    }
   }, ignoreNULL = TRUE, ignoreInit = FALSE)
 
   # 渲染日报内容
@@ -408,7 +449,14 @@ daily_report_server <- function(input, output, session, rv) {
       log_count <- nrow(user_logs)
       note_count <- nrow(user_notes)
 
-      # 构建卡片HTML
+      # 工作日志标题：月报或日期
+    report_label <- if (isTRUE(data$month_mode) && !is.null(data$month_label)) {
+      data$month_label
+    } else {
+      substr(as.character(data$date), 1, 10)
+    }
+
+    # 构建卡片HTML
       wo_html <- ""
       if (wo_count > 0) {
         wo_items <- ""
@@ -510,8 +558,7 @@ daily_report_server <- function(input, output, session, rv) {
             }
           }
         }
-        report_date_str <- substr(as.character(data$date), 1, 10)
-        note_html <- sprintf('<div class="dr-section"><div class="dr-section-title note">工作日志 %s (%d条)</div>%s</div>', report_date_str, note_count, note_items)
+        note_html <- sprintf('<div class="dr-section"><div class="dr-section-title note">工作日志 %s (%d条)</div>%s</div>', report_label, note_count, note_items)
       }
 
       cards_html <- paste0(cards_html, sprintf(
@@ -526,9 +573,13 @@ daily_report_server <- function(input, output, session, rv) {
 
       # 纯文本日报 — 新格式
       total_items <- wo_count + task_count + log_count + note_count
-      tomorrow <- format(as.Date(data$date) + 1, "%Y-%m-%d")
+      tomorrow <- if (isTRUE(data$month_mode) && !is.null(data$month_dates)) {
+        format(max(data$month_dates) + 1, "%Y-%m-%d")
+      } else {
+        format(as.Date(data$date) + 1, "%Y-%m-%d")
+      }
       text_report <- paste0(text_report,
-        sprintf("工作日志 %s (%d条) %s\n", as.character(data$date), total_items, uname))
+        sprintf("工作日志 %s (%d条) %s\n", report_label, total_items, uname))
       
       if (wo_count > 0) {
         text_report <- paste0(text_report, "\n工单\n")
@@ -601,6 +652,13 @@ daily_report_server <- function(input, output, session, rv) {
     if (is_admin) {
       con <- db_connect()
       disps <- tryCatch({
+        if (isTRUE(data$month_mode) && !is.null(data$month_dates)) {
+          date_clause <- sprintf("date(nc.created_at) BETWEEN '%s' AND '%s'",
+            format(min(data$month_dates), "%Y-%m-%d"),
+            format(max(data$month_dates), "%Y-%m-%d"))
+        } else {
+          date_clause <- sprintf("date(nc.created_at) = '%s'", format(as.Date(data$date), "%Y-%m-%d"))
+        }
         dbGetQuery(con, sprintf(
           "SELECT DISTINCT n.id, n.note_no, n.title,
                   nc.content, nc.status, nc.completed_at,
@@ -610,8 +668,8 @@ daily_report_server <- function(input, output, session, rv) {
            JOIN note_dispatches nd ON nd.note_id = n.id
            LEFT JOIN note_comments nc ON nc.note_id = n.id
            LEFT JOIN users u ON nc.created_by = u.id
-           WHERE date(nc.created_at) = '%s'
-           ORDER BY n.title, nc.created_at", format(as.Date(data$date), "%Y-%m-%d")))
+           WHERE %s
+           ORDER BY n.title, nc.created_at", date_clause))
       }, error = function(e) data.frame(), finally = { db_disconnect(con) })
       if (nrow(disps) > 0) {
         by_title <- split(disps, disps$title)
