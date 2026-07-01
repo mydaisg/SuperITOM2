@@ -1049,6 +1049,49 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
           )
         )
       ),
+      # 数据结转（月度数据结转）
+      tabPanel(
+        "数据结转",
+        icon = icon("calendar-check"),
+        fluidPage(
+          titlePanel("月度数据结转"),
+          p(style="color:#666; font-size:13px;", "将月度数据（记事等）结转到下月。先确认上月未完成事项，再生成下月模板。"),
+          tabsetPanel(
+            # ── Tab 1：记事结转 ──
+            tabPanel("记事结转",
+              br(),
+              h4(icon("clipboard-list"), "1. 上月末完成记事 — 确认结账"),
+              p(style="color:#999; font-size:12px;", "勾选要结转到“已完成”的记事，确认后执行。"),
+              fluidRow(
+                column(2, actionButton("carryover_load_prev", "加载上月清单", icon=icon("search"), class="btn-info btn-sm")),
+                column(2, actionButton("carryover_select_all", "全选", class="btn-default btn-sm")),
+                column(2, actionButton("carryover_deselect_all", "取消全选", class="btn-default btn-sm")),
+                column(3, div(style="margin-top:4px; font-size:12px; color:#999;", uiOutput("carryover_prev_month_label")))
+              ),
+              br(),
+              DTOutput("carryover_prev_table"),
+              br(),
+              div(style="display:flex; gap:8px;",
+                actionButton("carryover_close_btn", "确认结账（改为已完成）", icon=icon("check-circle"), class="btn-warning"),
+                tags$span(style="color:#999; font-size:12px; margin-top:6px;", "仅处理勾选的记事")
+              ),
+              hr(),
+              h4(icon("copy"), "2. 生成本月模板记事的副本 → 下月"),
+              p(style="color:#999; font-size:12px;", "从所有带 (YYYY年M月) 标题的记事中选取上月模板，生成下月副本。日期自动设为下月1日8:00、到期末天17:00、提醒25日8:01。"),
+              fluidRow(
+                column(2, actionButton("carryover_load_curr", "加载本月模板", icon=icon("search"), class="btn-info btn-sm")),
+                column(2, actionButton("carryover_gen_sel_all", "全选", class="btn-default btn-sm")),
+                column(2, actionButton("carryover_gen_desel_all", "取消全选", class="btn-default btn-sm")),
+                column(3, div(style="margin-top:4px; font-size:12px; color:#999;", uiOutput("carryover_next_month_label")))
+              ),
+              br(),
+              DTOutput("carryover_template_table"),
+              br(),
+              actionButton("carryover_gen_btn", "生成下月记事", icon=icon("forward"), class="btn-success")
+            )
+          )
+        )
+      ),
       if (can_admin("admin_github")) tabPanel(
         "GitHub",
         icon = icon("github"),

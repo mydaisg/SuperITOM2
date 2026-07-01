@@ -36,6 +36,7 @@ source("Script/duty_matrix_management.r") # 岗职模块数据层
 source("Script/duty_matrix_server.r")     # 岗职模块服务端
 source("Script/module_inventory.r")       # 模块清单（全站映射参考）
 source("Script/system_architecture.r")    # 系统架构可视化
+source("Script/monthly_carryover.r")      # 月度数据结转
 
 # 定义server函数
 # 这是Shiny应用的服务器逻辑核心
@@ -3377,6 +3378,180 @@ server <- function(input, output, session) {
   duty_matrix_server(input, output, session, rv)
 
   # 流程超时检测已移除（新审批模块为同步流转）
+
+  # ========== 数据结转模块 ==========
+  carryover_trigger <- reactiveVal(0)
+
+  # 加载上月末完成清单
+  observeEvent(input$carryover_load_prev, {
+    req(rv$logged_in)
+    rv$carryover_prev_notes <- carryover_prev_month_pending()
+    carryover_trigger(carryover_trigger() + 1)
+  })
+  observeEvent(input$carryover_select_all, {
+    proxy <- DT::dataTableProxy("carryover_prev_table")
+    if (!is.null(rv$carryover_prev_notes) && nrow(rv$carryover_prev_notes) > 0) {
+      DT::selectRows(proxy, seq_len(nrow(rv$carryover_prev_notes)))
+    }
+  })
+  observeEvent(input$carryover_deselect_all, {
+    proxy <- DT::dataTableProxy("carryover_prev_table")
+    DT::selectRows(proxy, NULL)
+  })
+
+  output$carryover_prev_month_label <- renderUI({
+    req(rv$carryover_prev_notes)
+    n <- nrow(rv$carryover_prev_notes)
+    if (n == 0) return(tags$span(style="color:#5cb85c;", "上月无未完成记事"))
+    # 计算年月
+    ym <- rv$carryover_prev_notes$ym[1]
+    tags$span(sprintf("%s 共 %d 条未完成", ym %||% "上月", n))
+  })
+
+  output$carryover_prev_table <- DT::renderDT({
+    carryover_trigger()
+    notes <- rv$carryover_prev_notes
+    if (is.null(notes) || nrow(notes) == 0) {
+      return(DT::datatable(data.frame(提示="点击 [加载上月清单] 按钮查看", stringsAsFactors=FALSE), options=list(dom="t")))
+    }
+    disp <- data.frame(
+      id = notes$id,
+      note_no = ifelse(is.na(notes$note_no), "", notes$note_no),
+      title = notes$title,
+      status = notes$status,
+      created_at = substr(notes$created_at, 1, 10),
+      ym = notes$ym,
+      stringsAsFactors = FALSE, check.names = FALSE
+    )
+    colnames(disp) <- c("ID", "记事号", "标题", "状态", "创建时间", "月份")
+    DT::datatable(disp, escape = FALSE, rownames = FALSE, selection = "multiple",
+      options = list(pageLength = 25, dom = "ltip", columnDefs = list(list(targets = 0, visible = FALSE)))
+    )
+  })
+
+  # 确认结账
+  observeEvent(input$carryover_close_btn, {
+    req(rv$logged_in, rv$current_user)
+    sel <- input$carryover_prev_table_rows_selected
+    notes <- rv$carryover_prev_notes
+    if (is.null(sel) || length(sel) == 0 || is.null(notes)) {
+      showNotification("请先勾选要结账的记事", type = "warning"); return()
+    }
+    ids <- notes$id[sel]
+    titles <- notes$title[sel]
+    showModal(modalDialog(
+      title = "确认结账",
+      size = "m",
+      tags$p(sprintf("将以下 %d 条记事标记为“已完成”：", length(ids))),
+      tags$ul(lapply(titles, tags$li)),
+      tags$p(style="color:#d9534f; font-size:12px;", "此操作不可撤销。"),
+      footer = tagList(
+        modalButton("取消"),
+        actionButton("carryover_close_confirm", "确认结转", class = "btn-warning")
+      )
+    ))
+  })
+  observeEvent(input$carryover_close_confirm, {
+    req(rv$logged_in, rv$current_user)
+    sel <- input$carryover_prev_table_rows_selected
+    notes <- rv$carryover_prev_notes
+    ids <- notes$id[sel]
+    result <- carryover_close_notes(ids, rv$current_user)
+    removeModal()
+    showNotification(result$message, type = if(result$success) "message" else "error")
+    if (result$success) {
+      rv$carryover_prev_notes <- carryover_prev_month_pending()
+      carryover_trigger(carryover_trigger() + 1)
+    }
+  })
+
+  # 加载本月模板
+  observeEvent(input$carryover_load_curr, {
+    req(rv$logged_in)
+    rv$carryover_templates <- carryover_current_month_templates()
+    carryover_trigger(carryover_trigger() + 1)
+  })
+  observeEvent(input$carryover_gen_sel_all, {
+    proxy <- DT::dataTableProxy("carryover_template_table")
+    if (!is.null(rv$carryover_templates) && nrow(rv$carryover_templates) > 0) {
+      DT::selectRows(proxy, seq_len(nrow(rv$carryover_templates)))
+    }
+  })
+  observeEvent(input$carryover_gen_desel_all, {
+    proxy <- DT::dataTableProxy("carryover_template_table")
+    DT::selectRows(proxy, NULL)
+  })
+
+  output$carryover_next_month_label <- renderUI({
+    notes <- rv$carryover_templates
+    if (is.null(notes) || nrow(notes) == 0) {
+      return(tags$span("请先加载模板"))
+    }
+    from_ym <- notes$ym[1]
+    dates <- carryover_next_month_dates(from_ym)
+    tags$span(sprintf("将生成: %d年%02d月 · 首日 1号8:00 · 提醒 25号8:01 · 到期 末天17:00",
+      dates$year, dates$month))
+  })
+
+  output$carryover_template_table <- DT::renderDT({
+    carryover_trigger()
+    notes <- rv$carryover_templates
+    if (is.null(notes) || nrow(notes) == 0) {
+      return(DT::datatable(data.frame(提示="点击 [加载本月模板] 按钮查看", stringsAsFactors=FALSE), options=list(dom="t")))
+    }
+    disp <- data.frame(
+      id = notes$id,
+      note_no = ifelse(is.na(notes$note_no), "", notes$note_no),
+      title = notes$title,
+      status = notes$status,
+      created_at = substr(notes$created_at, 1, 10),
+      ym = notes$ym,
+      stringsAsFactors = FALSE, check.names = FALSE
+    )
+    colnames(disp) <- c("ID", "记事号", "标题", "状态", "创建时间", "月份")
+    DT::datatable(disp, escape = FALSE, rownames = FALSE, selection = "multiple",
+      options = list(pageLength = 25, dom = "ltip", columnDefs = list(list(targets = 0, visible = FALSE)))
+    )
+  })
+
+  # 生成下月
+  observeEvent(input$carryover_gen_btn, {
+    req(rv$logged_in, rv$current_user)
+    sel <- input$carryover_template_table_rows_selected
+    notes <- rv$carryover_templates
+    if (is.null(sel) || length(sel) == 0 || is.null(notes)) {
+      showNotification("请先勾选模板记事", type = "warning"); return()
+    }
+    ids <- notes$id[sel]
+    from_ym <- notes$ym[sel][1]
+    rv$carryover_gen_from_ym <- from_ym
+    dates <- carryover_next_month_dates(from_ym)
+    showModal(modalDialog(
+      title = "确认生成下月记事",
+      size = "m",
+      tags$p(sprintf("将从 %d 条模板生成 %d年%02d月 的副本：", length(ids), dates$year, dates$month)),
+      tags$ul(lapply(notes$title[sel], function(t) {
+        new_t <- carryover_replace_ym(t, sprintf("%04d-%02d", dates$year, dates$month))
+        tags$li(tags$span(style="color:#999;", t), " → ", tags$b(new_t))
+      })),
+      tags$p(style="color:#999; font-size:12px;",
+        "创建日期: 1号8:00 · 提醒: 25号8:01 · 到期: 末天17:00"),
+      footer = tagList(
+        modalButton("取消"),
+        actionButton("carryover_gen_confirm", "确认生成", class = "btn-success")
+      )
+    ))
+  })
+  observeEvent(input$carryover_gen_confirm, {
+    req(rv$logged_in, rv$current_user)
+    sel <- input$carryover_template_table_rows_selected
+    notes <- rv$carryover_templates
+    ids <- notes$id[sel]
+    from_ym <- notes$ym[sel][1]
+    result <- carryover_generate_next_month(ids, rv$current_user, from_ym)
+    removeModal()
+    showNotification(result$message, type = if(result$success) "message" else "error", duration = 5)
+  })
 
   # ========== 模块清单（刷新按钮触发重新渲染） ==========
   rv$mi_refresh <- 0
