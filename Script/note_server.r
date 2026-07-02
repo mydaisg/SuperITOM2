@@ -541,21 +541,20 @@ note_server <- function(input, output, session, rv) {
     }
   })
 
-  # 拦截搜索框回车键 = 点击搜索
-  observeEvent(input$note_search_input_keyup, {
-    if (isTRUE(input$note_search_input_keyup$key == "Enter")) {
-      kw <- trimws(input$note_search_input_keyup$value %||% "")
-      note_search_term(kw)
-      note_pending_page(1)
-      if (kw != "") {
-        hist <- note_search_history()
-        hist <- unique(c(kw, hist))
-        if (length(hist) > 15) hist <- hist[1:15]
-        note_search_history(hist)
-        freq <- note_search_freq()
-        freq[[kw]] <- (freq[[kw]] %||% 0L) + 1L
-        note_search_freq(freq)
-      }
+  # 拦截搜索框回车键 = 点击搜索（JS 带随机后缀避免同值不触发）
+  observeEvent(input$note_search_key_detect, {
+    raw <- input$note_search_key_detect
+    kw <- trimws(sub("\\|\\|\\|[0-9.]+$", "", raw))
+    note_search_term(kw)
+    note_pending_page(1)
+    if (kw != "") {
+      hist <- note_search_history()
+      hist <- unique(c(kw, hist))
+      if (length(hist) > 15) hist <- hist[1:15]
+      note_search_history(hist)
+      freq <- note_search_freq()
+      freq[[kw]] <- (freq[[kw]] %||% 0L) + 1L
+      note_search_freq(freq)
     }
   })
 

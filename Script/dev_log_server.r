@@ -37,8 +37,8 @@ dev_log_server <- function(input, output, session, rv) {
     dl_trigger()
     req(rv$logged_in)
     
-    module_filter <- input$dl_filter_module %||% ""
-    logs <- dev_log_get_all(module = if (module_filter == "") NULL else module_filter)
+    module_filter <- if (is.null(input$dl_filter_module) || input$dl_filter_module == "") NULL else input$dl_filter_module
+    logs <- dev_log_get_all(module_filter, NULL, NULL)
     
     if (nrow(logs) == 0) {
       return(tags$div(style = "text-align:center; color:#999; padding:40px;", "暂无开发日志"))

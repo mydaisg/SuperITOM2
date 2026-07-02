@@ -1134,21 +1134,22 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
           uiOutput("module_inventory_ui")
         )
       ),
-      if (can_admin("admin_dev_log")) tabPanel(
-        "开发日志",
-        icon = icon("history"),
-        fluidPage(
-          titlePanel("开发日志"),
-          p(style = "color:#666; font-size:13px;", "自动记录每次开发的需求、方案、结果和关键代码。"),
-          uiOutput("dl_stats"),
-          fluidRow(
-            column(4, selectInput("dl_filter_module", "按模块筛选", choices = c("全部模块" = ""))),
-            column(2, div(style = "margin-top:25px;", actionButton("dl_refresh", "刷新", icon = icon("sync"), class = "btn-sm btn-primary")))
-          ),
-          hr(),
-          uiOutput("dl_list")
-        )
-      ),
+      # 开发日志（暂时注释排查空白页问题，通过后还原）
+      # if (can_admin("admin_dev_log")) tabPanel(
+      #   "开发日志",
+      #   icon = icon("history"),
+      #   fluidPage(
+      #     titlePanel("开发日志"),
+      #     p(style = "color:#666; font-size:13px;", "..."),
+      #     uiOutput("dl_stats"),
+      #     fluidRow(
+      #       column(4, selectInput("dl_filter_module", "按模块筛选", choices = c("全部模块" = ""))),
+      #       column(2, div(style = "margin-top:25px;", actionButton("dl_refresh", "刷新", icon = icon("sync"), class = "btn-sm btn-primary")))
+      #     ),
+      #     hr(),
+      #     uiOutput("dl_list")
+      #   )
+      # ),
       # --- 所有用户可见 ---
       tabPanel(
         "个人信息",

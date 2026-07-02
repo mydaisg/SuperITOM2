@@ -319,8 +319,7 @@ ui <- fluidPage(
       // 记事搜索框回车触发搜索
       $(document).on('keyup', '#note_search_input', function(e) {
         if (e.key === 'Enter') {
-          Shiny.setInputValue('note_search_input_keyup',
-            {value: this.value, key: 'Enter'}, {priority: 'event'});
+          Shiny.setInputValue('note_search_key_detect', this.value + '|||' + Math.random(), {priority: 'event'});
         }
       });
       // 记事搜索框：设置 data-savedKw 让 JS 知道真实值
