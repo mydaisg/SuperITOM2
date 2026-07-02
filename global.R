@@ -1265,17 +1265,29 @@ migrate_database <- function() {
     if (!"dev_logs" %in% tables) {
       dbExecute(con, "CREATE TABLE dev_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        log_no TEXT NOT NULL DEFAULT '',
         module TEXT NOT NULL DEFAULT '',
         title TEXT NOT NULL,
         requirement TEXT,
         solution TEXT,
         result TEXT,
+        result_en TEXT,
         code_snippet TEXT,
         files_changed TEXT,
         created_by TEXT,
         created_at TEXT DEFAULT (datetime('now','localtime'))
       )")
       cat("数据库迁移完成：已创建 dev_logs 表\n")
+    }
+    # 迁移：dev_logs 添加 log_no / result_en 列
+    dl_cols <- dbGetQuery(con, "PRAGMA table_info(dev_logs)")
+    if (!"log_no" %in% dl_cols$name) {
+      dbExecute(con, "ALTER TABLE dev_logs ADD COLUMN log_no TEXT NOT NULL DEFAULT ''")
+      cat("数据库迁移完成：dev_logs 表已添加 log_no 列\n")
+    }
+    if (!"result_en" %in% dl_cols$name) {
+      dbExecute(con, "ALTER TABLE dev_logs ADD COLUMN result_en TEXT")
+      cat("数据库迁移完成：dev_logs 表已添加 result_en 列\n")
     }
 
   }, error = function(e) {

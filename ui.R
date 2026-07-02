@@ -322,6 +322,12 @@ ui <- fluidPage(
           Shiny.setInputValue('note_search_key_detect', this.value + '|||' + Math.random(), {priority: 'event'});
         }
       });
+      // 开发日志搜索框回车触发刷新
+      $(document).on('keyup', '#dl_search_input', function(e) {
+        if (e.key === 'Enter') {
+          Shiny.setInputValue('dl_refresh', Math.random(), {priority: 'event'});
+        }
+      });
       // 记事搜索框：设置 data-savedKw 让 JS 知道真实值
       $(document).on('input change', '#note_search_input', function() {
         this.dataset.savedKw = this.value;

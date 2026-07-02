@@ -37,6 +37,8 @@ source("Script/duty_matrix_server.r")     # 岗职模块服务端
 source("Script/module_inventory.r")       # 模块清单（全站映射参考）
 source("Script/system_architecture.r")    # 系统架构可视化
 source("Script/monthly_carryover.r")      # 月度数据结转
+source("Script/dev_log_management.r")     # 开发日志数据层
+source("Script/dev_log_server.r")         # 开发日志模块
 
 # 定义server函数
 # 这是Shiny应用的服务器逻辑核心
@@ -3376,6 +3378,9 @@ server <- function(input, output, session) {
 
   # 岗职模块逻辑
   duty_matrix_server(input, output, session, rv)
+
+  # 开发日志模块
+  dev_log_server(input, output, session, rv)
 
   # 流程超时检测已移除（新审批模块为同步流转）
 
