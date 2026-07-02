@@ -465,7 +465,8 @@ ui <- fluidPage(
           });
         }).observe(document.body, { childList: true, subtree: true });
       });
-    "))
+    ")),
+    includeScript("www/switch_devlog.js")
   ),
   uiOutput("app_ui")
 )

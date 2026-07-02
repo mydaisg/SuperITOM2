@@ -80,27 +80,36 @@ dev_log_server <- function(input, output, session, rv) {
           )
         )
         if (!is.na(r$requirement) && nchar(r$requirement) > 0) {
+          en_req <- if (!is.null(r$requirement_en) && !is.na(r$requirement_en) && nchar(r$requirement_en) > 0) {
+            tags$div(style = "font-size:11px; color:#b45309; font-style:italic; font-family:Consolas,monospace; margin-bottom:4px; opacity:0.8;", icon("brain"), " ", r$requirement_en)
+          } else NULL
           parts <- c(parts, list(
             tags$div(style = "margin-top:6px; padding:8px 10px; background:#fff8e1; border-left:3px solid #f59e0b; border-radius:0 4px 4px 0; font-size:13px;",
               tags$div(style = "font-size:11px; color:#b45309; font-weight:bold; margin-bottom:3px;", icon("clipboard"), " 需求"),
-              tags$div(style = "white-space:pre-wrap; line-height:1.5;", r$requirement))
+              tags$div(style = "white-space:pre-wrap; line-height:1.5;", r$requirement),
+              en_req)
           ))
         }
         if (!is.na(r$solution) && nchar(r$solution) > 0) {
+          en_sol <- if (!is.null(r$solution_en) && !is.na(r$solution_en) && nchar(r$solution_en) > 0) {
+            tags$div(style = "font-size:11px; color:#2e7d32; font-style:italic; font-family:Consolas,monospace; margin-top:4px; opacity:0.8;", icon("brain"), " ", r$solution_en)
+          } else NULL
           parts <- c(parts, list(
             tags$div(style = "margin-top:6px; padding:8px 10px; background:#e8f5e9; border-left:3px solid #4caf50; border-radius:0 4px 4px 0; font-size:13px;",
               tags$div(style = "font-size:11px; color:#2e7d32; font-weight:bold; margin-bottom:3px;", icon("lightbulb"), " 方案"),
-              tags$div(style = "white-space:pre-wrap; line-height:1.5;", r$solution))
+              tags$div(style = "white-space:pre-wrap; line-height:1.5;", r$solution),
+              en_sol)
           ))
         }
         if (!is.na(r$result) && nchar(r$result) > 0) {
-          en_tag <- if (!is.null(r$result_en) && !is.na(r$result_en) && nchar(r$result_en) > 0) {
-            tags$span(style = "display:inline-block; background:#0d47a1; color:#fff; padding:0 6px; border-radius:3px; font-size:11px; font-family:Consolas,monospace; margin-right:6px;", r$result_en)
-          } else ""
+          en_line <- if (!is.null(r$result_en) && !is.na(r$result_en) && nchar(r$result_en) > 0) {
+            tags$div(style = "font-size:12px; color:#0d47a1; font-family:Consolas,monospace; margin-bottom:4px;", r$result_en)
+          } else NULL
           parts <- c(parts, list(
             tags$div(style = "margin-top:6px; padding:8px 10px; background:#e3f2fd; border-left:3px solid #2196f3; border-radius:0 4px 4px 0; font-size:13px;",
               tags$div(style = "font-size:11px; color:#1565c0; font-weight:bold; margin-bottom:3px;", icon("check-circle"), " 结果"),
-              tags$div(style = "white-space:pre-wrap; line-height:1.5;", en_tag, r$result))
+              en_line,
+              tags$div(style = "white-space:pre-wrap; line-height:1.5;", r$result))
           ))
         }
         if (!is.na(r$files_changed) && nchar(r$files_changed) > 0) {

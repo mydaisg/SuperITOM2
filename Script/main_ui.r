@@ -201,25 +201,73 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
         fluidRow(
           column(6,
             div(style = "border:1px solid #ddd; border-radius:8px; padding:16px; margin-bottom:16px;",
-              h4(style = "margin-top:0; color:#337ab7; border-bottom:2px solid #337ab7; padding-bottom:8px;", "我的项目"),
+              div(style = "display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #337ab7; padding-bottom:8px; margin-bottom:8px;",
+                h4(style = "margin:0; color:#337ab7;", "我的项目"),
+                tags$a("more \u00bb", href = "#", onclick = "Shiny.setInputValue('home_goto_proj',Math.random(),{priority:'event'});return false;", style = "font-size:12px; color:#337ab7;")
+              ),
               uiOutput("home_my_projects")
+            ),
+            div(style = "border:1px solid #ddd; border-radius:8px; padding:16px; margin-bottom:16px;",
+              h4(style = "margin-top:0; color:#5cb85c; border-bottom:2px solid #5cb85c; padding-bottom:8px;", "我的任务"),
+              uiOutput("home_my_tasks")
             )
           ),
           column(6,
             div(style = "border:1px solid #ddd; border-radius:8px; padding:16px; margin-bottom:16px;",
-              h4(style = "margin-top:0; color:#5bc0de; border-bottom:2px solid #5bc0de; padding-bottom:8px;", "我的工单"),
+              div(style = "display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #5bc0de; padding-bottom:8px; margin-bottom:8px;",
+                h4(style = "margin:0; color:#5bc0de;", "我的工单"),
+                tags$a("more \u00bb", href = "#", onclick = "Shiny.setInputValue('home_goto_wo',Math.random(),{priority:'event'});return false;", style = "font-size:12px; color:#5bc0de;")
+              ),
               uiOutput("home_my_work_orders")
             )
           )
         ),
-        fluidRow(
-          column(12,
-            div(style = "border:1px solid #ddd; border-radius:8px; padding:16px;",
-              h4(style = "margin-top:0; color:#5cb85c; border-bottom:2px solid #5cb85c; padding-bottom:8px;", "我的任务"),
-              uiOutput("home_my_tasks")
+        # 快速操作（仅管理员可见）
+        if (is_admin) fluidRow(
+          column(4,
+            div(style = "border:1px solid #f0ad4e; border-radius:8px; padding:12px; margin-top:16px; background:#fffdf5;",
+              h5(style = "margin-top:0; color:#f0ad4e;", icon("code"), " 快速开发"),
+              textAreaInput("quick_dev_input", NULL, width = "100%", rows = 6, placeholder = "输入开发需求/方案…"),
+              div(style = "display:flex; gap:4px;",
+                actionButton("quick_dev_submit", "提交", icon = icon("paper-plane"), class = "btn-warning btn-sm", style = "flex:1;"),
+                actionButton("quick_dev_goto_log", "View More \u00bb", class = "btn-sm btn-link", style = "white-space:nowrap;")
+              ),
+              hr(style = "margin:6px 0;"),
+              uiOutput("home_latest_dev_logs")
+            )
+          ),
+          column(4,
+            div(style = "border:1px solid #5bc0de; border-radius:8px; padding:12px; margin-top:16px; background:#f0f9ff;",
+              h5(style = "margin-top:0; color:#5bc0de;", icon("sticky-note"), " 快速记事"),
+              textAreaInput("quick_note_input", NULL, width = "100%", rows = 6, placeholder = "标题(第一行)\n内容…"),
+              div(style = "display:flex; gap:4px;",
+                actionButton("quick_note_submit", "创建", icon = icon("plus"), class = "btn-info btn-sm", style = "flex:1;"),
+                actionButton("quick_note_viewmore", "View More \u00bb", class = "btn-sm btn-link", style = "white-space:nowrap;")
+              ),
+              hr(style = "margin:6px 0;"),
+              uiOutput("home_recent_notes"),
+              div(style = "display:flex; gap:4px; margin-top:6px;",
+                textInput("home_note_search", NULL, width = "100%", placeholder = "搜索记事…"),
+                actionButton("home_note_search_btn", NULL, icon = icon("search"), class = "btn-xs btn-info")
+              ),
+              uiOutput("home_note_search_result")
+            )
+          ),
+          column(4,
+            div(style = "border:1px solid #5cb85c; border-radius:8px; padding:12px; margin-top:16px; background:#f0fff4;",
+              h5(style = "margin-top:0; color:#5cb85c;", icon("ticket-alt"), " 快速工单"),
+              textAreaInput("quick_wo_input", NULL, width = "100%", rows = 6, placeholder = "IT服务请求 20260702 1000：\n用户：姓名-部门-职位\n内容：…\n@处理人-部门-职位"),
+              div(style = "display:flex; gap:4px;",
+                actionButton("quick_wo_submit", "创建", icon = icon("plus"), class = "btn-success btn-sm", style = "flex:1;"),
+                actionButton("quick_wo_viewmore", "View More \u00bb", class = "btn-sm btn-link", style = "white-space:nowrap;")
+              ),
+              hr(style = "margin:6px 0;"),
+              uiOutput("home_recent_wos")
             )
           )
-        )
+        ),
+        # 页面底部留白
+        tags$div(style = "height:120px;")
       )
     ),
     

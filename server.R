@@ -61,7 +61,8 @@ server <- function(input, output, session) {
   rv <- reactiveValues(
     logged_in = FALSE,  # 登录状态，默认为未登录
     current_user = NULL, # 当前用户信息，默认为空
-    daily_report_refresh = 0  # 日报刷新触发器
+    daily_report_refresh = 0,  # 日报刷新触发器
+    home_dev_refresh = 0L  # 首页开发日志刷新
   )
   
   # 通用按钮状态控制
@@ -3215,7 +3216,7 @@ server <- function(input, output, session) {
         "SELECT id, project_no, name, status, priority, start_date, end_date
          FROM projects
          WHERE created_by = %d AND status NOT IN ('completed', 'closed')
-         ORDER BY updated_at DESC LIMIT 10", uid))
+         ORDER BY updated_at DESC LIMIT 5", uid))
     }, error = function(e) data.frame(), finally = db_disconnect(con))
 
     if (nrow(projects) == 0) {
@@ -3251,7 +3252,7 @@ server <- function(input, output, session) {
          FROM work_orders wo
          WHERE (wo.assigned_to = %d OR wo.handled_by = %d OR wo.created_by = %d)
            AND wo.status NOT IN ('completed', 'closed')
-         ORDER BY wo.updated_at DESC LIMIT 10", uid, uid, uid))
+         ORDER BY wo.updated_at DESC LIMIT 5", uid, uid, uid))
     }, error = function(e) data.frame(), finally = db_disconnect(con))
 
     if (nrow(orders) == 0) {
@@ -3338,6 +3339,207 @@ server <- function(input, output, session) {
     rv$proj_nav_level <- "phases"
     # 切换到项目管理tab
     updateTabsetPanel(session, "main_tabs", selected = "项目")
+  })
+
+  # 首页 "more" → 跳转
+  observeEvent(input$home_goto_proj, {
+    updateTabsetPanel(session, "main_tabs", selected = "项目")
+  })
+  observeEvent(input$home_goto_wo, {
+    updateTabsetPanel(session, "main_tabs", selected = "工单")
+  })
+
+  # ========== 首页快速开发 ==========
+  # 提交到元任务 NTE20260606002
+  observeEvent(input$quick_dev_submit, {
+    req(rv$logged_in, rv$current_user)
+    content <- trimws(input$quick_dev_input %||% "")
+    if (nchar(content) == 0) {
+      showNotification("请输入开发内容", type = "warning")
+      return()
+    }
+    # 获取元任务 note_id
+    con <- db_connect()
+    note_id <- tryCatch({
+      dbGetQuery(con, "SELECT id FROM notes WHERE note_no = 'NTE20260606002'")$id[1]
+    }, error = function(e) NA_integer_, finally = { db_disconnect(con) })
+    if (is.na(note_id)) {
+      showNotification("元任务 NTE20260606002 不存在", type = "error")
+      return()
+    }
+    result <- note_comment_add(note_id, content, rv$current_user$id[1])
+    if (isTRUE(result$success)) {
+      updateTextAreaInput(session, "quick_dev_input", value = "")
+      rv$home_dev_refresh <- isolate(rv$home_dev_refresh) + 1L
+      showNotification("已提交到元任务", type = "message")
+    } else {
+      showNotification(result$message, type = "error")
+    }
+  })
+
+  # 跳转开发日志
+  observeEvent(input$quick_dev_goto_log, {
+    req(rv$logged_in)
+    session$sendCustomMessage("runjs", "switchToDevLogTab")
+  })
+  # View More 跳转
+  observeEvent(input$quick_note_viewmore, {
+    updateTabsetPanel(session, "main_tabs", selected = "记事")
+  })
+  observeEvent(input$quick_wo_viewmore, {
+    updateTabsetPanel(session, "main_tabs", selected = "工单")
+  })
+
+  # 最近2条开发日志
+  output$home_latest_dev_logs <- renderUI({
+    req(rv$logged_in)
+    rv$home_dev_refresh
+    latest <- tryCatch(dev_log_get_all(NULL, NULL, NULL, NULL), error = function(e) data.frame())
+    if (nrow(latest) == 0) return(tags$p(style="color:#999;font-size:11px;text-align:center;margin:0;","暂无"))
+    latest <- head(latest, 2)
+    do.call(tagList, lapply(seq_len(nrow(latest)), function(i) {
+      r <- latest[i,]
+      tags$div(style="font-size:11px; padding:3px 0; border-bottom:1px dotted #eee;",
+        tags$span(style="color:#888;font-family:Consolas,monospace;margin-right:4px;", r$log_no),
+        tags$span(style="color:#333;", r$title),
+        tags$span(style="color:#bbb;float:right;", substr(r$created_at,12,16))
+      )
+    }))
+  })
+
+  # 最近5条记事
+  output$home_recent_notes <- renderUI({
+    req(rv$logged_in)
+    rv$home_dev_refresh
+    con <- db_connect()
+    notes <- tryCatch(dbGetQuery(con,
+      "SELECT id, note_no, title, status, updated_at FROM notes WHERE status != 'completed' ORDER BY updated_at DESC LIMIT 5"),
+      error=function(e) data.frame(), finally={db_disconnect(con)})
+    if (nrow(notes)==0) return(tags$p(style="color:#999;font-size:11px;text-align:center;margin:0;","暂无"))
+    st_col <- c(pending="#f0ad4e", in_progress="#337ab7", completed="#5cb85c")
+    do.call(tagList, lapply(seq_len(nrow(notes)), function(i){
+      r <- notes[i,]
+      clr <- st_col[as.character(r$status)]
+      if(is.na(clr)) clr <- "#999"
+      tags$div(style="font-size:11px;padding:2px 0;border-bottom:1px dotted #eee;",
+        tags$span(style=sprintf("display:inline-block;width:6px;height:6px;border-radius:50%%;background:%s;margin-right:4px;",clr)),
+        tags$span(style="color:#888;margin-right:4px;", r$note_no),
+        tags$a(style="color:#333;text-decoration:none;cursor:pointer;",
+          href="#", onclick=sprintf("Shiny.setInputValue('note_edit_click',%d,{priority:'event'});return false;", r$id),
+          substr(r$title,1,30)),
+        tags$span(style="color:#bbb;float:right;", substr(r$updated_at,12,16))
+      )
+    }))
+  })
+
+  # 最近5条工单
+  output$home_recent_wos <- renderUI({
+    req(rv$logged_in)
+    rv$home_dev_refresh
+    con <- db_connect()
+    wos <- tryCatch(dbGetQuery(con,
+      "SELECT id, order_no, title, status, updated_at FROM work_orders WHERE status NOT IN ('completed','closed') ORDER BY updated_at DESC LIMIT 5"),
+      error=function(e) data.frame(), finally={db_disconnect(con)})
+    if (nrow(wos)==0) return(tags$p(style="color:#999;font-size:11px;text-align:center;margin:0;","暂无"))
+    st_col <- c(pending="#f0ad4e",assigned="#5bc0de",processing="#337ab7")
+    do.call(tagList, lapply(seq_len(nrow(wos)), function(i){
+      r <- wos[i,]
+      clr <- st_col[as.character(r$status)]
+      if(is.na(clr)) clr <- "#999"
+      tags$div(style="font-size:11px;padding:2px 0;border-bottom:1px dotted #eee;",
+        tags$span(style=sprintf("display:inline-block;width:6px;height:6px;border-radius:50%%;background:%s;margin-right:4px;",clr)),
+        tags$span(style="color:#888;margin-right:4px;", r$order_no),
+        tags$a(style="color:#333;text-decoration:none;cursor:pointer;",
+          href="#", onclick=sprintf("Shiny.setInputValue('work_order_view_click',%d,{priority:'event'});return false;", r$id),
+          substr(r$title,1,30)),
+        tags$span(style="color:#bbb;float:right;", substr(r$updated_at,12,16))
+      )
+    }))
+  })
+
+  # 快速记事搜索
+  observeEvent(input$home_note_search_btn, {
+    rv$home_note_search_kw <- trimws(input$home_note_search %||% "")
+  })
+  output$home_note_search_result <- renderUI({
+    req(rv$logged_in)
+    kw <- rv$home_note_search_kw
+    if (is.null(kw) || nchar(kw) == 0) return(NULL)
+    con <- db_connect()
+    notes <- tryCatch(dbGetQuery(con, sprintf(
+      "SELECT id, note_no, title, status FROM notes WHERE title LIKE '%%%s%%' ORDER BY updated_at DESC LIMIT 10",
+      gsub("'","''",kw))),
+      error=function(e) data.frame(), finally={db_disconnect(con)})
+    if (nrow(notes)==0) return(tags$p(style="color:#999;font-size:11px;text-align:center;margin:0;",sprintf("未找到「%s」",kw)))
+    st_col <- c(pending="#f0ad4e", in_progress="#337ab7")
+    do.call(tagList, lapply(seq_len(nrow(notes)), function(i){
+      r <- notes[i,]
+      clr <- st_col[as.character(r$status)]
+      if(is.na(clr)) clr <- "#999"
+      tags$div(style="font-size:11px;padding:2px 0;border-bottom:1px dotted #eee;",
+        tags$span(style=sprintf("display:inline-block;width:6px;height:6px;border-radius:50%%;background:%s;margin-right:4px;",clr)),
+        tags$span(style="color:#888;margin-right:4px;", r$note_no),
+        tags$a(style="color:#333;text-decoration:none;cursor:pointer;",
+          href="#", onclick=sprintf("Shiny.setInputValue('note_edit_click',%d,{priority:'event'});return false;", r$id),
+          substr(r$title,1,30))
+      )
+    }))
+  })
+
+  # 快速记事
+  observeEvent(input$quick_note_submit, {
+    req(rv$logged_in, rv$current_user)
+    content <- trimws(input$quick_note_input %||% "")
+    if (nchar(content) == 0) {
+      showNotification("请输入记事内容", type = "warning")
+      return()
+    }
+    result <- note_add(content, rv$current_user$id[1])
+    if (isTRUE(result$success)) {
+      updateTextAreaInput(session, "quick_note_input", value = "")
+      showNotification(result$message, type = "message")
+    } else {
+      showNotification(result$message, type = "error")
+    }
+  })
+
+  # 快速工单
+  observeEvent(input$quick_wo_submit, {
+    req(rv$logged_in, rv$current_user)
+    content <- trimws(input$quick_wo_input %||% "")
+    if (nchar(content) == 0) {
+      showNotification("请输入工单内容", type = "warning")
+      return()
+    }
+    parsed <- tryCatch(work_order_parse_quick_text(content), error = function(e) NULL)
+    if (!is.null(parsed) && nchar(parsed$title) > 0) {
+      result <- work_order_add(parsed$title, parsed$description %||% "",
+        parsed$priority %||% "中", parsed$category %||% "一般",
+        parsed$subcategory %||% "", parsed$request_user, rv$current_user)
+      if (isTRUE(result$success)) {
+        updateTextAreaInput(session, "quick_wo_input", value = "")
+        # 指派处理人
+        if (!is.null(parsed$assigned_to) && nchar(parsed$assigned_to) > 0) {
+          wo_id <- result$id
+          if (!is.null(wo_id)) {
+            con <- db_connect()
+            tryCatch({
+              assignee <- dbGetQuery(con, sprintf(
+                "SELECT id FROM users WHERE username = '%s' OR display_name = '%s'",
+                parsed$assigned_to, parsed$assigned_to))
+              if (nrow(assignee) > 0) {
+                work_order_assign(wo_id, assignee$id[1], rv$current_user)
+              }
+            }, error = function(e) NULL, finally = { db_disconnect(con) })
+          }
+        }
+        showNotification(result$message, type = "message")
+      } else {
+        showNotification(result$message, type = "error")
+      }
+    } else {
+      showNotification("无法解析工单格式。请用标准格式：IT服务请求 日期 时间：\\n用户：姓名-部门\\n内容：…", type = "error")
+    }
   })
 
   # 日报模块逻辑

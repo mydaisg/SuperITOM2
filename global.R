@@ -1279,7 +1279,7 @@ migrate_database <- function() {
       )")
       cat("数据库迁移完成：已创建 dev_logs 表\n")
     }
-    # 迁移：dev_logs 添加 log_no / result_en 列
+    # 迁移：dev_logs 添加 log_no / result_en / requirement_en / solution_en 列
     dl_cols <- dbGetQuery(con, "PRAGMA table_info(dev_logs)")
     if (!"log_no" %in% dl_cols$name) {
       dbExecute(con, "ALTER TABLE dev_logs ADD COLUMN log_no TEXT NOT NULL DEFAULT ''")
@@ -1288,6 +1288,14 @@ migrate_database <- function() {
     if (!"result_en" %in% dl_cols$name) {
       dbExecute(con, "ALTER TABLE dev_logs ADD COLUMN result_en TEXT")
       cat("数据库迁移完成：dev_logs 表已添加 result_en 列\n")
+    }
+    if (!"requirement_en" %in% dl_cols$name) {
+      dbExecute(con, "ALTER TABLE dev_logs ADD COLUMN requirement_en TEXT")
+      cat("数据库迁移完成：dev_logs 表已添加 requirement_en 列\n")
+    }
+    if (!"solution_en" %in% dl_cols$name) {
+      dbExecute(con, "ALTER TABLE dev_logs ADD COLUMN solution_en TEXT")
+      cat("数据库迁移完成：dev_logs 表已添加 solution_en 列\n")
     }
 
   }, error = function(e) {

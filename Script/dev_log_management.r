@@ -56,20 +56,22 @@ dev_log_get_all <- function(module = NULL, from_date = NULL, to_date = NULL, sea
 }
 
 # 写入一条开发日志
-dev_log_add <- function(module, title, requirement, solution, result, result_en = NULL, code_snippet = NULL, files_changed = NULL, operator = NULL) {
+dev_log_add <- function(module, title, requirement, solution, result, result_en = NULL, requirement_en = NULL, solution_en = NULL, code_snippet = NULL, files_changed = NULL, operator = NULL) {
   log_no <- dev_log_generate_number()
   con <- db_connect()
   tryCatch({
     now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
     op <- if (is.null(operator) || length(operator) == 0) "系统" else operator$username[1] %||% "系统"
     dbExecute(con, sprintf(
-      "INSERT INTO dev_logs (log_no, module, title, requirement, solution, result, result_en, code_snippet, files_changed, created_by, created_at)
-       VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')",
+      "INSERT INTO dev_logs (log_no, module, title, requirement, requirement_en, solution, solution_en, result, result_en, code_snippet, files_changed, created_by, created_at)
+       VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')",
       log_no,
       gsub("'","''", module %||% ""),
       gsub("'","''", title %||% ""),
       gsub("'","''", requirement %||% ""),
+      gsub("'","''", requirement_en %||% ""),
       gsub("'","''", solution %||% ""),
+      gsub("'","''", solution_en %||% ""),
       gsub("'","''", result %||% ""),
       gsub("'","''", result_en %||% ""),
       gsub("'","''", code_snippet %||% ""),
