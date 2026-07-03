@@ -32,6 +32,7 @@ source("Script/daily_report.r")
 # 加载数据中心模块（数据归集）
 source("Script/data_center_ui.r")
 source("Script/integration_ui.r")
+source("Script/tools_ui.r")
 
 # 加载流程模块
 source("Script/process_ui.r")
@@ -772,6 +773,13 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       "集成",
       icon = icon("plug"),
       integration_ui()
+    ),
+
+    # 工具标签页
+    tabPanel(
+      "工具",
+      icon = icon("wrench"),
+      tools_ui()
     ),
 
     # 数据中心标签页（数据归集）

@@ -17,6 +17,7 @@ source("Script/login_ui.r")         # 登录界面定义
 source("Script/data_center_server.r")   # 数据中心模块（数据归集）
 source("Script/integration_management.r") # 集成模块数据层
 source("Script/integration_server.r")     # 集成模块服务端
+source("Script/tools_server.r")         # 工具模块
 source("Script/process_engine.r")       # 流程引擎核心（定义 %||% 等工具函数，network_test.r 依赖）
 source("Script/github_autosubmit.r") # GitHub自动提交功能
 source("Script/std_computer.r")        # 标准化模块
@@ -1697,7 +1698,7 @@ server <- function(input, output, session) {
   # collapsed_ids: 已折叠的部门 ID 集合（不渲染其下级）
   # hide_zero: 是否隐藏无子部门且无人员的"0部门"（默认隐藏）
   org_build_mermaid <- function(depts, users, collapsed_ids = integer(0), search_kw = NULL, hide_zero = TRUE) {
-    if (nrow(depts) == 0) return("flowchart LR\n  N_ROOT[LVCC ITOM]")
+    if (nrow(depts) == 0) return("flowchart LR\n  N_ROOT[LVCC]")
 
     l1 <- depts[is.na(depts$parent_id), , drop = FALSE]
     if ("sort_order" %in% names(l1)) l1 <- l1[order(l1$sort_order, l1$name), , drop = FALSE]
@@ -1739,7 +1740,7 @@ server <- function(input, output, session) {
 
     lines <- character(0)
     lines <- c(lines, "flowchart LR")
-    lines <- c(lines, '  N_ROOT["LVCC ITOM"]')
+    lines <- c(lines, '  N_ROOT["LVCC"]')
     lines <- c(lines, '  style N_ROOT fill:#337ab7,color:#fff,stroke:#1a5276,stroke-width:2px')
 
     # 第一遍：先按 sort_order 排序收集所有非零部门（每个深度分别排）
@@ -1789,7 +1790,7 @@ server <- function(input, output, session) {
       curw <- nchar_label(s)
       pad_n <- max(0, maxw - curw)
       if (pad_n > 0) {
-        paste0(s, paste0(rep("　", pad_n), collapse=""))
+        paste0(s, paste0(rep(" ", pad_n), collapse=""))
       } else {
         s
       }
@@ -1895,14 +1896,15 @@ server <- function(input, output, session) {
     users <- user_get_all()
     kw <- org_search_kw()
     collapsed <- org_collapsed()
-    mermaid_code <- org_build_mermaid(depts, users, collapsed, kw)
+    mermaid_code <- org_build_mermaid(depts, users, collapsed, kw, hide_zero = FALSE)
 
     tagList(
       tags$pre(class = "mermaid", id = "org_mermaid", style = "background:transparent; border:none;", mermaid_code),
       tags$script(HTML(sprintf("
         setTimeout(function() {
           if (typeof mermaid !== 'undefined') {
-            mermaid.run({nodes: document.querySelectorAll('#org_mermaid')}).then(function() {
+            mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'default' });
+            mermaid.run({ nodes: document.querySelectorAll('#org_mermaid') }).then(function() {
               // 渲染完成后，绑定每个节点的折叠/展开事件
               var svg = document.querySelector('#org_mindmap_container svg');
               if (svg) {
@@ -3633,7 +3635,10 @@ server <- function(input, output, session) {
   
   # 集成模块逻辑
   integration_server(input, output, session, rv)
-  
+
+  # 工具模块逻辑
+  tools_server(input, output, session, rv)
+
   # 巡检模块逻辑
   inspection_server(input, output, session, rv)
 

@@ -349,7 +349,9 @@ ui <- fluidPage(
       }, 500);
 
       // ========== 组织架构：Xmind 思维导图交互 ==========
-      // Mermaid 节点点击回调：Mermaid 10.x 调用 nodeClickCallback(nodeId)
+      // Mermaid 全局初始化（loose 模式启用点击回调）
+      if (typeof mermaid !== 'undefined') mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'default' });
+      // Mermaid 节点点击回调
       window.orgNodeClick = function(nodeId) {
         if (!nodeId) return;
         Shiny.setInputValue('org_mindmap_click', nodeId, {priority: 'event'});
