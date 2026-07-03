@@ -434,10 +434,11 @@ daily_report_server <- function(input, output, session, rv) {
         user_logs <- task_logs[!is.na(task_logs$creator_name) & (task_logs$creator_name == u$display_name | task_logs$creator_name == u$username), , drop = FALSE]
       }
 
-      # 该用户的记事评论
+      # 该用户的记事评论（排除元任务 NTE20260606002）
       user_notes <- data.frame()
       if (nrow(note_comments) > 0) {
-        user_notes <- note_comments[!is.na(note_comments$created_by) & note_comments$created_by == uid, , drop = FALSE]
+        user_notes <- note_comments[!is.na(note_comments$created_by) & note_comments$created_by == uid &
+          note_comments$note_no != "NTE20260606002", , drop = FALSE]
       }
 
       # 无数据则跳过
@@ -627,7 +628,11 @@ daily_report_server <- function(input, output, session, rv) {
             txt <- ""
             for (si in seq_len(nrow(sub))) {
               sc <- sub[si, ]
-              txt <- paste0(txt, sprintf("%s%d、 %s\n", indent, si, sc$content))
+              if (depth >= 2) {
+                txt <- paste0(txt, sprintf("%s- %s\n", indent, sc$content))
+              } else {
+                txt <- paste0(txt, sprintf("%s%d、 %s\n", indent, si, sc$content))
+              }
               txt <- paste0(txt, txt_render_replies(sc$id, depth + 1))
             }
             txt

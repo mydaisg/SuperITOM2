@@ -220,6 +220,41 @@ note_patch <- function(id, ..., current_user = NULL) {
   finally = { db_disconnect(con) })
 }
 
+# 挂起记事（设 status='suspended'，移除提醒和到期时间）
+note_suspend <- function(id, current_user = NULL) {
+  con <- db_connect()
+  tryCatch({
+    if (!note_check_ownership(id, current_user, con)) {
+      return(list(success = FALSE, message = "无权操作此记事"))
+    }
+    dbExecute(con, sprintf(
+      "UPDATE notes SET status='suspended', reminder_at=NULL, due_at=NULL, updated_at=datetime('now','localtime') WHERE id=%d",
+      as.integer(id)))
+    list(success = TRUE, message = "已挂起")
+  }, error = function(e) list(success = FALSE, message = paste("挂起失败:", e$message)),
+  finally = { db_disconnect(con) })
+}
+
+# 重启挂起记事（恢复为 pending，到期=当月最后一天15:00，提醒=当月最后一天14:00）
+note_resume <- function(id, current_user = NULL) {
+  con <- db_connect()
+  tryCatch({
+    if (!note_check_ownership(id, current_user, con)) {
+      return(list(success = FALSE, message = "无权操作此记事"))
+    }
+    d <- Sys.Date()
+    first_of_month <- as.Date(format(d, "%Y-%m-01"))
+    last_of_month <- seq(first_of_month, by = "month", length.out = 2)[2] - 1
+    due_at <- sprintf("%s 15:00:00", format(last_of_month, "%Y-%m-%d"))
+    reminder_at <- sprintf("%s 14:00:00", format(last_of_month, "%Y-%m-%d"))
+    dbExecute(con, sprintf(
+      "UPDATE notes SET status='pending', due_at='%s', reminder_at='%s', updated_at=datetime('now','localtime') WHERE id=%d",
+      due_at, reminder_at, as.integer(id)))
+    list(success = TRUE, message = sprintf("已重启，到期：%s", format(last_of_month, "%Y-%m-%d")))
+  }, error = function(e) list(success = FALSE, message = paste("重启失败:", e$message)),
+  finally = { db_disconnect(con) })
+}
+
 ##################
 # 取消提醒 / 延长到期
 ##################

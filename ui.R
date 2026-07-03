@@ -328,6 +328,16 @@ ui <- fluidPage(
           Shiny.setInputValue('dl_refresh', Math.random(), {priority: 'event'});
         }
       });
+      // 首页三个快速搜索框回车触发搜索
+      $(document).on('keyup', '#home_note_search', function(e) {
+        if (e.key === 'Enter') Shiny.setInputValue('home_note_search_btn', Math.random(), {priority:'event'});
+      });
+      $(document).on('keyup', '#home_dl_search', function(e) {
+        if (e.key === 'Enter') Shiny.setInputValue('home_dl_search_btn', Math.random(), {priority:'event'});
+      });
+      $(document).on('keyup', '#home_wo_search', function(e) {
+        if (e.key === 'Enter') Shiny.setInputValue('home_wo_search_btn', Math.random(), {priority:'event'});
+      });
       // 记事搜索框：设置 data-savedKw 让 JS 知道真实值
       $(document).on('input change', '#note_search_input', function() {
         this.dataset.savedKw = this.value;

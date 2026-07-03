@@ -233,7 +233,13 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
                 actionButton("quick_dev_goto_log", "View More \u00bb", class = "btn-sm btn-link", style = "white-space:nowrap;")
               ),
               hr(style = "margin:6px 0;"),
-              uiOutput("home_latest_dev_logs")
+              uiOutput("home_latest_dev_logs"),
+              div(style = "display:flex; gap:4px; margin-top:6px;",
+                textInput("home_dl_search", NULL, width = "100%", placeholder = "搜索开发日志…"),
+                actionButton("home_dl_search_btn", NULL, icon = icon("search"), class = "btn-xs btn-warning"),
+                actionButton("home_dl_search_x", NULL, icon = icon("times"), class = "btn-xs btn-default")
+              ),
+              uiOutput("home_dl_search_result")
             )
           ),
           column(4,
@@ -247,8 +253,9 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
               hr(style = "margin:6px 0;"),
               uiOutput("home_recent_notes"),
               div(style = "display:flex; gap:4px; margin-top:6px;",
-                textInput("home_note_search", NULL, width = "100%", placeholder = "搜索记事…"),
-                actionButton("home_note_search_btn", NULL, icon = icon("search"), class = "btn-xs btn-info")
+                textInput("home_note_search", NULL, width = "100%", placeholder = "搜索标题/评论…"),
+                actionButton("home_note_search_btn", NULL, icon = icon("search"), class = "btn-xs btn-info"),
+                actionButton("home_note_search_x", NULL, icon = icon("times"), class = "btn-xs btn-default")
               ),
               uiOutput("home_note_search_result")
             )
@@ -262,7 +269,13 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
                 actionButton("quick_wo_viewmore", "View More \u00bb", class = "btn-sm btn-link", style = "white-space:nowrap;")
               ),
               hr(style = "margin:6px 0;"),
-              uiOutput("home_recent_wos")
+              uiOutput("home_recent_wos"),
+              div(style = "display:flex; gap:4px; margin-top:6px;",
+                textInput("home_wo_search", NULL, width = "100%", placeholder = "搜索工单…"),
+                actionButton("home_wo_search_btn", NULL, icon = icon("search"), class = "btn-xs btn-success"),
+                actionButton("home_wo_search_x", NULL, icon = icon("times"), class = "btn-xs btn-default")
+              ),
+              uiOutput("home_wo_search_result")
             )
           )
         ),

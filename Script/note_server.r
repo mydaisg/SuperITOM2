@@ -306,6 +306,29 @@ note_server <- function(input, output, session, rv) {
       do.call(tagList, unlist(month_groups, recursive = FALSE))
     }
     
+    # 挂起列（简单列表，带重启按钮）
+    build_suspended_col <- function(items) {
+      subset <- items[items$status == "suspended", ]
+      if (nrow(subset) == 0) return(tagList())
+      subset <- subset[order(subset$updated_at, decreasing = TRUE), ]
+      lapply(seq_len(nrow(subset)), function(i) {
+        r <- subset[i, ]
+        note_no <- r$note_no %||% ""
+        disp <- if (nchar(note_no) > 0) note_no else sprintf("NTE%s%03d", format(Sys.Date(),"%Y%m%d"), r$id)
+        tags$div(class = "note-card suspended",
+          `data-id` = r$id,
+          style = "border-left:3px solid #6c757d; opacity:0.75;",
+          tags$div(style = "display:flex; justify-content:space-between; align-items:center;",
+            tags$div(style = "font-size:12px; font-weight:bold; color:#555;", disp, " ", r$title %||% ""),
+            tags$button(class = "btn btn-xs btn-outline-info note-move-btn",
+              style = "font-size:10px; padding:1px 6px;",
+              `data-id` = r$id, `data-to` = "resume", "🔄 重启")
+          ),
+          tags$div(style = "font-size:10px; color:#999;", "挂起 ", substr(r$updated_at, 1, 10))
+        )
+      })
+    }
+    
     # 待处理：前4条 + 创建框 + 全部剩余（无分页）
     pending_count <- sum(items$status == "pending", na.rm = TRUE)
     PGSZ <- 10  # 保留给搜索等模式使用
@@ -336,8 +359,9 @@ note_server <- function(input, output, session, rv) {
     today_in_progress <- sum(items$status == "in_progress" & substr(items$created_at, 1, 10) == today_prefix, na.rm = TRUE)
     today_completed <- sum(items$status == "completed" & substr(items$created_at, 1, 10) == today_prefix, na.rm = TRUE)
     comment_cnt <- note_comment_count_today()
-    reminder_count <- sum(!is.na(items$reminder_at) & items$reminder_at != "" & as.POSIXct(items$reminder_at) <= Sys.time(), na.rm = TRUE)
-    due_count <- sum(!is.na(items$due_at) & items$due_at != "" & as.POSIXct(items$due_at) < Sys.time(), na.rm = TRUE)
+    suspended_count <- sum(items$status == "suspended", na.rm = TRUE)
+    reminder_count <- sum(!is.na(items$reminder_at) & items$reminder_at != "" & as.POSIXct(items$reminder_at) <= Sys.time() & items$status != "suspended", na.rm = TRUE)
+    due_count <- sum(!is.na(items$due_at) & items$due_at != "" & as.POSIXct(items$due_at) < Sys.time() & items$status != "suspended", na.rm = TRUE)
 
     stat_box <- function(num, today_num, label, color, extra_class = "") {
       today_html <- if (today_num > 0) sprintf('<span style="font-size:9px; color:%s; opacity:0.75; margin-left:3px;">+%d</span>', color, today_num) else ""
@@ -360,6 +384,7 @@ note_server <- function(input, output, session, rv) {
       stat_box(pending_count, today_pending, "待处理", "#6c3bbf"),
       stat_box(sum(items$status == "in_progress", na.rm = TRUE), today_in_progress, "进行中", "#2563eb"),
       stat_box(sum(items$status == "completed", na.rm = TRUE), today_completed, "已完成", "#0d7d3a"),
+      if (suspended_count > 0) stat_box(suspended_count, 0, "挂起", "#6c757d"),
       stat_box(comment_cnt$total, comment_cnt$today, "评论", "#0891b2"),
       if (reminder_count > 0) tags$div(class = "note-stat-box", style = "flex:1; cursor:pointer;",
         onclick = sprintf("Shiny.setInputValue('note_filter_click','%s',{priority:'event'})", if(flt=="reminder") "" else "reminder"),
@@ -447,10 +472,12 @@ note_server <- function(input, output, session, rv) {
         tags$h4(sprintf("🔄 进行中 (%d)", sum(items$status == "in_progress", na.rm = TRUE))),
         build_col("in_progress", "进行中", items)
       ),
-      tags$div(class = "trello-col done",
+    tags$div(class = "trello-col done",
         tags$h4(sprintf("✅ 已完成 (%d)", sum(items$status == "completed", na.rm = TRUE))),
-        build_done_col(items)
-      )
+        build_done_col(items),
+        if (suspended_count > 0) tags$h5(style = "margin:16px 0 6px; color:#6c757d;", sprintf("⏸ 挂起 (%d)", suspended_count)),
+        if (suspended_count > 0) build_suspended_col(items)
+    )
     )
   )  # closes tagList(stats_bar, trello-board)
   })
@@ -674,7 +701,10 @@ note_server <- function(input, output, session, rv) {
       status_btns <- sprintf('<button class="btn btn-info btn-sm note-move-btn" data-id="%d" data-to="in_progress" style="margin-right:4px;">▶ 开始处理</button>', note$id[1])
     } else if (st == "in_progress") {
       status_btns <- sprintf('<button class="btn btn-success btn-sm note-move-btn" data-id="%d" data-to="completed" style="margin-right:4px;">✓ 完成</button>
-                              <button class="btn btn-warning btn-sm note-move-btn" data-id="%d" data-to="pending" style="margin-right:4px;">◀ 退回</button>', note$id[1], note$id[1])
+                              <button class="btn btn-secondary btn-sm note-move-btn" data-id="%d" data-to="suspended" style="margin-right:4px;">⏸ 挂起</button>
+                              <button class="btn btn-warning btn-sm note-move-btn" data-id="%d" data-to="pending" style="margin-right:4px;">◀ 退回</button>', note$id[1], note$id[1], note$id[1])
+    } else if (st == "suspended") {
+      status_btns <- sprintf('<button class="btn btn-info btn-sm note-move-btn" data-id="%d" data-to="resume" style="margin-right:4px;">🔄 重启</button>', note$id[1])
     } else {
       status_btns <- sprintf('<button class="btn btn-warning btn-sm note-move-btn" data-id="%d" data-to="pending" style="margin-right:4px;">◀ 重新打开</button>', note$id[1])
     }
@@ -930,7 +960,15 @@ note_server <- function(input, output, session, rv) {
   ##################
   observeEvent(input$note_move_click, {
     req(rv$logged_in)
-    result <- note_patch(as.integer(input$note_move_click$id), status = input$note_move_click$to)
+    nid <- as.integer(input$note_move_click$id)
+    to <- input$note_move_click$to
+    if (to == "suspended") {
+      result <- note_suspend(nid, rv$current_user)
+    } else if (to == "resume") {
+      result <- note_resume(nid, rv$current_user)
+    } else {
+      result <- note_patch(nid, status = to)
+    }
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = "message", duration = 2)
   })

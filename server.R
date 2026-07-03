@@ -3390,16 +3390,16 @@ server <- function(input, output, session) {
     updateTabsetPanel(session, "main_tabs", selected = "工单")
   })
 
-  # 最近2条开发日志
+  # 最近8条开发日志
   output$home_latest_dev_logs <- renderUI({
     req(rv$logged_in)
     rv$home_dev_refresh
     latest <- tryCatch(dev_log_get_all(NULL, NULL, NULL, NULL), error = function(e) data.frame())
-    if (nrow(latest) == 0) return(tags$p(style="color:#999;font-size:11px;text-align:center;margin:0;","暂无"))
-    latest <- head(latest, 2)
+    if (nrow(latest) == 0) return(tags$p(style="color:#999;font-size:12px;text-align:center;margin:0;","暂无"))
+    latest <- head(latest, 8)
     do.call(tagList, lapply(seq_len(nrow(latest)), function(i) {
       r <- latest[i,]
-      tags$div(style="font-size:11px; padding:3px 0; border-bottom:1px dotted #eee;",
+      tags$div(style="font-size:12px; padding:3px 0; border-bottom:1px dotted #eee;",
         tags$span(style="color:#888;font-family:Consolas,monospace;margin-right:4px;", r$log_no),
         tags$span(style="color:#333;", r$title),
         tags$span(style="color:#bbb;float:right;", substr(r$created_at,12,16))
@@ -3407,59 +3407,69 @@ server <- function(input, output, session) {
     }))
   })
 
-  # 最近5条记事
+  # 最近8条记事
   output$home_recent_notes <- renderUI({
     req(rv$logged_in)
     rv$home_dev_refresh
     con <- db_connect()
     notes <- tryCatch(dbGetQuery(con,
-      "SELECT id, note_no, title, status, updated_at FROM notes WHERE status != 'completed' ORDER BY updated_at DESC LIMIT 5"),
+      "SELECT id, note_no, title, status, updated_at FROM notes WHERE status != 'completed' ORDER BY updated_at DESC LIMIT 8"),
       error=function(e) data.frame(), finally={db_disconnect(con)})
-    if (nrow(notes)==0) return(tags$p(style="color:#999;font-size:11px;text-align:center;margin:0;","暂无"))
+    if (nrow(notes)==0) return(tags$p(style="color:#999;font-size:12px;text-align:center;margin:0;","暂无"))
     st_col <- c(pending="#f0ad4e", in_progress="#337ab7", completed="#5cb85c")
     do.call(tagList, lapply(seq_len(nrow(notes)), function(i){
       r <- notes[i,]
       clr <- st_col[as.character(r$status)]
       if(is.na(clr)) clr <- "#999"
-      tags$div(style="font-size:11px;padding:2px 0;border-bottom:1px dotted #eee;",
-        tags$span(style=sprintf("display:inline-block;width:6px;height:6px;border-radius:50%%;background:%s;margin-right:4px;",clr)),
+      tags$div(style="font-size:12px;padding:3px 0;border-bottom:1px dotted #eee;",
+        tags$span(style=sprintf("display:inline-block;width:7px;height:7px;border-radius:50%%;background:%s;margin-right:4px;",clr)),
         tags$span(style="color:#888;margin-right:4px;", r$note_no),
         tags$a(style="color:#333;text-decoration:none;cursor:pointer;",
           href="#", onclick=sprintf("Shiny.setInputValue('note_edit_click',%d,{priority:'event'});return false;", r$id),
-          substr(r$title,1,30)),
+          r$title),
         tags$span(style="color:#bbb;float:right;", substr(r$updated_at,12,16))
       )
     }))
   })
 
-  # 最近5条工单
+  # 最近8条工单
   output$home_recent_wos <- renderUI({
     req(rv$logged_in)
     rv$home_dev_refresh
     con <- db_connect()
     wos <- tryCatch(dbGetQuery(con,
-      "SELECT id, order_no, title, status, updated_at FROM work_orders WHERE status NOT IN ('completed','closed') ORDER BY updated_at DESC LIMIT 5"),
+      "SELECT id, order_no, title, status, updated_at FROM work_orders WHERE status NOT IN ('completed','closed') ORDER BY updated_at DESC LIMIT 8"),
       error=function(e) data.frame(), finally={db_disconnect(con)})
-    if (nrow(wos)==0) return(tags$p(style="color:#999;font-size:11px;text-align:center;margin:0;","暂无"))
+    if (nrow(wos)==0) return(tags$p(style="color:#999;font-size:12px;text-align:center;margin:0;","暂无"))
     st_col <- c(pending="#f0ad4e",assigned="#5bc0de",processing="#337ab7")
     do.call(tagList, lapply(seq_len(nrow(wos)), function(i){
       r <- wos[i,]
       clr <- st_col[as.character(r$status)]
       if(is.na(clr)) clr <- "#999"
-      tags$div(style="font-size:11px;padding:2px 0;border-bottom:1px dotted #eee;",
-        tags$span(style=sprintf("display:inline-block;width:6px;height:6px;border-radius:50%%;background:%s;margin-right:4px;",clr)),
+      tags$div(style="font-size:12px;padding:3px 0;border-bottom:1px dotted #eee;",
+        tags$span(style=sprintf("display:inline-block;width:7px;height:7px;border-radius:50%%;background:%s;margin-right:4px;",clr)),
         tags$span(style="color:#888;margin-right:4px;", r$order_no),
         tags$a(style="color:#333;text-decoration:none;cursor:pointer;",
           href="#", onclick=sprintf("Shiny.setInputValue('work_order_view_click',%d,{priority:'event'});return false;", r$id),
-          substr(r$title,1,30)),
+          r$title),
         tags$span(style="color:#bbb;float:right;", substr(r$updated_at,12,16))
       )
     }))
   })
 
-  # 快速记事搜索
+  # 高亮关键字辅助函数
+  hl <- function(txt, kw) {
+    if (is.null(kw) || nchar(kw)==0) return(txt)
+    gsub(paste0("(",kw,")"), "<mark style='background:#fef08a;padding:0 1px;border-radius:2px;'>\\1</mark>", txt, ignore.case=TRUE)
+  }
+
+  # 快速记事搜索（标题+评论，高亮，X清除）
   observeEvent(input$home_note_search_btn, {
     rv$home_note_search_kw <- trimws(input$home_note_search %||% "")
+  })
+  observeEvent(input$home_note_search_x, {
+    updateTextInput(session, "home_note_search", value = "")
+    rv$home_note_search_kw <- NULL
   })
   output$home_note_search_result <- renderUI({
     req(rv$logged_in)
@@ -3467,21 +3477,88 @@ server <- function(input, output, session) {
     if (is.null(kw) || nchar(kw) == 0) return(NULL)
     con <- db_connect()
     notes <- tryCatch(dbGetQuery(con, sprintf(
-      "SELECT id, note_no, title, status FROM notes WHERE title LIKE '%%%s%%' ORDER BY updated_at DESC LIMIT 10",
-      gsub("'","''",kw))),
+      "SELECT DISTINCT n.id, n.note_no, n.title, n.status FROM notes n
+       LEFT JOIN note_comments nc ON nc.note_id=n.id
+       WHERE n.title LIKE '%%%s%%' OR nc.content LIKE '%%%s%%'
+       ORDER BY n.updated_at DESC LIMIT 10",
+      gsub("'","''",kw), gsub("'","''",kw))),
       error=function(e) data.frame(), finally={db_disconnect(con)})
-    if (nrow(notes)==0) return(tags$p(style="color:#999;font-size:11px;text-align:center;margin:0;",sprintf("未找到「%s」",kw)))
+    if (nrow(notes)==0) return(tags$p(style="color:#999;font-size:12px;text-align:center;margin:0;",sprintf("未找到「%s」",kw)))
     st_col <- c(pending="#f0ad4e", in_progress="#337ab7")
     do.call(tagList, lapply(seq_len(nrow(notes)), function(i){
       r <- notes[i,]
       clr <- st_col[as.character(r$status)]
       if(is.na(clr)) clr <- "#999"
-      tags$div(style="font-size:11px;padding:2px 0;border-bottom:1px dotted #eee;",
-        tags$span(style=sprintf("display:inline-block;width:6px;height:6px;border-radius:50%%;background:%s;margin-right:4px;",clr)),
+      tags$div(style="font-size:12px;padding:3px 0;border-bottom:1px dotted #eee;",
+        tags$span(style=sprintf("display:inline-block;width:7px;height:7px;border-radius:50%%;background:%s;margin-right:4px;",clr)),
         tags$span(style="color:#888;margin-right:4px;", r$note_no),
         tags$a(style="color:#333;text-decoration:none;cursor:pointer;",
           href="#", onclick=sprintf("Shiny.setInputValue('note_edit_click',%d,{priority:'event'});return false;", r$id),
-          substr(r$title,1,30))
+          HTML(hl(r$title, kw)))
+      )
+    }))
+  })
+
+  # 快速开发日志搜索
+  observeEvent(input$home_dl_search_btn, {
+    rv$home_dl_search_kw <- trimws(input$home_dl_search %||% "")
+  })
+  observeEvent(input$home_dl_search_x, {
+    updateTextInput(session, "home_dl_search", value = "")
+    rv$home_dl_search_kw <- NULL
+  })
+  output$home_dl_search_result <- renderUI({
+    req(rv$logged_in)
+    kw <- rv$home_dl_search_kw
+    if (is.null(kw) || nchar(kw) == 0) return(NULL)
+    logs <- tryCatch(dev_log_get_all(NULL, NULL, NULL, kw), error=function(e) data.frame())
+    if (nrow(logs)==0) return(tags$p(style="color:#999;font-size:12px;text-align:center;margin:0;",sprintf("未找到「%s」",kw)))
+    logs <- head(logs, 10)
+    do.call(tagList, lapply(seq_len(nrow(logs)), function(i){
+      r <- logs[i,]
+      tags$div(style="font-size:12px;padding:3px 0;border-bottom:1px dotted #eee;",
+        tags$span(style="color:#888;font-family:Consolas,monospace;margin-right:4px;", r$log_no),
+        tags$a(style="color:#333;text-decoration:none;cursor:pointer;",
+          href="#", onclick="Shiny.setInputValue('home_dl_goto',Math.random(),{priority:'event'});return false;",
+          HTML(hl(r$title, kw))),
+        tags$span(style="color:#bbb;float:right;", substr(r$created_at,12,16))
+      )
+    }))
+  })
+  observeEvent(input$home_dl_goto, {
+    session$sendCustomMessage("runjs", "switchToDevLogTab")
+  })
+
+  # 快速工单搜索
+  observeEvent(input$home_wo_search_btn, {
+    rv$home_wo_search_kw <- trimws(input$home_wo_search %||% "")
+  })
+  observeEvent(input$home_wo_search_x, {
+    updateTextInput(session, "home_wo_search", value = "")
+    rv$home_wo_search_kw <- NULL
+  })
+  output$home_wo_search_result <- renderUI({
+    req(rv$logged_in)
+    kw <- rv$home_wo_search_kw
+    if (is.null(kw) || nchar(kw) == 0) return(NULL)
+    con <- db_connect()
+    wos <- tryCatch(dbGetQuery(con, sprintf(
+      "SELECT id, order_no, title, status, updated_at FROM work_orders WHERE title LIKE '%%%s%%' OR order_no LIKE '%%%s%%' ORDER BY updated_at DESC LIMIT 10",
+      gsub("'","''",kw), gsub("'","''",kw))),
+      error=function(e) data.frame(), finally={db_disconnect(con)})
+    if (nrow(wos)==0) return(tags$p(style="color:#999;font-size:12px;text-align:center;margin:0;",sprintf("未找到「%s」",kw)))
+    st_col <- c(pending="#f0ad4e",assigned="#5bc0de",processing="#337ab7")
+    do.call(tagList, lapply(seq_len(nrow(wos)), function(i){
+      r <- wos[i,]
+      clr <- st_col[as.character(r$status)]
+      if(is.na(clr)) clr <- "#999"
+      tags$div(style="font-size:12px;padding:3px 0;border-bottom:1px dotted #eee;",
+        tags$span(style=sprintf("display:inline-block;width:7px;height:7px;border-radius:50%%;background:%s;margin-right:4px;",clr)),
+        tags$span(style="color:#888;margin-right:4px;", r$order_no),
+        tags$a(style="color:#333;text-decoration:none;cursor:pointer;",
+          href="#", onclick=sprintf("Shiny.setInputValue('work_order_view_click',%d,{priority:'event'});return false;", r$id),
+          HTML(hl(r$title, kw))),
+        tags$span(style="color:#bbb;float:right;", substr(r$updated_at,12,16))
       )
     }))
   })

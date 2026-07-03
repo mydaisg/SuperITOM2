@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SuperITOM2 管理控制台</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#f5f5f5;color:#333}
+.navbar{background:#222;color:#fff;display:flex;align-items:center;padding:0 20px;height:50px;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.navbar .brand{font-size:18px;font-weight:bold;margin-right:30px}
+.navbar .nav{display:flex;gap:4px;list-style:none}
+.navbar .nav li a{color:#ccc;text-decoration:none;padding:14px 16px;display:block;font-size:14px;border-radius:4px 4px 0 0;transition:all .2s}
+.navbar .nav li a:hover,.navbar .nav li a.active{color:#fff;background:#333}
+.navbar .right{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px}
+.container{max-width:1100px;margin:20px auto;padding:0 20px}
+.login-box{max-width:380px;margin:80px auto;background:#fff;border-radius:8px;padding:30px;box-shadow:0 2px 12px rgba(0,0,0,.1);text-align:center}
+.login-box h2{margin-bottom:6px;color:#222}
+.login-box .sub{color:#999;font-size:13px;margin-bottom:20px}
+.login-box input{width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:4px;font-size:14px;margin-bottom:10px}
+.login-box button{width:100%;padding:10px;background:#337ab7;color:#fff;border:none;border-radius:4px;font-size:14px;cursor:pointer}
+.login-box button:hover{background:#286090}
+.login-box .error{color:#d9534f;font-size:13px;margin-top:6px;display:none}
+.card{background:#fff;border-radius:8px;padding:20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.card h3{color:#222;margin-bottom:4px;font-size:16px;border-bottom:2px solid #337ab7;padding-bottom:8px}
+.card .status-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+.card .status-dot.online{background:#5cb85c;box-shadow:0 0 6px #5cb85c}
+.card .status-dot.offline{background:#d9534f}
+.flex{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.btn{padding:6px 16px;border:none;border-radius:4px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;gap:4px}
+.btn-primary{background:#337ab7;color:#fff}
+.btn-success{background:#5cb85c;color:#fff}
+.btn-danger{background:#d9534f;color:#fff}
+.btn-warning{background:#f0ad4e;color:#fff}
+.btn-xs{padding:3px 8px;font-size:11px}
+.btn:hover{opacity:.85}
+table{width:100%;border-collapse:collapse;font-size:13px}
+table th,table td{padding:8px 12px;text-align:left;border-bottom:1px solid #eee}
+table th{background:#f8f9fa;color:#555;font-weight:600}
+table tr:hover{background:#f5f8ff}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.badge-ok{background:#dff0d8;color:#3c763d}
+.badge-warn{background:#fcf8e3;color:#8a6d3b}
+.badge-err{background:#f2dede;color:#a94442}
+.code{background:#1e1e1e;color:#d4d4d4;padding:10px 14px;border-radius:4px;font-family:Consolas,monospace;font-size:12px;overflow-x:auto;white-space:pre-wrap;max-height:300px;overflow-y:auto}
+.cmd-box{display:flex;align-items:center;gap:6px;background:#f8f9fa;padding:6px 10px;border-radius:4px;margin:6px 0}
+.cmd-box code{flex:1;font-size:13px}
+.copy-btn{cursor:pointer;color:#337ab7;font-size:12px;border:none;background:none;white-space:nowrap}
+.copy-btn:hover{text-decoration:underline}
+.tree{font-family:Consolas,monospace;font-size:12px;line-height:1.6;color:#555}
+.tree .dir{color:#337ab7;font-weight:bold}
+.tree .file{color:#555}
+.tree .size{color:#999;font-size:11px}
+.hidden{display:none}
+.tab-content{display:none}
+.tab-content.active{display:block}
+textarea.quick{width:100%;border:1px solid #ddd;border-radius:4px;padding:8px;font-size:13px;resize:vertical;font-family:inherit}
+textarea.quick:focus{outline:none;border-color:#337ab7;box-shadow:0 0 0 2px rgba(51,122,183,.15)}
+.result-box{margin-top:8px;padding:8px 12px;border-radius:4px;font-size:13px;display:none}
+.result-box.success{background:#dff0d8;color:#3c763d;border:1px solid #d6e9c6;display:block}
+.result-box.error{background:#f2dede;color:#a94442;border:1px solid #ebccd1;display:block}
+.toast{position:fixed;top:20px;right:20px;padding:10px 18px;border-radius:6px;color:#fff;font-size:13px;z-index:9999;opacity:0;transition:opacity .3s}
+.toast.show{opacity:1}
+.toast.info{background:#337ab7}
+.toast.ok{background:#5cb85c}
+.log-list{max-height:400px;overflow-y:auto;font-size:12px;font-family:Consolas,monospace;background:#f8f9fa;padding:10px;border-radius:4px}
+#envTable td:nth-child(2){font-family:Consolas,monospace;font-size:12px}
+</style>
+</head>
+<body>
+<!-- 导航栏 -->
+<nav class="navbar">
+  <div class="brand">🔧 SuperITOM2 管理控制台</div>
+  <ul class="nav" id="mainNav">
+    <li><a href="#" data-tab="status" class="active">📊 状态管理</a></li>
+    <li><a href="#" data-tab="structure">📁 项目结构</a></li>
+    <li><a href="#" data-tab="env">🖥️ 环境检查</a></li>
+    <li><a href="#" data-tab="quick">⚡ 快速开发</a></li>
+    <li><a href="#" data-tab="logs">📋 运行日志</a></li>
+  </ul>
+  <div class="right" id="navRight"></div>
+</nav>
+
+<!-- 登录框 -->
+<div id="loginPage" class="container">
+  <div class="login-box">
+    <h2>🔐 管理员登录</h2>
+    <div class="sub">使用 Shiny 账号密码</div>
+    <input id="userInput" placeholder="用户名" autofocus>
+    <input type="password" id="pwdInput" placeholder="密码">
+    <button onclick="doLogin()">登 录</button>
+    <div class="error" id="loginError">用户名或密码错误</div>
+  </div>
+</div>
+
+<!-- 主内容 -->
+<div id="mainPage" class="container hidden">
+  <!-- 状态管理 -->
+  <div class="tab-content active" id="tab-status">
+    <div class="card">
+      <div class="flex" style="justify-content:space-between">
+        <h3 style="border:none;margin:0">📊 Shiny 服务状态</h3>
+        <div class="flex" style="gap:6px">
+          <button class="btn btn-xs" onclick="checkStatus()">🔄 刷新</button>
+          <label style="font-size:12px;display:flex;align-items:center;gap:4px">
+            <input type="checkbox" id="autoRefresh" checked onchange="toggleAutoRefresh()"> 自动(5s)
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="flex" style="margin-bottom:12px">
+        <span class="status-dot" id="shinyDot"></span>
+        <strong id="shinyStatus">检测中...</strong>
+        <span style="color:#999;font-size:12px" id="shinyUrl">http://localhost:3838</span>
+      </div>
+      <div class="flex" style="gap:8px">
+        <button class="btn btn-success" onclick="startShiny()">▶ 启动 Shiny</button>
+        <button class="btn btn-danger" onclick="stopShiny()">⏹ 停止 Shiny</button>
+        <button class="btn btn-warning" onclick="restartShiny()">🔄 重启 Shiny</button>
+        <button class="btn btn-xs" onclick="openShiny()">🌐 打开 Shiny</button>
+      </div>
+      <div class="code" id="cmdOutput" style="margin-top:10px;display:none"></div>
+    </div>
+  </div>
+
+  <!-- 项目结构 -->
+  <div class="tab-content" id="tab-structure">
+    <div class="card">
+      <h3>📁 项目目录结构</h3>
+      <div class="tree" id="dirTree">加载中...</div>
+    </div>
+  </div>
+
+  <!-- 环境检查 -->
+  <div class="tab-content" id="tab-env">
+    <div class="card">
+      <h3>🖥️ 运行环境</h3>
+      <table id="envTable"><tr><td>加载中...</td></tr></table>
+    </div>
+    <div class="card">
+      <h3>📦 关键组件版本</h3>
+      <table id="verTable"><tr><td>加载中...</td></tr></table>
+    </div>
+  </div>
+
+  <!-- 快速开发 -->
+  <div class="tab-content" id="tab-quick">
+    <div class="card">
+      <h3>⚡ 快速开发</h3>
+      <p style="color:#999;font-size:13px;margin-bottom:10px">提交到元任务 NTE20260606002（需 Shiny 运行中）</p>
+      <textarea class="quick" id="quickDev" rows="5" placeholder="输入开发需求/方案/结果..."></textarea>
+      <div class="flex" style="margin-top:8px;gap:8px">
+        <button class="btn btn-primary" onclick="quickSubmit('dev')">📨 提交开发</button>
+        <button class="btn btn-info" onclick="quickSubmit('note')">📝 快速记事</button>
+        <button class="btn btn-success" onclick="quickSubmit('wo')">🎫 快速工单</button>
+      </div>
+      <div class="result-box" id="quickResult"></div>
+    </div>
+  </div>
+
+  <!-- 运行日志 -->
+  <div class="tab-content" id="tab-logs">
+    <div class="card">
+      <h3>📋 Shiny 运行日志</h3>
+      <div class="flex" style="gap:8px;margin-bottom:8px">
+        <button class="btn btn-xs" onclick="fetchLogs()">🔄 刷新日志</button>
+      </div>
+      <div class="log-list" id="logContent">点击刷新加载...</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============ 配置 ============
+const SHINY_PORT = 3838;
+const API_PORT = 3839;
+const SHINY_URL = `http://localhost:${SHINY_PORT}`;
+const API_URL = `http://localhost:${API_PORT}`;
+let autoTimer = null;
+let loggedUser = '';
+
+// ============ 登录（调用 API 验证数据库密码） ============
+document.getElementById('pwdInput').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+document.getElementById('userInput').addEventListener('keydown', e => { if(e.key==='Enter') document.getElementById('pwdInput').focus(); });
+async function doLogin() {
+  const user = document.getElementById('userInput').value.trim();
+  const pw = document.getElementById('pwdInput').value;
+  if (!user || !pw) { document.getElementById('loginError').style.display='block'; return; }
+  try {
+    const r = await fetch(API_URL+'/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({username:user, password:pw})
+    });
+    const data = await r.json();
+    if (data.ok && (data.role === 'admin')) {
+      loggedUser = user;
+      localStorage.setItem('sitom_mgmt_auth','1');
+      localStorage.setItem('sitom_mgmt_user', user);
+      document.getElementById('loginPage').classList.add('hidden');
+      document.getElementById('mainPage').classList.remove('hidden');
+      document.getElementById('navRight').innerHTML = `<span>👤 ${user}</span><a href="#" onclick="logout()" style="color:#999;text-decoration:none">退出</a>`;
+      initAll();
+    } else {
+      document.getElementById('loginError').style.display = 'block';
+    }
+  } catch(e) {
+    document.getElementById('loginError').textContent = 'API 未启动，请先运行 mgmt_api.ps1';
+    document.getElementById('loginError').style.display = 'block';
+  }
+}
+function logout() { localStorage.removeItem('sitom_mgmt_auth'); location.reload(); }
+if (localStorage.getItem('sitom_mgmt_auth') === '1') {
+  loggedUser = localStorage.getItem('sitom_mgmt_user') || '管理员';
+  document.getElementById('loginPage').classList.add('hidden');
+  document.getElementById('mainPage').classList.remove('hidden');
+  document.getElementById('navRight').innerHTML = `<span>👤 ${loggedUser}</span><a href="#" onclick="logout()" style="color:#999;text-decoration:none">退出</a>`;
+  initAll();
+}
+
+// ============ 导航 ============
+document.querySelectorAll('#mainNav a').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    document.querySelectorAll('#mainNav a').forEach(x => x.classList.remove('active'));
+    a.classList.add('active');
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + a.dataset.tab).classList.add('active');
+    if (a.dataset.tab === 'env') checkEnv();
+    if (a.dataset.tab === 'structure') loadStructure();
+    if (a.dataset.tab === 'logs') fetchLogs();
+  });
+});
+
+// ============ Toast ============
+function toast(msg, type='info') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast ' + type + ' show';
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ============ API 调用 ============
+async function apiCall(endpoint, method='GET', body=null) {
+  try {
+    const opts = { method, headers: {} };
+    if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+    const r = await fetch(API_URL + endpoint, opts);
+    return await r.json();
+  } catch(e) {
+    // API 未运行，回退到直接检测
+    if (endpoint === '/status') return await checkShinyDirect();
+    return { ok: false, error: e.message };
+  }
+}
+async function checkShinyDirect() {
+  try {
+    const r = await fetch(SHINY_URL + '/', { signal: AbortSignal.timeout(3000) });
+    return { running: true, status: r.status };
+  } catch(e) { return { running: false }; }
+}
+
+// ============ 状态管理 ============
+async function checkStatus() {
+  const result = await apiCall('/status');
+  const dot = document.getElementById('shinyDot');
+  const st = document.getElementById('shinyStatus');
+  if (result.running) {
+    dot.className = 'status-dot online'; st.textContent = 'Shiny 运行中';
+    if (result.pid) st.textContent += ` (PID: ${result.pid})`;
+  } else {
+    dot.className = 'status-dot offline'; st.textContent = 'Shiny 未运行';
+  }
+}
+function toggleAutoRefresh() {
+  if (document.getElementById('autoRefresh').checked) {
+    autoTimer = setInterval(checkStatus, 5000);
+  } else { clearInterval(autoTimer); }
+}
+async function startShiny() {
+  toast('正在启动 Shiny...');
+  const r = await apiCall('/start', 'POST');
+  if (r.ok) toast('Shiny 已启动', 'ok');
+  else {
+    // API 不可用，显示命令
+    showCmd('rscript.exe D:\\GitHub\\SuperITOM2\\run_app.R');
+    toast('请复制命令手动执行（API 未运行）', 'info');
+  }
+  setTimeout(checkStatus, 2000);
+}
+async function stopShiny() {
+  toast('正在停止 Shiny...');
+  const r = await apiCall('/stop', 'POST');
+  if (r.ok) toast('Shiny 已停止', 'ok');
+  else showCmd('taskkill /F /IM Rscript.exe');
+  setTimeout(checkStatus, 2000);
+}
+async function restartShiny() { await stopShiny(); setTimeout(startShiny, 2000); }
+function openShiny() { window.open(SHINY_URL, '_blank'); }
+function showCmd(cmd) {
+  const box = document.getElementById('cmdOutput');
+  box.style.display = 'block';
+  box.innerHTML = `<div class="cmd-box"><code>${cmd}</code><button class="copy-btn" onclick="copyCmd('${cmd.replace(/'/g,"\\'")}')">📋 复制</button></div>`;
+}
+function copyCmd(cmd) { navigator.clipboard.writeText(cmd); toast('已复制', 'ok'); }
+
+// ============ 环境检查 ============
+async function checkEnv() {
+  const r = await apiCall('/env');
+  if (r.ok) {
+    document.getElementById('envTable').innerHTML = r.env.map(e =>
+      `<tr><td>${e.key}</td><td>${e.val}</td></tr>`).join('');
+    document.getElementById('verTable').innerHTML = r.ver.map(v =>
+      `<tr><td>${v.key}</td><td>${v.val}</td><td><span class="badge badge-ok">${v.stat||'OK'}</span></td></tr>`).join('');
+  } else {
+    // 客户端检测
+    const env = [
+      {key:'操作系统', val:navigator.platform},
+      {key:'浏览器', val:navigator.userAgent.split('Chrome/')[1]?.split(' ')[0] ? 'Chrome '+navigator.userAgent.split('Chrome/')[1].split(' ')[0] : navigator.userAgent},
+      {key:'Shiny URL', val:SHINY_URL},
+      {key:'API URL', val:API_URL},
+    ];
+    document.getElementById('envTable').innerHTML = env.map(e=>`<tr><td>${e.key}</td><td>${e.val}</td></tr>`).join('');
+    document.getElementById('verTable').innerHTML = '<tr><td colspan="3">启动 API 服务后查看完整环境信息</td></tr>';
+  }
+}
+
+// ============ 项目结构 ============
+async function loadStructure() {
+  const r = await apiCall('/structure');
+  if (r.ok) {
+    document.getElementById('dirTree').innerHTML = r.tree;
+  } else {
+    document.getElementById('dirTree').innerHTML = '<span style="color:#999">启动 API 服务后查看项目结构</span>';
+  }
+}
+
+// ============ 日志 ============
+async function fetchLogs() {
+  const r = await apiCall('/logs');
+  if (r.ok) {
+    document.getElementById('logContent').textContent = r.logs || '无日志';
+  } else {
+    document.getElementById('logContent').textContent = '启动 API 服务后查看日志';
+  }
+}
+
+// ============ 快速开发 ============
+async function quickSubmit(type) {
+  const text = document.getElementById('quickDev').value.trim();
+  if (!text) { toast('请输入内容', 'info'); return; }
+  const box = document.getElementById('quickResult');
+  box.className = 'result-box';
+  box.textContent = '提交中...'; box.style.display = 'block';
+  const r = await apiCall('/quick', 'POST', { type, text });
+  if (r.ok) {
+    box.className = 'result-box success'; box.textContent = '✅ ' + (r.msg||'提交成功');
+    document.getElementById('quickDev').value = '';
+  } else {
+    box.className = 'result-box error'; box.textContent = '❌ ' + (r.error||'提交失败，请确认 Shiny 在运行');
+  }
+}
+
+function initAll() {
+  checkStatus();
+  if (document.getElementById('autoRefresh').checked) autoTimer = setInterval(checkStatus, 5000);
+}
+</script>
+</body>
+</html>
