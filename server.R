@@ -93,7 +93,7 @@ server <- function(input, output, session) {
     if (!rv$logged_in) {
       login_ui()
     } else {
-      message("[RENDER] 调用 main_ui()")
+      # message("[RENDER] 调用 main_ui()")  # debug only
       is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
       user_modules <- rbac_get_user_modules(rv$current_user)
       main_ui(is_admin = is_admin, user_modules = user_modules, current_user = rv$current_user)

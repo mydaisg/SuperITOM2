@@ -1,6 +1,7 @@
 # 工具模块 UI
 tools_ui <- function() {
   tagList(
+    tags$script(src = "https://unpkg.com/pinyin-pro@3"),
     fluidPage(
       titlePanel(""),
       tabsetPanel(id = "tools_tabs",
@@ -24,6 +25,97 @@ tools_ui <- function() {
                 verbatimTextOutput("tool_text_out"),
                 tags$button(class = "btn btn-xs", style = "position:absolute; top:4px; right:8px;",
                   onclick = "var t=document.getElementById('tool_text_out'); if(t){navigator.clipboard.writeText(t.innerText); this.textContent='已复制'; setTimeout(function(){this.textContent='复制'}.bind(this),1500)}", "复制")
+              )
+            )
+          )
+        ),
+        tabPanel("拼音",
+          tags$style(HTML("
+            .py-above-wrap { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; }
+            .py-above-line { display: flex; flex-wrap: wrap; gap: 2px 4px; margin-bottom: 4px; }
+            .py-item { display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-end; min-width: 1.2em; padding: 2px 3px; border-radius: 3px; background: #f8f9fa; }
+            .py-pinyin { font-size: 13px; color: #0d47a1; line-height: 1.4; white-space: nowrap; }
+            .py-char { font-size: 16px; color: #222; line-height: 1.4; margin-top: 2px; }
+            #tool_py_out { background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; padding: 8px; min-height: 260px; font-size: 14px; }
+            #tool_py_out .py-block { margin-bottom: 2px; }
+            #tool_py_out pre { margin: 0 !important; padding: 0 !important; background: transparent !important; border: none !important; }
+          ")),
+          tags$script(HTML("
+            Shiny.addCustomMessageHandler('doPinyin', function(mode) {
+              var inp = document.getElementById('tool_py_in');
+              if (!inp || typeof pinyinPro === 'undefined') return;
+              var txt = inp.value;
+              var result = '';
+              if (mode === 'above') {
+                var lines = txt.split('\\n');
+                var out = [];
+                for (var li = 0; li < lines.length; li++) {
+                  var line = lines[li];
+                  var py3 = pinyinPro.pinyin(line, { toneType: 'symbol', type: 'array' });
+                  var chars3 = line.split('');
+                  var items = [];
+                  for (var i = 0; i < chars3.length; i++) {
+                    var c = chars3[i];
+                    var p = (i < py3.length && /[\\u4e00-\\u9fff]/.test(c)) ? py3[i] : (c.trim() ? c : ' ');
+                    items.push('<div class=\"py-item\"><div class=\"py-pinyin\">' + p + '</div><div class=\"py-char\">' + c + '</div></div>');
+                  }
+                  out.push('<div class=\"py-above-line\">' + items.join('') + '</div>');
+                }
+                result = '<div class=\"py-above-wrap\">' + out.join('') + '</div>';
+              } else if (mode === 'pure') {
+                var lines = txt.split('\\n');
+                result = lines.map(function(line) {
+                  return pinyinPro.pinyin(line, { toneType: 'symbol', type: 'array' }).join(' ');
+                }).join('\\n');
+              } else if (mode === 'num') {
+                var lines = txt.split('\\n');
+                result = lines.map(function(line) {
+                  return pinyinPro.pinyin(line, { toneType: 'num', type: 'array' }).join(' ');
+                }).join('\\n');
+              } else if (mode === 'char') {
+                var lines = txt.split('\\n');
+                result = lines.map(function(line) {
+                  var py = pinyinPro.pinyin(line, { toneType: 'symbol', type: 'array' });
+                  var chars = line.split('');
+                  return chars.map(function(c,i) { return i < py.length ? py[i] : c; }).join(' ');
+                }).join('\\n');
+              } else if (mode === 'mixed') {
+                var lines = txt.split('\\n');
+                result = lines.map(function(line) {
+                  var py2 = pinyinPro.pinyin(line, { toneType: 'symbol', type: 'array' });
+                  var chars2 = line.split('');
+                  return chars2.map(function(c,i) {
+                    if (/[\\u4e00-\\u9fff]/.test(c) && i < py2.length) return c + '(' + py2[i] + ')';
+                    return c;
+                  }).join('');
+                }).join('\\n');
+              }
+              Shiny.setInputValue('tool_py_result', {mode: mode, html: result}, {priority: 'event'});
+            });
+          ")),
+          fluidRow(
+            column(6,
+              h5("输入中文"),
+              textAreaInput("tool_py_in", NULL, width = "100%", rows = 15,
+                placeholder = "输入中文文本..."),
+              div(style = "display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px;",
+                actionButton("tool_py_above", "上部拼音", icon = icon("text-height"), class = "btn-primary btn-sm"),
+                actionButton("tool_py_pure", "纯拼音 sān bǎi", icon = icon("font"), class = "btn-info btn-sm"),
+                actionButton("tool_py_num", "数字调 san1 bai3", icon = icon("sort-numeric-down"), class = "btn-info btn-sm"),
+                actionButton("tool_py_char", "逐字", icon = icon("align-justify"), class = "btn-success btn-sm"),
+                actionButton("tool_py_mixed", "混合 三(sān)", icon = icon("italic"), class = "btn-warning btn-sm")
+              ),
+              div(style = "display:flex; gap:4px; margin-top:6px;",
+                actionButton("tool_py_clear_in", "清空输入", icon = icon("eraser"), class = "btn-sm btn-default"),
+                actionButton("tool_py_clear_out", "清空输出", icon = icon("trash"), class = "btn-sm btn-default")
+              )
+            ),
+            column(6,
+              h5("输出"),
+              tags$div(style = "position:relative;",
+                htmlOutput("tool_py_out"),
+                tags$button(class = "btn btn-xs", style = "position:absolute; top:4px; right:8px;",
+                  onclick = "var t=document.getElementById('tool_py_out'); if(t){navigator.clipboard.writeText(t.innerText); this.textContent='已复制'; setTimeout(function(){this.textContent='复制'}.bind(this),1500)}", "复制")
               )
             )
           )

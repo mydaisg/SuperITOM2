@@ -360,8 +360,8 @@ note_server <- function(input, output, session, rv) {
     today_completed <- sum(items$status == "completed" & substr(items$created_at, 1, 10) == today_prefix, na.rm = TRUE)
     comment_cnt <- note_comment_count_today()
     suspended_count <- sum(items$status == "suspended", na.rm = TRUE)
-    reminder_count <- sum(!is.na(items$reminder_at) & items$reminder_at != "" & as.POSIXct(items$reminder_at) <= Sys.time() & items$status != "suspended", na.rm = TRUE)
-    due_count <- sum(!is.na(items$due_at) & items$due_at != "" & as.POSIXct(items$due_at) < Sys.time() & items$status != "suspended", na.rm = TRUE)
+    reminder_count <- sum(!is.na(items$reminder_at) & items$reminder_at != "" & as.POSIXct(items$reminder_at) <= Sys.time() & !items$status %in% c("suspended","completed"), na.rm = TRUE)
+    due_count <- sum(!is.na(items$due_at) & items$due_at != "" & as.POSIXct(items$due_at) < Sys.time() & !items$status %in% c("suspended","completed"), na.rm = TRUE)
 
     stat_box <- function(num, today_num, label, color, extra_class = "") {
       today_html <- if (today_num > 0) sprintf('<span style="font-size:9px; color:%s; opacity:0.75; margin-left:3px;">+%d</span>', color, today_num) else ""
@@ -408,53 +408,58 @@ note_server <- function(input, output, session, rv) {
           onclick = "Shiny.setInputValue('note_toggle_compact', Math.random(), {priority:'event'})",
           if (compact) "📋 详细" else "📋 简约")
       ),
-      # 搜索框 + 关键字标签（同一行，搜索框在左）
-      if (nrow(items) > 0) {
-        cat_kw <- note_keywords_cache()
-        freq <- note_search_freq()
-        if (length(freq) > 0) {
-          freq_sorted <- sort(unlist(freq), decreasing = TRUE)
-          hist_kw <- names(freq_sorted)[seq_len(min(5, length(freq_sorted)))]
-          hist_kw <- setdiff(hist_kw, cat_kw)
-        } else {
-          hist_kw <- character(0)
-        }
-        kw_btn <- function(label, cls) {
-          sprintf('<span class="note-kw-tag %s" onclick="Shiny.setInputValue(\'note_kw_click\',\'%s\',{priority:\'event\'})">%s <a href="#" onclick="event.stopPropagation();Shiny.setInputValue(\'note_kw_del\',\'%s\',{priority:\'event\'});return false;" style="color:#999;text-decoration:none;">✕</a></span>',
-            cls, label, label, label)
-        }
-        if (length(cat_kw) > 0) {
-          cats <- paste(sapply(cat_kw[1:min(10,length(cat_kw))], function(x) kw_btn(x, "kw-cat")), collapse = "")
-        } else cats <- ""
-        if (length(hist_kw) > 0) {
-          hists <- paste(sapply(hist_kw, function(x) kw_btn(x, "kw-hist")), collapse = "")
-        } else hists <- ""
-        tags$div(style = "display:flex; align-items:center; gap:6px; margin-bottom:6px;",
-          # 搜索框（最左，紧凑样式）
-          tags$style("#note_search_input { height: 26px !important; font-size: 12px; padding: 2px 6px; width: 290px !important; vertical-align: middle; }
-                    #note_search_input + .form-control-feedback { display: none; }
-                    .btn-xs { display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; }
-                    .btn-xs .fa { font-size: 12px; line-height: 1; }"),
-          tags$div(style = "display:flex; align-items:center; gap:3px; flex-shrink:0; margin-right:2px;",
-            if (kw != "") tags$span(style = "font-size:9px; color:#999; white-space:nowrap;",
-              sprintf("「%s」%d条", kw, nrow(items))),
-            textInput("note_search_input", NULL, width = "290px",
-              placeholder = "搜索标题/评论"),
-            actionButton("note_search_btn", NULL, icon = icon("search"),
-              class = "btn-xs btn-primary", style = "height:26px;"),
-            if (kw != "") actionButton("note_search_clear_btn", NULL, icon = icon("times"),
-              class = "btn-xs btn-default", style = "height:26px;")
-          ),
-          # 关键字标签（flex:1 占剩余空间）
+      # 搜索框 + 关键字标签（同行，搜索框始终可见）
+      tags$div(style = "display:flex; align-items:center; gap:6px; margin-bottom:6px;",
+        tags$style("#note_search_input { height: 26px !important; font-size: 12px; padding: 2px 6px; width: 290px !important; vertical-align: middle; }
+                  #note_search_input + .form-control-feedback { display: none; }
+                  .btn-xs { display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; }
+                  .btn-xs .fa { font-size: 12px; line-height: 1; }"),
+        tags$div(style = "display:flex; align-items:center; gap:3px; flex-shrink:0; margin-right:2px;",
+          if (kw != "" && nrow(items) > 0) tags$span(style = "font-size:9px; color:#999; white-space:nowrap;",
+            sprintf("「%s」%d条", kw, nrow(items)))
+          else if (kw != "" && nrow(items) == 0) tags$span(style = "font-size:9px; color:#e53e3e; white-space:nowrap;",
+            sprintf("「%s」未找到", kw)),
+          textInput("note_search_input", NULL, width = "290px",
+            placeholder = "搜索标题/评论"),
+          actionButton("note_search_btn", NULL, icon = icon("search"),
+            class = "btn-xs btn-primary", style = "height:26px;"),
+          if (kw != "") actionButton("note_search_clear_btn", NULL, icon = icon("times"),
+            class = "btn-xs btn-default", style = "height:26px;")
+        ),
+        # 关键字标签（仅在有结果时显示）
+        if (nrow(items) > 0) {
+          cat_kw <- note_keywords_cache()
+          freq <- note_search_freq()
+          if (length(freq) > 0) {
+            freq_sorted <- sort(unlist(freq), decreasing = TRUE)
+            hist_kw <- names(freq_sorted)[seq_len(min(5, length(freq_sorted)))]
+            hist_kw <- setdiff(hist_kw, cat_kw)
+          } else {
+            hist_kw <- character(0)
+          }
+          kw_btn <- function(label, cls) {
+            sprintf('<span class="note-kw-tag %s" onclick="Shiny.setInputValue(\'note_kw_click\',\'%s\',{priority:\'event\'})">%s <a href="#" onclick="event.stopPropagation();Shiny.setInputValue(\'note_kw_del\',\'%s\',{priority:\'event\'});return false;" style="color:#999;text-decoration:none;">✕</a></span>',
+              cls, label, label, label)
+          }
+          if (length(cat_kw) > 0) {
+            cats <- paste(sapply(cat_kw[1:min(10,length(cat_kw))], function(x) kw_btn(x, "kw-cat")), collapse = "")
+          } else cats <- ""
+          if (length(hist_kw) > 0) {
+            hists <- paste(sapply(hist_kw, function(x) kw_btn(x, "kw-hist")), collapse = "")
+          } else hists <- ""
           tags$div(style = "display:flex; gap:4px; flex-wrap:wrap; align-items:center; flex:1;",
             if (cats != "") tags$span(style="font-size:10px;color:#999;margin-right:2px;","分类:"),
             if (cats != "") HTML(cats),
             if (hists != "") tags$span(style="font-size:10px;color:#999;margin-left:4px;margin-right:2px;","高频:"),
             if (hists != "") HTML(hists)
           )
-        )
-      },
-      tags$div(class = "trello-board",
+        }
+      ),
+      if (kw != "" && nrow(items) == 0) tags$div(style = "text-align:center; padding:40px; color:#999;",
+        icon("search", "fa-2x"), tags$br(), tags$br(),
+        sprintf("未找到包含「%s」的记事", kw)
+      )
+      else tags$div(class = "trello-board",
         tags$div(class = "trello-col pending",
           tags$h4(sprintf("📋 待处理 (%d)", pending_count)),
           # 搜索模式：全部显示；正常模式：前4 + 创建框 + 全部
@@ -802,19 +807,11 @@ note_server <- function(input, output, session, rv) {
     }
     
     modal_body <- tagList(
-      # 编号 + 状态/时间 + 小旗 + 阅读/关闭（同行）
+      # 状态 + 小旗（默认只显示状态和标记）
       tags$div(style="background:#f5f5f5; padding:8px 10px; border-radius:6px; margin-bottom:10px;",
         tags$div(style="display:flex; justify-content:space-between; align-items:center; flex-wrap:nowrap;",
           tags$div(style="display:flex; align-items:center; gap:12px; flex-wrap:nowrap; white-space:nowrap; overflow:hidden;",
-            tags$b(style="color:#337ab7; font-size:15px;", note_no),
-            tags$span(style="font-size:12px; color:#999;",
-              sprintf("状态: %s | 创建: %s", st, substr(note$created_at[1] %||% "", 1, 16))),
-            tags$span(style="font-size:12px; color:#999;",
-              "⏰ 提醒: ", rem_val,
-              if (isTRUE(rem_val != "")) HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_cancel_reminder_btn\',%d,{priority:\'event\'});return false;" style="color:#e53e3e;font-size:10px;margin-left:2px;text-decoration:none;">✕</a>', note$id[1])),
-              if (isTRUE(rem_val != "")) HTML(sprintf('<a href="#" onclick="Shiny.setInputValue(\'note_extend_due_btn\',%d,{priority:\'event\'});return false;" style="color:#2563eb;font-size:10px;margin-left:2px;text-decoration:none;">Ext 1D</a>', note$id[1]))),
-            tags$span(style="font-size:12px; color:#999;",
-              "📅 到期: ", due_val)
+            tags$span(style="font-size:13px; color:#555; font-weight:bold;", sprintf("状态: %s", st))
           ),
           tags$div(style="display:flex; align-items:center; gap:6px; flex-shrink:0;",
             HTML(flags_html)
@@ -822,34 +819,22 @@ note_server <- function(input, output, session, rv) {
         )
       ),
       
-      # 内容只读（初始隐藏）
-      tags$div(id = "note_content_ro", style="display:none;",
-        tags$div(style="font-size:15px; font-weight:bold; margin-bottom:6px;", note$title[1]),
-        tags$div(style="font-size:13px; color:#333; white-space:pre-wrap; line-height:1.6; max-height:150px; overflow-y:auto;",
-          note$content[1] %||% "")
-      ),
-      
-      # 内容编辑（默认可见）
-      tags$div(id = "note_content_ed",
-        fluidRow(
-          column(8,
-            textInput("note_edit_no_m", "编号", value = note_no),
-            textAreaInput("note_edit_content_m", "内容（首行为标题）", rows = 5, value = note$content[1] %||% "")
-          ),
-          column(4,
-            textInput("note_edit_created_m", "创建时间", value = substr(note$created_at[1] %||% format(Sys.time(),"%Y-%m-%d %H:%M"), 1, 16)),
-            textInput("note_edit_reminder_m", "⏰ 提醒时间", placeholder = "YYYY-MM-DD HH:MM", value = rem_val),
-            textInput("note_edit_due_m", "📅 到期时间", placeholder = "YYYY-MM-DD HH:MM", value = due_val),
-            if (!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin") tagList(
-              tags$hr(style = "margin:6px 0;"),
-              tags$b("📨 派发给"),
-              selectInput("note_edit_dispatch", NULL, choices = NULL, multiple = TRUE, width = "100%")
+      # 详情编辑区（编号/内容/创建/提醒/到期）——默认隐藏，点"修改状态"展开
+      tags$div(id = "note_edit_detail_panel", style = "display:none; margin-bottom:10px;",
+        tags$div(style="border:1px solid #ddd; border-radius:6px; padding:10px; background:#fafafa;",
+          fluidRow(
+            column(8,
+              textInput("note_edit_no_m", "编号", value = note_no),
+              textAreaInput("note_edit_content_m", "内容（首行为标题）", rows = 5, value = note$content[1] %||% "")
+            ),
+            column(4,
+              textInput("note_edit_created_m", "创建时间", value = substr(note$created_at[1] %||% format(Sys.time(),"%Y-%m-%d %H:%M"), 1, 16)),
+              textInput("note_edit_reminder_m", "⏰ 提醒时间", placeholder = "YYYY-MM-DD HH:MM", value = rem_val),
+              textInput("note_edit_due_m", "📅 到期时间", placeholder = "YYYY-MM-DD HH:MM", value = due_val)
             )
           )
         )
       ),
-      
-      tags$hr(),
       
       # 评论标题 + 排序
       tags$div(style = "display:flex; justify-content:space-between; align-items:center;",
@@ -868,18 +853,23 @@ note_server <- function(input, output, session, rv) {
       ) else tags$p(class = "note-no-comment", style = "color:#999; font-size:12px;", "暂无评论"),
       
       # 评论输入
-      textAreaInput("note_comment_new_m", NULL, rows = 8, placeholder = "添加评论...", width = "100%"),
-      div(style="text-align:right; margin-top:4px; margin-bottom:8px;",
-        actionButton("note_add_comment_m", "发表评论", class = "btn-info btn-sm", icon = icon("comment")))
+      textAreaInput("note_comment_new_m", NULL, rows = 6, placeholder = "添加评论...", width = "100%"),
+      div(style="display:flex; justify-content:space-between; align-items:flex-end; gap:8px; margin-top:4px; margin-bottom:8px;",
+        actionButton("note_add_comment_m", "发表评论", class = "btn-info btn-sm", icon = icon("comment")),
+        if (!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin") div(style="flex:1;",
+          tags$b("📨 派发给", style="font-size:12px; color:#555;"),
+          selectInput("note_edit_dispatch", NULL, choices = NULL, multiple = TRUE, width = "100%")
+        ) else div()
+      )
     )
     
     showModal(modalDialog(
       title = tags$div(style="display:flex; justify-content:space-between; align-items:center; width:100%;",
         tags$span(icon("sticky-note"), " ", note_no, " — ", note$title[1]),
         tags$div(style="display:flex; gap:6px; flex-shrink:0;",
-          tags$button(id="note_read_mode_toggle", class="btn btn-xs btn-default",
-            onclick="var ro=$('#note_content_ro');var ed=$('#note_content_ed');var btn=$('#note_read_mode_toggle');var ca=$('.comment-actions');var ta=$('#note_comment_new_m');var ab=$('#note_add_comment_m');if(ed.is(':visible')){Shiny.setInputValue('note_readmode_autosave',Math.random(),{priority:'event'});ed.hide();ro.show();btn.text('📓 编辑');ca.hide();ta.hide();ab.hide();}else{ro.hide();ed.show();btn.text('📖 阅读');ca.show();ta.show();ab.show();}",
-            "📖 阅读"),
+          tags$button(id="note_edit_toggle", class="btn btn-xs btn-default",
+            onclick="var panel=$('#note_edit_detail_panel');var btn=$('#note_edit_toggle');if(panel.is(':visible')){Shiny.setInputValue('note_readmode_autosave',Math.random(),{priority:'event'});panel.hide();btn.text('✏️ 修改状态');}else{panel.show();btn.text('📖 收起');}",
+            "✏️ 修改状态"),
           tags$button(class="btn btn-xs btn-default",
             onclick="$('#shiny-modal').modal('hide')",
             "✕ 关闭")
