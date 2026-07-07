@@ -1298,6 +1298,22 @@ migrate_database <- function() {
       cat("数据库迁移完成：dev_logs 表已添加 solution_en 列\n")
     }
 
+    # 迁移：方案表
+    if (!"solutions" %in% tables) {
+      dbExecute(con, "CREATE TABLE solutions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sol_no TEXT NOT NULL DEFAULT '',
+        title TEXT NOT NULL,
+        content TEXT,
+        category TEXT,
+        related_project TEXT,
+        created_by INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 solutions 表\n")
+    }
+
     # 迁移：记事关键词统计表
     if (!"note_kw_stats" %in% tables) {
       dbExecute(con, "CREATE TABLE note_kw_stats (

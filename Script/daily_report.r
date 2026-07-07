@@ -541,11 +541,13 @@ daily_report_server <- function(input, output, session, rv) {
             for (si in seq_len(nrow(sub))) {
               sc <- sub[si, ]
               sct <- .clean_lines(sc$content)
-              lab <- sprintf("%s.%d", prefix, si)
+              num_lab <- sprintf("%s.%d", prefix, si)          # 纯数字编号: "1.1"
+              dot_cnt <- nchar(gsub("[^.]", "", num_lab))       # 1=二级, 2=三级
+              show_lab <- paste0(paste(rep("+", dot_cnt), collapse=""), num_lab)  # "+1.1" / "++1.1.1"
               html <- paste0(html, sprintf(
                 '<div class="dr-item" style="padding-left:%dem; white-space:pre-wrap;"><span class="dr-badge" style="background:#a78bfa;">沟通%s</span>\n<div style="padding-left:2em;">%s</div></div>',
-                indent_em, lab, sct))
-              html <- paste0(html, render_replies(sc$id, lab, indent_em + 2))
+                indent_em, show_lab, sct))
+              html <- paste0(html, render_replies(sc$id, num_lab, indent_em + 2))
             }
             html
           }
@@ -629,9 +631,11 @@ daily_report_server <- function(input, output, session, rv) {
             for (si in seq_len(nrow(sub))) {
               sc <- sub[si, ]
               if (depth >= 2) {
-                txt <- paste0(txt, sprintf("%s- %s\n", indent, sc$content))
+                lead <- paste(rep("+", depth), collapse="")
+                txt <- paste0(txt, sprintf("%s%s- %s\n", indent, lead, sc$content))
               } else {
-                txt <- paste0(txt, sprintf("%s%d、 %s\n", indent, si, sc$content))
+                lead <- paste(rep("+", depth), collapse="")
+                txt <- paste0(txt, sprintf("%s%s%d、 %s\n", indent, lead, si, sc$content))
               }
               txt <- paste0(txt, txt_render_replies(sc$id, depth + 1))
             }

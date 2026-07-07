@@ -189,8 +189,8 @@ ui <- fluidPage(
       }
 
       /* ── 弹窗拖拽光标 ── */
-      .modal .modal-header { cursor: grab !important; user-select: none !important; }
-      .modal .modal-header.modal-dragging { cursor: grabbing !important; }
+      .modal .modal-header { cursor: grab !important; }
+      .modal .modal-header.modal-dragging { cursor: grabbing !important; user-select: none !important; }
 
       /* ── 通知居中显示 ── */
       #shiny-notification-panel {
@@ -238,7 +238,13 @@ ui <- fluidPage(
         }
       });
       Shiny.addCustomMessageHandler('runjs', function(msg) {
-        if (window[msg]) window[msg]();
+        if (typeof msg !== 'string' || !msg.trim()) return;
+        var fn = window[msg];
+        if (typeof fn === 'function') {
+          fn();
+        } else {
+          try { (window.execScript || window.eval)(msg); } catch(e) { console.error('runjs error:', e); }
+        }
       });
       // admin 菜单 JS 控制（兼容 server.R 中的 toggleAdminMenu 调用）
       Shiny.addCustomMessageHandler('toggleAdminMenu', function(message) {
@@ -395,28 +401,32 @@ ui <- fluidPage(
         $('#org_search_input').val('').trigger('input');
       });
 
-      // ========== 全站弹窗拖拽（拖标题栏即可移动） ==========
+      // ========== 全站弹窗拖拽（标题栏任意位置均可拖动，短距离移动不拖=可选文字） ==========
       (function initGlobalModalDrag(){
-        var $dlg = null, dragging = false, offX = 0, offY = 0;
+        var $dlg = null, dragging = false, offX = 0, offY = 0, startX = 0, startY = 0, moved = false;
         $(function(){
           $(document).on('mousedown','.modal-dialog .modal-header',function(e){
             $dlg = $(this).closest('.modal-dialog');
             if (!$dlg.length) return;
-            dragging = true;
             var rect = $dlg[0].getBoundingClientRect();
             offX = e.clientX - rect.left;
             offY = e.clientY - rect.top;
-            $dlg.css({position:'fixed',left:rect.left+'px',top:rect.top+'px',margin:'0',transform:'none'});
-            $(this).addClass('modal-dragging');
-            e.preventDefault();
+            startX = e.clientX; startY = e.clientY;
+            moved = false; dragging = true;
           });
           $(document).on('mousemove',function(e){
             if (!dragging || !$dlg) return;
-            $dlg.css({left:(e.clientX-offX)+'px', top:(e.clientY-offY)+'px'});
+            if (Math.abs(e.clientX-startX)<4 && Math.abs(e.clientY-startY)<4) return;
+            if (!moved) {
+              moved = true;
+              $(document).getSelection().removeAllRanges();
+            }
+            $dlg.css({position:'fixed',left:(e.clientX-offX)+'px',top:(e.clientY-offY)+'px',margin:'0',transform:'none'});
+            $dlg.find('.modal-header').addClass('modal-dragging');
           });
           $(document).on('mouseup',function(){
             if ($dlg) $dlg.find('.modal-header').removeClass('modal-dragging');
-            dragging = false; $dlg = null;
+            dragging = false; $dlg = null; moved = false;
           });
         });
       })();

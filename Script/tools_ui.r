@@ -16,7 +16,13 @@ tools_ui <- function() {
                 checkboxInput("tool_quote", "加引号", FALSE),
                 actionButton("tool_format_btn", "格式化 →", icon = icon("arrow-right"), class = "btn-primary"),
                 actionButton("tool_clear_btn", "清空", icon = icon("trash"), class = "btn-sm btn-default"),
-                actionButton("tool_reverse_btn", "反向(行转列)", icon = icon("exchange"), class = "btn-sm btn-info")
+                actionButton("tool_reverse_btn", "反向(行转列)", icon = icon("exchange"), class = "btn-sm btn-info"),
+                actionButton("tool_addnum_btn", "加序号", icon = icon("list-ol"), class = "btn-sm btn-success"),
+                actionButton("tool_delnum_btn", "去序号", icon = icon("list-ul"), class = "btn-sm btn-default"),
+                actionButton("tool_nospc_btn", "去空格", icon = icon("compress"), class = "btn-sm btn-default"),
+                actionButton("tool_prefix_btn", "加前缀", icon = icon("plus-square"), class = "btn-sm btn-default"),
+                actionButton("tool_dot2plus_btn", "● → +", icon = icon("circle"), class = "btn-sm btn-warning"),
+                actionButton("tool_num2plus_btn", "1、 → +", icon = icon("hashtag"), class = "btn-sm btn-warning")
               )
             ),
             column(6,
@@ -119,6 +125,33 @@ tools_ui <- function() {
               )
             )
           )
+        ),
+        tabPanel("收集器",
+          fluidPage(
+            titlePanel(""),
+            sidebarLayout(
+              sidebarPanel(
+                textInput("collector_name", "收集器名称"),
+                selectInput("collector_type", "收集器类型", choices = c("系统信息", "网络信息", "应用信息", "数据库信息")),
+                textAreaInput("collector_config", "收集器配置"),
+                tags$button(id="add_collector", type="button", class="btn btn-primary action-button", disabled=NA, "添加收集器"),
+                br(), br(),
+                actionButton("refresh_collectors", "刷新收集器", class = "btn-info")
+              ),
+              mainPanel(
+                DTOutput("collector_table")
+              )
+            )
+          )
+        ),
+        tabPanel("集成",
+          integration_ui()
+        ),
+        tabPanel("标准化",
+          std_ui()
+        ),
+        tabPanel("AI",
+          ai_ui()
         )
       )
     )

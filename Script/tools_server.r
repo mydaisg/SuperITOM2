@@ -30,6 +30,84 @@ tools_server <- function(input, output, session, rv) {
     output$tool_text_out <- renderText({ result })
   })
 
+  # 数字序号 1、2、... → +
+  observeEvent(input$tool_num2plus_btn, {
+    req(rv$logged_in)
+    txt <- input$tool_text_in %||% ""
+    if (nchar(trimws(txt)) == 0) { showNotification("请先输入文本", type = "warning"); return() }
+    lines <- strsplit(txt, "\\r?\\n")[[1]]
+    lines <- trimws(lines, which = "left")
+    lines <- gsub("^\\d+[、，]\\s*", "+", lines)
+    result <- paste(lines, collapse = "\n")
+    output$tool_text_out <- renderText({ result })
+  })
+
+  # 加序号
+  observeEvent(input$tool_addnum_btn, {
+    req(rv$logged_in)
+    txt <- input$tool_text_in %||% ""
+    if (nchar(trimws(txt)) == 0) { showNotification("请先输入文本", type = "warning"); return() }
+    lines <- strsplit(txt, "\\r?\\n")[[1]]
+    lines <- lines[trimws(lines) != ""]
+    result <- paste(sprintf("%d、%s", seq_along(lines), lines), collapse = "\n")
+    output$tool_text_out <- renderText({ result })
+  })
+
+  # 去序号
+  observeEvent(input$tool_delnum_btn, {
+    req(rv$logged_in)
+    txt <- input$tool_text_in %||% ""
+    if (nchar(trimws(txt)) == 0) { showNotification("请先输入文本", type = "warning"); return() }
+    lines <- strsplit(txt, "\\r?\\n")[[1]]
+    lines <- gsub("^\\d+[、，.)）]\\s*", "", lines)
+    lines <- gsub("^[+]+\\d+[、，.)）]?\\s*", "", lines)
+    result <- paste(lines, collapse = "\n")
+    output$tool_text_out <- renderText({ result })
+  })
+
+  # 去空格
+  observeEvent(input$tool_nospc_btn, {
+    req(rv$logged_in)
+    txt <- input$tool_text_in %||% ""
+    if (nchar(trimws(txt)) == 0) { showNotification("请先输入文本", type = "warning"); return() }
+    result <- gsub("\\s+", "", txt)
+    output$tool_text_out <- renderText({ result })
+  })
+
+  # 加前缀
+  observeEvent(input$tool_prefix_btn, {
+    req(rv$logged_in)
+    txt <- input$tool_text_in %||% ""
+    if (nchar(trimws(txt)) == 0) { showNotification("请先输入文本", type = "warning"); return() }
+    showModal(modalDialog(
+      title = "加固定前缀",
+      textInput("tool_prefix_val", "前缀内容", placeholder = "例如：+、●、- "),
+      footer = tagList(
+        actionButton("tool_prefix_confirm", "确定", class = "btn-primary"),
+        modalButton("取消")
+      ), size = "s", easyClose = TRUE
+    ))
+  })
+  observeEvent(input$tool_prefix_confirm, {
+    req(rv$logged_in, input$tool_prefix_val)
+    txt <- input$tool_text_in %||% ""
+    prefix <- input$tool_prefix_val
+    lines <- strsplit(txt, "\\r?\\n")[[1]]
+    lines <- lines[trimws(lines) != ""]
+    result <- paste(paste0(prefix, lines), collapse = "\n")
+    output$tool_text_out <- renderText({ result })
+    removeModal()
+  })
+
+  # ● → +
+  observeEvent(input$tool_dot2plus_btn, {
+    req(rv$logged_in)
+    txt <- input$tool_text_in %||% ""
+    if (nchar(trimws(txt)) == 0) { showNotification("请先输入文本", type = "warning"); return() }
+    result <- gsub("●", "+", txt, fixed = TRUE)
+    output$tool_text_out <- renderText({ result })
+  })
+
   # 清空
   observeEvent(input$tool_clear_btn, {
     updateTextAreaInput(session, "tool_text_in", value = "")

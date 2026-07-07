@@ -134,6 +134,7 @@ performance_server <- function(input, output, session, rv) {
       br(), DT::DTOutput("perf_work_source_table")
     )
   })
+  outputOptions(output, "perf_main", suspendWhenHidden = FALSE)
 
   ##################
   # 员工筛选
@@ -235,7 +236,7 @@ performance_server <- function(input, output, session, rv) {
             $('td', row).css('background-color','#fafafa');
           }
           // 对齐：指标列（第2列，索引1）
-          var summaryRows = ['A类得分（30分）','B类得分（40分）','C类得分（30分）','总分','绩效得分（10分）','绩效结果','标杆','签字确认'];
+          var summaryRows = ['A类得分（30分）','B类得分（40分）','C类得分（30分）','总分','绩效得分（10分）','绩效结果','绩优/标杆','签字确认'];
           if (summaryRows.indexOf(ind) >= 0) {
             // 汇总行：居右
             $('td:eq(1)', row).css('text-align', 'right');
@@ -646,7 +647,7 @@ performance_server <- function(input, output, session, rv) {
     showModal(modalDialog(
       title = "绩效结果评定", size = "m",
       tags$table(class = "table table-condensed", style = "width:100%;",
-        tags$thead(tags$tr(tags$th("员工"),tags$th("绩效结果"),tags$th("标杆"))),
+        tags$thead(tags$tr(tags$th("员工"),tags$th("绩效结果"),tags$th("绩优/标杆"))),
         tags$tbody(
           lapply(seq_len(nrow(emps)), function(i) {
             e <- emps[i, ]; nm <- emp_labels[i]
@@ -666,7 +667,8 @@ performance_server <- function(input, output, session, rv) {
                 tags$select(class="form-control input-sm perf-rate-benchmark",
                   `data-eid` = as.character(e$employee_id),
                   tags$option(value="", selected=if(prev_bm=="")NA else NULL, "—"),
-                  tags$option(value="突出贡献", selected=if(prev_bm=="突出贡献")NA else NULL, "突出贡献")))
+                  tags$option(value="突出贡献", selected=if(prev_bm=="突出贡献")NA else NULL, "突出贡献"),
+                  tags$option(value="绩效优秀", selected=if(prev_bm=="绩效优秀")NA else NULL, "绩效优秀")))
             )
           })
         )

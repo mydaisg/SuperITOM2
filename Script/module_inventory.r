@@ -195,8 +195,8 @@ MODULE_INVENTORY <- list(
     )
   ),
   list(
-    module = "标准化", icon = "cogs",
-    frontend = "标准化标签页 → std_ui()",
+    module = "标准化", icon = "cogs", parent = "工具",
+    frontend = "工具 → 标准化（子标签页）→ std_ui()",
     source = c("Script/std_computer.r"),
     tables = "std_hosts",
     perms = list(
@@ -277,8 +277,8 @@ MODULE_INVENTORY <- list(
     )
   ),
   list(
-    module = "收集器", icon = "download",
-    frontend = "收集器标签页 (sidebarLayout)",
+    module = "收集器", icon = "download", parent = "工具",
+    frontend = "工具 → 收集器（子标签页，sidebarLayout）",
     source = c("Script/information_collector.r", "server.R"),
     tables = "information_collectors",
     perms = list(
@@ -292,8 +292,8 @@ MODULE_INVENTORY <- list(
     )
   ),
   list(
-    module = "集成", icon = "plug",
-    frontend = "集成标签页 → integration_ui()",
+    module = "集成", icon = "plug", parent = "工具",
+    frontend = "工具 → 集成（子标签页）→ integration_ui()",
     source = c("Script/integration_management.r", "Script/integration_server.r", "Script/integration_ui.r"),
     tables = "integrations",
     perms = list(
@@ -448,8 +448,8 @@ MODULE_INVENTORY <- list(
 NAV_ICONS <- list(
   "首页" = "home", "项目" = "project-diagram", "巡检" = "clipboard-check",
   "工单" = "clipboard-list", "资产" = "laptop", "记事" = "sticky-note",
-  "标准化" = "cogs", "测试" = "network-wired", "性能" = "heartbeat",
-  "日报" = "calendar-day", "收集器" = "download", "集成" = "plug",
+  "工具" = "wrench", "测试" = "network-wired", "性能" = "heartbeat",
+  "日报" = "calendar-day", "流程" = "project-diagram", "AI" = "robot",
   "数据" = "database", "岗职" = "sitemap", "绩效" = "chart-bar",
   "模型" = "cogs", "可视化" = "chart-line", "管理" = "tools"
 )

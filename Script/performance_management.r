@@ -234,7 +234,7 @@ perf_calculate <- function(sheet_id, employees = NULL) {
           ind_scores[i] <- -ds
         }
       } else {
-        sc <- min(count * ind$unit_score, ind$max_count * ind$unit_score)
+        sc <- count * ind$unit_score
         scores[ind$category] <- scores[ind$category] + sc
         ind_scores[i] <- sc
       }
@@ -258,7 +258,7 @@ perf_calculate <- function(sheet_id, employees = NULL) {
       row[[nm]] <- cnt
       # 计每指标每人得分
       if (ind$scoring == "add") {
-        col_score <- col_score + min(cnt * ind$unit_score, ind$max_count * ind$unit_score)
+        col_score <- col_score + cnt * ind$unit_score
       } else if (cnt > 0) {
         ds <- sum(sapply(eitems$deduction_level, function(l) {
           for (dl in ind$deduct_levels) if (dl$level == l) return(dl$points)
@@ -272,7 +272,7 @@ perf_calculate <- function(sheet_id, employees = NULL) {
   }
 
   # A/B/C 分类得分行
-  score_label <- c(A = "A类得分（30分）", B = "B类得分（40分）", C = "C类得分（30分）")
+  score_label <- c(A = "A类得分（30分）", B = "B类得分", C = "C类得分")
   for (cn in c("A", "B", "C")) {
     r <- list(category = "", indicator = score_label[cn], code = "")
     col_sum <- 0
@@ -315,8 +315,8 @@ perf_calculate <- function(sheet_id, employees = NULL) {
   result_row[["计分"]] <- ""
   result[[row_idx]] <- result_row; row_idx <- row_idx + 1
 
-  # 标杆行（从评定表读取）
-  benchmark_row <- list(category = "", indicator = "标杆", code = "")
+  # 绩优/标杆行（从评定表读取）
+  benchmark_row <- list(category = "", indicator = "绩优/标杆", code = "")
   for (ei in seq_len(nrow(emp_list))) {
     eid <- emp_list$employee_id[ei]; nm <- emp_list$employee_name[ei]
     r <- if (nrow(ratings) > 0) ratings[ratings$employee_id == eid, ] else data.frame()
@@ -342,12 +342,12 @@ perf_calculate <- function(sheet_id, employees = NULL) {
     summary_rows[[ei]] <- data.frame(
       员工 = emp_name,
       "A类得分（30分）" = sc["A"],
-      "B类得分（40分）" = sc["B"],
-      "C类得分（30分）" = sc["C"],
+      "B类得分" = sc["B"],
+      "C类得分" = sc["C"],
       "总分" = sc["总分"],
       "绩效得分（10分）" = sc["绩效得分"],
       "绩效结果" = if (nrow(r) > 0) r$result[1] %||% "" else "",
-      "标杆" = if (nrow(r) > 0) r$benchmark[1] %||% "" else "",
+      "绩优/标杆" = if (nrow(r) > 0) r$benchmark[1] %||% "" else "",
       "签字确认" = "",
       stringsAsFactors = FALSE, check.names = FALSE)
   }

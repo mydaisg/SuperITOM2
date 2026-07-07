@@ -613,11 +613,16 @@ note_server <- function(input, output, session, rv) {
     }
   })
 
-  # 关键字缓存（从 DB 读取热门关键词）
+  # 关键字缓存（从标题提取 TOP8，如果 DB 有点击记录则优先显示）
   observe({
     note_trigger()
     req(rv$logged_in)
-    tryCatch({ note_keywords_cache(note_kw_get_top(8)) }, error = function(e) NULL)
+    tryCatch({
+      from_db <- note_kw_get_top(8)
+      from_titles <- note_get_top_keywords(8, rv$current_user)
+      combined <- unique(c(from_db, from_titles))
+      note_keywords_cache(combined[1:min(8, length(combined))])
+    }, error = function(e) NULL)
   })
 
   # 关键字点击 → 弹窗展示匹配记事 + 记录到 DB

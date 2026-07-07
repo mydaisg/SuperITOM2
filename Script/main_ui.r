@@ -33,6 +33,8 @@ source("Script/daily_report.r")
 source("Script/data_center_ui.r")
 source("Script/integration_ui.r")
 source("Script/tools_ui.r")
+source("Script/ai_ui.r")
+source("Script/solution_ui.r")
 
 # 加载流程模块
 source("Script/process_ui.r")
@@ -87,11 +89,10 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
         '/inspection': '巡检',
         '/work_order': '工单',
         '/note': '记事',
-        '/std': '标准化',
+        '/tool': '工具',
         '/network_test': '测试',
         '/monitor': '性能',
         '/daily_report': '日报',
-        '/collector': '收集器',
         '/data': '数据',
         '/process': '流程',
         '/duty': '岗职',
@@ -290,6 +291,13 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       "项目",
       icon = icon("project-diagram"),
       project_ui()
+    ),
+
+    # 方案标签页（放在项目后面，巡检前面）
+    if (can_access("方案")) tabPanel(
+      "方案",
+      icon = icon("lightbulb"),
+      solution_ui()
     ),
 
     # 巡检标签页
@@ -718,13 +726,6 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       note_ui()
     ),
 
-    # 标准化标签页
-    if (can_access("标准化")) tabPanel(
-      "标准化",
-      icon = icon("cogs"),  # 齿轮图标
-      std_ui()
-    ),
-    
     # 测试标签页（网络巡检）
     if (can_access("测试")) tabPanel(
       "测试",
@@ -746,36 +747,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       daily_report_ui()
     ),
 
-    # 收集器标签页
-    if (can_access("收集器")) tabPanel(
-      "收集器",
-      icon = icon("download"),  # 收集器图标
-      fluidPage(
-        titlePanel("信息收集器"),
-        sidebarLayout(
-          sidebarPanel(
-            textInput("collector_name", "收集器名称"),
-            selectInput("collector_type", "收集器类型", choices = c("系统信息", "网络信息", "应用信息", "数据库信息")),
-            textAreaInput("collector_config", "收集器配置"),
-            tags$button(id="add_collector", type="button", class="btn btn-primary action-button", disabled=NA, "添加收集器"),
-            br(), br(),
-            actionButton("refresh_collectors", "刷新收集器", class = "btn-info")
-          ),
-          mainPanel(
-            DTOutput("collector_table")
-          )
-        )
-      )
-    ),
-    
-    # 集成标签页
-    if (can_access("集成")) tabPanel(
-      "集成",
-      icon = icon("plug"),
-      integration_ui()
-    ),
-
-    # 工具标签页
+    # 工具标签页（含：文本格式化/拼音/收集器/集成/标准化/AI）
     tabPanel(
       "工具",
       icon = icon("wrench"),
@@ -789,12 +761,12 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       data_center_ui()
     ),
 
-    # 流程引擎标签页（暂停排查）
-    # tabPanel(
-    #   "流程",
-    #   icon = icon("project-diagram"),
-    #   process_ui()
-    # ),
+    # 流程引擎标签页
+    tabPanel(
+      "流程",
+      icon = icon("project-diagram"),
+      process_ui()
+    ),
 
     # 岗职矩阵标签页
     if (can_access("岗职")) tabPanel(
