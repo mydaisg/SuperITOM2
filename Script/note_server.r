@@ -306,27 +306,50 @@ note_server <- function(input, output, session, rv) {
       do.call(tagList, unlist(month_groups, recursive = FALSE))
     }
     
-    # 挂起列（简单列表，带重启按钮）
+    # 挂起列（按月份折叠，与已完成一致）
     build_suspended_col <- function(items) {
       subset <- items[items$status == "suspended", ]
       if (nrow(subset) == 0) return(tagList())
       subset <- subset[order(subset$updated_at, decreasing = TRUE), ]
-      lapply(seq_len(nrow(subset)), function(i) {
-        r <- subset[i, ]
-        note_no <- r$note_no %||% ""
-        disp <- if (nchar(note_no) > 0) note_no else sprintf("NTE%s%03d", format(Sys.Date(),"%Y%m%d"), r$id)
-        tags$div(class = "note-card suspended",
-          `data-id` = r$id,
-          style = "border-left:3px solid #6c757d; opacity:0.75;",
-          tags$div(style = "display:flex; justify-content:space-between; align-items:center;",
-            tags$div(style = "font-size:12px; font-weight:bold; color:#555;", disp, " ", r$title %||% ""),
-            tags$button(class = "btn btn-xs btn-outline-info note-move-btn",
-              style = "font-size:10px; padding:1px 6px;",
-              `data-id` = r$id, `data-to` = "resume", "🔄 重启")
-          ),
-          tags$div(style = "font-size:10px; color:#999;", "挂起 ", substr(r$updated_at, 1, 10))
+      subset$month <- substr(subset$updated_at, 1, 7)
+      months <- unique(subset$month)
+      months <- sort(months, decreasing = TRUE)
+      now_month <- format(Sys.Date(), "%Y-%m")
+      month_groups <- lapply(months, function(mo) {
+        grp <- subset[subset$month == mo, ]
+        is_current <- (mo == now_month)
+        grp_id <- paste0("nsus-", gsub("-","",mo))
+        header <- tags$div(
+          class = "note-card", style = "padding:8px 12px; background:#f0f0f0; border:1px solid #ccc; cursor:pointer; margin-bottom:6px; opacity:0.85;",
+          onclick = sprintf("var d=document.getElementById('%s');d.style.display=d.style.display==='none'?'block':'none';", grp_id),
+          tags$div(style = "font-size:12px; font-weight:600; color:#6c757d;",
+            "⏸ 挂起-", format(as.Date(paste0(mo,"-01")), "%Y年%m月"),
+            sprintf(" (%d条)", nrow(grp)),
+            if (!is_current) tags$span(" ▸", style = "float:right;") else tags$span(" ▾", style = "float:right;")
+          )
         )
+        body <- tags$div(id = grp_id,
+          style = if (is_current) "display:block;" else "display:none;",
+          lapply(1:nrow(grp), function(i) {
+            r <- grp[i, ]
+            note_no <- r$note_no %||% ""
+            disp <- if (nchar(note_no) > 0) note_no else sprintf("NTE%s%03d", format(Sys.Date(),"%Y%m%d"), r$id)
+            tags$div(class = "note-card suspended",
+              `data-id` = r$id,
+              style = "border-left:3px solid #6c757d; opacity:0.75; margin-bottom:4px;",
+              tags$div(style = "display:flex; justify-content:space-between; align-items:center;",
+                tags$div(style = "font-size:12px; font-weight:bold; color:#555;", disp, " ", r$title %||% ""),
+                tags$button(class = "btn btn-xs btn-outline-info note-move-btn",
+                  style = "font-size:10px; padding:1px 6px;",
+                  `data-id` = r$id, `data-to` = "resume", "🔄 重启")
+              ),
+              tags$div(style = "font-size:10px; color:#999;", "挂起 ", substr(r$updated_at, 1, 10))
+            )
+          })
+        )
+        list(header, body)
       })
+      do.call(tagList, unlist(month_groups, recursive = FALSE))
     }
     
     # 待处理：前4条 + 创建框 + 全部剩余（无分页）
@@ -590,30 +613,49 @@ note_server <- function(input, output, session, rv) {
     }
   })
 
-  # 关键字缓存（首次加载或刷新时更新TOP10）
+  # 关键字缓存（从 DB 读取热门关键词）
   observe({
     note_trigger()
     req(rv$logged_in)
-    if (length(note_keywords_cache()) == 0) {
-      tryCatch({ note_keywords_cache(note_get_top_keywords(10, rv$current_user)) }, error = function(e) NULL)
-    }
+    tryCatch({ note_keywords_cache(note_kw_get_top(8)) }, error = function(e) NULL)
   })
 
-  # 关键字点击 → 设搜索词触发筛选
+  # 关键字点击 → 弹窗展示匹配记事 + 记录到 DB
   observeEvent(input$note_kw_click, {
     req(rv$logged_in, input$note_kw_click)
     kw <- trimws(input$note_kw_click)
     if (kw == "") return()
-    note_search_term(kw)
-    note_pending_page(1)
-    # 加入搜索历史（去重，最多15条） + 频次
-    hist <- note_search_history()
-    hist <- unique(c(kw, hist))
-    if (length(hist) > 15) hist <- hist[1:15]
-    note_search_history(hist)
-    freq <- note_search_freq()
-    freq[[kw]] <- (freq[[kw]] %||% 0L) + 1L
-    note_search_freq(freq)
+    note_kw_record_click(kw)
+    note_trigger(note_trigger() + 1)
+    items <- tryCatch(note_search(kw, rv$current_user), error = function(e) data.frame())
+    if (nrow(items) == 0) {
+      showNotification(sprintf("未找到包含「%s」的记事", kw), type = "warning")
+      return()
+    }
+    items <- head(items[order(items$updated_at, decreasing = TRUE), ], 20)
+    cards <- lapply(1:nrow(items), function(i) {
+      r <- items[i, ]
+      note_no <- r$note_no[1] %||% ""
+      st <- r$status[1] %||% ""
+      display_no <- if (nchar(note_no) > 0) note_no else sprintf("NTE%s%03d", format(Sys.Date(),"%Y%m%d"), r$id[1])
+      st_label <- switch(st, pending = "⏳待处理", in_progress = "🔄进行中", completed = "✅已完成", suspended = "⏸挂起", st)
+      tags$div(class = "note-card", `data-id` = r$id[1],
+        style = "border-left:3px solid #337ab7; padding:8px 10px; margin-bottom:4px; cursor:pointer; background:#fff; border-radius:4px;",
+        onclick = sprintf("$('#shiny-modal').modal('hide');Shiny.setInputValue('note_edit_click',%d,{priority:'event'});", r$id[1]),
+        tags$div(style = "display:flex; justify-content:space-between; align-items:center;",
+          tags$div(style = "font-size:13px; font-weight:bold; color:#333;", display_no, " ", r$title[1] %||% ""),
+          tags$span(style = "font-size:10px; color:#888;", st_label)
+        ),
+        tags$div(style = "font-size:11px; color:#666; margin-top:2px;",
+          substr(r$content[1] %||% "", 1, 80), if (nchar(r$content[1] %||% "") > 80) "…")
+      )
+    })
+    showModal(modalDialog(
+      title = sprintf("📂 「%s」- %d 条记事", kw, nrow(items)),
+      tagList(cards),
+      size = "l", easyClose = TRUE,
+      footer = modalButton("关闭")
+    ))
   })
 
   # 关键字 X 删除
@@ -742,13 +784,10 @@ note_server <- function(input, output, session, rv) {
         } else {
           sprintf('<button class="btn btn-xs btn-default comment-undone-btn" data-id="%d">🔄</button>', c$id)
         }
-        reply_btn <- ''
-        if (level == 0) {
-          reply_btn <- sprintf('<button class="btn btn-xs btn-default comment-reply-btn" data-id="%d" data-name="%s">💬 回复</button>', c$id, cn)
-        }
+        reply_btn <- sprintf('<button class="btn btn-xs btn-default comment-reply-btn" data-id="%d" data-name="%s">💬 回复</button>', c$id, cn)
         indent <- if (level > 0) sprintf("margin-left:%dpx;", level * 24) else ""
-        
-        # 子评论
+
+        # 子评论（默认展开）
         sub_html <- ""
         if (!is.null(children_df) && nrow(children_df) > 0) {
           subs <- children_df[children_df$parent_id == c$id, ]
@@ -757,7 +796,7 @@ note_server <- function(input, output, session, rv) {
             for (si in 1:nrow(subs)) {
               sub_parts <- c(sub_parts, render_one_comment(subs[si, ], children_df, level + 1, counter + si))
             }
-            sub_html <- paste(sub_parts, collapse = "")
+            sub_html <- sprintf('<div class="comment-sub-list" style="margin-top:4px;">%s</div>', paste(sub_parts, collapse = ""))
           }
         }
         

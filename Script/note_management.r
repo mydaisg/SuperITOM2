@@ -630,4 +630,33 @@ note_comment_count_today <- function() {
   finally = { db_disconnect(con) })
 }
 
+##################
+# 记事关键词统计（分类记忆）
+##################
+
+# 记录关键词点击
+note_kw_record_click <- function(keyword) {
+  if (is.null(keyword) || nchar(trimws(keyword)) == 0) return()
+  con <- db_connect()
+  tryCatch({
+    kw <- gsub("'", "''", trimws(keyword))
+    now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+    dbExecute(con, sprintf(
+      "INSERT INTO note_kw_stats (keyword, click_count, last_clicked_at) VALUES ('%s', 1, '%s')
+       ON CONFLICT(keyword) DO UPDATE SET click_count = click_count + 1, last_clicked_at = '%s'",
+      kw, now, now))
+  }, error = function(e) NULL, finally = { db_disconnect(con) })
+}
+
+# 获取热门关键词（按点击次数排序）
+note_kw_get_top <- function(n = 8) {
+  con <- db_connect()
+  tryCatch({
+    r <- dbGetQuery(con, sprintf(
+      "SELECT keyword, click_count FROM note_kw_stats ORDER BY click_count DESC, last_clicked_at DESC LIMIT %d", n))
+    if (nrow(r) == 0) character(0) else r$keyword
+  }, error = function(e) character(0),
+  finally = { db_disconnect(con) })
+}
+
 

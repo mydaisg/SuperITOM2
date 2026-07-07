@@ -93,23 +93,23 @@ note_ui <- function() {
         if (!confirm('删除此评论？')) return;
         Shiny.setInputValue('note_comment_delete', $(this).data('id'), {priority:'event'});
       });
-      // 回复按钮：显示/隐藏回复表单
+      // 回复按钮：显示/隐藏回复表单（.first() 确保只操作当前评论的回复框）
       $(document).on('click','.comment-reply-btn',function(e){
         e.stopPropagation();
         var $item = $(this).closest('.comment-item');
-        $item.find('.comment-reply-form').toggle();
-        $item.find('.comment-reply-input').focus();
+        $item.find('.comment-reply-form').first().toggle();
+        $item.find('.comment-reply-form').first().find('.comment-reply-input').focus();
       });
       // 回复取消
       $(document).on('click','.comment-reply-cancel',function(e){
         e.stopPropagation();
         $(this).closest('.comment-reply-form').hide();
       });
-      // 回复提交
+      // 回复提交（从当前按钮所在的回复表单取值）
       $(document).on('click','.comment-reply-submit',function(e){
         e.stopPropagation();
         var id = $(this).data('id');
-        var text = $(this).closest('.comment-item').find('.comment-reply-input').val();
+        var text = $(this).closest('.comment-reply-form').find('.comment-reply-input').val();
         if (!text || text.trim() === '') return;
         Shiny.setInputValue('note_reply_submit', {id: id, text: text}, {priority:'event'});
       });

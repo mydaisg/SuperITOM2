@@ -1298,6 +1298,16 @@ migrate_database <- function() {
       cat("数据库迁移完成：dev_logs 表已添加 solution_en 列\n")
     }
 
+    # 迁移：记事关键词统计表
+    if (!"note_kw_stats" %in% tables) {
+      dbExecute(con, "CREATE TABLE note_kw_stats (
+        keyword TEXT PRIMARY KEY,
+        click_count INTEGER DEFAULT 0,
+        last_clicked_at TEXT
+      )")
+      cat("数据库迁移完成：已创建 note_kw_stats 表\n")
+    }
+
   }, error = function(e) {
     cat("数据库迁移失败:", e$message, "\n")
   }, finally = {
