@@ -103,6 +103,10 @@ sol_sanitize_html <- function(raw) {
   # 5. 修复内联 onclick：替换外部函数调用为内联 DOM 操作
   txt <- gsub("onclick=\"toggleSec\\(this\\)\"",
     "onclick=\"this.nextElementSibling.classList.toggle('open')\"", txt)
+  txt <- gsub("onclick=\"toggleMI\\(this\\)\"",
+    "onclick=\"var b=this.nextElementSibling,v=b.style.display!=='block';b.style.display=v?'block':'none';this.querySelector('.mi-arr').textContent=v?'▾':'▸';\"", txt)
+  txt <- gsub("onclick=\"toggleL2\\(this\\)\"",
+    "onclick=\"var b=this.nextElementSibling;b.style.display=b.style.display==='none'?'block':'none';\"", txt)
   txt <- gsub("onclick=\"switchTab\\('[^']*'\\)\"",
     "onclick=\"\"", txt)  # switchTab 无脚本支持，禁用
 
