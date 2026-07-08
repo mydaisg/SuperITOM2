@@ -237,6 +237,55 @@ daily_report_ui <- function() {
         font-size: 11px; color: white; margin-right: 6px;
       }
       .dr-empty { color: #999; font-size: 13px; padding: 8px 12px; }
+      /* ── 时间流水：整点区间 + 左右交替时间轴 ── */
+      .dr-timeline { max-width: 900px; margin: 0 auto; padding: 20px 0 40px; position: relative; }
+      .dr-timeline::before {
+        content: ''; position: absolute; left: 50%; top: 0; bottom: 0;
+        width: 4px; background: linear-gradient(180deg, #e0e7ff, #c7d2fe 30%, #a5b4fc 70%, #e0e7ff);
+        transform: translateX(-50%); border-radius: 2px;
+      }
+      .tl-header { text-align: center; font-size: 15px; font-weight: bold; color: #4f46e5; margin-bottom: 24px; }
+      .tl-hour-label {
+        position: relative; left: 50%; transform: translateX(-50%);
+        width: 52px; text-align: center; background: #f8f9ff; border: 1px solid #c7d2fe;
+        color: #6366f1; font-size: 11px; font-weight: 600; border-radius: 12px;
+        padding: 2px 0; margin: 8px 0; z-index: 2;
+      }
+      .tl-item {
+        position: relative; width: 50%; padding: 8px 40px 8px 0; box-sizing: border-box;
+        min-height: 60px;
+      }
+      .tl-item:nth-child(even) {
+        margin-left: 50%; padding: 8px 0 8px 40px;
+      }
+      .tl-item::before {
+        content: ''; position: absolute; right: -8px; top: 22px;
+        width: 16px; height: 16px; border-radius: 50%; background: #fff;
+        border: 4px solid #6366f1; box-shadow: 0 0 0 2px #e0e7ff; z-index: 3;
+      }
+      .tl-item:nth-child(even)::before { left: -8px; right: auto; }
+      .tl-item::after {
+        content: ''; position: absolute; right: 0; top: 28px; width: 32px; height: 2px; background: #c7d2fe; z-index: 1;
+      }
+      .tl-item:nth-child(even)::after { left: 0; right: auto; }
+      .tl-card {
+        background: #fff; border: 1px solid #e0e7ff; border-radius: 10px;
+        padding: 12px 14px; box-shadow: 0 2px 6px rgba(99,102,241,0.08);
+        position: relative; transition: all .15s;
+      }
+      .tl-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(99,102,241,0.15); border-color: #a5b4fc; }
+      .tl-card::before {
+        content: ''; position: absolute; top: 20px; width: 10px; height: 10px; background: #fff; border: 1px solid #e0e7ff;
+        transform: rotate(45deg); border-right-color: #fff; border-top-color: #fff;
+      }
+      .tl-item:nth-child(odd) .tl-card::before { right: -6px; }
+      .tl-item:nth-child(even) .tl-card::before { left: -6px; transform: rotate(45deg); border-left-color: #fff; border-bottom-color: #fff; border-right-color: #e0e7ff; border-top-color: #e0e7ff; }
+      .tl-card-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+      .tl-card-hd-left { display: flex; align-items: center; gap: 8px; }
+      .tl-card-hd b { font-size: 13px; color: #4338ca; }
+      .tl-time-badge { font-size: 10px; background: #ede9fe; color: #5b21b6; border-radius: 6px; padding: 1px 8px; font-family: Consolas, monospace; }
+      .tl-tag { font-size: 10px; background: #e0f2fe; color: #0369a1; border-radius: 10px; padding: 1px 8px; white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
+      .tl-card-bd { font-size: 12px; color: #475569; line-height: 1.6; white-space: pre-wrap; }
     ")),
     fluidRow(
       column(2, dateInput("dr_date", "选择日期", value = Sys.Date(), language = "zh-CN")),
@@ -255,7 +304,10 @@ daily_report_ui <- function() {
         actionButton("dr_copy_text", "复制文本日报", class = "btn-default btn-sm", icon = icon("copy"))))
     ),
     hr(),
-    uiOutput("dr_report_content"),
+    tabsetPanel(
+      tabPanel("人员日报", uiOutput("dr_report_content")),
+      tabPanel("⏱ 时间流水", uiOutput("dr_timeline_content"))
+    ),
     # 隐藏textarea用于存放纯文本日报
     tags$textarea(id = "dr_text_content", style = "display:none;"),
     tags$script(HTML("
@@ -710,6 +762,63 @@ daily_report_server <- function(input, output, session, rv) {
     session$sendCustomMessage("dr_update_text", text_report)
 
     HTML(cards_html)
+  })
+
+  # 时间流水
+  output$dr_timeline_content <- renderUI({
+    req(rv$logged_in)
+    data <- dr_data()
+    if (is.null(data)) return(div(class = "dr-empty", "请选择日期并点击刷新"))
+    note_comments <- data$note_comments
+    if (is.null(note_comments) || nrow(note_comments) == 0)
+      return(div(class = "dr-empty", style = "text-align:center;padding:40px;", "当天暂无评论记录"))
+
+    today_str <- format(as.Date(data$date), "%Y-%m-%d")
+    today_comments <- note_comments[substr(note_comments$created_at, 1, 10) == today_str &
+      note_comments$note_no != "NTE20260606002", , drop = FALSE]
+    if (nrow(today_comments) == 0)
+      return(div(class = "dr-empty", style = "text-align:center;padding:40px;", "当天暂无评论记录"))
+
+    today_comments <- today_comments[order(today_comments$created_at), ]
+    timeline_html <- ""
+
+    # 整点区间标签（06:00 ~ 23:00，预留全天位置）
+    hours <- 6:23
+    for (h in hours) {
+      hr_label <- sprintf("%02d:00", h)
+      timeline_html <- paste0(timeline_html, sprintf('<div class="tl-hour-label">%s</div>', hr_label))
+      # 放置该小时内发生的评论
+      hr_str <- sprintf("%02d:", h)
+      hr_items <- today_comments[substr(today_comments$created_at, 12, 14) == hr_str, , drop = FALSE]
+      if (nrow(hr_items) > 0) {
+        for (ti in seq_len(nrow(hr_items))) {
+          tc <- hr_items[ti, ]
+          tm <- substr(tc$created_at, 12, 16)
+          who <- if (!is.na(tc$display_name) && nchar(tc$display_name) > 0) tc$display_name else tc$username
+          content <- trimws(gsub("\n+", " ", tc$content %||% ""))
+          if (nchar(content) > 200) content <- paste0(substr(content, 1, 200), "…")
+          note_tag <- if (!is.na(tc$note_title) && nchar(tc$note_title) > 0)
+            sprintf('<span class="tl-tag">%s</span>', tc$note_title) else ""
+          timeline_html <- paste0(timeline_html, sprintf(
+            '<div class="tl-item">
+              <div class="tl-card">
+                <div class="tl-card-hd">
+                  <div class="tl-card-hd-left"><b>%s</b>%s</div>
+                  <span class="tl-time-badge">%s</span>
+                </div>
+                <div class="tl-card-bd">%s</div>
+              </div>
+            </div>',
+            who, note_tag, tm, content))
+        }
+      }
+    }
+
+    HTML(sprintf(
+      '<div class="dr-timeline">
+        <div class="tl-header">⏱ 当天共 %d 条评论</div>
+        %s
+      </div>', nrow(today_comments), timeline_html))
   })
 
   # 复制完成通知

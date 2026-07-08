@@ -106,7 +106,37 @@ sol_sanitize_html <- function(raw) {
   txt <- gsub("onclick=\"switchTab\\('[^']*'\\)\"",
     "onclick=\"\"", txt)  # switchTab 无脚本支持，禁用
 
-  list(styles = trimws(css_text), body = trimws(txt))
+  list(styles = sol_scope_css(css_text), body = trimws(txt))
+}
+
+# 限定 CSS 作用域：所有选择器前加 .sol-detail-content
+sol_scope_css <- function(css) {
+  if (is.null(css) || nchar(trimws(css)) == 0) return(css)
+  # 按 } 分割每条规则
+  rules <- strsplit(css, "\\}", fixed = FALSE)[[1]]
+  scoped <- c()
+  for (rule in rules) {
+    rule <- trimws(rule)
+    if (nchar(rule) == 0) next
+    # 找 { 位置
+    brace_pos <- regexpr("\\{", rule)
+    if (brace_pos < 0) { scoped <- c(scoped, rule); next }
+    sel <- trimws(substr(rule, 1, brace_pos - 1))
+    body <- substr(rule, brace_pos, nchar(rule))
+    # 跳过 @ 规则和注释
+    if (grepl("^@|^/\\*|^$", sel)) { scoped <- c(scoped, paste0(sel, " ", body, "}")); next }
+    # 按逗号分割各选择器，每个前加 .sol-detail-content 
+    sels <- strsplit(sel, ",", fixed = FALSE)[[1]]
+    sels <- sapply(sels, function(s) {
+      s <- trimws(s)
+      if (nchar(s) == 0) return(s)
+      # 已经有限定符的跳过
+      if (grepl("^\\.sol-detail-content", s)) return(s)
+      paste(".sol-detail-content", s)
+    }, USE.NAMES = FALSE)
+    scoped <- c(scoped, paste0(paste(sels, collapse = ", "), " ", body, "}"))
+  }
+  paste(scoped, collapse = "\n")
 }
 
 solution_delete <- function(id) {

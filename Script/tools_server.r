@@ -99,12 +99,32 @@ tools_server <- function(input, output, session, rv) {
     removeModal()
   })
 
-  # ● → +
+  # 奇偶合并：奇数行加:，偶数行拼接到上一行后面
+  observeEvent(input$tool_merge_btn, {
+    req(rv$logged_in)
+    txt <- input$tool_text_in %||% ""
+    if (nchar(trimws(txt)) == 0) { showNotification("请先输入文本", type = "warning"); return() }
+    lines <- strsplit(txt, "\\r?\\n")[[1]]
+    lines <- trimws(lines)
+    lines <- lines[lines != ""]
+    result <- c()
+    for (i in seq(1, length(lines), by = 2)) {
+      odd <- lines[i]
+      if (i + 1 <= length(lines)) {
+        result <- c(result, paste0(odd, ":", lines[i+1]))
+      } else {
+        result <- c(result, paste0(odd, ":"))
+      }
+    }
+    output$tool_text_out <- renderText({ paste(result, collapse = "\n") })
+  })
+
+  # ● / · → +
   observeEvent(input$tool_dot2plus_btn, {
     req(rv$logged_in)
     txt <- input$tool_text_in %||% ""
     if (nchar(trimws(txt)) == 0) { showNotification("请先输入文本", type = "warning"); return() }
-    result <- gsub("●", "+", txt, fixed = TRUE)
+    result <- gsub("[●·]", "+", txt)
     output$tool_text_out <- renderText({ result })
   })
 

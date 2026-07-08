@@ -21,6 +21,7 @@ tools_ui <- function() {
                 actionButton("tool_delnum_btn", "去序号", icon = icon("list-ul"), class = "btn-sm btn-default"),
                 actionButton("tool_nospc_btn", "去空格", icon = icon("compress"), class = "btn-sm btn-default"),
                 actionButton("tool_prefix_btn", "加前缀", icon = icon("plus-square"), class = "btn-sm btn-default"),
+                actionButton("tool_merge_btn", "奇偶合并", icon = icon("object-group"), class = "btn-sm btn-info"),
                 actionButton("tool_dot2plus_btn", "● → +", icon = icon("circle"), class = "btn-sm btn-warning"),
                 actionButton("tool_num2plus_btn", "1、 → +", icon = icon("hashtag"), class = "btn-sm btn-warning")
               )
