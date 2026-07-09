@@ -68,9 +68,11 @@ dev_log_server <- function(input, output, session, rv) {
 
         parts <- list(
           # 标题行：编号 + 模块标签 + 标题 + 时间（同行）
-          tags$div(style = "display:flex; align-items:flex-start; gap:6px; margin-bottom:6px;",
+          tags$div(style = "display:flex; align-items:flex-start; gap:6px; margin-bottom:6px; flex-wrap:wrap;",
             if (nchar(log_no_str) > 0) tags$span(style = "font-size:10px; color:#888; font-family:Consolas,monospace; white-space:nowrap; margin-top:3px; flex-shrink:0;", log_no_str),
             tags$span(style = "display:inline-block; padding:1px 7px; border-radius:10px; font-size:11px; background:#ede9fe; color:#5b21b6; white-space:nowrap; flex-shrink:0;", r$module %||% "全局"),
+            if (!is.null(r$commit_msg) && !is.na(r$commit_msg) && nchar(r$commit_msg) > 0)
+              tags$span(style = "display:inline-block; padding:1px 6px; border-radius:3px; font-size:10px; background:#1e1e1e; color:#7ecb7e; font-family:Consolas,monospace; white-space:nowrap; flex-shrink:0;", r$commit_msg),
             tags$div(style = "flex:1; min-width:0;",
               tags$div(style = "font-size:15px; font-weight:bold; color:#222; line-height:1.3;",
                 r$title %||% "",

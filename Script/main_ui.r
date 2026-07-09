@@ -1168,6 +1168,13 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
           system_architecture_ui()
         )
       ),
+      if (can_admin("admin_meta_task")) tabPanel(
+        "元任务",
+        icon = icon("code-branch"),
+        fluidPage(
+          meta_task_ui()
+        )
+      ),
       if (can_admin("admin_inventory")) tabPanel(
         "模块清单",
         icon = icon("sitemap"),

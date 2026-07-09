@@ -345,15 +345,19 @@ daily_report_server <- function(input, output, session, rv) {
     updateDateInput(session, "dr_date", value = Sys.Date() - 1)
   })
   observeEvent(input$dr_this_week, {
-    dr_month_mode(NULL)
     d <- Sys.Date()
     monday <- d - as.integer(format(d, "%u")) + 1
+    sunday <- min(monday + 6, d)
+    dr_month_mode(list(start = monday, end = sunday,
+                       label = sprintf("本周 (%s~%s)", format(monday, "%m/%d"), format(sunday, "%m/%d"))))
     updateDateInput(session, "dr_date", value = monday)
   })
   observeEvent(input$dr_last_week, {
-    dr_month_mode(NULL)
     d <- Sys.Date() - 7
     monday <- d - as.integer(format(d, "%u")) + 1
+    sunday <- monday + 6
+    dr_month_mode(list(start = monday, end = sunday,
+                       label = sprintf("上周 (%s~%s)", format(monday, "%m/%d"), format(sunday, "%m/%d"))))
     updateDateInput(session, "dr_date", value = monday)
   })
   observeEvent(input$dr_this_month, {
@@ -771,26 +775,44 @@ daily_report_server <- function(input, output, session, rv) {
     if (is.null(data)) return(div(class = "dr-empty", "请选择日期并点击刷新"))
     note_comments <- data$note_comments
     if (is.null(note_comments) || nrow(note_comments) == 0)
-      return(div(class = "dr-empty", style = "text-align:center;padding:40px;", "当天暂无评论记录"))
+      return(div(class = "dr-empty", style = "text-align:center;padding:40px;", "暂无评论记录"))
 
-    today_str <- format(as.Date(data$date), "%Y-%m-%d")
-    today_comments <- note_comments[substr(note_comments$created_at, 1, 10) == today_str &
-      note_comments$note_no != "NTE20260606002", , drop = FALSE]
-    if (nrow(today_comments) == 0)
-      return(div(class = "dr-empty", style = "text-align:center;padding:40px;", "当天暂无评论记录"))
+    # 多日模式：取日期范围；单日模式：取当天
+    if (isTRUE(data$month_mode) && !is.null(data$month_dates)) {
+      dates <- sort(data$month_dates)
+      period_label <- data$month_label %||% paste(format(min(dates), "%m/%d"), "~", format(max(dates), "%m/%d"))
+    } else {
+      dates <- as.Date(data$date)
+      period_label <- format(dates, "%Y-%m-%d")
+    }
 
-    today_comments <- today_comments[order(today_comments$created_at), ]
+    total_count <- 0
     timeline_html <- ""
 
-    # 整点区间标签（06:00 ~ 23:00，预留全天位置）
-    hours <- 6:23
-    for (h in hours) {
-      hr_label <- sprintf("%02d:00", h)
-      timeline_html <- paste0(timeline_html, sprintf('<div class="tl-hour-label">%s</div>', hr_label))
-      # 放置该小时内发生的评论
-      hr_str <- sprintf("%02d:", h)
-      hr_items <- today_comments[substr(today_comments$created_at, 12, 14) == hr_str, , drop = FALSE]
-      if (nrow(hr_items) > 0) {
+    # 用索引遍历保持 Date 类（for-in 会剥除 S3 class）
+    for (di in seq_along(dates)) {
+      d <- dates[di]
+      day_str <- format(d, "%Y-%m-%d")
+      day_label <- format(d, "%m月%d日 %a")
+      day_comments <- note_comments[substr(note_comments$created_at, 1, 10) == day_str &
+        note_comments$note_no != "NTE20260606002", , drop = FALSE]
+      if (nrow(day_comments) == 0) next
+      day_comments <- day_comments[order(day_comments$created_at), ]
+      total_count <- total_count + nrow(day_comments)
+
+      # 日期标题行
+      timeline_html <- paste0(timeline_html, sprintf(
+        '<div class="tl-hour-label" style="width:auto;font-size:13px;color:#4338ca;border-color:#a5b4fc;background:#eef2ff;margin:16px 0 8px;">📅 %s · %d条</div>',
+        day_label, nrow(day_comments)))
+
+      # 整点区间标签（06:00 ~ 23:00）
+      hours <- 6:23
+      for (h in hours) {
+        hr_label <- sprintf("%02d:00", h)
+        hr_str <- sprintf("%02d:", h)
+        hr_items <- day_comments[substr(day_comments$created_at, 12, 14) == hr_str, , drop = FALSE]
+        if (nrow(hr_items) == 0) next
+        timeline_html <- paste0(timeline_html, sprintf('<div class="tl-hour-label">%s</div>', hr_label))
         for (ti in seq_len(nrow(hr_items))) {
           tc <- hr_items[ti, ]
           tm <- substr(tc$created_at, 12, 16)
@@ -814,11 +836,14 @@ daily_report_server <- function(input, output, session, rv) {
       }
     }
 
+    if (total_count == 0)
+      return(div(class = "dr-empty", style = "text-align:center;padding:40px;", "所选时间范围内暂无评论记录"))
+
     HTML(sprintf(
       '<div class="dr-timeline">
-        <div class="tl-header">⏱ 当天共 %d 条评论</div>
+        <div class="tl-header">⏱ %s · 共 %d 条评论</div>
         %s
-      </div>', nrow(today_comments), timeline_html))
+      </div>', period_label, total_count, timeline_html))
   })
 
   # 复制完成通知

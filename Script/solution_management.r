@@ -107,8 +107,9 @@ sol_sanitize_html <- function(raw) {
     "onclick=\"var b=this.nextElementSibling,v=b.style.display!=='block';b.style.display=v?'block':'none';this.querySelector('.mi-arr').textContent=v?'▾':'▸';\"", txt)
   txt <- gsub("onclick=\"toggleL2\\(this\\)\"",
     "onclick=\"var b=this.nextElementSibling;b.style.display=b.style.display==='none'?'block':'none';\"", txt)
-  txt <- gsub("onclick=\"switchTab\\('[^']*'\\)\"",
-    "onclick=\"\"", txt)  # switchTab 无脚本支持，禁用
+  # switchTab('tabN') → 内联 Tab 切换（tabs 和 container 是相邻兄弟 div）
+  txt <- gsub("onclick=\"switchTab\\('([^']+)'\\)\"",
+    "onclick=\"var p=this.parentElement,q=p.nextElementSibling,ts=p.querySelectorAll('.tab'),cs=q.querySelectorAll('.tab-content'),id='\\1',i;for(i=0;i<ts.length;i++){ts[i].classList.remove('active');if(i<cs.length)cs[i].classList.remove('active')}this.classList.add('active');var x=q.querySelector('#'+id);if(x)x.classList.add('active')\"", txt)
 
   list(styles = sol_scope_css(css_text), body = trimws(txt))
 }

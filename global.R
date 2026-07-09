@@ -1297,6 +1297,10 @@ migrate_database <- function() {
       dbExecute(con, "ALTER TABLE dev_logs ADD COLUMN solution_en TEXT")
       cat("数据库迁移完成：dev_logs 表已添加 solution_en 列\n")
     }
+    if (!"commit_msg" %in% dl_cols$name) {
+      dbExecute(con, "ALTER TABLE dev_logs ADD COLUMN commit_msg TEXT")
+      cat("数据库迁移完成：dev_logs 表已添加 commit_msg 列\n")
+    }
 
     # 迁移：方案表
     if (!"solutions" %in% tables) {

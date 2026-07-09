@@ -416,7 +416,8 @@ MODULE_INVENTORY <- list(
       list(code="admin_github",  name="GitHub操作"),
       list(code="admin_rbac",    name="授权管理"),
       list(code="admin_inventory", name="模块清单"),
-      list(code="admin_architecture", name="系统架构")
+      list(code="admin_architecture", name="系统架构"),
+      list(code="admin_meta_task", name="元任务")
     ),
     key_funcs = c(
       "user_get_all() / user_add() — 用户列表/添加",

@@ -56,15 +56,27 @@ dev_log_get_all <- function(module = NULL, from_date = NULL, to_date = NULL, sea
 }
 
 # 写入一条开发日志
-dev_log_add <- function(module, title, requirement, solution, result, result_en = NULL, requirement_en = NULL, solution_en = NULL, code_snippet = NULL, files_changed = NULL, operator = NULL) {
+# ★ 英文字段规范（参照 DL20260702007）：
+#   requirement_en : LLM 分析和理解，用英文重新表述需求（1~2句）
+#   solution_en    : LLM 方案英文描述（1~2句）
+#   result_en      : LLM 总结 + GitHub Commit 描述（~6 单词，可缩写简称）
+#   commit_msg     : 同 result_en 的简短版本，用于 Git commit（~50字符）
+# 操作示例：
+#   dev_log_add(module="方案", title="...",
+#     requirement="中文需求...",  requirement_en="English req summary...",
+#     solution="中文方案...",     solution_en="English solution...",
+#     result="中文结果...",       result_en="Short commit msg, ~6 words",
+#     commit_msg="fix: short 6-word commit message",
+#     code_snippet="...", files_changed="...")
+dev_log_add <- function(module, title, requirement, solution, result, result_en = NULL, requirement_en = NULL, solution_en = NULL, commit_msg = NULL, code_snippet = NULL, files_changed = NULL, operator = NULL) {
   log_no <- dev_log_generate_number()
   con <- db_connect()
   tryCatch({
     now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
     op <- if (is.null(operator) || length(operator) == 0) "系统" else operator$username[1] %||% "系统"
     dbExecute(con, sprintf(
-      "INSERT INTO dev_logs (log_no, module, title, requirement, requirement_en, solution, solution_en, result, result_en, code_snippet, files_changed, created_by, created_at)
-       VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')",
+      "INSERT INTO dev_logs (log_no, module, title, requirement, requirement_en, solution, solution_en, result, result_en, commit_msg, code_snippet, files_changed, created_by, created_at)
+       VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')",
       log_no,
       gsub("'","''", module %||% ""),
       gsub("'","''", title %||% ""),
@@ -74,6 +86,7 @@ dev_log_add <- function(module, title, requirement, solution, result, result_en 
       gsub("'","''", solution_en %||% ""),
       gsub("'","''", result %||% ""),
       gsub("'","''", result_en %||% ""),
+      gsub("'","''", commit_msg %||% result_en %||% ""),
       gsub("'","''", code_snippet %||% ""),
       gsub("'","''", files_changed %||% ""),
       gsub("'","''", op),
