@@ -120,7 +120,8 @@ dev_log_server <- function(input, output, session, rv) {
         tags$div(style = "background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:12px; height:100%; box-sizing:border-box;", parts)
       })
       items_list <- c(items_list, list(
-        tags$div(style = "font-size:14px; font-weight:bold; color:#555; margin:12px 0 8px; grid-column:1/-1;", d, sprintf(" · %d 条", nrow(grp))),
+        tags$div(style = "font-size:14px; font-weight:bold; color:#fff; margin:16px 0 8px; grid-column:1/-1; background:linear-gradient(90deg,#1a237e,#1565c0); padding:6px 14px; border-radius:6px;",
+          icon("calendar"), " ", d, tags$span(style = "font-weight:normal; opacity:0.8; margin-left:8px;", sprintf("· %d 条", nrow(grp)))),
         cards
       ))
     }

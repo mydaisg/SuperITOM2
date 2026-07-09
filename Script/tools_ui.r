@@ -153,6 +153,38 @@ tools_ui <- function() {
         ),
         tabPanel("AI",
           ai_ui()
+        ),
+        tabPanel("记算",
+          icon = icon("calculator"),
+          fluidRow(
+            column(6,
+              h5("输入数据（每行一组数字，支持负数、加减乘除）"),
+              textAreaInput("tool_calc_in", NULL, width = "100%", rows = 8,
+                placeholder = "每行输入数字，空格或换行分隔\n如：\n100 200 300\n50 -20\n5*8+10"),
+              div(style = "display:flex; gap:4px; flex-wrap:wrap;",
+                actionButton("tool_calc_sum", "求和 Σ", icon = icon("plus"), class = "btn-primary btn-sm"),
+                actionButton("tool_calc_avg", "平均", icon = icon("chart-bar"), class = "btn-info btn-sm"),
+                actionButton("tool_calc_mul", "连乘 ∏", icon = icon("times"), class = "btn-warning btn-sm"),
+                actionButton("tool_calc_max", "最大值", class = "btn-default btn-sm"),
+                actionButton("tool_calc_min", "最小值", class = "btn-default btn-sm"),
+                actionButton("tool_calc_count", "计数", class = "btn-default btn-sm"),
+                actionButton("tool_calc_clear", "清空", icon = icon("trash"), class = "btn-danger btn-sm")
+              )
+            ),
+            column(6,
+              h5("计算结果"),
+              verbatimTextOutput("tool_calc_out"),
+              tags$hr(style = "margin:6px 0;"),
+              div(style = "display:flex; gap:4px; align-items:center;",
+                tags$b("参与下次计算：", style = "font-size:12px;"),
+                actionButton("tool_calc_reuse", "继续加", icon = icon("redo"), class = "btn-success btn-xs"),
+                actionButton("tool_calc_reset", "重置", class = "btn-default btn-xs")
+              ),
+              tags$hr(style = "margin:6px 0;"),
+              h5("计算历史", style = "margin-top:4px;"),
+              uiOutput("tool_calc_history")
+            )
+          )
         )
       )
     )

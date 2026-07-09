@@ -182,4 +182,110 @@ tools_server <- function(input, output, session, rv) {
   observeEvent(input$tool_py_num,   { session$sendCustomMessage("doPinyin", "num") })
   observeEvent(input$tool_py_char,  { session$sendCustomMessage("doPinyin", "char") })
   observeEvent(input$tool_py_mixed, { session$sendCustomMessage("doPinyin", "mixed") })
+
+  # ═══════════════════ 记算 ═══════════════════
+  calc_total <- reactiveVal(0)
+  calc_history <- reactiveVal(list())
+
+  # 解析每行：提取数字，-前缀转负，支持基本算术表达式
+  parse_line <- function(line) {
+    line <- trimws(line)
+    if (nchar(line) == 0) return(numeric(0))
+    # 尝试直接 eval 算术表达式（如 5*8+10）
+    if (grepl("[*+/]", line) && !grepl("^[-]?[0-9. ]+$", line)) {
+      result <- tryCatch(eval(parse(text = line)), error = function(e) NULL)
+      if (is.numeric(result)) return(result)
+    }
+    # 空格分隔的数字（含负数）
+    parts <- strsplit(line, "\\s+")[[1]]
+    nums <- suppressWarnings(as.numeric(parts))
+    nums[!is.na(nums)]
+  }
+
+  do_calc <- function(mode) {
+    req(rv$logged_in)
+    txt <- input$tool_calc_in %||% ""
+    lines <- strsplit(txt, "\n")[[1]]
+    all_nums <- numeric(0)
+    line_exprs <- character(0)
+    for (line in lines) {
+      nums <- parse_line(line)
+      if (length(nums) > 0) {
+        all_nums <- c(all_nums, nums)
+        line_exprs <- c(line_exprs, paste(nums, collapse = " + "))
+      }
+    }
+    if (length(all_nums) == 0) {
+      output$tool_calc_out <- renderText("无有效数字")
+      return()
+    }
+    result <- switch(mode,
+      sum = sum(all_nums),
+      avg = mean(all_nums),
+      mul = prod(all_nums),
+      max = max(all_nums),
+      min = min(all_nums),
+      count = length(all_nums),
+      sum
+    )
+    # 输出表达式
+    expr <- switch(mode,
+      sum = paste(line_exprs, collapse = "\n+ "),
+      avg = sprintf("(%s) / %d", paste(all_nums, collapse = " + "), length(all_nums)),
+      mul = paste(paste(all_nums, collapse = " x "), "\n= "),
+      max = paste("max(", paste(all_nums, collapse = ", "), ")"),
+      min = paste("min(", paste(all_nums, collapse = ", "), ")"),
+      count = sprintf("共 %d 个数字", length(all_nums)),
+      ""
+    )
+    output$tool_calc_out <- renderText(sprintf("%s\n= %s", expr, format(result, scientific = FALSE)))
+    calc_total(result)
+  }
+
+  observeEvent(input$tool_calc_sum,   { do_calc("sum") })
+  observeEvent(input$tool_calc_avg,   { do_calc("avg") })
+  observeEvent(input$tool_calc_mul,   { do_calc("mul") })
+  observeEvent(input$tool_calc_max,   { do_calc("max") })
+  observeEvent(input$tool_calc_min,   { do_calc("min") })
+  observeEvent(input$tool_calc_count, { do_calc("count") })
+
+  # 添加当前结果到累积
+  observeEvent(input$tool_calc_reuse, {
+    req(rv$logged_in)
+    v <- calc_total()
+    cur <- input$tool_calc_in %||% ""
+    new_txt <- if (nchar(trimws(cur)) == 0) as.character(v) else paste0(cur, "\n", v)
+    updateTextAreaInput(session, "tool_calc_in", value = new_txt)
+    # 记录历史
+    h <- calc_history()
+    h <- c(h, list(list(value = v, time = format(Sys.time(), "%H:%M:%S"), expr = paste0("+ ", v))))
+    if (length(h) > 50) h <- h[(length(h) - 49):length(h)]
+    calc_history(h)
+  })
+
+  observeEvent(input$tool_calc_reset, {
+    calc_total(0)
+    calc_history(list())
+  })
+
+  observeEvent(input$tool_calc_clear, {
+    updateTextAreaInput(session, "tool_calc_in", value = "")
+    calc_total(0)
+    calc_history(list())
+    output$tool_calc_out <- renderText("")
+  })
+
+  output$tool_calc_history <- renderUI({
+    req(rv$logged_in)
+    h <- calc_history()
+    if (length(h) == 0) return(tags$p(style = "color:#999;font-size:12px;", "暂无历史"))
+    acc <- 0
+    do.call(tagList, lapply(rev(seq_along(h)), function(i) {
+      acc <<- acc + h[[i]]$value
+      tags$div(style = "font-size:12px;padding:2px 0;border-bottom:1px dotted #eee;display:flex;justify-content:space-between;",
+        tags$span(h[[i]]$expr),
+        tags$span(style = "color:#2e7d32;font-weight:bold;", sprintf("累积: %s", format(acc, scientific = FALSE)))
+      )
+    }))
+  })
 }

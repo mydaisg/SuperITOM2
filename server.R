@@ -18,6 +18,7 @@ source("Script/data_center_server.r")   # 数据中心模块（数据归集）
 source("Script/integration_management.r") # 集成模块数据层
 source("Script/integration_server.r")     # 集成模块服务端
 source("Script/tools_server.r")         # 工具模块
+source("Script/ai_management.r")       # AI 模块数据层
 source("Script/ai_server.r")           # AI 模块
 source("Script/process_engine.r")       # 流程引擎核心（定义 %||% 等工具函数，network_test.r 依赖）
 source("Script/github_autosubmit.r") # GitHub自动提交功能
@@ -3398,19 +3399,32 @@ server <- function(input, output, session) {
     updateTabsetPanel(session, "main_tabs", selected = "工单")
   })
 
-  # 最近8条开发日志
+  # 最近 N 条元任务评论（NTE20260606002）
   output$home_latest_dev_logs <- renderUI({
     req(rv$logged_in)
     rv$home_dev_refresh
-    latest <- tryCatch(dev_log_get_all(NULL, NULL, NULL, NULL), error = function(e) data.frame())
-    if (nrow(latest) == 0) return(tags$p(style="color:#999;font-size:12px;text-align:center;margin:0;","暂无"))
-    latest <- head(latest, 8)
-    do.call(tagList, lapply(seq_len(nrow(latest)), function(i) {
-      r <- latest[i,]
+    con <- db_connect()
+    comments <- tryCatch({
+      dbGetQuery(con, "SELECT nc.id, nc.content, nc.status, nc.created_at, nc.created_by, u.display_name
+        FROM note_comments nc
+        LEFT JOIN users u ON nc.created_by = u.id
+        WHERE nc.note_id = (SELECT id FROM notes WHERE note_no = 'NTE20260606002')
+        ORDER BY nc.created_at DESC LIMIT 8")
+    }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+    if (nrow(comments) == 0) return(tags$p(style="color:#999;font-size:12px;text-align:center;margin:0;","暂无"))
+    do.call(tagList, lapply(seq_len(nrow(comments)), function(i) {
+      r <- comments[i,]
+      is_done <- !is.na(r$status) && r$status == "completed"
+      status_badge <- if (is_done)
+        tags$span(style="display:inline-block;background:#d4edda;color:#155724;border-radius:10px;padding:0 6px;font-size:10px;margin-right:4px;", "✅ 完成")
+      else
+        tags$span(style="display:inline-block;background:#fff3cd;color:#856404;border-radius:10px;padding:0 6px;font-size:10px;margin-right:4px;", "⏳ 待开")
+      preview <- if (nchar(r$content) > 60) paste0(substr(r$content, 1, 60), "…") else r$content
       tags$div(style="font-size:12px; padding:3px 0; border-bottom:1px dotted #eee;",
-        tags$span(style="color:#888;font-family:Consolas,monospace;margin-right:4px;", r$log_no),
-        tags$span(style="color:#333;", r$title),
-        tags$span(style="color:#bbb;float:right;", substr(r$created_at,12,16))
+        tags$span(style="color:#888;font-family:Consolas,monospace;margin-right:4px;", sprintf("#%d", r$id)),
+        status_badge,
+        tags$span(style="color:#333;", preview),
+        tags$span(style="color:#bbb;float:right;", substr(r$created_at, 12, 16))
       )
     }))
   })
@@ -3507,7 +3521,7 @@ server <- function(input, output, session) {
     }))
   })
 
-  # 快速开发日志搜索
+  # 快速开发搜索（元任务评论）
   observeEvent(input$home_dl_search_btn, {
     rv$home_dl_search_kw <- trimws(input$home_dl_search %||% "")
   })
@@ -3519,16 +3533,28 @@ server <- function(input, output, session) {
     req(rv$logged_in)
     kw <- rv$home_dl_search_kw
     if (is.null(kw) || nchar(kw) == 0) return(NULL)
-    logs <- tryCatch(dev_log_get_all(NULL, NULL, NULL, kw), error=function(e) data.frame())
-    if (nrow(logs)==0) return(tags$p(style="color:#999;font-size:12px;text-align:center;margin:0;",sprintf("未找到「%s」",kw)))
-    logs <- head(logs, 10)
-    do.call(tagList, lapply(seq_len(nrow(logs)), function(i){
-      r <- logs[i,]
+    con <- db_connect()
+    comments <- tryCatch({
+      dbGetQuery(con, sprintf(
+        "SELECT nc.id, nc.content, nc.status, nc.created_at, u.display_name
+         FROM note_comments nc LEFT JOIN users u ON nc.created_by = u.id
+         WHERE nc.note_id = (SELECT id FROM notes WHERE note_no = 'NTE20260606002')
+         AND nc.content LIKE '%%%s%%' ORDER BY nc.created_at DESC LIMIT 10",
+        gsub("'", "''", kw)))
+    }, error=function(e) data.frame(), finally={db_disconnect(con)})
+    if (nrow(comments)==0) return(tags$p(style="color:#999;font-size:12px;text-align:center;margin:0;",sprintf("未找到「%s」",kw)))
+    do.call(tagList, lapply(seq_len(nrow(comments)), function(i){
+      r <- comments[i,]
+      is_done <- !is.na(r$status) && r$status == "completed"
+      status_badge <- if (is_done)
+        tags$span(style="display:inline-block;background:#d4edda;color:#155724;border-radius:10px;padding:0 6px;font-size:10px;margin-right:4px;", "✅")
+      else
+        tags$span(style="display:inline-block;background:#fff3cd;color:#856404;border-radius:10px;padding:0 6px;font-size:10px;margin-right:4px;", "⏳")
+      preview <- if (nchar(r$content) > 60) paste0(substr(r$content, 1, 60), "…") else r$content
       tags$div(style="font-size:12px;padding:3px 0;border-bottom:1px dotted #eee;",
-        tags$span(style="color:#888;font-family:Consolas,monospace;margin-right:4px;", r$log_no),
-        tags$a(style="color:#333;text-decoration:none;cursor:pointer;",
-          href="#", onclick="Shiny.setInputValue('home_dl_goto',Math.random(),{priority:'event'});return false;",
-          HTML(hl(r$title, kw))),
+        tags$span(style="color:#888;font-family:Consolas,monospace;margin-right:4px;", sprintf("#%d", r$id)),
+        status_badge,
+        tags$span(style="color:#333;", preview),
         tags$span(style="color:#bbb;float:right;", substr(r$created_at,12,16))
       )
     }))

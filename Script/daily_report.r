@@ -679,31 +679,45 @@ daily_report_server <- function(input, output, session, rv) {
           tops <- grp[is.na(grp$parent_id) | grp$parent_id == 0, , drop = FALSE]
           reps <- grp[!(is.na(grp$parent_id) | grp$parent_id == 0), , drop = FALSE]
           text_report <- paste0(text_report, sprintf("%s、 %s\n", dr_cn_number(gi), grp$note_title[1] %||% ""))
+          # 递归渲染子回复。返回 list(txt=文本, has_children=是否有下级)
           txt_render_replies <- function(pid, depth) {
             sub <- reps[reps$parent_id == pid, , drop = FALSE]
-            if (nrow(sub) == 0) return("")
-            indent <- paste(rep("  ", depth), collapse="")
+            if (nrow(sub) == 0) return(list(txt = "", has_children = FALSE))
+            indent <- paste(rep("  ", depth), collapse = "")
             txt <- ""
             for (si in seq_len(nrow(sub))) {
               sc <- sub[si, ]
               if (depth >= 2) {
-                lead <- paste(rep("+", depth), collapse="")
+                lead <- paste(rep("+", depth), collapse = "")
                 txt <- paste0(txt, sprintf("%s%s- %s\n", indent, lead, sc$content))
               } else {
-                lead <- paste(rep("+", depth), collapse="")
+                lead <- paste(rep("+", depth), collapse = "")
                 txt <- paste0(txt, sprintf("%s%s%d、 %s\n", indent, lead, si, sc$content))
               }
-              txt <- paste0(txt, txt_render_replies(sc$id, depth + 1))
+              child_result <- txt_render_replies(sc$id, depth + 1)
+              txt <- paste0(txt, child_result$txt)
+              # 如果此条有子级，后面加空行分隔
+              if (child_result$has_children) {
+                txt <- paste0(txt, "\n")
+              }
             }
-            txt
+            # 返回当前级是否有子级（用于上层判断是否加空行）
+            has_any <- any(apply(sub, 1, function(r) {
+              nrow(reps[reps$parent_id == r["id"], , drop = FALSE]) > 0
+            }))
+            list(txt = txt, has_children = has_any)
           }
           for (ti in seq_len(nrow(tops))) {
             tc <- tops[ti, ]
             text_report <- paste0(text_report, sprintf("%d、 %s\n", ti, tc$content))
-            if (nrow(reps) > 0) {
-              text_report <- paste0(text_report, txt_render_replies(tc$id, 1))
+            child <- txt_render_replies(tc$id, 1)
+            if (nchar(child$txt) > 0) {
+              text_report <- paste0(text_report, child$txt)
+              # 此条有子回复，后加空行
+              text_report <- paste0(text_report, "\n")
             }
           }
+          # 笔记间固定一个空行分隔
           text_report <- paste0(text_report, "\n")
         }
       }

@@ -292,6 +292,23 @@ MODULE_INVENTORY <- list(
     )
   ),
   list(
+    module = "AI", icon = "robot", parent = "工具",
+    frontend = "工具 → AI（子标签页，全网搜索 + 全网AI + 配置）",
+    source = c("Script/ai_management.r", "Script/ai_server.r", "Script/ai_ui.r"),
+    tables = "- (system_config: ai_search_engines / ai_chat_tools JSON)",
+    perms = list(
+      list(code="ai_view",   name="查看AI工具"),
+      list(code="ai_config", name="配置AI工具")
+    ),
+    key_funcs = c(
+      "ai_get_search_engines() — 读取搜索引擎配置JSON",
+      "ai_get_chat_tools() — 读取AI对话工具配置JSON",
+      "ai_save_search_engines(cfg) — 保存搜索引擎配置",
+      "ai_save_chat_tools(cfg) — 保存AI工具配置",
+      "ai_init_seed() — 初始化默认配置(Bing搜索)"
+    )
+  ),
+  list(
     module = "集成", icon = "plug", parent = "工具",
     frontend = "工具 → 集成（子标签页）→ integration_ui()",
     source = c("Script/integration_management.r", "Script/integration_server.r", "Script/integration_ui.r"),
