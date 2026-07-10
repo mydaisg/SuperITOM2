@@ -696,24 +696,22 @@ daily_report_server <- function(input, output, session, rv) {
               }
               child_result <- txt_render_replies(sc$id, depth + 1)
               txt <- paste0(txt, child_result$txt)
-              # 如果此条有子级，后面加空行分隔
-              if (child_result$has_children) {
-                txt <- paste0(txt, "\n")
-              }
             }
-            # 返回当前级是否有子级（用于上层判断是否加空行）
-            has_any <- any(apply(sub, 1, function(r) {
-              nrow(reps[reps$parent_id == r["id"], , drop = FALSE]) > 0
-            }))
+            # 返回当前级是否有子级
+            has_any <- nrow(sub) > 0
             list(txt = txt, has_children = has_any)
           }
           for (ti in seq_len(nrow(tops))) {
             tc <- tops[ti, ]
             text_report <- paste0(text_report, sprintf("%d、 %s\n", ti, tc$content))
-            child <- txt_render_replies(tc$id, 1)
-            if (nchar(child$txt) > 0) {
-              text_report <- paste0(text_report, child$txt)
-              # 此条有子回复，后加空行
+            # 直接检查此评论是否有子回复
+            has_replies <- nrow(reps[reps$parent_id == tc$id, , drop = FALSE]) > 0
+            if (has_replies) {
+              child <- txt_render_replies(tc$id, 1)
+              if (nchar(child$txt) > 0) {
+                text_report <- paste0(text_report, child$txt)
+              }
+              # 有子回复，结尾加空行
               text_report <- paste0(text_report, "\n")
             }
           }
@@ -721,6 +719,8 @@ daily_report_server <- function(input, output, session, rv) {
           text_report <- paste0(text_report, "\n")
         }
       }
+      # 去除连续多余空行（保留最多一个空行 = \n\n）
+      text_report <- gsub("\n{3,}", "\n\n", text_report)
       # 明日计划
       text_report <- paste0(text_report, sprintf("\n明日计划 %s\n重点跟进：\n\n", tomorrow))
     }

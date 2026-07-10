@@ -119,6 +119,13 @@ note_ui <- function() {
           Shiny.setInputValue('note_edit_click', msg.note_id, {priority: 'event'});
         }, 150);
       });
+      // 弹窗打开后，评论列表自动滚到底部
+      Shiny.addCustomMessageHandler('noteScrollCommentBottom', function(msg) {
+        setTimeout(function() {
+          var $list = $('.modal-body .note-comment-list');
+          if ($list.length > 0) $list.scrollTop($list[0].scrollHeight);
+        }, 200);
+      });
       // 搜索框回车触发搜索
       $(document).on('keypress', '#note_search_input', function(e) {
         if (e.which === 13) {

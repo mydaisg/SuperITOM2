@@ -815,7 +815,7 @@ note_server <- function(input, output, session, rv) {
                 </div>
                 <div class="comment-text" style="font-size:13px; line-height:1.5; white-space:pre-wrap; word-break:break-word;">%s</div>
                 <div class="comment-edit-area" style="display:none; margin-top:4px;">
-                  <textarea class="form-control comment-edit-input" style="font-size:13px;" rows="2">%s</textarea>
+                  <textarea class="form-control comment-edit-input" style="font-size:13px;" rows="8">%s</textarea>
                   <div style="margin-top:3px;">
                     <input class="form-control comment-edit-time" style="font-size:11px; width:150px; display:inline;" value="%s" placeholder="时间">
                     <button class="btn btn-xs btn-primary comment-save-btn" style="margin-top:2px;" data-id="%d">保存</button>
@@ -834,7 +834,7 @@ note_server <- function(input, output, session, rv) {
           </div>',
           c$id, clr, indent, clr, cn, status_badge, ca,
           c$content, c$content, ca, c$id,
-          sprintf('<div class="comment-reply-form" style="display:none; margin-top:6px;"><textarea class="form-control comment-reply-input" rows="2" placeholder="回复 %s ..." style="font-size:12px;"></textarea><button class="btn btn-xs btn-primary comment-reply-submit" data-id="%d" style="margin-top:3px;">回复</button><button class="btn btn-xs btn-default comment-reply-cancel" style="margin-top:3px;">取消</button></div>', cn, c$id),
+          sprintf('<div class="comment-reply-form" style="display:none; margin-top:6px;"><textarea class="form-control comment-reply-input" rows="8" placeholder="回复 %s ..." style="font-size:12px;"></textarea><button class="btn btn-xs btn-primary comment-reply-submit" data-id="%d" style="margin-top:3px;">回复</button><button class="btn btn-xs btn-default comment-reply-cancel" style="margin-top:3px;">取消</button></div>', cn, c$id),
           mark_btn, reply_btn, c$id, c$id,
           sub_html
         )
@@ -897,13 +897,13 @@ note_server <- function(input, output, session, rv) {
       ) else tags$p(class = "note-no-comment", style = "color:#999; font-size:12px;", "暂无评论"),
       
       # 评论输入
-      textAreaInput("note_comment_new_m", NULL, rows = 6, placeholder = "添加评论...", width = "100%"),
-      div(style="display:flex; justify-content:space-between; align-items:flex-end; gap:8px; margin-top:4px; margin-bottom:8px;",
-        actionButton("note_add_comment_m", "发表评论", class = "btn-info btn-sm", icon = icon("comment")),
-        if (!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin") div(style="flex:1;",
-          tags$b("📨 派发给", style="font-size:12px; color:#555;"),
-          selectInput("note_edit_dispatch", NULL, choices = NULL, multiple = TRUE, width = "100%")
-        ) else div()
+      textAreaInput("note_comment_new_m", NULL, rows = 8, placeholder = "添加评论...", width = "100%"),
+      div(style="margin-top:0; margin-bottom:4px;",
+        actionButton("note_add_comment_m", "发表评论", class = "btn-info btn-sm", icon = icon("comment"), style = "width:100%;")
+      ),
+      if (!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin") div(style="margin-bottom:8px;",
+        tags$b("📨 派发给", style="font-size:12px; color:#555;"),
+        selectInput("note_edit_dispatch", NULL, choices = NULL, multiple = TRUE, width = "100%")
       )
     )
     
@@ -931,6 +931,8 @@ note_server <- function(input, output, session, rv) {
       ),
       easyClose = TRUE
     ))
+    # 评论列表滚动到底部
+    session$sendCustomMessage("noteScrollCommentBottom", list())
     # 初始化派发下拉（admin专用）
     if (!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin") {
       con <- db_connect()
@@ -1072,7 +1074,7 @@ note_server <- function(input, output, session, rv) {
           </div>
         </div>
         <div class="comment-reply-form" style="display:none; margin-top:6px;">
-          <textarea class="form-control comment-reply-input" rows="2" placeholder="回复 %s ..." style="font-size:12px;"></textarea>
+          <textarea class="form-control comment-reply-input" rows="8" placeholder="回复 %s ..." style="font-size:12px;"></textarea>
           <button class="btn btn-xs btn-primary comment-reply-submit" data-id="%d" style="margin-top:3px;">回复</button>
           <button class="btn btn-xs btn-default comment-reply-cancel" style="margin-top:3px;">取消</button>
         </div>
