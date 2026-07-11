@@ -17,12 +17,14 @@ ai_server <- function(input, output, session, rv) {
   # 当前搜索引擎列表
   ai_search_list <- reactive({
     req(rv$logged_in)
+    ai_se_counter()  # 依赖counter，添加/删除时触发刷新
     tryCatch(ai_get_search_engines(), error = function(e) list())
   })
 
   # 当前 AI 工具列表
   ai_chat_list <- reactive({
     req(rv$logged_in)
+    ai_ct_counter()  # 依赖counter，添加/删除时触发刷新
     tryCatch(ai_get_chat_tools(), error = function(e) list())
   })
 
