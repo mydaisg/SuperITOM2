@@ -1,0 +1,53 @@
+========================================
+       网络测试报告 (V3)
+========================================
+开始时间: 2026-07-13 08:33:11
+测试目标: LVCC协同平台-前端服务器
+========================================
+========================================
+  应用系统连通性测试
+========================================
+服务器描述  : LVCC协同平台-前端服务器
+URL         : http://ecs.Lvcchong.com:20600
+域名        : ecs.Lvcchong.com
+IP地址      : 117.162.0.171
+测试端口    : 20600
+测试时间    : 2026-07-13 08:33:11
+========================================
+
+
+== DNS解析 - nslookup ecs.Lvcchong.com ==
+$ nslookup ecs.Lvcchong.com
+
+Server:  UnKnown
+Address:  10.10.50.249
+
+Name:    ecs.Lvcchong.com
+Address:  117.162.0.171
+
+
+== Ping测试 - 117.162.0.171 ==
+$ ping 117.162.0.171 -n 4
+
+
+Pinging 117.162.0.171 with 32 bytes of data:
+Reply from 117.162.0.171: bytes=32 time=39ms TTL=51
+Reply from 117.162.0.171: bytes=32 time=41ms TTL=51
+Reply from 117.162.0.171: bytes=32 time=43ms TTL=51
+Reply from 117.162.0.171: bytes=32 time=42ms TTL=51
+
+Ping statistics for 117.162.0.171:
+    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 39ms, Maximum = 43ms, Average = 41ms
+
+== 文件服务器 ecs.Lvcchong.com - 端口 20600 ==
+
+ComputerName     : ecs.Lvcchong.com
+RemoteAddress    : ecs.Lvcchong.com
+RemotePort       : 20600
+TcpTestSucceeded : TRUE
+========================================
+结束时间: 2026-07-13 08:33:18
+========================================
+

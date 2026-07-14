@@ -831,7 +831,7 @@ daily_report_server <- function(input, output, session, rv) {
           tc <- hr_items[ti, ]
           tm <- substr(tc$created_at, 12, 16)
           who <- if (!is.na(tc$display_name) && nchar(tc$display_name) > 0) tc$display_name else tc$username
-          content <- trimws(gsub("\n+", " ", tc$content %||% ""))
+          content <- trimws(tc$content %||% "")
           if (nchar(content) > 200) content <- paste0(substr(content, 1, 200), "…")
           note_tag <- if (!is.na(tc$note_title) && nchar(tc$note_title) > 0)
             sprintf('<span class="tl-tag">%s</span>', tc$note_title) else ""

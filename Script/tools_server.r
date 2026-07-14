@@ -249,6 +249,40 @@ tools_server <- function(input, output, session, rv) {
   observeEvent(input$tool_calc_min,   { do_calc("min") })
   observeEvent(input$tool_calc_count, { do_calc("count") })
 
+  # 直接计算：每行 eval 算术表达式（如 18000*0.3*0.1951）
+  observeEvent(input$tool_calc_direct, {
+    req(rv$logged_in)
+    txt <- input$tool_calc_in %||% ""
+    lines <- strsplit(txt, "\n")[[1]]
+    results <- character(0)
+    for (line in lines) {
+      line <- trimws(line)
+      if (nchar(line) == 0) next
+      # 只有数字和运算符的表达式直接 eval
+      if (grepl("^[0-9.+\\-*/^()% ]+$", line)) {
+        v <- tryCatch(eval(parse(text = line)), error = function(e) NULL)
+        if (is.numeric(v)) {
+          results <- c(results, sprintf("%s = %s", line, format(v, scientific = FALSE)))
+        } else {
+          results <- c(results, sprintf("%s = ERROR", line))
+        }
+      } else {
+        results <- c(results, sprintf("%s = (skip: not a pure expression)", line))
+      }
+    }
+    if (length(results) == 0) {
+      output$tool_calc_out <- renderText("无有效表达式")
+      return()
+    }
+    out <- paste(results, collapse = "\n")
+    output$tool_calc_out <- renderText(out)
+    # 记录历史
+    h <- calc_history()
+    h <- c(h, list(list(value = out, time = format(Sys.time(), "%H:%M:%S"), expr = "直接计算")))
+    if (length(h) > 50) h <- h[(length(h) - 49):length(h)]
+    calc_history(h)
+  })
+
   # 添加当前结果到累积
   observeEvent(input$tool_calc_reuse, {
     req(rv$logged_in)

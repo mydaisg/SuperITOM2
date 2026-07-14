@@ -168,6 +168,7 @@ tools_ui <- function() {
                 actionButton("tool_calc_max", "最大值", class = "btn-default btn-sm"),
                 actionButton("tool_calc_min", "最小值", class = "btn-default btn-sm"),
                 actionButton("tool_calc_count", "计数", class = "btn-default btn-sm"),
+                actionButton("tool_calc_direct", "直接算", icon = icon("equals"), class = "btn-success btn-sm"),
                 actionButton("tool_calc_clear", "清空", icon = icon("trash"), class = "btn-danger btn-sm")
               )
             ),

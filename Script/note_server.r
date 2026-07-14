@@ -361,6 +361,10 @@ note_server <- function(input, output, session, rv) {
       tags$div(style = "font-size:11px; font-weight:700; color:#6c3bbf; margin-bottom:4px;", "✦ 快速添加"),
       textAreaInput("note_new_text", NULL, rows = 4, width = "100%",
         placeholder = "输入内容，第一行自动作为标题…"),
+      div(style = "display:flex; gap:4px; margin-top:4px;",
+        actionButton("note_week_add", "本周+", icon = icon("calendar-week"), class = "btn-success btn-xs", title = "生成下一周编号并创建记事"),
+        actionButton("note_week_preview", "预览", icon = icon("eye"), class = "btn-default btn-xs", title = "预览下一周编号")
+      ),
       div(style = "text-align:right; border-top:1px solid #f0f0f5; padding-top:6px; margin-top:4px;",
         # 隐藏的默认值（不显示但供 server 读取）
         div(style="display:none;",
@@ -718,6 +722,50 @@ note_server <- function(input, output, session, rv) {
     if (result$success) {
       updateTextAreaInput(session, "note_new_text", value = "")
       note_pending_page(1)  # 添加后跳到第一页看新卡片
+    }
+    note_trigger(note_trigger() + 1)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+  })
+
+  ##################
+  # 周次预览：显示下一周编号
+  ##################
+  observeEvent(input$note_week_preview, {
+    req(rv$logged_in)
+    wk <- note_week_gen_next()
+    if (wk$success) {
+      updateTextAreaInput(session, "note_new_text",
+        value = paste0(wk$label, " ", trimws(input$note_new_text %||% "")))
+      showNotification(paste("下一周编号:", wk$label), type = "message")
+    } else {
+      showNotification(wk$message, type = "error")
+    }
+  })
+
+  ##################
+  # 本周+：生成下一周编号并创建记事
+  ##################
+  observeEvent(input$note_week_add, {
+    req(rv$logged_in)
+    wk <- note_week_gen_next()
+    if (!wk$success) { showNotification(wk$message, type = "error"); return() }
+    uid <- if (!is.null(rv$current_user) && nrow(rv$current_user) > 0) rv$current_user$id[1] else NULL
+    body <- trimws(input$note_new_text %||% "")
+    # 有内容时：第一行标题加（2026Week28），其余为正文
+    text <- if (nchar(body) > 0) {
+      lines <- strsplit(body, "\n")[[1]]
+      lines[1] <- paste0(lines[1], "（", wk$label, "）")
+      paste(lines, collapse = "\n")
+    } else wk$label
+    result <- note_add(text, uid,
+      reminder_hours = input$note_reminder_hours,
+      due_hour = input$note_due_hour)
+    if (result$success) {
+      updateTextAreaInput(session, "note_new_text", value = "")
+      note_pending_page(1)
+      showNotification(paste(wk$label, "已创建"), type = "message")
+    } else {
+      showNotification(result$message, type = "error")
     }
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "error"))

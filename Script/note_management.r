@@ -659,4 +659,39 @@ note_kw_get_top <- function(n = 8) {
   finally = { db_disconnect(con) })
 }
 
+##################
+# 周次自动编号：从所有标题含"Week"的笔记中取最大周号+1
+##################
+note_week_gen_next <- function() {
+  con <- db_connect()
+  tryCatch({
+    titles <- dbGetQuery(con, "SELECT title FROM notes WHERE title LIKE '%Week%'")
+    max_yr <- 0L; max_wk <- 0L
+    if (nrow(titles) > 0) {
+      for (t in titles$title) {
+        m <- regmatches(t, gregexpr("\\d{4}Week\\d+", t))[[1]]
+        if (length(m) == 0) next
+        m <- m[length(m)]  # 取最后一个匹配
+        parts <- strsplit(m, "Week")[[1]]
+        yr <- as.integer(parts[1]); wk <- as.integer(parts[2])
+        if (is.na(yr) || is.na(wk)) next
+        if (yr > max_yr || (yr == max_yr && wk > max_wk)) { max_yr <- yr; max_wk <- wk }
+      }
+    }
+    if (max_yr == 0L) {
+      today <- Sys.Date()
+      max_yr <- as.integer(format(today, "%Y"))
+      max_wk <- as.integer(format(today, "%V"))  # 当前周，+1得下周
+    }
+    # 年末翻年判定
+    dec28 <- as.Date(paste0(max_yr, "-12-28"))
+    yr_max_wk <- if (as.integer(format(dec28, "%V")) == 52) 52L else 53L
+    if (max_wk >= yr_max_wk) { max_yr <- max_yr + 1L; max_wk <- 0L }
+    next_wk <- max_wk + 1L
+    label <- sprintf("%dWeek%d", max_yr, next_wk)
+    list(success = TRUE, label = label)
+  }, error = function(e) list(success = FALSE, message = e$message, label = ""),
+  finally = { db_disconnect(con) })
+}
+
 
