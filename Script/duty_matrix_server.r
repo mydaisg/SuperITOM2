@@ -45,9 +45,8 @@ duty_matrix_server <- function(input, output, session, rv) {
     }
 
     level_colors <- list(
-      "负责人" = "owner",
-      "执行"   = "exec",
-      "知晓"   = "know"
+      "R-负责" = "r", "A-批准" = "a", "S-支持" = "s",
+      "C-咨询" = "c", "I-知晓" = "i"
     )
 
     # 计算每列的子列数（人员数）
@@ -213,15 +212,15 @@ duty_matrix_server <- function(input, output, session, rv) {
       rv$duty_modal_did <- did; rv$duty_modal_is_sub <- FALSE
     }
 
-    def_level <- if(cur_level != "") cur_level else "执行"
+    def_level <- if(cur_level != "") cur_level else "R-负责"
     showModal(modalDialog(
       title = title, size = "s",
       div(class = "duty-modal",
-        selectizeInput("duty_modal_level", "RBAC级别", 
-          choices = c("负责人","执行","知晓"), 
+        selectizeInput("duty_modal_level", "RASCI级别", 
+          choices = c("R-负责","A-批准","S-支持","C-咨询","I-知晓"), 
           selected = def_level, width="100%",
           options = list(
-            render = I("{option:function(item,escape){var txt=item.text||item.value||'';var c=item.value==='负责人'?'#d4edda':(item.value==='执行'?'#d1ecf1':'#fff3cd');var t=item.value==='负责人'?'#155724':(item.value==='执行'?'#0c5460':'#856404');return'<div style=background:'+c+';color:'+t+';padding:6px 14px;border-radius:20px;font-size:13px;font-weight:500;margin:2px;display:inline-block>'+escape(txt)+'</div>';},item:function(item,escape){var txt=item.text||item.value||'';var c=item.value==='负责人'?'#d4edda':(item.value==='执行'?'#d1ecf1':'#fff3cd');var t=item.value==='负责人'?'#155724':(item.value==='执行'?'#0c5460':'#856404');return'<div style=background:'+c+';color:'+t+';padding:4px 10px;border-radius:20px;font-size:13px;font-weight:500;display:inline-block>'+escape(txt)+'</div>';}}")
+            render = I("{option:function(item,escape){var txt=item.text||item.value||'';var m={'R-负责':{bg:'#d4edda',fg:'#155724'},'A-批准':{bg:'#f8d7da',fg:'#721c24'},'S-支持':{bg:'#d1ecf1',fg:'#0c5460'},'C-咨询':{bg:'#fff3cd',fg:'#856404'},'I-知晓':{bg:'#e2e3e5',fg:'#383d41'}};var c=m[txt];if(!c)return'<div>'+escape(txt)+'</div>';return'<div style=background:'+c.bg+';color:'+c.fg+';padding:6px 14px;border-radius:20px;font-size:13px;font-weight:500;margin:2px;display:inline-block>'+escape(txt)+'</div>';},item:function(item,escape){var txt=item.text||item.value||'';var m={'R-负责':{bg:'#d4edda',fg:'#155724'},'A-批准':{bg:'#f8d7da',fg:'#721c24'},'S-支持':{bg:'#d1ecf1',fg:'#0c5460'},'C-咨询':{bg:'#fff3cd',fg:'#856404'},'I-知晓':{bg:'#e2e3e5',fg:'#383d41'}};var c=m[txt];if(!c)return'<div>'+escape(txt)+'</div>';return'<div style=background:'+c.bg+';color:'+c.fg+';padding:4px 10px;border-radius:20px;font-size:13px;font-weight:500;display:inline-block>'+escape(txt)+'</div>';}}")
           )
         ),
         textAreaInput("duty_modal_comment","备注",rows=2,value=cur_comment)
@@ -337,7 +336,7 @@ duty_matrix_server <- function(input, output, session, rv) {
             lapply(1:nrow(duties), function(j) {
               d <- duties[j, ]
               lvl <- d$responsibility_level[1]
-              cls <- switch(lvl, "负责人"="owner","执行"="exec","知晓"="know","")
+              cls <- switch(lvl, "R-负责"="r","A-批准"="a","S-支持"="s","C-咨询"="c","I-知晓"="i","")
               tags$span(class = paste("tag", cls),
                 d$duty_name, "(", lvl, ")",
                 tags$span(style="cursor:pointer; margin-left:2px;", `data-sid`=s$id, `data-pid`=d$position_id, `data-did`=d$duty_item_id, class="duty-card-rm-duty", "×"))
@@ -392,7 +391,7 @@ duty_matrix_server <- function(input, output, session, rv) {
             lapply(1:nrow(assigned), function(j) {
               a <- assigned[j, ]
               lvl <- a$responsibility_level[1] %||% "—"
-              cls <- switch(lvl, "负责人"="owner","执行"="exec","知晓"="know","")
+              cls <- switch(lvl, "R-负责"="r","A-批准"="a","S-支持"="s","C-咨询"="c","I-知晓"="i","")
               tags$span(class = paste("tag", cls),
                 a$staff_name, "(", lvl, ")",
                 tags$span(style="cursor:pointer; margin-left:2px;", `data-sid`=a$staff_id, `data-pid`=a$position_id, `data-did`=it$id, class="duty-card-rm-duty", "×"))
@@ -408,9 +407,9 @@ duty_matrix_server <- function(input, output, session, rv) {
                 lapply(1:nrow(sub_assigned), function(j) {
                   sa <- sub_assigned[j, ]
                   lvl <- sa$responsibility_level[1] %||% "—"
-                  cls <- switch(lvl, "负责人"="owner","执行"="exec","知晓"="know","")
-                  tags$span(class = paste("tag", cls),
-                    sa$staff_name, "(", lvl, ")",
+              cls <- switch(lvl, "R-负责"="r","A-批准"="a","S-支持"="s","C-咨询"="c","I-知晓"="i","")
+              tags$span(class = paste("tag", cls),
+                sa$staff_name, "(", lvl, ")",
                     tags$span(style="cursor:pointer; margin-left:2px;", `data-sid`=sa$staff_id, `data-pid`=sa$position_id, `data-sdid`=sub$id, class="duty-card-rm-sub-duty", "×"))
                 })
               } else list()
@@ -521,9 +520,9 @@ duty_matrix_server <- function(input, output, session, rv) {
           options = list(placeholder = "选择一级职责...", render = .tag_render_js)),
         selectizeInput("duty_card_add_duty_sub", "二级任务 (可选)", choices = c("— 不指定二级 —" = ""), width="100%",
           options = list(placeholder = "可选二级任务...", render = .tag_render_js)),
-        selectizeInput("duty_card_add_duty_level", "RBAC级别", choices = c("负责人","执行","知晓"), selected="执行", width="100%",
+        selectizeInput("duty_card_add_duty_level", "RASCI级别", choices = c("R-负责","A-批准","S-支持","C-咨询","I-知晓"), selected="R-负责", width="100%",
           options = list(
-            render = I("{option:function(item,escape){var txt=item.text||item.value||'';var c=item.value==='负责人'?'#d4edda':(item.value==='执行'?'#d1ecf1':'#fff3cd');var t=item.value==='负责人'?'#155724':(item.value==='执行'?'#0c5460':'#856404');return'<div style=background:'+c+';color:'+t+';padding:6px 14px;border-radius:20px;font-size:13px;font-weight:500;margin:2px;display:inline-block>'+escape(txt)+'</div>';},item:function(item,escape){var txt=item.text||item.value||'';var c=item.value==='负责人'?'#d4edda':(item.value==='执行'?'#d1ecf1':'#fff3cd');var t=item.value==='负责人'?'#155724':(item.value==='执行'?'#0c5460':'#856404');return'<div style=background:'+c+';color:'+t+';padding:4px 10px;border-radius:20px;font-size:13px;font-weight:500;display:inline-block>'+escape(txt)+'</div>';}}")
+            render = I("{option:function(item,escape){var txt=item.text||item.value||'';var m={'R-负责':{bg:'#d4edda',fg:'#155724'},'A-批准':{bg:'#f8d7da',fg:'#721c24'},'S-支持':{bg:'#d1ecf1',fg:'#0c5460'},'C-咨询':{bg:'#fff3cd',fg:'#856404'},'I-知晓':{bg:'#e2e3e5',fg:'#383d41'}};var c=m[txt];if(!c)return'<div>'+escape(txt)+'</div>';return'<div style=background:'+c.bg+';color:'+c.fg+';padding:6px 14px;border-radius:20px;font-size:13px;font-weight:500;margin:2px;display:inline-block>'+escape(txt)+'</div>';},item:function(item,escape){var txt=item.text||item.value||'';var m={'R-负责':{bg:'#d4edda',fg:'#155724'},'A-批准':{bg:'#f8d7da',fg:'#721c24'},'S-支持':{bg:'#d1ecf1',fg:'#0c5460'},'C-咨询':{bg:'#fff3cd',fg:'#856404'},'I-知晓':{bg:'#e2e3e5',fg:'#383d41'}};var c=m[txt];if(!c)return'<div>'+escape(txt)+'</div>';return'<div style=background:'+c.bg+';color:'+c.fg+';padding:4px 10px;border-radius:20px;font-size:13px;font-weight:500;display:inline-block>'+escape(txt)+'</div>';}}")
           )
         )
       ),
@@ -959,11 +958,11 @@ duty_matrix_server <- function(input, output, session, rv) {
     # 查询用户名和邮箱
     con <- db_connect()
     user_info <- tryCatch({
-      dbGetQuery(con, sprintf("SELECT username, display_name, email FROM users WHERE id = %d", uid))
+      dbGetQuery(con, sprintf("SELECT username, display_name FROM users WHERE id = %d", uid))
     }, finally = { db_disconnect(con) })
     name <- if (nrow(user_info) > 0 && !is.na(user_info$display_name[1]) && user_info$display_name[1] != "")
               user_info$display_name[1] else user_info$username[1]
-    email <- if (nrow(user_info) > 0) user_info$email[1] %||% "" else ""
+    email <- ""
     result <- duty_staff_add(name, department = "", email = email, user_id = uid, position_id = pos_id)
     if (result$success) {
       updateSelectInput(session, "duty_new_staff_user", selected = "")

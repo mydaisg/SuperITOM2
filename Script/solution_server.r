@@ -30,13 +30,15 @@ solution_server <- function(input, output, session, rv) {
 
     lapply(seq_len(nrow(items)), function(i) {
       r <- items[i,]
-      is_open <- (expanded_id == r$id)
+      is_open <- (expanded_id == -1L || expanded_id == r$id)
       cat_tag <- if (!is.na(r$category) && nchar(r$category) > 0) {
         tags$span(style = "display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; background:#e8f5e9; color:#2e7d32; margin-left:8px;", r$category)
       } else ""
-      # 预览内容去除 HTML 标签
+      # 预览内容：去除 script/style 标签及内容 + 去除所有 HTML 标签
       preview_text <- if (!is.na(r$content) && nchar(r$content) > 0) {
         txt <- r$content
+        txt <- gsub("(?s)<script[^>]*>.*?</script>", "", txt, perl = TRUE, ignore.case = TRUE)
+        txt <- gsub("(?s)<style[^>]*>.*?</style>", "", txt, perl = TRUE, ignore.case = TRUE)
         txt <- gsub("<[^>]+>", "", txt)
         txt <- gsub("\\s+", " ", txt)
         trimws(txt)
@@ -65,7 +67,9 @@ solution_server <- function(input, output, session, rv) {
             tags$button(class = "btn btn-sm btn-primary", "✏ 编辑",
               onclick = sprintf("Shiny.setInputValue('sol_edit_click',%d,{priority:'event'});", r$id)),
             tags$button(class = "btn btn-sm btn-default", "📁 收起",
-              onclick = sprintf("Shiny.setInputValue('sol_expand_click',%d,{priority:'event'});", r$id))
+              onclick = sprintf("Shiny.setInputValue('sol_expand_click',%d,{priority:'event'});", r$id)),
+            tags$button(class = "btn btn-sm btn-info", "📂 展开全部",
+              onclick = "var bd=this.parentElement.parentElement.querySelectorAll('.sec-bd');for(var i=0;i<bd.length;i++)bd[i].classList.add('open');")
           )
         )
       }
@@ -103,6 +107,18 @@ solution_server <- function(input, output, session, rv) {
     req(rv$logged_in, input$sol_expand_click)
     id <- as.integer(input$sol_expand_click)
     sol_expand(if (sol_expand() == id) 0L else id)
+  })
+
+  # 全部展开
+  observeEvent(input$sol_expand_all, {
+    req(rv$logged_in)
+    sol_expand(-1L)  # -1 表示全部展开
+  })
+
+  # 全部收起
+  observeEvent(input$sol_collapse_all, {
+    req(rv$logged_in)
+    sol_expand(0L)
   })
 
   # 更新分类下拉

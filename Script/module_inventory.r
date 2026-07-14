@@ -362,7 +362,7 @@ MODULE_INVENTORY <- list(
       "duty_sub_item_get_all_with_parent() — 全部二级任务(含上级信息)",
       "duty_sub_item_add() / update() / delete() — 二级任务CRUD",
       "duty_matrix_get() — 获取岗位×人员×职责矩阵",
-      "duty_matrix_set() — 设置矩阵(RBAC级别: 负责人/执行/知晓)",
+      "duty_matrix_set() — 设置矩阵(RASCI级别: R负责/A批准/S支持/C咨询/I知晓)",
       "duty_matrix_delete() — 删除矩阵条目",
       "duty_sub_matrix_get() — 获取二级矩阵",
       "duty_sub_matrix_set() — 设置二级矩阵",

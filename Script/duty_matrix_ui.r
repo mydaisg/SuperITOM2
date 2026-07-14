@@ -77,9 +77,11 @@ duty_matrix_ui <- function() {
       .duty-table th { background:#f5f5f5; font-weight:600; }
       .duty-cell { cursor:pointer; min-width:60px; border-radius:3px; padding:3px 6px; font-size:11px; }
       .duty-cell:hover { box-shadow:0 0 4px rgba(0,0,0,0.2); }
-      .duty-cell.owner { background:#d4edda; color:#155724; font-weight:bold; }
-      .duty-cell.exec  { background:#d1ecf1; color:#0c5460; }
-      .duty-cell.know  { background:#fff3cd; color:#856404; }
+      .duty-cell.r { background:#d4edda; color:#155724; font-weight:bold; }
+      .duty-cell.a { background:#f8d7da; color:#721c24; font-weight:bold; }
+      .duty-cell.s { background:#d1ecf1; color:#0c5460; }
+      .duty-cell.c { background:#fff3cd; color:#856404; }
+      .duty-cell.i { background:#e2e3e5; color:#383d41; }
       .duty-cell.empty { background:#f8f9fa; color:#ccc; }
       .duty-cell.empty:hover { color:#999; }
       /* 二级子行 */
@@ -87,9 +89,11 @@ duty_matrix_ui <- function() {
       .duty-sub-row td:first-child { padding-left:28px; font-style:italic; }
       .duty-sub-cell { cursor:pointer; min-width:60px; border-radius:3px; padding:2px 5px; font-size:10px; }
       .duty-sub-cell:hover { box-shadow:0 0 4px rgba(0,0,0,0.2); }
-      .duty-sub-cell.owner { background:#d4edda; color:#155724; font-weight:bold; }
-      .duty-sub-cell.exec  { background:#d1ecf1; color:#0c5460; }
-      .duty-sub-cell.know  { background:#fff3cd; color:#856404; }
+      .duty-sub-cell.r { background:#d4edda; color:#155724; font-weight:bold; }
+      .duty-sub-cell.a { background:#f8d7da; color:#721c24; font-weight:bold; }
+      .duty-sub-cell.s { background:#d1ecf1; color:#0c5460; }
+      .duty-sub-cell.c { background:#fff3cd; color:#856404; }
+      .duty-sub-cell.i { background:#e2e3e5; color:#383d41; }
       .duty-sub-cell.empty { background:#f8f9fa; color:#ccc; }
       .duty-row-toggle { cursor:pointer; color:#666; font-family:monospace; font-size:11px; margin-right:4px; user-select:none; }
       .duty-row-toggle:hover { color:#333; }
@@ -97,9 +101,11 @@ duty_matrix_ui <- function() {
       .duty-card h5 { margin:0 0 8px; display:flex; justify-content:space-between; align-items:center; }
       .duty-card .card-actions { display:flex; gap:4px; }
       .duty-card .tag { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; margin:2px 2px 2px 0; }
-      .duty-card .tag.owner { background:#d4edda; color:#155724; }
-      .duty-card .tag.exec { background:#d1ecf1; color:#0c5460; }
-      .duty-card .tag.know { background:#fff3cd; color:#856404; }
+      .duty-card .tag.r { background:#d4edda; color:#155724; }
+      .duty-card .tag.a { background:#f8d7da; color:#721c24; }
+      .duty-card .tag.s { background:#d1ecf1; color:#0c5460; }
+      .duty-card .tag.c { background:#fff3cd; color:#856404; }
+      .duty-card .tag.i { background:#e2e3e5; color:#383d41; }
       .duty-card-fields { font-size:12px; color:#666; }
       /* 二级卡片 */
       .duty-sub-card { background:#faf5ff; border-radius:6px; padding:8px 10px; margin-bottom:4px; margin-left:12px; border-left:3px solid #c8b6e0; }
@@ -112,9 +118,11 @@ duty_matrix_ui <- function() {
       }
       .duty-level-btn:hover { opacity:0.8; }
       .duty-level-btn.active { opacity:1 !important; border:2px solid #333 !important; }
-      .duty-level-btn.owner { background:#d4edda; color:#155724; }
-      .duty-level-btn.exec  { background:#d1ecf1; color:#0c5460; }
-      .duty-level-btn.know  { background:#fff3cd; color:#856404; }
+      .duty-level-btn.r { background:#d4edda; color:#155724; }
+      .duty-level-btn.a { background:#f8d7da; color:#721c24; }
+      .duty-level-btn.s { background:#d1ecf1; color:#0c5460; }
+      .duty-level-btn.c { background:#fff3cd; color:#856404; }
+      .duty-level-btn.i { background:#e2e3e5; color:#383d41; }
       /* 岗职矩阵内 selectize 微调（继承全局 Material Design，仅调字号） */
       .duty-matrix-wrapper .selectize-input,
       .duty-create-row .selectize-input,
