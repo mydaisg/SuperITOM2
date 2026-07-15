@@ -180,11 +180,20 @@ note_server <- function(input, output, session, rv) {
             }
           }
           card_class <- if (pinned > 0) "note-card note-card-pinned" else "note-card"
+          # 卡片上的快速移动按钮
+          move_btn <- ""
+          if (status == "pending") {
+            move_btn <- sprintf('<button class="btn btn-xs btn-info note-move-btn" data-id="%d" data-to="in_progress" style="font-size:9px;padding:1px 5px;flex-shrink:0;">▶</button>', r$id)
+          } else if (status == "in_progress") {
+            move_btn <- sprintf('<button class="btn btn-xs btn-success note-move-btn" data-id="%d" data-to="completed" style="font-size:9px;padding:1px 5px;flex-shrink:0;">✓</button>', r$id)
+          }
           cards[[i]] <- tags$div(class = card_class, `data-id` = r$id,
-            tags$div(class = "note-title",
-              HTML(pin_html),
-              if (isTRUE(note_no != "")) tags$span(style="color:#337ab7;font-size:11px;margin-right:6px;", note_no),
-              HTML(.hl(r$title, search_words)), " ", HTML(flags)),
+            tags$div(class = "note-title", style = "display:flex; justify-content:space-between; align-items:center;",
+              tags$div(style = "flex:1; min-width:0;",
+                HTML(pin_html),
+                if (isTRUE(note_no != "")) tags$span(style="color:#337ab7;font-size:11px;margin-right:6px;", note_no),
+                HTML(.hl(r$title, search_words)), " ", HTML(flags)),
+              if (nchar(move_btn) > 0) HTML(move_btn)),
             if (!compact && isTRUE(nchar(body) > 0)) tags$div(class = "note-body", HTML(.hl(body, search_words))) else "",
             if (!compact) tags$div(class = "note-meta", style = "white-space:nowrap; overflow:hidden; text-overflow:ellipsis;",
               tags$span(if (stale_cls != "") class = stale_cls else NULL,
@@ -837,7 +846,9 @@ note_server <- function(input, output, session, rv) {
         } else {
           sprintf('<button class="btn btn-xs btn-default comment-undone-btn" data-id="%d">🔄</button>', c$id)
         }
-        reply_btn <- sprintf('<button class="btn btn-xs btn-default comment-reply-btn" data-id="%d" data-name="%s">💬 回复</button>', c$id, cn)
+        reply_btn_cls <- switch(as.character(level %||% 0),
+          "0" = "btn-primary", "1" = "btn-info", "2" = "btn-success", "3" = "btn-warning", "btn-default")
+        reply_btn <- sprintf('<button class="btn btn-xs %s comment-reply-btn" data-id="%d" data-name="%s">💬 回复</button>', reply_btn_cls, c$id, cn)
         indent <- if (level > 0) sprintf("margin-left:%dpx;", level * 24) else ""
 
         # 子评论（默认展开）
@@ -949,10 +960,16 @@ note_server <- function(input, output, session, rv) {
       div(style="margin-top:0; margin-bottom:4px;",
         actionButton("note_add_comment_m", "发表评论", class = "btn-info btn-sm", icon = icon("comment"), style = "width:100%;")
       ),
-      if (!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin") div(style="margin-bottom:8px;",
-        tags$b("📨 派发给", style="font-size:12px; color:#555;"),
-        selectInput("note_edit_dispatch", NULL, choices = NULL, multiple = TRUE, width = "100%")
-      )
+      if (!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin") {
+        dispatched <- note_dispatch_get_users(note$id[1])
+        disp_names <- if (nrow(dispatched) > 0) paste(dispatched$display_name, collapse = ", ") else "无"
+        div(style="margin-bottom:8px;",
+          tags$b("📨 派发给: ", style="font-size:12px; color:#555;"),
+          tags$span(id="note_dispatch_show", style="font-size:12px; color:#333; margin-left:4px;", disp_names),
+          tags$button(class="btn btn-xs btn-info note-dispatch-btn", `data-id`=note$id[1],
+            style="margin-left:8px;", "选择用户")
+        )
+      }
     )
     
     showModal(modalDialog(
@@ -981,20 +998,6 @@ note_server <- function(input, output, session, rv) {
     ))
     # 评论列表滚动到底部
     session$sendCustomMessage("noteScrollCommentBottom", list())
-    # 初始化派发下拉（admin专用）
-    if (!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin") {
-      con <- db_connect()
-      all_users <- tryCatch({
-        dbGetQuery(con, "SELECT id, username, COALESCE(NULLIF(display_name,''), username) as display_name FROM users WHERE active = 1 AND role != 'admin' ORDER BY username")
-      }, finally = { db_disconnect(con) })
-      dispatched <- note_dispatch_get_users(note$id[1])
-      if (nrow(all_users) > 0) {
-        labels <- sprintf("%s", all_users$display_name)
-        choices <- stats::setNames(as.character(all_users$id), labels)
-        selected_vals <- if (nrow(dispatched) > 0) as.character(dispatched$id) else character(0)
-        updateSelectInput(session, "note_edit_dispatch", choices = choices, selected = selected_vals)
-      }
-    }
   })
 
   ##################
@@ -1011,10 +1014,11 @@ note_server <- function(input, output, session, rv) {
       reminder_at = if (trimws(input$note_edit_reminder_m) != "") input$note_edit_reminder_m else NULL,
       due_at = if (trimws(input$note_edit_due_m) != "") input$note_edit_due_m else NULL,
       current_user = rv$current_user)
-    # 保存派发（admin 专用）
+    # 保存派发（admin 专用）—— 即使清空也要保存（清除派发）
     if (result$success && !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin") {
-      dispatch_uids <- input$note_edit_dispatch
-      if (!is.null(dispatch_uids)) note_dispatch_set(rv$note_edit_id, dispatch_uids)
+      dispatch_uids <- rv$note_dispatch_uids
+      if (is.null(dispatch_uids)) dispatch_uids <- character(0)
+      note_dispatch_set(rv$note_edit_id, dispatch_uids)
     }
     note_trigger(note_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "error"))
@@ -1033,10 +1037,84 @@ note_server <- function(input, output, session, rv) {
       due_at = if (trimws(input$note_edit_due_m) != "") input$note_edit_due_m else NULL,
       current_user = rv$current_user)
     if (!is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin") {
-      dispatch_uids <- input$note_edit_dispatch
-      if (!is.null(dispatch_uids)) note_dispatch_set(rv$note_edit_id, dispatch_uids)
+      dispatch_uids <- rv$note_dispatch_uids
+      if (is.null(dispatch_uids)) dispatch_uids <- character(0)
+      note_dispatch_set(rv$note_edit_id, dispatch_uids)
     }
     note_trigger(note_trigger() + 1)
+  })
+
+  ##################
+  # 派发：选择用户弹窗
+  ##################
+  observeEvent(input$note_dispatch_show, {
+    req(rv$logged_in, rv$note_edit_id)
+    nid <- as.integer(input$note_dispatch_show)
+    # 读取已派发用户
+    dispatched <- note_dispatch_get_users(nid)
+    rv$note_dispatch_uids <- if (nrow(dispatched) > 0) as.character(dispatched$id) else character(0)
+    # 获取所有非admin用户
+    con <- db_connect()
+    all_users <- tryCatch({
+      dbGetQuery(con, "SELECT id, username, COALESCE(NULLIF(display_name,''), username) as display_name FROM users WHERE active = 1 AND role != 'admin' ORDER BY username")
+    }, finally = { db_disconnect(con) })
+    if (nrow(all_users) == 0) {
+      showNotification("没有可派发的用户", type = "warning")
+      return()
+    }
+    # 构建勾选列表
+    checkboxes <- lapply(1:nrow(all_users), function(i) {
+      u <- all_users[i, ]
+      checked <- as.character(u$id) %in% rv$note_dispatch_uids
+      tags$div(style = "padding:4px 0; border-bottom:1px solid #eee;",
+        tags$label(style = "cursor:pointer; display:block;",
+          tags$input(type = "checkbox", class = "note-dispatch-check",
+            value = u$id, checked = if(checked) NA else NULL,
+            onclick = sprintf("var v=this.value; var uids=$('#note_dispatch_selected').val()||''; var arr=uids?uids.split(','):[]; if(this.checked){arr.push(v)}else{arr=arr.filter(function(x){return x!==v})}; $('#note_dispatch_selected').val(arr.join(','));"),
+            style = "margin-right:8px;"),
+          tags$span(u$display_name, style = "font-size:13px;"),
+          tags$span(style = "font-size:10px; color:#999; margin-left:8px;", sprintf("@%s", u$username))
+        )
+      )
+    })
+    showModal(modalDialog(
+      title = "📨 选择派发用户",
+      tags$div(style = "max-height:400px; overflow-y:auto;", do.call(tagList, checkboxes)),
+      tags$input(id = "note_dispatch_selected", type = "hidden",
+        value = paste(rv$note_dispatch_uids, collapse = ",")),
+      size = "s", easyClose = TRUE,
+      footer = tagList(
+        tags$button(class = "btn btn-xs btn-default",
+          onclick = "$('.note-dispatch-check').prop('checked',true).trigger('change');",
+          "全选"),
+        tags$button(class = "btn btn-xs btn-default",
+          onclick = "$('.note-dispatch-check').prop('checked',false).trigger('change');",
+          "清空"),
+        modalButton("取消"),
+        actionButton("note_dispatch_confirm", "确认派发", class = "btn-primary btn-sm")
+      )
+    ))
+  })
+
+  # 派发确认
+  observeEvent(input$note_dispatch_confirm, {
+    req(rv$logged_in)
+    val <- input$note_dispatch_selected
+    uids <- if (is.null(val) || val == "") character(0) else strsplit(val, ",")[[1]]
+    rv$note_dispatch_uids <- uids
+    # 更新弹窗中的显示文字
+    if (length(uids) > 0) {
+      con <- db_connect()
+      names <- tryCatch({
+        dbGetQuery(con, sprintf("SELECT COALESCE(NULLIF(display_name,''), username) as display_name FROM users WHERE id IN (%s) ORDER BY username",
+          paste(uids, collapse = ",")))$display_name
+      }, finally = { db_disconnect(con) })
+      session$sendCustomMessage("noteUpdateDispatchShow", paste(names, collapse = ", "))
+    } else {
+      session$sendCustomMessage("noteUpdateDispatchShow", "无")
+    }
+    removeModal()
+    showNotification(sprintf("已选择 %d 人，保存后生效", length(uids)), type = "message", duration = 2)
   })
 
   ##################

@@ -680,24 +680,27 @@ daily_report_server <- function(input, output, session, rv) {
           reps <- grp[!(is.na(grp$parent_id) | grp$parent_id == 0), , drop = FALSE]
           text_report <- paste0(text_report, sprintf("%s、 %s\n", dr_cn_number(gi), grp$note_title[1] %||% ""))
           # 递归渲染子回复。返回 list(txt=文本, has_children=是否有下级)
-          txt_render_replies <- function(pid, depth) {
+          # parent_num: 父级序号，用于生成 1.1 / 2.3 格式
+          txt_render_replies <- function(pid, depth, parent_num = NULL) {
             sub <- reps[reps$parent_id == pid, , drop = FALSE]
             if (nrow(sub) == 0) return(list(txt = "", has_children = FALSE))
             indent <- paste(rep("  ", depth), collapse = "")
             txt <- ""
             for (si in seq_len(nrow(sub))) {
               sc <- sub[si, ]
+              # 子评论内容每行加4空格缩进
+              sc_content <- gsub("\n", "\n    ", sc$content %||% "")
               if (depth >= 2) {
                 lead <- paste(rep("+", depth), collapse = "")
-                txt <- paste0(txt, sprintf("%s%s- %s\n", indent, lead, sc$content))
+                txt <- paste0(txt, sprintf("%s%s- %s\n", indent, lead, sc_content))
               } else {
-                lead <- paste(rep("+", depth), collapse = "")
-                txt <- paste0(txt, sprintf("%s%s%d、 %s\n", indent, lead, si, sc$content))
+                # depth==1: 二级序号 1.1 / 1.2 ...
+                num <- if (!is.null(parent_num)) sprintf("%d.%d", parent_num, si) else sprintf("%d", si)
+                txt <- paste0(txt, sprintf("%s%s %s\n", indent, num, sc_content))
               }
               child_result <- txt_render_replies(sc$id, depth + 1)
               txt <- paste0(txt, child_result$txt)
             }
-            # 返回当前级是否有子级
             has_any <- nrow(sub) > 0
             list(txt = txt, has_children = has_any)
           }
@@ -707,7 +710,7 @@ daily_report_server <- function(input, output, session, rv) {
             # 直接检查此评论是否有子回复
             has_replies <- nrow(reps[reps$parent_id == tc$id, , drop = FALSE]) > 0
             if (has_replies) {
-              child <- txt_render_replies(tc$id, 1)
+              child <- txt_render_replies(tc$id, 1, parent_num = ti)
               if (nchar(child$txt) > 0) {
                 text_report <- paste0(text_report, child$txt)
               }
@@ -721,6 +724,8 @@ daily_report_server <- function(input, output, session, rv) {
       }
       # 去除连续多余空行（保留最多一个空行 = \n\n）
       text_report <- gsub("\n{3,}", "\n\n", text_report)
+      # 去掉日期括号：From吴时超（7月13日）→ From吴时超
+      text_report <- gsub("（\\d{1,2}月\\d{1,2}日）", "", text_report)
       # 明日计划
       text_report <- paste0(text_report, sprintf("\n明日计划 %s\n重点跟进：\n\n", tomorrow))
     }

@@ -3,9 +3,36 @@
 note_ui <- function() {
   tagList(
     tags$script(HTML("
+      // 弹窗标题栏拖拽（仅真正拖拽时阻止默认，允许文字选中）
+      $(document).on('mousedown','.modal-header',function(e){
+        if ($(e.target).closest('button,a').length) return;
+        var modal = $(this).closest('.modal-dialog');
+        var startX = e.clientX, startY = e.clientY;
+        var tx = 0, ty = 0; // 累计 translate
+        var dragged = false;
+        $(document).on('mousemove.modaldrag',function(e2){
+          var dx = e2.clientX - startX, dy = e2.clientY - startY;
+          if (!dragged && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) dragged = true;
+          if (dragged) {
+            modal.css('transform','translate('+dx+'px,'+dy+'px)');
+          }
+        });
+        $(document).on('mouseup.modaldrag',function(){
+          $(document).off('.modaldrag');
+        });
+      }).css('cursor','move');
       $(document).on('click','.note-card',function(e){
         if ($(e.target).closest('button,a,.note-flag').length) return;
         Shiny.setInputValue('note_edit_click',$(this).data('id'),{priority:'event'});
+      });
+      // 派发按钮
+      $(document).on('click','.note-dispatch-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('note_dispatch_show',$(this).data('id'),{priority:'event'});
+      });
+      // 更新派发显示
+      Shiny.addCustomMessageHandler('noteUpdateDispatchShow', function(msg) {
+        $('#note_dispatch_show').text(msg);
       });
       $(document).on('click','.note-move-btn',function(e){
         e.stopPropagation();

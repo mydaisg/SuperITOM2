@@ -190,7 +190,6 @@ ui <- fluidPage(
 
       /* ── 弹窗拖拽光标 ── */
       .modal .modal-header { cursor: grab !important; }
-      .modal .modal-header.modal-dragging { cursor: grabbing !important; user-select: none !important; }
 
       /* ── 通知居中显示 ── */
       #shiny-notification-panel {
@@ -401,35 +400,28 @@ ui <- fluidPage(
         $('#org_search_input').val('').trigger('input');
       });
 
-      // ========== 全站弹窗拖拽（标题栏任意位置均可拖动，短距离移动不拖=可选文字） ==========
-      (function initGlobalModalDrag(){
-        var $dlg = null, dragging = false, offX = 0, offY = 0, startX = 0, startY = 0, moved = false;
-        $(function(){
-          $(document).on('mousedown','.modal-dialog .modal-header',function(e){
-            $dlg = $(this).closest('.modal-dialog');
-            if (!$dlg.length) return;
-            var rect = $dlg[0].getBoundingClientRect();
-            offX = e.clientX - rect.left;
-            offY = e.clientY - rect.top;
-            startX = e.clientX; startY = e.clientY;
-            moved = false; dragging = true;
-          });
-          $(document).on('mousemove',function(e){
-            if (!dragging || !$dlg) return;
-            if (Math.abs(e.clientX-startX)<4 && Math.abs(e.clientY-startY)<4) return;
-            if (!moved) {
-              moved = true;
-              $(document).getSelection().removeAllRanges();
-            }
-            $dlg.css({position:'fixed',left:(e.clientX-offX)+'px',top:(e.clientY-offY)+'px',margin:'0',transform:'none'});
-            $dlg.find('.modal-header').addClass('modal-dragging');
-          });
-          $(document).on('mouseup',function(){
-            if ($dlg) $dlg.find('.modal-header').removeClass('modal-dragging');
-            dragging = false; $dlg = null; moved = false;
-          });
+      // ========== 全站弹窗拖拽 ==========
+      $(function(){
+        var dlg = null, ox = 0, oy = 0;
+        $(document).on('mousedown','.modal-header',function(e){
+          if ($(e.target).closest('button,a,.close').length) return;
+          dlg = $(this).closest('.modal-dialog');
+          if (!dlg.length) return;
+          ox = e.pageX - dlg.offset().left;
+          oy = e.pageY - dlg.offset().top;
+          dlg.css({position:'fixed',left:dlg.offset().left,top:dlg.offset().top,margin:0,transform:'none'});
+          $(this).css({cursor:'grabbing',userSelect:'none'});
+          e.preventDefault();
         });
-      })();
+        $(document).on('mousemove',function(e){
+          if (!dlg) return;
+          dlg.css({left:e.pageX-ox, top:e.pageY-oy});
+        });
+        $(document).on('mouseup',function(){
+          if (dlg) dlg.find('.modal-header').css({cursor:'',userSelect:''});
+          dlg = null;
+        });
+      });
 
       // ========== 下拉选项彩色药丸 + 色圆点 ==========
       var selPalette = [

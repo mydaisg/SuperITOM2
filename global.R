@@ -1328,6 +1328,29 @@ migrate_database <- function() {
       cat("数据库迁移完成：已创建 note_kw_stats 表\n")
     }
 
+    # ===============================================
+    # 大屏实时数据历史记录表
+    # ===============================================
+    if (!"bigscreen_snapshots" %in% tables) {
+      dbExecute(con, "CREATE TABLE bigscreen_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        total_device TEXT,
+        total_port TEXT,
+        total_user TEXT,
+        total_power_consumption TEXT,
+        total_carbon_emission_reduction TEXT,
+        total_oil_saving TEXT,
+        today_order_number TEXT,
+        today_charge_order_number TEXT,
+        today_pay_order_number TEXT,
+        today_carbon_emission_reduction TEXT,
+        today_turnover TEXT,
+        snapshot_time TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_bigscreen_time ON bigscreen_snapshots(snapshot_time)")
+      cat("数据库迁移完成：已创建 bigscreen_snapshots 表及索引\n")
+    }
+
   }, error = function(e) {
     cat("数据库迁移失败:", e$message, "\n")
   }, finally = {
