@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>实时数据大屏</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0e27;
+  color: #fff;
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+/* 顶部标题栏 */
+.header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 24px;
+  background: linear-gradient(90deg, #0f1535 0%, #1a1f4a 100%);
+  border-bottom: 1px solid #2a2f5a;
+}
+.header h1 {
+  font-size: 22px; font-weight: 700;
+  background: linear-gradient(90deg, #4facfe, #00f2fe);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.header .info {
+  font-size: 13px; color: #8899cc;
+  display: flex; align-items: center; gap: 16px;
+}
+.header button {
+  background: #2a2f5a; color: #aab; border: 1px solid #3a3f6a;
+  padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  transition: all 0.2s;
+}
+.header button:hover { background: #3a3f6a; color: #fff; }
+/* 统计条 */
+.stats-bar {
+  display: flex; gap: 0;
+  padding: 0 24px;
+  border-bottom: 1px solid #1a1f4a;
+}
+.stat-item {
+  flex: 1; text-align: center; padding: 10px 0;
+  border-right: 1px solid #1a1f4a; cursor: pointer;
+}
+.stat-item:last-child { border-right: none; }
+.stat-item .num {
+  font-size: 26px; font-weight: 800;
+  background: linear-gradient(90deg, #4facfe, #00f2fe);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.stat-item .lbl { font-size: 11px; color: #667; margin-top: 2px; }
+/* 卡片网格 */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  padding: 20px 24px;
+}
+.card {
+  border-radius: 14px; padding: 22px 18px;
+  position: relative; overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.3);
+  transition: transform 0.25s, box-shadow 0.25s;
+  cursor: default;
+}
+.card:hover { transform: translateY(-3px); box-shadow: 0 10px 36px rgba(0,0,0,0.4); }
+.card::after {
+  content: ''; position: absolute; top: -30px; right: -30px;
+  width: 100px; height: 100px; border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+}
+.card .value { font-size: 30px; font-weight: 800; letter-spacing: 1px; position: relative; z-index: 1; }
+.card .label { font-size: 13px; opacity: 0.8; margin-top: 8px; position: relative; z-index: 1; }
+.card .unit  { font-size: 11px; opacity: 0.5; margin-top: 4px; position: relative; z-index: 1; }
+.card .delta  { margin-top: 8px; font-size: 11px; position: relative; z-index: 1; display: none; }
+.card .delta.show { display: block; }
+.card .delta .up   { color: #4caf50; }
+.card .delta .down { color: #e53e3e; }
+/* 11种卡片颜色 */
+.c1  { background: linear-gradient(135deg, #667eea, #764ba2); }
+.c2  { background: linear-gradient(135deg, #f093fb, #f5576c); }
+.c3  { background: linear-gradient(135deg, #4facfe, #00f2fe); color: #1a1a2e; }
+.c4  { background: linear-gradient(135deg, #43e97b, #38f9d7); color: #1a1a2e; }
+.c5  { background: linear-gradient(135deg, #fa709a, #fee140); color: #1a1a2e; }
+.c6  { background: linear-gradient(135deg, #a18cd1, #fbc2eb); color: #1a1a2e; }
+.c7  { background: linear-gradient(135deg, #ffecd2, #fcb69f); color: #1a1a2e; }
+.c8  { background: linear-gradient(135deg, #89f7fe, #66a6ff); }
+.c9  { background: linear-gradient(135deg, #fddb92, #d1fdff); color: #1a1a2e; }
+.c10 { background: linear-gradient(135deg, #a1c4fd, #c2e9fb); color: #1a1a2e; }
+.c11 { background: linear-gradient(135deg, #d4fc79, #96e6a1); color: #1a1a2e; }
+/* 图表区 */
+.chart-section {
+  margin: 0 24px 20px;
+  background: #0f1535; border-radius: 14px; padding: 20px;
+  border: 1px solid #1a1f4a;
+}
+.chart-section h3 { font-size: 15px; color: #8899cc; margin-bottom: 12px; }
+.charts-grid {
+  display: flex; flex-direction: column; gap: 14px;
+}
+.chart-item {
+  background: #0a0e27; border-radius: 10px; padding: 10px;
+  border: 1px solid #1a1f4a; height: 260px;
+}
+/* 响应式 */
+@media (max-width: 768px) {
+  .grid { grid-template-columns: repeat(2, 1fr); }
+  .header { flex-direction: column; gap: 8px; }
+}
+/* 加载动画 */
+.loading {
+  display: flex; justify-content: center; align-items: center;
+  height: 200px; font-size: 16px; color: #667;
+}
+.spinner {
+  width: 32px; height: 32px; border: 3px solid #1a1f4a;
+  border-top-color: #4facfe; border-radius: 50%;
+  animation: spin 0.8s linear infinite; margin-right: 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⚡ 实时数据大屏</h1>
+  <div class="info">
+    <span id="bs-time">正在加载...</span>
+    <button onclick="refresh()">🔄 刷新</button>
+  </div>
+</div>
+
+<div class="stats-bar" id="stats-bar"></div>
+<div class="grid" id="card-grid">
+  <div class="loading">
+    <div class="spinner"></div>
+    <span>正在获取数据...</span>
+  </div>
+</div>
+
+<div class="chart-section" id="chart-section" style="display:none;">
+  <h3 style="margin:0 0 12px; font-size:15px; color:#8899cc;">📈 历史趋势（实线=绝对值左轴，虚线=增量右轴）</h3>
+  <div id="charts-grid" class="charts-grid"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script>
+// ============ 本地存储历史 ============
+const STORAGE_KEY = 'bigscreen_history';
+const MAX_HISTORY = 720; // 30天 * 24小时
+
+function loadHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  } catch(e) { return []; }
+}
+
+function saveHistory(snapshot) {
+  let hist = loadHistory();
+  hist.push(snapshot);
+  if (hist.length > MAX_HISTORY) hist = hist.slice(-MAX_HISTORY);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(hist));
+  return hist;
+}
+
+// ============ 格式化 ============
+function fmt(x) {
+  if (x == null || x === '') return '—';
+  x = Number(x);
+  if (isNaN(x)) return '—';
+  if (Math.abs(x) >= 1e8) return (x / 1e8).toFixed(2) + '亿';
+  if (Math.abs(x) >= 1e4) return (x / 1e4).toFixed(2) + '万';
+  return x.toLocaleString();
+}
+
+function fmtDelta(cur, prev) {
+  if (prev == null) return '';
+  const d = cur - prev;
+  if (d === 0) return '';
+  return d > 0
+    ? '<span class="up">+'+fmt(d)+'</span>'
+    : '<span class="down">'+fmt(d)+'</span>';
+}
+
+// ============ 计算增量 ============
+function calcDeltas(hist, field) {
+  const now = Date.now();
+  const periods = { h: 3600000, daily: 86400000, weekly: 604800000, monthly: 2592000000, yearly: 31536000000 };
+  const result = {};
+  for (const [key, ms] of Object.entries(periods)) {
+    const target = now - ms;
+    let prev = null;
+    for (let i = hist.length - 1; i >= 0; i--) {
+      if (new Date(hist[i].t).getTime() <= target) { prev = hist[i][field]; break; }
+    }
+    result[key] = prev;
+  }
+  return result;
+}
+
+// ============ 渲染卡片 ============
+const cardDefs = [
+  { field:'totalDevice',                  label:'设备总数',       unit:'台' },
+  { field:'totalPort',                    label:'端口总数',       unit:'个' },
+  { field:'totalUser',                    label:'用户总数',       unit:'人' },
+  { field:'totalPowerConsumption',        label:'总耗电量',       unit:'kWh' },
+  { field:'totalCarbonEmissionReduction', label:'累计碳减排',     unit:'吨' },
+  { field:'totalOilSaving',               label:'累计节油量',     unit:'升' },
+  { field:'todayOrderNumber',             label:'今日订单',       unit:'单' },
+  { field:'todayChargeOrderNumber',       label:'今日充电订单',   unit:'单' },
+  { field:'todayPayOrderNumber',          label:'今日支付订单',   unit:'单' },
+  { field:'todayCarbonEmissionReduction', label:'今日碳减排',     unit:'吨' },
+  { field:'todayTurnover',                label:'今日营业额',     unit:'元' },
+];
+
+function renderCards(data, hist) {
+  const grid = document.getElementById('card-grid');
+  grid.innerHTML = cardDefs.map((c, i) => {
+    const cur = Number(data[c.field]) || 0;
+    const deltas = calcDeltas(hist, c.field);
+    const deltaLines = ['h','daily','weekly','monthly','yearly']
+      .filter(k => deltas[k] != null)
+      .map(k => {
+        const label = {h:'时增',daily:'日增',weekly:'周增',monthly:'月增',yearly:'年增'}[k];
+        const html = fmtDelta(cur, deltas[k]);
+        return html ? `<div>${label}: ${html}</div>` : '';
+      }).filter(s => s).join('');
+    return `<div class="card c${i+1}">
+      <div class="value">${fmt(cur)}</div>
+      <div class="label">${c.label}</div>
+      <div class="unit">单位: ${c.unit}</div>
+      ${deltaLines ? `<div class="delta show">${deltaLines}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ============ 统计条 ============
+function renderStats(data) {
+  const total = Number(data.totalDevice) || 0;
+  const online = Number(data.todayChargeOrderNumber) || 0;
+  const power = Number(data.totalPowerConsumption) || 0;
+  const carbon = Number(data.totalCarbonEmissionReduction) || 0;
+  const turnover = Number(data.todayTurnover) || 0;
+  document.getElementById('stats-bar').innerHTML = `
+    <div class="stat-item"><div class="num">${fmt(total)}</div><div class="lbl">设备总数</div></div>
+    <div class="stat-item"><div class="num">${fmt(online)}</div><div class="lbl">今日充电订单</div></div>
+    <div class="stat-item"><div class="num">${fmt(power)}</div><div class="lbl">总耗电量 kWh</div></div>
+    <div class="stat-item"><div class="num">${fmt(carbon)}</div><div class="lbl">碳减排 吨</div></div>
+    <div class="stat-item"><div class="num">${fmt(turnover)}</div><div class="lbl">营业额 元</div></div>
+  `;
+}
+
+// ============ 数据获取 ============
+// 方式A：通过本地 CORS 代理（推荐，完全独立于 Shiny）
+// 先启动代理: node bigscreen-proxy.js
+// 方式B：如果部署时 API 已配好 CORS，改为下面被注释的直连地址
+const API_URL = 'http://127.0.0.1:3839/api';
+// const API_URL = 'https://lvcchong.com/factoryBi/charge/0/realTimeData';
+
+async function fetchData() {
+  try {
+    const resp = await fetch(API_URL, { headers: { 'Accept': 'application/json' } });
+    if (resp.ok) {
+      const json = await resp.json();
+      if (json.success) return json.data;
+    }
+  } catch(e) {
+    console.error('fetch error:', e);
+  }
+  return null;
+}
+
+// ============ 主流程 ============
+let chartInstance = null;
+
+async function refresh() {
+  const data = await fetchData();
+  if (!data) {
+    document.getElementById('card-grid').innerHTML =
+      '<div class="loading"><span style="color:#e53e3e;">获取数据失败，请重试</span></div>';
+    return;
+  }
+
+  // 保存历史
+  const snapshot = { t: new Date().toISOString() };
+  cardDefs.forEach(c => { snapshot[c.field] = Number(data[c.field]) || 0; });
+  const hist = saveHistory(snapshot);
+
+  // 渲染
+  renderCards(data, hist);
+  renderStats(data);
+  document.getElementById('bs-time').textContent =
+    '更新于 ' + new Date().toLocaleTimeString();
+
+  // K线图
+  if (hist.length >= 2) {
+    document.getElementById('chart-section').style.display = 'block';
+    renderAllCharts(hist);
+  }
+}
+
+// 指标配置：key, 名称, 颜色
+const chartMetrics = [
+  { key: 'todayTurnover',                label: '今日营业额',    color: '#4facfe', axisBreak: true },
+  { key: 'totalDevice',                  label: '设备总数',      color: '#43e97b' },
+  { key: 'totalPort',                    label: '端口总数',      color: '#f093fb' },
+  { key: 'totalUser',                    label: '用户总数',      color: '#fa709a' },
+  { key: 'totalPowerConsumption',        label: '总耗电量',      color: '#ffa726' },
+  { key: 'totalCarbonEmissionReduction', label: '累计碳减排',    color: '#66bb6a' },
+  { key: 'totalOilSaving',               label: '累计节油量',    color: '#42a5f5' },
+  { key: 'todayOrderNumber',             label: '今日订单',      color: '#ab47bc' },
+  { key: 'todayChargeOrderNumber',       label: '今日充电订单',  color: '#ef5350' },
+  { key: 'todayPayOrderNumber',          label: '今日支付订单',  color: '#26c6da' },
+  { key: 'todayCarbonEmissionReduction', label: '今日碳减排',    color: '#9ccc65' }
+];
+
+const chartInstances = {};
+
+function renderAllCharts(hist) {
+  const grid = document.getElementById('charts-grid');
+  grid.innerHTML = chartMetrics.map(m =>
+    `<div class="chart-item" id="chart-${m.key}"></div>`
+  ).join('');
+
+  // 只取今天的数据，并生成24小时整点X轴
+  const today = new Date().toISOString().slice(0, 10); // "2026-07-16"
+  const todayHist = hist.filter(h => h.t.startsWith(today));
+
+  // 生成 00:00 ~ 23:00 整点标签
+  const hourLabels = [];
+  for (let h = 0; h < 24; h++) {
+    hourLabels.push(String(h).padStart(2,'0') + ':00');
+  }
+
+  // 将数据按小时对齐到 24 个槽位
+  function align24h(items) {
+    const map = {};
+    items.forEach(item => {
+      const hh = new Date(item.t).getHours();
+      // 取该小时内最后一条（最新）
+      if (!map[hh] || item.t > map[hh].t) map[hh] = item;
+    });
+    const result = [];
+    for (let h = 0; h < 24; h++) {
+      result.push(map[h] ? Number(map[h][arguments[1]]) || 0 : null);
+    }
+    return result;
+  }
+
+  chartMetrics.forEach(m => {
+    const dom = document.getElementById('chart-' + m.key);
+    if (!dom) return;
+    if (chartInstances[m.key]) chartInstances[m.key].dispose();
+    const inst = echarts.init(dom);
+    chartInstances[m.key] = inst;
+
+    const rawVals = align24h(todayHist, m.key);
+    // 增量 = 相邻差值（null 保持 null）
+    const deltaVals = rawVals.map((v, i) => {
+      if (v === null) return null;
+      if (i === 0) return 0;
+      return rawVals[i-1] === null ? 0 : v - rawVals[i-1];
+    });
+
+    // 统计当天摘要
+    const validVals = rawVals.filter(v => v !== null);
+    const first = validVals[0], last = validVals[validVals.length - 1];
+    const dayDelta = (first != null && last != null) ? last - first : null;
+
+    if (m.axisBreak) {
+      // ====== 断轴方案：上下两半拼接 ======
+      const base = validVals.length > 0 ? validVals[0] : 1e9;
+      const gapStart = base * 0.02;  // 断轴起点：base 的 2%（增量区域上界）
+      const gapEnd   = base * 0.95;  // 断轴终点：base 的 95%（绝对值区域下界）
+
+      // 上方：绝对值区（gapEnd ~ max）
+      const upperVals = rawVals.map(v => v === null ? null : v);
+      // 下方：增量区（0 ~ gapStart），将原始值映射到增量
+      const lowerVals = deltaVals.map(d => d === null ? null : d);
+
+      inst.setOption({
+        title: {
+          text: m.label,
+          subtext: dayDelta != null ? '日增: ' + fmtDeltaText(dayDelta) : '',
+          left: 8, top: 2,
+          textStyle: { color: '#8899cc', fontSize: 13 },
+          subtextStyle: { color: '#667', fontSize: 11 }
+        },
+        tooltip: {
+          trigger: 'axis',
+          formatter: params => {
+            const t = params[0].axisValue;
+            let html = t;
+            params.forEach(p => {
+              if (p.seriesName === '绝对值') {
+                const v = rawVals[p.dataIndex];
+                html += '<br/>绝对值: ' + (v != null ? fmt(v) : '无数据');
+              } else if (p.seriesName === '增量') {
+                const v = deltaVals[p.dataIndex];
+                html += '<br/>增量: ' + (v != null ? fmtDeltaText(v) : '无数据');
+              }
+            });
+            return html;
+          }
+        },
+        legend: {
+          data: ['绝对值', '增量'],
+          right: 10, top: 2,
+          textStyle: { color: '#667', fontSize: 10 }
+        },
+        // 上方 grid: 绝对值区
+        grid: [
+          { top: 44, right: 60, bottom: '55%', left: 75 },
+          { top: '55%', right: 60, bottom: 28, left: 75 }
+        ],
+        xAxis: [
+          {
+            type: 'category', data: hourLabels, gridIndex: 0,
+            axisLabel: { color: '#555', fontSize: 10 },
+            axisLine: { lineStyle: { color: '#1a1f4a' } },
+            axisTick: { show: false }
+          },
+          {
+            type: 'category', data: hourLabels, gridIndex: 1,
+            axisLabel: { color: '#555', fontSize: 10 },
+            axisLine: { lineStyle: { color: '#1a1f4a' } }
+          }
+        ],
+        yAxis: [
+          {
+            type: 'value', gridIndex: 0, name: '绝对值',
+            nameTextStyle: { color: '#667', fontSize: 10 },
+            min: gapEnd,
+            axisLabel: { color: '#667', fontSize: 10, formatter: fmt },
+            splitLine: { lineStyle: { color: '#1a1f4a' } }
+          },
+          {
+            type: 'value', gridIndex: 1, name: '增量',
+            nameTextStyle: { color: '#f59e0b', fontSize: 10 },
+            axisLabel: { color: '#f59e0b', fontSize: 10, formatter: fmt },
+            splitLine: { lineStyle: { color: '#1a1f4a' } }
+          }
+        ],
+        series: [
+          {
+            name: '绝对值', type: 'line', xAxisIndex: 0, yAxisIndex: 0,
+            data: upperVals, smooth: true, connectNulls: true,
+            lineStyle: { color: m.color, width: 2 },
+            itemStyle: { color: m.color },
+            symbol: 'none'
+          },
+          {
+            name: '增量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1,
+            data: lowerVals,
+            itemStyle: {
+              color: params => {
+                if (params.value == null) return 'transparent';
+                return params.value >= 0 ? 'rgba(76,175,80,0.5)' : 'rgba(229,57,53,0.5)';
+              }
+            },
+            barMaxWidth: 12
+          }
+        ]
+      });
+    } else {
+      // ====== 普通双Y轴 ======
+      inst.setOption({
+        title: {
+          text: m.label,
+          subtext: dayDelta != null ? '日增: ' + fmtDeltaText(dayDelta) : '',
+          left: 8, top: 2,
+          textStyle: { color: '#8899cc', fontSize: 13 },
+          subtextStyle: { color: '#667', fontSize: 11 }
+        },
+        tooltip: {
+          trigger: 'axis',
+          formatter: params => {
+            const t = params[0].axisValue;
+            return t + '<br/>' +
+              params.map(p => {
+                const v = p.value;
+                if (v === null) return p.seriesName + ': 无数据';
+                return p.seriesName + ': ' + fmt(v);
+              }).join('<br/>');
+          }
+        },
+        legend: {
+          data: ['绝对值', '增量'],
+          right: 10, top: 2,
+          textStyle: { color: '#667', fontSize: 10 }
+        },
+        grid: { top: 44, right: 60, bottom: 28, left: 75 },
+        xAxis: {
+          type: 'category', data: hourLabels,
+          axisLabel: { color: '#555', fontSize: 10 },
+          axisLine: { lineStyle: { color: '#1a1f4a' } }
+        },
+        yAxis: [
+          {
+            type: 'value', name: '绝对值',
+            nameTextStyle: { color: '#667', fontSize: 10 },
+            axisLabel: { color: '#667', fontSize: 10, formatter: fmt },
+            splitLine: { lineStyle: { color: '#1a1f4a' } }
+          },
+          {
+            type: 'value', name: '增量',
+            nameTextStyle: { color: '#f59e0b', fontSize: 10 },
+            axisLabel: { color: '#f59e0b', fontSize: 10, formatter: fmt },
+            splitLine: { show: false }
+          }
+        ],
+        series: [
+          {
+            name: '绝对值', type: 'line', yAxisIndex: 0,
+            data: rawVals, smooth: true, connectNulls: true,
+            lineStyle: { color: m.color, width: 2 },
+            itemStyle: { color: m.color },
+            symbol: 'none'
+          },
+          {
+            name: '增量', type: 'bar', yAxisIndex: 1,
+            data: deltaVals,
+            itemStyle: {
+              color: params => {
+                if (params.value == null) return 'transparent';
+                return params.value >= 0 ? 'rgba(76,175,80,0.5)' : 'rgba(229,57,53,0.5)';
+              }
+            },
+            barMaxWidth: 12
+          }
+        ]
+      });
+    }
+  });
+}
+
+function fmtDeltaText(d) {
+  if (d == null) return '';
+  if (d >= 0) return '+' + fmt(d);
+  return fmt(d);
+}
+
+// 监听父窗口传来的数据（Shiny 侧推送）
+window.addEventListener('message', e => {
+  if (e.data && e.data.type === 'bigscreen_push') {
+    const data = e.data.payload;
+    const snapshot = { t: new Date().toISOString() };
+    cardDefs.forEach(c => { snapshot[c.field] = Number(data[c.field]) || 0; });
+    const hist = saveHistory(snapshot);
+    renderCards(data, hist);
+    renderStats(data);
+    document.getElementById('bs-time').textContent =
+      '更新于 ' + new Date().toLocaleTimeString();
+    if (hist.length >= 2) {
+      document.getElementById('chart-section').style.display = 'block';
+      renderAllCharts(hist);
+    }
+  }
+});
+
+// 窗口大小变化时重绘所有图表
+window.addEventListener('resize', () => {
+  Object.values(chartInstances).forEach(inst => inst.resize());
+});
+
+// 启动
+refresh();
+setInterval(refresh, 3600000); // 每小时刷新
+</script>
+</body>
+</html>

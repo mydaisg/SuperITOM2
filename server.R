@@ -48,6 +48,10 @@ source("Script/meta_task_management.r")  # 元任务数据层
 source("Script/meta_task_ui.r")          # 元任务UI
 source("Script/meta_task_server.r")      # 元任务模块
 
+
+# 注册静态资源路径（www 目录下的文件可通过 /www/ 访问）
+addResourcePath("www", "www")
+
 # 定义server函数
 # 这是Shiny应用的服务器逻辑核心
 # 参数说明：
@@ -55,7 +59,28 @@ source("Script/meta_task_server.r")      # 元任务模块
 # - output: 向UI发送输出内容
 # - session: 管理用户会话
 server <- function(input, output, session) {
-  
+
+  # ====== 大屏数据代理 API（供独立大屏页调用） ======
+  # 注册 HTTP GET /bigscreen_api 端点，代理请求远程 API 返回 JSON
+  session$registerDataObj("bigscreen_api", data.frame(), function(data, req) {
+    if (!requireNamespace("httr", quietly = TRUE)) {
+      return(list(status = 500L, body = '{"error":"httr not installed"}', headers = list("Content-Type" = "application/json")))
+    }
+    resp <- tryCatch({
+      httr::GET("https://lvcchong.com/factoryBi/charge/0/realTimeData",
+        httr::add_headers("Accept" = "application/json"),
+        httr::timeout(10))
+    }, error = function(e) NULL)
+    if (is.null(resp) || httr::status_code(resp) != 200) {
+      return(list(status = 502L, body = '{"error":"upstream error"}', headers = list("Content-Type" = "application/json")))
+    }
+    body <- httr::content(resp, "text", encoding = "UTF-8")
+    return(list(status = 200L, body = body, headers = list(
+      "Content-Type" = "application/json",
+      "Access-Control-Allow-Origin" = "*"
+    )))
+  })
+
   # 初始化工单配置选项（确保如果已有 config_options 表但没有工单配置时能正确初始化）
   tryCatch({
     init_work_order_config_options()

@@ -34,6 +34,38 @@ integration_ui <- function() {
       .bigscreen-header h5 { margin:0; font-size:15px; }
       .bigscreen-refresh { font-size:10px; color:#999; }
     ")),
+    # 数据推送到独立大屏页 + 响应大屏页的数据请求
+    tags$script(HTML("
+      var bigscreen_cached_data = null;
+
+      // Shiny 刷新数据时缓存并推送
+      Shiny.addCustomMessageHandler('bigscreen_push', function(data) {
+        bigscreen_cached_data = data;
+        // 发给本页内的 iframe
+        var iframe = document.querySelector('iframe[src*=\"bigscreen\"]');
+        if (iframe && iframe.contentWindow) {
+          iframe.contentWindow.postMessage({ type: 'bigscreen_push', payload: data }, '*');
+        }
+      });
+
+      // 监听大屏页的数据请求（来自 iframe 或独立窗口）
+      window.addEventListener('message', function(e) {
+        if (e.data && e.data.type === 'bigscreen_fetch') {
+          if (bigscreen_cached_data) {
+            e.source.postMessage({ type: 'bigscreen_data', payload: bigscreen_cached_data }, '*');
+          } else {
+            // 没有缓存数据，触发一次 Shiny 刷新
+            Shiny.setInputValue('integ_bigscreen_refresh', Math.random(), {priority: 'event'});
+            // 等1秒后重试
+            setTimeout(function() {
+              if (bigscreen_cached_data) {
+                e.source.postMessage({ type: 'bigscreen_data', payload: bigscreen_cached_data }, '*');
+              }
+            }, 1500);
+          }
+        }
+      });
+    ")),
     fluidPage(
       h4(icon("plug"), " 集成管理", style="margin-bottom:10px;"),
       fluidRow(
@@ -52,7 +84,10 @@ integration_ui <- function() {
             h5(icon("tachometer-alt"), " 实时数据大屏"),
             tags$span(class="bigscreen-refresh",
               actionButton("integ_bigscreen_refresh", "刷新", icon=icon("sync"), class="btn-xs btn-info"),
-              textOutput("integ_bigscreen_time", inline=TRUE)
+              textOutput("integ_bigscreen_time", inline=TRUE),
+              tags$a(href="www/bigscreen.html", target="_blank",
+                class="btn btn-xs btn-warning", style="margin-left:8px;",
+                icon("external-link"), " 独立大屏")
             )
           ),
           uiOutput("integ_bigscreen_cards"),
@@ -60,6 +95,11 @@ integration_ui <- function() {
           wellPanel(
             h5(icon("chart-line"), " 历史趋势 (K线图)", style="margin-top:0;"),
             plotlyOutput("integ_bigscreen_chart", height = "350px")
+          ),
+          # 历史明细数据表
+          wellPanel(
+            h5(icon("table"), " 历史明细", style="margin-top:0;"),
+            DT::dataTableOutput("integ_bigscreen_table")
           ),
           tags$hr(),
           # 调试面板：选了配置才显示

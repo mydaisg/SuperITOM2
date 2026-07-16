@@ -213,11 +213,15 @@ integration_server <- function(input, output, session, rv) {
   # 从历史快照计算多时间维度增量
   .deltas <- function(field, snapshots_df) {
     if (nrow(snapshots_df) == 0) return(list(h=NA_real_,daily=NA_real_,weekly=NA_real_,monthly=NA_real_,yearly=NA_real_))
-    cur <- as.numeric(snapshots_df[1, field])
+    # camelCase -> snake_case 映射（数据库中列名是 snake_case）
+    .to_snake <- function(s) gsub("([A-Z])", "_\\L\\1", s, perl = TRUE)
+    col <- .to_snake(field)
+    cur <- as.numeric(snapshots_df[1, col])
     if (length(cur) == 0 || is.na(cur)) return(list(h=NA_real_,daily=NA_real_,weekly=NA_real_,monthly=NA_real_,yearly=NA_real_))
     now <- Sys.time()
     times <- as.POSIXct(snapshots_df$snapshot_time)
-    vals <- as.numeric(snapshots_df[[field]])
+    vals <- as.numeric(snapshots_df[[col]])
+    vals[is.na(vals)] <- 0
     .prev_at <- function(seconds) {
       target <- now - seconds
       idx <- which(times <= target)
@@ -250,21 +254,22 @@ integration_server <- function(input, output, session, rv) {
     finally = { db_disconnect(con) })
   }
 
-  # 初始化加载
+
+  # 初始化加载 + 每小时自动刷新
   observe({
     req(rv$logged_in)
-    isolate({
-      data <- bigscreen_fetch_data()
-      if (!is.null(data) && isTRUE(data$success)) {
-        bigscreen_data(data$data)
-        bigscreen_time(format(Sys.time(), "%H:%M:%S"))
-        bigscreen_save_snapshot(data$data)
-        bigscreen_history(load_history())
-      }
-    })
+    invalidateLater(3600000)  # 每小时刷新（毫秒）
+    data <- bigscreen_fetch_data()
+    if (!is.null(data) && isTRUE(data$success)) {
+      bigscreen_data(data$data)
+      bigscreen_time(format(Sys.time(), "%H:%M:%S"))
+      bigscreen_save_snapshot(data$data)
+      bigscreen_history(load_history())
+      session$sendCustomMessage("bigscreen_push", data$data)
+    }
   })
 
-  # 刷新按钮
+  # 手动刷新按钮
   observeEvent(input$integ_bigscreen_refresh, {
     req(rv$logged_in)
     data <- bigscreen_fetch_data()
@@ -273,6 +278,7 @@ integration_server <- function(input, output, session, rv) {
       bigscreen_time(format(Sys.time(), "%H:%M:%S"))
       bigscreen_save_snapshot(data$data)
       bigscreen_history(load_history())
+      session$sendCustomMessage("bigscreen_push", data$data)
       showNotification("数据已刷新", type = "message", duration = 1.5)
     } else {
       showNotification("获取数据失败", type = "error", duration = 3)
@@ -360,5 +366,77 @@ integration_server <- function(input, output, session, rv) {
         margin = list(t = 40, b = 40, l = 80, r = 20),
         paper_bgcolor = "#fafafa"
       )
+  })
+
+  # 历史明细数据表
+  output$integ_bigscreen_table <- DT::renderDataTable({
+    snap <- bigscreen_history()
+    if (nrow(snap) == 0) return(data.frame(提示 = "暂无历史数据，请刷新"))
+    df <- snap[order(snap$snapshot_time, decreasing = TRUE), ]
+    if (nrow(df) > 100) df <- df[1:100, ]
+    nr <- nrow(df)
+
+    # 安全取列（不存在则填0）
+    .col <- function(name) {
+      v <- df[[name]]
+      if (is.null(v)) return(rep(0, nr))
+      v <- suppressWarnings(as.numeric(v))
+      v[is.na(v)] <- 0
+      v
+    }
+    # 计算相邻差值
+    .delta <- function(v) {
+      if (length(v) <= 1) return(rep(NA_real_, length(v)))
+      c(NA_real_, v[-1] - v[-length(v)])
+    }
+    # 格式化值+增量的列对
+    .pair <- function(name) {
+      v <- .col(name)
+      d <- .delta(v)
+      list(
+        val = sapply(v, .fmt),
+        delta = sapply(d, function(x) if(is.na(x)) "" else paste0(if(x>=0)"+","",.fmt(x)))
+      )
+    }
+
+    t  <- if (!is.null(df$snapshot_time)) substr(df$snapshot_time, 1, 16) else rep("", nr)
+    d1 <- .pair("total_device")
+    d2 <- .pair("total_port")
+    d3 <- .pair("total_user")
+    d4 <- .pair("total_power_consumption")
+    d5 <- .pair("total_carbon_emission_reduction")
+    d6 <- .pair("total_oil_saving")
+    d7 <- .pair("today_order_number")
+    d8 <- .pair("today_charge_order_number")
+    d9 <- .pair("today_pay_order_number")
+    d10<- .pair("today_carbon_emission_reduction")
+    d11<- .pair("today_turnover")
+
+    disp <- data.frame(
+      时间      = t,
+      设备总数   = d1$val,   设备增量   = d1$delta,
+      端口总数   = d2$val,   端口增量   = d2$delta,
+      用户总数   = d3$val,   用户增量   = d3$delta,
+      总耗电量   = d4$val,   耗电增量   = d4$delta,
+      累计碳减排 = d5$val,   碳减增量   = d5$delta,
+      累计节油量 = d6$val,   节油增量   = d6$delta,
+      今日订单   = d7$val,   订单增量   = d7$delta,
+      充电订单   = d8$val,   充电增量   = d8$delta,
+      支付订单   = d9$val,   支付增量   = d9$delta,
+      今日碳减排 = d10$val,  今碳增量   = d10$delta,
+      今日营业额 = d11$val,  营业增量   = d11$delta,
+      stringsAsFactors = FALSE, check.names = FALSE
+    )
+    DT::datatable(disp, rownames = FALSE, escape = FALSE,
+      options = list(
+        pageLength = 25, lengthMenu = c(10, 25, 50, 100),
+        scrollX = TRUE, dom = "ltip",
+        columnDefs = list(list(targets = 0, width = "130px"))
+      ),
+      class = "cell-border stripe compact"
+    ) %>% DT::formatStyle(
+      columns = grep("增量", names(disp)),
+      color = DT::styleInterval(0, c("#e53e3e", "#4caf50"))
+    )
   })
 }
