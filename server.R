@@ -29,6 +29,8 @@ source("Script/sysmon_management.r")   # 性能监控数据层
 source("Script/sysmon_server.r")       # 性能监控服务端
 source("Script/solution_management.r") # 方案模块数据层
 source("Script/solution_server.r")     # 方案模块服务端
+source("Script/solution_exec.r")        # 方案执行模块数据层
+source("Script/solution_exec_server.r") # 方案执行模块服务端
 source("Script/performance_management.r") # 绩效数据层
 source("Script/performance_server.r")   # 绩效模块服务端
 source("Script/note_management.r")   # 记事模块数据层
@@ -3706,8 +3708,12 @@ server <- function(input, output, session) {
   # 性能监控模块逻辑
   sysmon_server(input, output, session, rv)
 
+
   # 方案模块逻辑
   solution_server(input, output, session, rv)
+
+  # 方案执行模块逻辑
+  solution_exec_server(input, output, session, rv)
 
   # 流程模块逻辑
   process_server(input, output, session, rv)

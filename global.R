@@ -1371,6 +1371,42 @@ migrate_database <- function() {
       cat("数据库迁移完成：已创建 attendance_devices 表\n")
     }
 
+    # ===============================================
+    # 方案执行模块表（8张）
+    # ===============================================
+    if (!"exec_train_plan" %in% tables) {
+      dbExecute(con, "CREATE TABLE exec_train_plan (id INTEGER PRIMARY KEY AUTOINCREMENT, seq TEXT, module TEXT, content TEXT, target TEXT, duration TEXT, method TEXT, plan_date TEXT, responsible TEXT, remark TEXT)")
+      cat("数据库迁移完成：已创建 exec_train_plan 表\n")
+    }
+    if (!"exec_pilot_plan" %in% tables) {
+      dbExecute(con, "CREATE TABLE exec_pilot_plan (id INTEGER PRIMARY KEY AUTOINCREMENT, phase TEXT, phase_name TEXT, time_range TEXT, departments TEXT, tasks TEXT, deliverables TEXT, responsible TEXT, acceptance TEXT)")
+      cat("数据库迁移完成：已创建 exec_pilot_plan 表\n")
+    }
+    if (!"exec_basic_data" %in% tables) {
+      dbExecute(con, "CREATE TABLE exec_basic_data (id INTEGER PRIMARY KEY AUTOINCREMENT, seq TEXT, department TEXT, data_type TEXT, data_name TEXT, responsible TEXT, deadline TEXT, status TEXT, remark TEXT)")
+      cat("数据库迁移完成：已创建 exec_basic_data 表\n")
+    }
+    if (!"exec_test_hr" %in% tables) {
+      dbExecute(con, "CREATE TABLE exec_test_hr (id INTEGER PRIMARY KEY AUTOINCREMENT, case_no TEXT, module TEXT, scenario TEXT, steps TEXT, expected TEXT, actual TEXT, status TEXT, priority TEXT, tester TEXT, test_date TEXT, issue_desc TEXT)")
+      cat("数据库迁移完成：已创建 exec_test_hr 表\n")
+    }
+    if (!"exec_test_admin" %in% tables) {
+      dbExecute(con, "CREATE TABLE exec_test_admin (id INTEGER PRIMARY KEY AUTOINCREMENT, case_no TEXT, module TEXT, scenario TEXT, steps TEXT, expected TEXT, actual TEXT, status TEXT, priority TEXT, tester TEXT, test_date TEXT, issue_desc TEXT)")
+      cat("数据库迁移完成：已创建 exec_test_admin 表\n")
+    }
+    if (!"exec_test_fin" %in% tables) {
+      dbExecute(con, "CREATE TABLE exec_test_fin (id INTEGER PRIMARY KEY AUTOINCREMENT, case_no TEXT, module TEXT, scenario TEXT, steps TEXT, expected TEXT, actual TEXT, status TEXT, priority TEXT, tester TEXT, test_date TEXT, issue_desc TEXT)")
+      cat("数据库迁移完成：已创建 exec_test_fin 表\n")
+    }
+    if (!"exec_test_it" %in% tables) {
+      dbExecute(con, "CREATE TABLE exec_test_it (id INTEGER PRIMARY KEY AUTOINCREMENT, case_no TEXT, module TEXT, scenario TEXT, steps TEXT, expected TEXT, actual TEXT, status TEXT, priority TEXT, tester TEXT, test_date TEXT, issue_desc TEXT)")
+      cat("数据库迁移完成：已创建 exec_test_it 表\n")
+    }
+    if (!"exec_issues" %in% tables) {
+      dbExecute(con, "CREATE TABLE exec_issues (id INTEGER PRIMARY KEY AUTOINCREMENT, issue_no TEXT, title TEXT, module TEXT, issue_type TEXT, severity TEXT, description TEXT, steps TEXT, reporter TEXT, report_date TEXT, status TEXT, responsible TEXT, suggestion TEXT)")
+      cat("数据库迁移完成：已创建 exec_issues 表\n")
+    }
+
   }, error = function(e) {
     cat("数据库迁移失败:", e$message, "\n")
   }, finally = {
