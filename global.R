@@ -1407,6 +1407,63 @@ migrate_database <- function() {
       cat("数据库迁移完成：已创建 exec_issues 表\n")
     }
 
+    # ===============================================
+    # 方案执行主表 + 配置表
+    # ===============================================
+    if (!"exec_projects" %in% tables) {
+      dbExecute(con, "CREATE TABLE exec_projects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        status TEXT DEFAULT '进行中',
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 exec_projects 表\n")
+    }
+    # 执行任务的通用表（替代原来的8张独立表）
+    if (!"exec_tasks" %in% tables) {
+      dbExecute(con, "CREATE TABLE exec_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        task_type TEXT NOT NULL,
+        parent_id INTEGER DEFAULT 0,
+        seq TEXT,
+        module TEXT,
+        content TEXT,
+        target TEXT,
+        duration TEXT,
+        method TEXT,
+        plan_date TEXT,
+        responsible TEXT,
+        department TEXT,
+        status TEXT,
+        priority TEXT,
+        tester TEXT,
+        test_date TEXT,
+        issue_desc TEXT,
+        remark TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_exec_tasks_proj ON exec_tasks(project_id)")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_exec_tasks_type ON exec_tasks(task_type)")
+      cat("数据库迁移完成：已创建 exec_tasks 表及索引\n")
+    }
+    # 执行配置表（部门/人员/模块/阶段等可选项）
+    if (!"exec_config" %in% tables) {
+      dbExecute(con, "CREATE TABLE exec_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category TEXT NOT NULL,
+        value TEXT NOT NULL,
+        color TEXT DEFAULT '',
+        sort_order INTEGER DEFAULT 0,
+        UNIQUE(category, value)
+      )")
+      cat("数据库迁移完成：已创建 exec_config 表\n")
+    }
+
   }, error = function(e) {
     cat("数据库迁移失败:", e$message, "\n")
   }, finally = {
