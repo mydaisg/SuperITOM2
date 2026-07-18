@@ -1351,6 +1351,26 @@ migrate_database <- function() {
       cat("数据库迁移完成：已创建 bigscreen_snapshots 表及索引\n")
     }
 
+    # ===============================================
+    # 考勤设备表
+    # ===============================================
+    if (!"attendance_devices" %in% tables) {
+      dbExecute(con, "CREATE TABLE attendance_devices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        area TEXT,
+        location TEXT,
+        device_type TEXT,
+        brand TEXT,
+        quantity INTEGER DEFAULT 1,
+        applicable_users TEXT,
+        special_users TEXT,
+        remark TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 attendance_devices 表\n")
+    }
+
   }, error = function(e) {
     cat("数据库迁移失败:", e$message, "\n")
   }, finally = {

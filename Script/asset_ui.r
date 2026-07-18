@@ -11,6 +11,14 @@ asset_ui <- function() {
         e.stopPropagation();
         Shiny.setInputValue('asset_del_click',$(this).data('id'),{priority:'event'});
       });
+      $(document).on('click','.att-edit-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('att_edit_click',$(this).data('id'),{priority:'event'});
+      });
+      $(document).on('click','.att-del-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('att_del_click',$(this).data('id'),{priority:'event'});
+      });
     ")),
     tags$style(HTML("
       .asset-stat-box { text-align:center; padding:10px 6px; border-radius:6px; margin:0; }
@@ -40,6 +48,24 @@ asset_ui <- function() {
       # ── 标签2：工位图 ──
       tabPanel("工位图", value = "seat",
         seat_map_content()
+      ),
+      # ── 标签3：考勤设备 ──
+      tabPanel("考勤设备", value = "attendance",
+        uiOutput("attendance_device_stats"),
+        wellPanel(
+          fluidRow(
+            column(2, selectInput("attendance_filter_area", "区域筛选",
+              choices = c("全部"), selected = "全部")),
+            column(2, selectInput("attendance_filter_type", "设备类型",
+              choices = c("全部","人脸识别","指纹机"), selected = "全部")),
+            column(2, selectInput("attendance_filter_brand", "品牌筛选",
+              choices = c("全部","中控","钉钉"), selected = "全部")),
+            column(3, actionButton("attendance_add_btn", "添加设备", icon = icon("plus"), class = "btn-primary")),
+            column(3, div(style = "text-align:right;",
+              actionButton("attendance_refresh", icon("refresh"), class = "btn-default")))
+          )
+        ),
+        DTOutput("attendance_device_table")
       )
     )
   )
