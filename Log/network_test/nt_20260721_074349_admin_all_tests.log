@@ -1,0 +1,204 @@
+========================================
+       网络测试报告 (V3)
+========================================
+开始时间: 2026-07-21 07:40:52
+测试目标: 综合测试（包含文件服务器）
+========================================
+
+== 网卡信息 ==
+$ ipconfig /all
+
+
+Windows IP Configuration
+
+   Host Name . . . . . . . . . . . . : DWTCNSGZRD002
+   Primary Dns Suffix  . . . . . . . : lvcc.org
+   Node Type . . . . . . . . . . . . : Hybrid
+   IP Routing Enabled. . . . . . . . : No
+   WINS Proxy Enabled. . . . . . . . : No
+   DNS Suffix Search List. . . . . . : lvcc.org
+
+Ethernet adapter 以太网:
+
+   Connection-specific DNS Suffix  . : 
+   Description . . . . . . . . . . . : Realtek PCIe GbE Family Controller
+   Physical Address. . . . . . . . . : 00-68-EB-97-70-EF
+   DHCP Enabled. . . . . . . . . . . : Yes
+   Autoconfiguration Enabled . . . . : Yes
+   IPv4 Address. . . . . . . . . . . : 10.3.3.131(Preferred) 
+   Subnet Mask . . . . . . . . . . . : 255.255.254.0
+   Lease Obtained. . . . . . . . . . : 2026年7月13日 11:44:33
+   Lease Expires . . . . . . . . . . : 2026年7月21日 17:44:33
+   Default Gateway . . . . . . . . . : 10.3.3.254
+   DHCP Server . . . . . . . . . . . : 10.3.3.254
+   DNS Servers . . . . . . . . . . . : 10.10.50.249
+                                       114.114.114.114
+   NetBIOS over Tcpip. . . . . . . . : Enabled
+
+Ethernet adapter vEthernet (WSL):
+
+   Connection-specific DNS Suffix  . : 
+   Description . . . . . . . . . . . : Hyper-V Virtual Ethernet Adapter
+   Physical Address. . . . . . . . . : 00-15-5D-C9-68-05
+   DHCP Enabled. . . . . . . . . . . : No
+   Autoconfiguration Enabled . . . . : Yes
+   Link-local IPv6 Address . . . . . : fe80::a4a0:d502:6a60:d43f%39(Preferred) 
+   IPv4 Address. . . . . . . . . . . : 172.28.0.1(Preferred) 
+   Subnet Mask . . . . . . . . . . . : 255.255.240.0
+   Default Gateway . . . . . . . . . : 
+   DHCPv6 IAID . . . . . . . . . . . : 654316893
+   DHCPv6 Client DUID. . . . . . . . : 00-01-00-01-31-60-FE-DB-00-68-EB-97-70-EF
+   DNS Servers . . . . . . . . . . . : fec0:0:0:ffff::1%1
+                                       fec0:0:0:ffff::2%1
+                                       fec0:0:0:ffff::3%1
+   NetBIOS over Tcpip. . . . . . . . : Enabled
+
+== 连通性测试 - ping qq.com ==
+$ ping qq.com -n 4
+
+
+Pinging qq.com [157.255.219.143] with 32 bytes of data:
+Reply from 157.255.219.143: bytes=32 time=27ms TTL=47
+Reply from 157.255.219.143: bytes=32 time=27ms TTL=47
+Reply from 157.255.219.143: bytes=32 time=28ms TTL=47
+Reply from 157.255.219.143: bytes=32 time=27ms TTL=47
+
+Ping statistics for 157.255.219.143:
+    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 27ms, Maximum = 28ms, Average = 27ms
+
+== DNS解析 - nslookup qq.com ==
+$ nslookup qq.com
+
+Server:  UnKnown
+Address:  10.10.50.249
+
+Name:    qq.com
+Address:  157.255.219.143
+
+
+== 域控检测 - nltest /dsgetdc:lvcc.org ==
+$ nltest /dsgetdc:lvcc.org
+
+           DC: \\PublicServer.lvcc.org
+      Address: \\10.10.50.253
+     Dom Guid: 651845e8-bce1-4102-b2bb-f02e7b7e567f
+     Dom Name: lvcc.org
+  Forest Name: lvcc.org
+ Dc Site Name: Default-First-Site-Name
+Our Site Name: Default-First-Site-Name
+        Flags: GC DS LDAP KDC TIMESERV WRITABLE DNS_DC DNS_DOMAIN DNS_FOREST CLOSE_SITE FULL_SECRET WS DS_8 DS_9
+The command completed successfully
+
+== 路由追踪 - tracert qq.com ==
+$ tracert qq.com
+
+
+Tracing route to qq.com [157.255.219.143]
+over a maximum of 30 hops:
+
+  1     *        *        *     Request timed out.
+  2     *        *        *     Request timed out.
+  3     3 ms     2 ms     2 ms  111.75.240.65 
+  4     4 ms     3 ms     5 ms  125.247.101.202.dial.gz.jx.dynamic.163data.com.cn [202.101.247.125] 
+  5     4 ms     4 ms     *     1.1.10.1 
+  6     *        *        *     Request timed out.
+  7     *        *        *     Request timed out.
+  8     *        *        *     Request timed out.
+  9     *       22 ms     *     118.84.106.110 
+ 10    24 ms    25 ms    24 ms  219.158.24.69 
+ 11    31 ms     *        *     112.97.0.142 
+ 12     *        *        *     Request timed out.
+ 13     *        *        *     Request timed out.
+ 14     *        *        *     Request timed out.
+ 15     *        *        *     Request timed out.
+ 16     *        *        *     Request timed out.
+ 17    27 ms    27 ms    26 ms  30.143.234.159 
+ 18    26 ms    27 ms    26 ms  157.255.219.143 
+
+Trace complete.
+
+== HTTP测试 - curl -I www.baidu.com ==
+$ curl -I www.baidu.com
+
+HTTP/1.1 200 OK
+Cache-Control: private, no-cache, no-store, proxy-revalidate, no-transform
+Content-Length: 0
+Content-Type: text/html
+Pragma: no-cache
+Server: bfe
+Date: Mon, 20 Jul 2026 23:43:36 GMT
+
+
+== 文件服务器 10.10.50.50 - SMB连接测试 ==
+$ net use \\10.10.50.50
+
+The command completed successfully.
+
+
+== 文件服务器 10.10.50.50 - 端口 445 ==
+
+ComputerName     : 10.10.50.50
+RemoteAddress    : 10.10.50.50
+RemotePort       : 445
+TcpTestSucceeded : TRUE
+
+== 文件服务器 10.10.50.50 - 端口 139 ==
+
+ComputerName     : 10.10.50.50
+RemoteAddress    : 10.10.50.50
+RemotePort       : 139
+TcpTestSucceeded : TRUE
+
+== 文件服务器 10.10.50.50 - Ping ==
+
+
+Pinging 10.10.50.50 with 32 bytes of data:
+Reply from 10.10.50.50: bytes=32 time=1ms TTL=63
+Reply from 10.10.50.50: bytes=32 time=1ms TTL=63
+Reply from 10.10.50.50: bytes=32 time=1ms TTL=63
+Reply from 10.10.50.50: bytes=32 time=1ms TTL=63
+
+Ping statistics for 10.10.50.50:
+    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 1ms, Maximum = 1ms, Average = 1ms
+
+== 文件服务器 10.10.50.150 - SMB连接测试 ==
+$ net use \\10.10.50.150
+
+The command completed successfully.
+
+
+== 文件服务器 10.10.50.150 - 端口 445 ==
+
+ComputerName     : 10.10.50.150
+RemoteAddress    : 10.10.50.150
+RemotePort       : 445
+TcpTestSucceeded : TRUE
+
+== 文件服务器 10.10.50.150 - 端口 139 ==
+
+ComputerName     : 10.10.50.150
+RemoteAddress    : 10.10.50.150
+RemotePort       : 139
+TcpTestSucceeded : TRUE
+
+== 文件服务器 10.10.50.150 - Ping ==
+
+
+Pinging 10.10.50.150 with 32 bytes of data:
+Reply from 10.10.50.150: bytes=32 time=1ms TTL=63
+Reply from 10.10.50.150: bytes=32 time=1ms TTL=63
+Reply from 10.10.50.150: bytes=32 time=1ms TTL=63
+Reply from 10.10.50.150: bytes=32 time=1ms TTL=63
+
+Ping statistics for 10.10.50.150:
+    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+Approximate round trip times in milli-seconds:
+    Minimum = 1ms, Maximum = 1ms, Average = 1ms
+========================================
+结束时间: 2026-07-21 07:43:49
+========================================
+

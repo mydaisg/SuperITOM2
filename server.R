@@ -2095,14 +2095,14 @@ server <- function(input, output, session) {
   # 添加部门
   observeEvent(input$org_add_dept, {
     req(rv$logged_in)
-    depts <- dept_get_all(); dept_choices <- c("(顶级)"="", setNames(as.character(depts$id), depts$name))
+    depts <- dept_get_all(); dept_choices <- c("(顶级 — 创建一级部门)"="", setNames(as.character(depts$id), depts$name))
     # 默认为选中部门的上级（即选中的部门）
     default_parent <- ""
     sel <- org_selected_dept(); stype <- org_selected_type()
     if (!is.null(sel) && (is.null(stype) || stype == "dept")) default_parent <- as.character(sel)
     showModal(modalDialog(title="添加部门", size="s", easyClose=TRUE,
       textInput("org_new_dept_name", "部门名称 *", placeholder="例如：研发中心"),
-      selectizeInput("org_new_dept_parent", "上级部门", choices=dept_choices, selected=default_parent, width="100%"),
+      selectInput("org_new_dept_parent", "上级部门", choices=dept_choices, selected=default_parent, width="100%"),
       numericInput("org_new_dept_sort", "显示序号", value=0, min=0, max=999, step=1),
       textInput("org_new_dept_desc", "描述"),
       footer=tagList(modalButton("取消"), actionButton("org_add_dept_confirm", "添加", class="btn-success"))))
@@ -2123,7 +2123,7 @@ server <- function(input, output, session) {
     dept_choices <- c("(顶级)"="", setNames(as.character(depts$id[depts$id!=did]), depts$name[depts$id!=did]))
     showModal(modalDialog(title=paste("编辑部门", d$name[1]), size="s", easyClose=TRUE,
       textInput("org_edit_dept_name", "名称", value=d$name[1]),
-      selectizeInput("org_edit_dept_parent", "上级部门", choices=dept_choices,
+      selectInput("org_edit_dept_parent", "上级部门", choices=dept_choices,
         selected=as.character(d$parent_id[1] %||% ""), width="100%"),
       numericInput("org_edit_dept_sort", "显示序号", value=d$sort_order[1] %||% 0, min=0, max=999, step=1),
       textInput("org_edit_dept_desc", "描述", value=d$description[1] %||% ""),
@@ -3914,6 +3914,177 @@ server <- function(input, output, session) {
     ids <- notes$id[sel]
     from_ym <- notes$ym[sel][1]
     result <- carryover_generate_next_month(ids, rv$current_user, from_ym)
+    removeModal()
+    showNotification(result$message, type = if(result$success) "message" else "error", duration = 5)
+  })
+
+  # ========== 周度数据结转 ==========
+  # 加载最旧周未完成清单
+  observeEvent(input$carryover_week_load_prev, {
+    req(rv$logged_in)
+    rv$carryover_week_prev <- carryover_prev_week_pending()
+    carryover_trigger(carryover_trigger() + 1)
+  })
+  observeEvent(input$carryover_week_sel_all, {
+    proxy <- DT::dataTableProxy("carryover_week_prev_table")
+    if (!is.null(rv$carryover_week_prev) && nrow(rv$carryover_week_prev) > 0) {
+      DT::selectRows(proxy, seq_len(nrow(rv$carryover_week_prev)))
+    }
+  })
+  observeEvent(input$carryover_week_desel_all, {
+    proxy <- DT::dataTableProxy("carryover_week_prev_table")
+    DT::selectRows(proxy, NULL)
+  })
+
+  output$carryover_prev_week_label <- renderUI({
+    req(rv$carryover_week_prev)
+    n <- nrow(rv$carryover_week_prev)
+    if (n == 0) {
+      wk <- carryover_get_prev_week()
+      if (is.null(wk)) return(tags$span(style="color:#5cb85c;", "没有待处理的周记事"))
+      return(tags$span(style="color:#5cb85c;", sprintf("%s 所有周记事已完成", wk)))
+    }
+    wk <- rv$carryover_week_prev$wk[1]
+    tags$span(sprintf("%s 共 %d 条未完成", wk, n))
+  })
+
+  output$carryover_week_prev_table <- DT::renderDT({
+    carryover_trigger()
+    notes <- rv$carryover_week_prev
+    if (is.null(notes) || nrow(notes) == 0) {
+      return(DT::datatable(data.frame(提示="点击 [加载待结账清单] 按钮查看", stringsAsFactors=FALSE), options=list(dom="t")))
+    }
+    disp <- data.frame(
+      id = notes$id,
+      note_no = ifelse(is.na(notes$note_no), "", notes$note_no),
+      title = notes$title,
+      status = notes$status,
+      created_at = substr(notes$created_at, 1, 10),
+      wk = notes$wk,
+      stringsAsFactors = FALSE, check.names = FALSE
+    )
+    colnames(disp) <- c("ID", "记事号", "标题", "状态", "创建时间", "周次")
+    DT::datatable(disp, escape = FALSE, rownames = FALSE, selection = "multiple",
+      options = list(pageLength = 25, dom = "ltip", columnDefs = list(list(targets = 0, visible = FALSE)))
+    )
+  })
+
+  # 确认周结账
+  observeEvent(input$carryover_week_close_btn, {
+    req(rv$logged_in, rv$current_user)
+    sel <- input$carryover_week_prev_table_rows_selected
+    notes <- rv$carryover_week_prev
+    if (is.null(sel) || length(sel) == 0 || is.null(notes)) {
+      showNotification("请先勾选要结账的记事", type = "warning"); return()
+    }
+    ids <- notes$id[sel]
+    titles <- notes$title[sel]
+    showModal(modalDialog(
+      title = "确认周结账",
+      size = "m",
+      tags$p(sprintf("将以下 %d 条记事标记为已完成：", length(ids))),
+      tags$ul(lapply(titles, tags$li)),
+      tags$p(style="color:#d9534f; font-size:12px;", "此操作不可撤销。"),
+      footer = tagList(
+        modalButton("取消"),
+        actionButton("carryover_week_close_confirm", "确认结转", class = "btn-warning")
+      )
+    ))
+  })
+  observeEvent(input$carryover_week_close_confirm, {
+    req(rv$logged_in, rv$current_user)
+    sel <- input$carryover_week_prev_table_rows_selected
+    notes <- rv$carryover_week_prev
+    ids <- notes$id[sel]
+    result <- carryover_close_notes(ids, rv$current_user)
+    removeModal()
+    showNotification(result$message, type = if(result$success) "message" else "error")
+    if (result$success) {
+      rv$carryover_week_prev <- carryover_prev_week_pending()
+      carryover_trigger(carryover_trigger() + 1)
+    }
+  })
+
+  # 加载本周模板
+  observeEvent(input$carryover_week_load_curr, {
+    req(rv$logged_in)
+    rv$carryover_week_templates <- carryover_current_week_templates()
+    carryover_trigger(carryover_trigger() + 1)
+  })
+  observeEvent(input$carryover_week_gen_sel_all, {
+    proxy <- DT::dataTableProxy("carryover_week_template_table")
+    if (!is.null(rv$carryover_week_templates) && nrow(rv$carryover_week_templates) > 0) {
+      DT::selectRows(proxy, seq_len(nrow(rv$carryover_week_templates)))
+    }
+  })
+  observeEvent(input$carryover_week_gen_desel_all, {
+    proxy <- DT::dataTableProxy("carryover_week_template_table")
+    DT::selectRows(proxy, NULL)
+  })
+
+  output$carryover_next_week_label <- renderUI({
+    notes <- rv$carryover_week_templates
+    if (is.null(notes) || nrow(notes) == 0) {
+      return(tags$span("请先加载模板"))
+    }
+    from_wk <- notes$wk[1]
+    dates <- carryover_next_week_dates(from_wk)
+    tags$span(sprintf("将生成: %d年第%02d周", dates$year, dates$week))
+  })
+
+  output$carryover_week_template_table <- DT::renderDT({
+    carryover_trigger()
+    notes <- rv$carryover_week_templates
+    if (is.null(notes) || nrow(notes) == 0) {
+      return(DT::datatable(data.frame(提示="点击 [加载本周模板] 按钮查看", stringsAsFactors=FALSE), options=list(dom="t")))
+    }
+    disp <- data.frame(
+      id = notes$id,
+      note_no = ifelse(is.na(notes$note_no), "", notes$note_no),
+      title = notes$title,
+      status = notes$status,
+      created_at = substr(notes$created_at, 1, 10),
+      wk = notes$wk,
+      stringsAsFactors = FALSE, check.names = FALSE
+    )
+    colnames(disp) <- c("ID", "记事号", "标题", "状态", "创建时间", "周次")
+    DT::datatable(disp, escape = FALSE, rownames = FALSE, selection = "multiple",
+      options = list(pageLength = 25, dom = "ltip", columnDefs = list(list(targets = 0, visible = FALSE)))
+    )
+  })
+
+  # 生成下周
+  observeEvent(input$carryover_week_gen_btn, {
+    req(rv$logged_in, rv$current_user)
+    sel <- input$carryover_week_template_table_rows_selected
+    notes <- rv$carryover_week_templates
+    if (is.null(sel) || length(sel) == 0 || is.null(notes)) {
+      showNotification("请先勾选模板记事", type = "warning"); return()
+    }
+    ids <- notes$id[sel]
+    from_wk <- notes$wk[sel][1]
+    dates <- carryover_next_week_dates(from_wk)
+    showModal(modalDialog(
+      title = "确认生成下周记事",
+      size = "m",
+      tags$p(sprintf("将从 %d 条模板生成 %d年第%02d周 的副本：", length(ids), dates$year, dates$week)),
+      tags$ul(lapply(notes$title[sel], function(t) {
+        new_t <- carryover_replace_week(t, sprintf("%04d-W%02d", dates$year, dates$week))
+        tags$li(tags$span(style="color:#999;", t), " → ", tags$b(new_t))
+      })),
+      footer = tagList(
+        modalButton("取消"),
+        actionButton("carryover_week_gen_confirm", "确认生成", class = "btn-success")
+      )
+    ))
+  })
+  observeEvent(input$carryover_week_gen_confirm, {
+    req(rv$logged_in, rv$current_user)
+    sel <- input$carryover_week_template_table_rows_selected
+    notes <- rv$carryover_week_templates
+    ids <- notes$id[sel]
+    from_wk <- notes$wk[sel][1]
+    result <- carryover_generate_next_week(ids, rv$current_user, from_wk)
     removeModal()
     showNotification(result$message, type = if(result$success) "message" else "error", duration = 5)
   })

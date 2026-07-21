@@ -1,12 +1,15 @@
 ##################
-# 数据结转模块 — 月度数据结转（记事先行）
+# 数据结转模块 — 月度/周度数据结转（记事先行）
 ##################
 source("Script/log_user.r")
 
 # 正则匹配标题中的 (YYYY年M月) 或（YYYY年MM月）模式（兼容半角/全角括号）
 .CARRYOVER_PATTERN <- "[（(](\\d{4})年(\\d{1,2})月[）)]"
 
-# 从标题提取年月字符串，如 "2026-06"
+# 正则匹配标题中的 (YYYY年第W周) 模式
+.CARRYOVER_WEEK_PATTERN <- "[（(](\\d{4})年第(\\d{1,2})周[）)]"
+
+# 从标题提取年月字符串，如 "2026-06"（仅匹配月模式）
 carryover_extract_ym <- function(title) {
   m <- regmatches(title, regexec(.CARRYOVER_PATTERN, title))[[1]]
   if (length(m) < 3) return(NULL)
@@ -14,6 +17,16 @@ carryover_extract_ym <- function(title) {
   mo  <- as.integer(m[3])
   if (is.na(yr) || is.na(mo) || mo < 1 || mo > 12) return(NULL)
   sprintf("%04d-%02d", yr, mo)
+}
+
+# 从标题提取年周字符串，如 "2026-W28"（仅匹配周模式）
+carryover_extract_week <- function(title) {
+  m <- regmatches(title, regexec(.CARRYOVER_WEEK_PATTERN, title))[[1]]
+  if (length(m) < 3) return(NULL)
+  yr <- as.integer(m[2])
+  wk <- as.integer(m[3])
+  if (is.na(yr) || is.na(wk) || wk < 1 || wk > 53) return(NULL)
+  sprintf("%04d-W%02d", yr, wk)
 }
 
 # 从标题中的年月替换为新的年月（title 中的 (2026年6月) → (2026年7月)）
@@ -24,6 +37,15 @@ carryover_replace_ym <- function(title, new_ym) {
   new_mo  <- as.integer(parts[2])
   # 统一替换为半角括号，月份保持两位
   gsub(.CARRYOVER_PATTERN, sprintf("(%d年%02d月)", new_yr, new_mo), title, perl = TRUE)
+}
+
+# 替换标题中的周模式，如 (2026年第28周) → (2026年第29周)
+carryover_replace_week <- function(title, new_week_str) {
+  if (is.null(title) || length(title) == 0) return("")
+  parts <- strsplit(new_week_str, "-W")[[1]]
+  new_yr <- as.integer(parts[1])
+  new_wk <- as.integer(parts[2])
+  gsub(.CARRYOVER_WEEK_PATTERN, sprintf("(%d年第%02d周)", new_yr, new_wk), title, perl = TRUE)
 }
 
 # 列出所有匹配标题规则的记事（可选按年月筛选）
@@ -156,6 +178,115 @@ carryover_generate_next_month <- function(note_ids, operator, from_ym = NULL) {
       operator$username[1] %||% "系统")
     list(success = TRUE, message = sprintf(
       "已生成 %d 条下月记事（%d年%02d月）", created, dates$year, dates$month))
+  }, error = function(e) list(success = FALSE, message = paste("生成失败:", e$message)),
+  finally = { db_disconnect(con) })
+}
+
+# ── 周度结转 ──
+
+# 列出所有匹配标题周规则的记事
+carryover_list_week_notes <- function(year_week = NULL) {
+  con <- db_connect()
+  tryCatch({
+    notes <- dbGetQuery(con, "SELECT id, note_no, title, content, status, importance,
+      reminder_at, due_at, created_at, created_by, reported_to_daily
+      FROM notes WHERE title IS NOT NULL AND title != '' ORDER BY created_at DESC")
+    notes$wk <- sapply(notes$title, function(t) {
+      res <- carryover_extract_week(t)
+      if (is.null(res)) NA_character_ else res
+    })
+    notes <- notes[!is.na(notes$wk), , drop = FALSE]
+    if (!is.null(year_week)) {
+      notes <- notes[notes$wk == year_week, , drop = FALSE]
+    }
+    notes
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+# 获取最旧未结账的周
+carryover_get_prev_week <- function() {
+  notes <- carryover_list_week_notes()
+  pending <- notes[notes$status != "completed", , drop = FALSE]
+  if (nrow(pending) == 0) return(NULL)
+  sort(unique(pending$wk))[1]
+}
+
+# 获取最旧未结账周的待处理记事
+carryover_prev_week_pending <- function() {
+  wk <- carryover_get_prev_week()
+  if (is.null(wk)) return(data.frame())
+  notes <- carryover_list_week_notes(wk)
+  notes[notes$status != "completed", , drop = FALSE]
+}
+
+# 获取可用于生成下周的模板
+carryover_current_week_templates <- function() {
+  wk <- carryover_get_prev_week()
+  if (is.null(wk)) return(data.frame())
+  notes <- carryover_list_week_notes(wk)
+  notes[!duplicated(notes$title), , drop = FALSE]
+}
+
+# 计算下一周日期
+carryover_next_week_dates <- function(from_wk = NULL) {
+  if (is.null(from_wk)) {
+    today <- Sys.Date()
+    wk_num <- as.integer(format(today, "%W")) + 1
+    yr <- as.integer(format(today, "%Y"))
+  } else {
+    parts <- strsplit(from_wk, "-W")[[1]]
+    yr <- as.integer(parts[1])
+    wk_num <- as.integer(parts[2]) + 1L
+  }
+  # 计算该周一的日期（R 的 %W 以周一为起点）
+  jan4 <- as.Date(sprintf("%04d-01-04", yr))
+  week1_start <- jan4 - as.integer(format(jan4, "%w"))
+  if (week1_start > jan4) week1_start <- week1_start - 7
+  week_start <- week1_start + (wk_num - 1) * 7
+  week_end <- week_start + 6
+  list(
+    year = yr, week = wk_num,
+    created_at = sprintf("%s 08:00:00", format(week_start, "%Y-%m-%d")),
+    due_at      = sprintf("%s 17:00:00", format(week_end, "%Y-%m-%d")),
+    reminder_at = sprintf("%s 08:01:00", format(week_start, "%Y-%m-%d"))
+  )
+}
+
+# 生成下周记事
+carryover_generate_next_week <- function(note_ids, operator, from_wk = NULL) {
+  if (length(note_ids) == 0) return(list(success = FALSE, message = "未选择模板记事"))
+  dates <- carryover_next_week_dates(from_wk)
+  con <- db_connect()
+  tryCatch({
+    created <- 0
+    for (nid in note_ids) {
+      nid <- as.integer(nid)
+      orig <- dbGetQuery(con, sprintf(
+        "SELECT title, content, created_by FROM notes WHERE id=%d", nid))
+      if (nrow(orig) == 0) next
+      target_wk <- sprintf("%04d-W%02d", dates$year, dates$week)
+      new_title <- carryover_replace_week(orig$title[1], target_wk)
+      new_content <- carryover_replace_week(orig$content[1] %||% "", target_wk)
+      new_no <- note_generate_number()
+      dbExecute(con, sprintf(
+        "INSERT INTO notes (note_no, title, content, status, importance,
+         reminder_at, due_at, created_by, created_at)
+         VALUES ('%s', '%s', '%s', 'pending', 0,
+         '%s', '%s', %d, '%s')",
+        new_no,
+        gsub("'","''",new_title),
+        gsub("'","''",new_content),
+        dates$reminder_at, dates$due_at,
+        orig$created_by[1] %||% 1,
+        dates$created_at))
+      created <- created + 1
+    }
+    note_fill_missing_no()
+    log_user_operation("数据结转-生成下周记事",
+      sprintf("%d 条 → %d 条", length(note_ids), created),
+      operator$username[1] %||% "系统")
+    list(success = TRUE, message = sprintf(
+      "已生成 %d 条下周记事（%d年第%02d周）", created, dates$year, dates$week))
   }, error = function(e) list(success = FALSE, message = paste("生成失败:", e$message)),
   finally = { db_disconnect(con) })
 }

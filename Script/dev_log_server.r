@@ -41,7 +41,7 @@ dev_log_server <- function(input, output, session, rv) {
     )
   })
 
-  # 列表（两列，带 log_no）
+  # 列表（两列，带 log_no + 搜索关键词高亮）
   output$dl_list <- renderUI({
     req(rv$logged_in)
     dl_trigger()
@@ -49,6 +49,31 @@ dev_log_server <- function(input, output, session, rv) {
     kw <- dl_search_term()
     sk <- if (is.null(kw) || nchar(trimws(kw)) == 0) NULL else trimws(kw)
     logs <- tryCatch(dev_log_get_all(mf, NULL, NULL, sk), error = function(e) data.frame())
+
+    # 搜索词分词
+    search_words <- if (!is.null(sk) && sk != "") strsplit(sk, "\\s+")[[1]] else character(0)
+    search_words <- search_words[search_words != ""]
+
+    # 高亮辅助函数（复用 Note 模块逻辑）
+    .hl <- function(text, words) {
+      if (length(words) == 0 || is.null(text) || is.na(text)) return(text)
+      for (w in words) {
+        pos <- gregexpr(w, text, ignore.case = TRUE)[[1]]
+        if (pos[1] > 0) {
+          parts <- c(); last <- 1
+          for (i in seq_along(pos)) {
+            p <- pos[i]; l <- attr(pos, "match.length")[i]
+            if (p > last) parts <- c(parts, substr(text, last, p - 1))
+            parts <- c(parts, '<mark style="background:#fde68a;color:#92400e;border-radius:3px;padding:0 2px;">',
+              substr(text, p, p + l - 1), '</mark>')
+            last <- p + l
+          }
+          if (last <= nchar(text)) parts <- c(parts, substr(text, last, nchar(text)))
+          text <- paste(parts, collapse = "")
+        }
+      }
+      text
+    }
 
     if (nrow(logs) == 0) {
       return(tags$div(style = "text-align:center; color:#999; padding:40px; font-size:14px;",
@@ -66,6 +91,9 @@ dev_log_server <- function(input, output, session, rv) {
         time_str <- substr(r$created_at, 12, 16)
         log_no_str <- if (!is.null(r$log_no) && !is.na(r$log_no) && nchar(r$log_no) > 0) r$log_no else ""
 
+        # 高亮后的标题
+        hl_title <- if (length(search_words) > 0) HTML(.hl(r$title %||% "", search_words)) else r$title %||% ""
+
         parts <- list(
           # 标题行：编号 + 模块标签 + 标题 + 时间（同行）
           tags$div(style = "display:flex; align-items:flex-start; gap:6px; margin-bottom:6px; flex-wrap:wrap;",
@@ -75,7 +103,7 @@ dev_log_server <- function(input, output, session, rv) {
               tags$span(style = "display:inline-block; padding:1px 6px; border-radius:3px; font-size:10px; background:#1e1e1e; color:#7ecb7e; font-family:Consolas,monospace; white-space:nowrap; flex-shrink:0;", r$commit_msg),
             tags$div(style = "flex:1; min-width:0;",
               tags$div(style = "font-size:15px; font-weight:bold; color:#222; line-height:1.3;",
-                r$title %||% "",
+                hl_title,
                 tags$span(style = "font-size:11px; color:#bbb; font-weight:normal; margin-left:6px; white-space:nowrap;", time_str)
               )
             )
@@ -85,10 +113,11 @@ dev_log_server <- function(input, output, session, rv) {
           en_req <- if (!is.null(r$requirement_en) && !is.na(r$requirement_en) && nchar(r$requirement_en) > 0) {
             tags$div(style = "font-size:11px; color:#b45309; font-style:italic; font-family:Consolas,monospace; margin-bottom:4px; opacity:0.8;", icon("brain"), " ", r$requirement_en)
           } else NULL
+          hl_req <- if (length(search_words) > 0) HTML(.hl(r$requirement, search_words)) else r$requirement
           parts <- c(parts, list(
             tags$div(style = "margin-top:6px; padding:8px 10px; background:#fff8e1; border-left:3px solid #f59e0b; border-radius:0 4px 4px 0; font-size:13px;",
               tags$div(style = "font-size:11px; color:#b45309; font-weight:bold; margin-bottom:3px;", icon("clipboard"), " 需求"),
-              tags$div(style = "white-space:pre-wrap; line-height:1.5;", r$requirement),
+              tags$div(style = "white-space:pre-wrap; line-height:1.5;", hl_req),
               en_req)
           ))
         }
@@ -96,10 +125,11 @@ dev_log_server <- function(input, output, session, rv) {
           en_sol <- if (!is.null(r$solution_en) && !is.na(r$solution_en) && nchar(r$solution_en) > 0) {
             tags$div(style = "font-size:11px; color:#2e7d32; font-style:italic; font-family:Consolas,monospace; margin-top:4px; opacity:0.8;", icon("brain"), " ", r$solution_en)
           } else NULL
+          hl_sol <- if (length(search_words) > 0) HTML(.hl(r$solution, search_words)) else r$solution
           parts <- c(parts, list(
             tags$div(style = "margin-top:6px; padding:8px 10px; background:#e8f5e9; border-left:3px solid #4caf50; border-radius:0 4px 4px 0; font-size:13px;",
               tags$div(style = "font-size:11px; color:#2e7d32; font-weight:bold; margin-bottom:3px;", icon("lightbulb"), " 方案"),
-              tags$div(style = "white-space:pre-wrap; line-height:1.5;", r$solution),
+              tags$div(style = "white-space:pre-wrap; line-height:1.5;", hl_sol),
               en_sol)
           ))
         }
@@ -107,11 +137,12 @@ dev_log_server <- function(input, output, session, rv) {
           en_line <- if (!is.null(r$result_en) && !is.na(r$result_en) && nchar(r$result_en) > 0) {
             tags$div(style = "font-size:12px; color:#0d47a1; font-family:Consolas,monospace; margin-bottom:4px;", r$result_en)
           } else NULL
+          hl_res <- if (length(search_words) > 0) HTML(.hl(r$result, search_words)) else r$result
           parts <- c(parts, list(
             tags$div(style = "margin-top:6px; padding:8px 10px; background:#e3f2fd; border-left:3px solid #2196f3; border-radius:0 4px 4px 0; font-size:13px;",
               tags$div(style = "font-size:11px; color:#1565c0; font-weight:bold; margin-bottom:3px;", icon("check-circle"), " 结果"),
               en_line,
-              tags$div(style = "white-space:pre-wrap; line-height:1.5;", r$result))
+              tags$div(style = "white-space:pre-wrap; line-height:1.5;", hl_res))
           ))
         }
         if (!is.na(r$files_changed) && nchar(r$files_changed) > 0) {
