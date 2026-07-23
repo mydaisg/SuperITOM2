@@ -6,8 +6,8 @@ source("Script/log_user.r")
 # 正则匹配标题中的 (YYYY年M月) 或（YYYY年MM月）模式（兼容半角/全角括号）
 .CARRYOVER_PATTERN <- "[（(](\\d{4})年(\\d{1,2})月[）)]"
 
-# 正则匹配标题中的 (YYYY年第W周) 模式
-.CARRYOVER_WEEK_PATTERN <- "[（(](\\d{4})年第(\\d{1,2})周[）)]"
+# 正则匹配标题中的 (YYYYWeekW) 模式（如 2026Week28）
+.CARRYOVER_WEEK_PATTERN <- "[（(](\\d{4})[Ww]eek(\\d{1,2})[）)]"
 
 # 从标题提取年月字符串，如 "2026-06"（仅匹配月模式）
 carryover_extract_ym <- function(title) {
@@ -39,13 +39,13 @@ carryover_replace_ym <- function(title, new_ym) {
   gsub(.CARRYOVER_PATTERN, sprintf("(%d年%02d月)", new_yr, new_mo), title, perl = TRUE)
 }
 
-# 替换标题中的周模式，如 (2026年第28周) → (2026年第29周)
+# 替换标题中的周模式，如 (2026Week28) → (2026Week29)
 carryover_replace_week <- function(title, new_week_str) {
   if (is.null(title) || length(title) == 0) return("")
   parts <- strsplit(new_week_str, "-W")[[1]]
   new_yr <- as.integer(parts[1])
   new_wk <- as.integer(parts[2])
-  gsub(.CARRYOVER_WEEK_PATTERN, sprintf("(%d年第%02d周)", new_yr, new_wk), title, perl = TRUE)
+  gsub(.CARRYOVER_WEEK_PATTERN, sprintf("(%dWeek%02d)", new_yr, new_wk), title, perl = TRUE)
 }
 
 # 列出所有匹配标题规则的记事（可选按年月筛选）
