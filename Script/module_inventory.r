@@ -133,9 +133,10 @@ MODULE_INVENTORY <- list(
   ),
   list(
     module = "资产", icon = "laptop",
-    frontend = "资产标签页 → tabsetPanel(资产列表, 工位图) → asset_ui()",
+    frontend = "资产标签页 → tabsetPanel(资产列表, 工位图, 工位图V2) → asset_ui()",
     source = c("Script/asset_management.r", "Script/asset_server.r", "Script/asset_ui.r",
-               "Script/seat_map_management.r", "Script/seat_map_server.r"),
+               "Script/seat_map_management.r", "Script/seat_map_server.r",
+               "Script/seat_map_v2_ui.r", "Script/seat_map_v2_server.r"),
     tables = "assets, seat_buildings, seat_floors, seat_zones, seats",
     perms = list(
       list(code="asset_view",      name="查看资产"),
@@ -151,7 +152,8 @@ MODULE_INVENTORY <- list(
       "zone_get_all/add/update/delete() — 区域CRUD",
       "seat_get_all/add/update/delete() — 工位CRUD",
       "seat_batch_generate() — 批量生成工位",
-      "seat_floor_snapshot() — 楼层快照(工位图渲染)"
+      "seat_floor_snapshot() — 楼层快照(工位图渲染)",
+      "seat_map_v2_ui() / seat_map_v2_server() — 工位图V2（搜索/筛选/右键菜单/详情面板）"
     )
   ),
   list(

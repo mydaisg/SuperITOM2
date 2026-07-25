@@ -25,7 +25,7 @@ solution_exec_server <- function(input, output, session, rv) {
         selectInput("exec_project_select", NULL, choices = choices, width = "300px",
           selected = exec_project_id()),
         actionButton("exec_project_new_btn", "新建执行项目", icon = icon("plus"), class = "btn-success btn-sm"),
-        if (!is.null(exec_project_id())) actionButton("exec_project_del_btn", "删除", icon = icon("trash"), class = "btn-danger btn-sm")
+        if (!is.null(exec_project_id())) actionButton("exec_project_del_btn", "删除", icon = icon("trash"), class = "btn-dark btn-sm")
       )
     )
   })
@@ -55,7 +55,7 @@ solution_exec_server <- function(input, output, session, rv) {
     req(rv$logged_in, exec_project_id())
     showModal(modalDialog(title = "确认删除项目",
       "删除项目将同时删除所有关联任务，不可恢复。",
-      footer = tagList(modalButton("取消"), actionButton("exec_project_del_confirm", "确认删除", class = "btn-danger")),
+      footer = tagList(modalButton("取消"), actionButton("exec_project_del_confirm", "确认删除", class = "btn-dark")),
       size = "s", easyClose = TRUE
     ))
   })
@@ -86,7 +86,7 @@ solution_exec_server <- function(input, output, session, rv) {
     sprintf(paste0(
       '<button class="btn btn-xs btn-warning" style="margin-right:3px;" ',
       'onclick="Shiny.setInputValue(\'exec_edit_row\',{id:%d},{priority:\'event\'});" title="编辑">✏</button>',
-      '<button class="btn btn-xs btn-danger" ',
+      '<button class="btn btn-xs btn-dark" ',
       'onclick="if(confirm(\'确认删除？\'))Shiny.setInputValue(\'exec_del_row\',{id:%d},{priority:\'event\'});" title="删除">🗑</button>'),
       id, id)
   }
@@ -158,9 +158,10 @@ solution_exec_server <- function(input, output, session, rv) {
     items <- exec_task_get_by_project(pid, "issue")
     if (nrow(items) == 0) return(data.frame(提示 = "暂无数据"))
 
-    # 从 exec_config 读取可选项
+    # 从 exec_config 读取可选项（确保不为空）
     modules <- exec_config_get("module")
-    module_opts <- if (nrow(modules) > 0) paste0('<option>', modules$value, '</option>', collapse = "") else ""
+    module_opts <- if (nrow(modules) > 0) paste0('<option>', modules$value, '</option>', collapse = "") else
+      '<option>请在配置管理中添加模块</option>'
     issue_types <- exec_config_get("issue_type")
     type_opts <- if (nrow(issue_types) > 0) paste0('<option>', issue_types$value, '</option>', collapse = "") else
       '<option>功能缺陷</option><option>性能问题</option><option>界面问题</option><option>数据问题</option><option>其他</option>'
@@ -289,25 +290,63 @@ solution_exec_server <- function(input, output, session, rv) {
     showNotification(result$message, type = ifelse(result$success, "message", "error"))
   })
 
-  # ── 添加任务弹窗 ──
+  # ── 添加任务弹窗（动态切换：问题管理显示专用字段）──
   observeEvent(input$exec_task_add_btn, {
     req(rv$logged_in, exec_project_id())
+
+    # 从 exec_config 读取可选项
+    modules <- exec_config_get("module")
+    module_choices <- if (nrow(modules) > 0) setNames(modules$value, modules$value) else c("请先在配置管理中添加模块" = "")
+    issue_types <- exec_config_get("issue_type")
+    type_choices <- if (nrow(issue_types) > 0) setNames(issue_types$value, issue_types$value) else
+      c("功能缺陷"="功能缺陷","性能问题"="性能问题","界面问题"="界面问题","数据问题"="数据问题","其他"="其他")
+    severities <- exec_config_get("severity")
+    sev_choices <- if (nrow(severities) > 0) setNames(severities$value, severities$value) else
+      c("致命"="致命","严重"="严重","一般"="一般","轻微"="轻微","建议"="建议")
+
     showModal(modalDialog(title = "添加任务", size = "m",
+      # 任务类型选择
       selectInput("exec_add_type", "任务类型",
         choices = c("培训计划"="train","试运行计划"="pilot","基础信息维护"="basic",
           "人力资源测试用例"="test_hr","行政管理测试用例"="test_admin",
-          "财务管理测试用例"="test_fin","IT管理测试用例"="test_it","问题管理"="issue")),
+          "财务管理测试用例"="test_fin","IT管理测试用例"="test_it","问题管理"="issue"),
+        selected = "issue"),
+
+      # ── 通用字段（始终显示）──
       textInput("exec_add_seq", "序号/编号"),
-      textInput("exec_add_module", "模块"),
-      textAreaInput("exec_add_content", "内容", rows = 2),
-      textInput("exec_add_target", "对象/场景"),
-      textInput("exec_add_duration", "时长/预期"),
-      textInput("exec_add_method", "方式/实际"),
-      textInput("exec_add_date", "计划日期"),
       textInput("exec_add_responsible", "负责人"),
       textInput("exec_add_department", "部门"),
       selectInput("exec_add_status", "状态",
         choices = c("待开始","进行中","已完成","待测试","测试中","已通过","待处理","处理中","已修复")),
+
+      # ── 问题管理专用字段（初始隐藏）──
+      conditionalPanel("input.exec_add_type == 'issue'",
+        tags$hr(),
+        tags$b("问题信息"),
+        selectizeInput("exec_add_issue_module", "所属模块", choices = module_choices, width = "100%",
+          options = list(placeholder = "选择所属模块...")),
+        selectizeInput("exec_add_issue_type", "问题类型", choices = type_choices, width = "100%"),
+        textAreaInput("exec_add_issue_title", "问题标题 *", rows = 2, placeholder = "描述问题现象"),
+        textAreaInput("exec_add_issue_desc", "问题描述", rows = 3, placeholder = "详细描述问题"),
+        selectizeInput("exec_add_issue_severity", "严重程度", choices = sev_choices, width = "100%", selected = "一般"),
+        fluidRow(
+          column(6, textInput("exec_add_issue_tester", "提交人")),
+          column(6, textInput("exec_add_issue_date", "日期", value = format(Sys.Date(), "%Y-%m-%d")))
+        ),
+        textAreaInput("exec_add_issue_remark", "建议", rows = 2, placeholder = "修复建议")
+      ),
+
+      # ── 通用字段（问题管理时隐藏）──
+      conditionalPanel("input.exec_add_type != 'issue'",
+        tags$hr(),
+        textInput("exec_add_module", "模块"),
+        textAreaInput("exec_add_content", "内容", rows = 2),
+        textInput("exec_add_target", "对象/场景"),
+        textInput("exec_add_duration", "时长/预期"),
+        textInput("exec_add_method", "方式/实际"),
+        textInput("exec_add_date", "计划日期")
+      ),
+
       footer = tagList(modalButton("取消"), actionButton("exec_task_save", "保存", class = "btn-primary")),
       easyClose = TRUE
     ))
@@ -315,14 +354,35 @@ solution_exec_server <- function(input, output, session, rv) {
 
   observeEvent(input$exec_task_save, {
     req(rv$logged_in, exec_project_id())
-    result <- exec_task_add(
-      project_id = exec_project_id(), task_type = input$exec_add_type,
-      seq = input$exec_add_seq, module = input$exec_add_module,
-      content = input$exec_add_content, target = input$exec_add_target,
-      duration = input$exec_add_duration, method = input$exec_add_method,
-      plan_date = input$exec_add_date, responsible = input$exec_add_responsible,
-      department = input$exec_add_department, status = input$exec_add_status
-    )
+
+    if (input$exec_add_type == "issue") {
+      # ── 问题管理：用专用字段 ──
+      result <- exec_task_add(
+        project_id = exec_project_id(), task_type = "issue",
+        seq = input$exec_add_seq,
+        module = input$exec_add_issue_module,
+        content = input$exec_add_issue_title,
+        target = input$exec_add_issue_type,
+        duration = input$exec_add_issue_desc,
+        priority = input$exec_add_issue_severity,
+        tester = input$exec_add_issue_tester,
+        test_date = input$exec_add_issue_date,
+        remark = input$exec_add_issue_remark,
+        responsible = input$exec_add_responsible,
+        department = input$exec_add_department,
+        status = input$exec_add_status
+      )
+    } else {
+      # ── 通用任务：用通用字段 ──
+      result <- exec_task_add(
+        project_id = exec_project_id(), task_type = input$exec_add_type,
+        seq = input$exec_add_seq, module = input$exec_add_module,
+        content = input$exec_add_content, target = input$exec_add_target,
+        duration = input$exec_add_duration, method = input$exec_add_method,
+        plan_date = input$exec_add_date, responsible = input$exec_add_responsible,
+        department = input$exec_add_department, status = input$exec_add_status
+      )
+    }
     if (result$success) removeModal()
     exec_trigger(exec_trigger() + 1)
     showNotification(result$message, type = ifelse(result$success, "message", "error"))

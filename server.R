@@ -39,7 +39,8 @@ source("Script/asset_management.r")  # 资产模块数据层
 source("Script/asset_server.r")      # 资产模块服务端
 source("Script/attendance_device.r")  # 考勤设备模块数据层
 source("Script/seat_map_management.r")  # 工位图模块数据层
-source("Script/seat_map_server.r")      # 工位图模块服务端
+source("Script/seat_map_server.r")      # 工位图模块服务端（旧版）
+source("Script/seat_map_v2_server.r")   # 工位图模块 V2 服务端
 source("Script/duty_matrix_management.r") # 岗职模块数据层
 source("Script/duty_matrix_server.r")     # 岗职模块服务端
 source("Script/module_inventory.r")       # 模块清单（全站映射参考）
@@ -3729,6 +3730,7 @@ server <- function(input, output, session) {
 
   # 工位图模块逻辑
   seat_map_server(input, output, session, rv)
+  seat_map_v2_server(input, output, session, rv)  # V2新版
 
   # 岗职模块逻辑
   duty_matrix_server(input, output, session, rv)

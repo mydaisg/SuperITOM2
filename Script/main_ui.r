@@ -47,6 +47,7 @@ source("Script/note_ui.r")
 
 # 加载资产模块
 source("Script/asset_ui.r")
+source("Script/seat_map_v2_ui.r")
 
 # 加载岗职模块
 source("Script/duty_matrix_ui.r")

@@ -89,7 +89,7 @@ solution_server <- function(input, output, session, rv) {
             </div>
             <div style="display:flex;gap:4px;flex-shrink:0;">
               <button class="btn btn-xs btn-info" title="编辑" onclick="Shiny.setInputValue(\'sol_edit_click\',%d,{priority:\'event\'});">✏</button>
-              <button class="btn btn-xs btn-danger" title="删除" onclick="if(confirm(\'确认删除此方案？\'))Shiny.setInputValue(\'sol_delete_click\',%d,{priority:\'event\'});">🗑</button>
+              <button class="btn btn-xs btn-dark" title="删除" onclick="if(confirm(\'确认删除此方案？\'))Shiny.setInputValue(\'sol_delete_click\',%d,{priority:\'event\'});">🗑</button>
             </div>
           </div>
           %s

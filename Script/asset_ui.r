@@ -45,9 +45,13 @@ asset_ui <- function() {
         ),
         DTOutput("asset_table")
       ),
-      # ── 标签2：工位图 ──
+      # ── 标签2：工位图（旧版）──
       tabPanel("工位图", value = "seat",
         seat_map_content()
+      ),
+      # ── 标签2b：工位图 V2（新版）──
+      tabPanel(tags$span("工位图", tags$sup(style = "color:#ff9800; font-size:10px;", "V2")), value = "seat_v2",
+        seat_map_v2_ui()
       ),
       # ── 标签3：考勤设备 ──
       tabPanel("考勤设备", value = "attendance",
