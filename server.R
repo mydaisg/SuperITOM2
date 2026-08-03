@@ -25,6 +25,7 @@ source("Script/github_autosubmit.r") # GitHub自动提交功能
 source("Script/std_computer.r")        # 标准化模块
 source("Script/main_ui.r")          # 主界面定义
 source("Script/process_server.r")       # 流程模块服务端
+source("Script/process_v2_server.r")    # 流程模块 V2 服务端
 source("Script/sysmon_management.r")   # 性能监控数据层
 source("Script/sysmon_server.r")       # 性能监控服务端
 source("Script/solution_management.r") # 方案模块数据层
@@ -1907,6 +1908,26 @@ server <- function(input, output, session) {
           build_branch(kids[ki, ], nid, depth + 1)
         }
       }
+
+      # ★ 渲染该部门直属人员
+      dept_users <- users_by_dept[[as.character(dept_row$id)]]
+      if (!is.null(dept_users) && nrow(dept_users) > 0) {
+        for (ui in seq_len(nrow(dept_users))) {
+          u <- dept_users[ui, ]
+          uid <- sprintf("U%d", u$id)
+          ulabel <- org_clean_label(u$display_name)
+          if (is.null(ulabel) || nchar(ulabel) == 0) ulabel <- org_clean_label(u$username)
+          if (nchar(ulabel) == 0) ulabel <- sprintf("User-%d", u$id)
+          # 人员用圆角矩形（Mermaid 中 () 表示圆角）
+          lines <<- c(lines, sprintf('  %s("%s")', uid, ulabel))
+          lines <<- c(lines, sprintf('  style %s fill:#f5f5f5,color:#333,stroke:#bbb,stroke-width:1px', uid))
+          lines <<- c(lines, sprintf('  %s -.-> %s', nid, uid))
+          lines <<- c(lines, sprintf('  linkStyle %d stroke:#bbb,stroke-width:1px,stroke-dasharray:4 2',
+            link_index()))
+          link_inc()
+          lines <<- c(lines, sprintf('  click %s orgNodeClick', uid))
+        }
+      }
     }
 
     for (i in seq_len(nrow(l1))) {
@@ -2132,8 +2153,28 @@ server <- function(input, output, session) {
   }
 
   observeEvent(input$org_edit_dept, {
-    req(rv$logged_in, org_selected_dept())
-    org_show_edit_dept_modal(org_selected_dept())
+    req(rv$logged_in)
+    did <- org_selected_dept(); stype <- org_selected_type()
+    # 如果已选中部门，直接编辑；否则弹窗选择
+    if (!is.null(did) && (is.null(stype) || stype == "dept")) {
+      org_show_edit_dept_modal(did)
+    } else {
+      depts <- dept_get_all()
+      if (nrow(depts) == 0) { showNotification("暂无部门", type = "warning"); return() }
+      choices <- setNames(as.character(depts$id), dept_get_tree()$path)
+      showModal(modalDialog(title = "选择要编辑的部门", size = "m", easyClose = TRUE,
+        selectizeInput("org_select_dept_edit", "部门", choices = choices, width = "100%",
+          options = list(placeholder = "搜索部门...")),
+        footer = tagList(modalButton("取消"),
+          actionButton("org_select_dept_edit_confirm", "编辑", class = "btn-primary"))))
+    }
+  })
+  observeEvent(input$org_select_dept_edit_confirm, {
+    req(input$org_select_dept_edit)
+    did <- as.integer(input$org_select_dept_edit)
+    org_selected_dept(did); org_selected_type("dept")
+    removeModal()
+    org_show_edit_dept_modal(did)
   })
 
   # L2 双击 → 选中并弹出编辑
@@ -2154,14 +2195,40 @@ server <- function(input, output, session) {
 
   # 删除部门
   observeEvent(input$org_del_dept, {
-    req(rv$logged_in, org_selected_dept())
-    did <- org_selected_dept(); depts <- dept_get_all(); d <- depts[depts$id==did, ]
+    req(rv$logged_in)
+    did <- org_selected_dept(); stype <- org_selected_type()
+    if (!is.null(did) && (is.null(stype) || stype == "dept")) {
+      depts <- dept_get_all(); d <- depts[depts$id==did, ]
+      if (nrow(d)==0) return()
+      showModal(modalDialog(title="确认删除部门",
+        tags$div(style="font-size:13px;",
+          tags$p(tags$b(sprintf("确定删除部门 [%s] 吗？", d$name[1]))),
+          tags$p(style="color:#d9534f; font-size:12px;", "有子部门或人员时，无法删除。")),
+        footer=tagList(modalButton("取消"), actionButton("org_del_dept_confirm", "确认删除", class="btn-dark")),
+        size="s", easyClose=TRUE))
+    } else {
+      depts <- dept_get_all()
+      if (nrow(depts) == 0) { showNotification("暂无部门", type = "warning"); return() }
+      choices <- setNames(as.character(depts$id), dept_get_tree()$path)
+      showModal(modalDialog(title = "选择要删除的部门", size = "m", easyClose = TRUE,
+        selectizeInput("org_select_dept_del", "部门", choices = choices, width = "100%",
+          options = list(placeholder = "搜索部门...")),
+        footer = tagList(modalButton("取消"),
+          actionButton("org_select_dept_del_confirm", "下一步", class = "btn-dark"))))
+    }
+  })
+  observeEvent(input$org_select_dept_del_confirm, {
+    req(input$org_select_dept_del)
+    did <- as.integer(input$org_select_dept_del)
+    org_selected_dept(did); org_selected_type("dept")
+    removeModal()
+    depts <- dept_get_all(); d <- depts[depts$id==did, ]
     if (nrow(d)==0) return()
     showModal(modalDialog(title="确认删除部门",
       tags$div(style="font-size:13px;",
         tags$p(tags$b(sprintf("确定删除部门 [%s] 吗？", d$name[1]))),
         tags$p(style="color:#d9534f; font-size:12px;", "有子部门或人员时，无法删除。")),
-      footer=tagList(modalButton("取消"), actionButton("org_del_dept_confirm", "确认删除", class="btn-danger")),
+      footer=tagList(modalButton("取消"), actionButton("org_del_dept_confirm", "确认删除", class = "btn-dark")),
       size="s", easyClose=TRUE))
   })
   observeEvent(input$org_del_dept_confirm, {
@@ -3718,6 +3785,7 @@ server <- function(input, output, session) {
 
   # 流程模块逻辑
   process_server(input, output, session, rv)
+  process_v2_server(input, output, session, rv)  # V2 重构版
 
   # 绩效模块逻辑
   performance_server(input, output, session, rv)

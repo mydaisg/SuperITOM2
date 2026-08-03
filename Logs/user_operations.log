@@ -203,3 +203,9 @@
 [2026-07-21 10:27:24] 操作: 数据结转-生成下周记事, 用户: 1 条 → 1 条, 操作者: DaiSG 
 [2026-07-23 10:44:48] 操作: 开发日志-新增, 用户: DL20260723004 工位图 V2 新版重写, 操作者: 系统 
 [2026-07-23 10:48:30] 操作: 开发日志-新增, 用户: DL20260723005 添加问题弹窗改为专用表单+下拉选择配置项, 操作者: 系统 
+[2026-07-31 19:25:55] 操作: 操作失败 添加用户, 用户: unknown, 操作者: admin , 详情: 错误: missing value where TRUE/FALSE needed 
+[2026-07-31 19:25:55] 操作: 操作失败 添加用户, 用户: unknown, 操作者: admin , 详情: 错误: missing value where TRUE/FALSE needed 
+[2026-07-31 19:25:55] 操作: 操作失败 添加用户, 用户: unknown, 操作者: admin , 详情: 错误: missing value where TRUE/FALSE needed 
+[2026-07-31 19:25:55] 操作: 操作失败 添加用户, 用户: unknown, 操作者: admin , 详情: 错误: missing value where TRUE/FALSE needed 
+[2026-07-31 19:25:55] 操作: 操作失败 添加用户, 用户: unknown, 操作者: admin , 详情: 错误: missing value where TRUE/FALSE needed 
+[2026-08-01 00:19:52] 操作: 开发日志-新增, 用户: DL20260801001 流程模块V2重构（借鉴泛微OA标准流程）, 操作者: 系统 
