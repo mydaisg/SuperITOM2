@@ -2089,6 +2089,12 @@ server <- function(input, output, session) {
 
   observeEvent(input$org_deselect, { org_selected_dept(NULL); org_selected_type(NULL) })
 
+  # IT 工作模型 Mermaid 流程图
+  output$itwm_chart <- renderUI({
+    req(rv$logged_in)
+    it_work_model_mermaid()
+  })
+
   # 全部展开
   observeEvent(input$org_expand_all, {
     org_collapsed(integer(0))
