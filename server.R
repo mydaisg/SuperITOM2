@@ -52,6 +52,7 @@ source("Script/dev_log_server.r")         # 开发日志模块
 source("Script/meta_task_management.r")  # 元任务数据层
 source("Script/meta_task_ui.r")          # 元任务UI
 source("Script/meta_task_server.r")      # 元任务模块
+source("Script/kingdee_k3cloud.r")       # 金蝶云星空 WebAPI 集成（SOL20260731001）
 
 
 # 注册静态资源路径（www 目录下的文件可通过 /www/ 访问）

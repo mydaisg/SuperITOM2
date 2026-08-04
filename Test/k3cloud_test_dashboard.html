@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>金蝶云星空集成测试看板 — SOL20260731001</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh;color:#e0e0e0;padding:20px}
+.header{text-align:center;padding:30px 0 20px}
+.header h1{font-size:32px;font-weight:700;background:linear-gradient(90deg,#00d4ff,#7b2cbf);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:8px}
+.header .subtitle{color:#8892b0;font-size:15px}
+.header .badge{display:inline-block;background:rgba(0,212,255,0.15);color:#00d4ff;border:1px solid rgba(0,212,255,0.3);border-radius:20px;padding:4px 16px;font-size:13px;margin-top:8px}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px}
+.kpi-card{background:rgba(255,255,255,0.04);border-radius:14px;padding:20px;border:1px solid rgba(255,255,255,0.08);transition:all .3s}
+.kpi-card:hover{transform:translateY(-3px);border-color:rgba(0,212,255,.25);box-shadow:0 8px 30px rgba(0,212,255,.08)}
+.kpi-card.status-ok{border-left:3px solid #00e676}
+.kpi-card.status-warn{border-left:3px solid #ffd700}
+.kpi-card.status-err{border-left:3px solid #ff5252}
+.kpi-label{color:#8892b0;font-size:13px;margin-bottom:6px}
+.kpi-value{font-size:28px;font-weight:700}
+.kpi-value.ok{color:#00e676}
+.kpi-value.warn{color:#ffd700}
+.kpi-value.err{color:#ff5252}
+.kpi-sub{font-size:11px;color:#8892b0;margin-top:4px}
+.section{margin-bottom:28px}
+.section-title{font-size:18px;font-weight:600;margin-bottom:14px;color:#fff;display:flex;align-items:center;gap:8px}
+.section-title .icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px}
+.section-title .icon.blue{background:rgba(0,212,255,.15);color:#00d4ff}
+.section-title .icon.green{background:rgba(0,230,118,.15);color:#00e676}
+.section-title .icon.purple{background:rgba(123,44,191,.15);color:#7b2cbf}
+.section-title .icon.orange{background:rgba(255,159,67,.15);color:#ff9f43}
+.panel{background:rgba(255,255,255,.04);border-radius:14px;padding:20px;border:1px solid rgba(255,255,255,.08);margin-bottom:16px}
+.panel h3{font-size:15px;margin-bottom:12px;color:#ccc}
+.code-block{background:#1a1a2e;border-radius:8px;padding:16px;font-family:'Consolas','Courier New',monospace;font-size:12px;color:#d4d4d4;overflow-x:auto;white-space:pre-wrap;line-height:1.5;border:1px solid #2d3748;max-height:300px;overflow-y:auto}
+.code-block .key{color:#569cd6}
+.code-block .str{color:#ce9178}
+.code-block .num{color:#b5cea8}
+.code-block .comment{color:#6a9955}
+.status-row{display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(255,255,255,.03);border-radius:8px;margin-bottom:8px}
+.status-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.status-dot.ok{background:#00e676;box-shadow:0 0 8px rgba(0,230,118,.4)}
+.status-dot.err{background:#ff5252;box-shadow:0 0 8px rgba(255,82,82,.4)}
+.status-dot.pending{background:#ffd700;box-shadow:0 0 8px rgba(255,215,0,.4)}
+.status-label{font-weight:600;min-width:80px}
+.status-detail{font-size:13px;color:#8892b0}
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.param-table{width:100%;border-collapse:collapse;font-size:13px}
+.param-table td{padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.06)}
+.param-table td:first-child{color:#8892b0;width:120px}
+.param-table td:last-child{color:#e0e0e0;font-family:'Consolas',monospace;font-size:12px}
+.footer{text-align:center;padding:30px;color:#555;font-size:13px}
+.chart-card{background:rgba(255,255,255,.04);border-radius:14px;padding:20px;border:1px solid rgba(255,255,255,.08)}
+.chart-container{width:100%;height:280px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="header">
+    <h1>金蝶云星空 · 集成测试看板</h1>
+    <div class="subtitle">方案：SOL20260731001 ERP集成开发 | 测试账套2</div>
+    <div class="badge">Kingdee K3 Cloud WebAPI v6.0+</div>
+</div>
+
+<!-- KPI 概览 -->
+<div class="kpi-grid">
+    <div class="kpi-card status-err" id="kpiConnect">
+        <div class="kpi-label">服务器连通性</div>
+        <div class="kpi-value err">不可达</div>
+        <div class="kpi-sub">39.108.127.76:80 — 需内网环境</div>
+    </div>
+    <div class="kpi-card status-warn" id="kpiLogin">
+        <div class="kpi-label">登录认证</div>
+        <div class="kpi-value warn">待验证</div>
+        <div class="kpi-sub">LoginByAppSecret — 代码就绪</div>
+    </div>
+    <div class="kpi-card status-ok" id="kpiCode">
+        <div class="kpi-label">集成代码</div>
+        <div class="kpi-value ok">已实现</div>
+        <div class="kpi-sub">4个核心函数 + 签名认证</div>
+    </div>
+    <div class="kpi-card status-ok" id="kpiApi">
+        <div class="kpi-label">API 接口数</div>
+        <div class="kpi-value">4</div>
+        <div class="kpi-sub">登录/查询/查看/保存</div>
+    </div>
+</div>
+
+<!-- 连接测试详情 -->
+<div class="section">
+    <div class="section-title"><span class="icon blue">🔌</span>连接测试结果</div>
+    <div class="panel">
+        <div class="status-row">
+            <span class="status-dot err"></span>
+            <span class="status-label">服务器连接</span>
+            <span class="status-detail">http://39.108.127.76/k3cloud — TCP 端口 80/443 均不可达（当前网络环境）</span>
+        </div>
+        <div class="status-row">
+            <span class="status-dot pending"></span>
+            <span class="status-label">签名生成</span>
+            <span class="status-detail">HMAC-SHA256(appId + timestamp, appSecret) — openssl 包验证通过</span>
+        </div>
+        <div class="status-row">
+            <span class="status-dot ok"></span>
+            <span class="status-label">认证流程</span>
+            <span class="status-detail">LoginByAppSecret → Cookie(SessionId) → 业务API — 代码逻辑完整</span>
+        </div>
+        <div class="status-row">
+            <span class="status-dot ok"></span>
+            <span class="status-label">测试报告</span>
+            <span class="status-detail">已生成 Test/k3cloud_test_report.json (2026-08-03 18:14:04)</span>
+        </div>
+    </div>
+</div>
+
+<!-- 配置参数 -->
+<div class="section">
+    <div class="section-title"><span class="icon purple">⚙️</span>连接参数配置</div>
+    <div class="grid2">
+        <div class="panel">
+            <h3>服务器信息</h3>
+            <table class="param-table">
+                <tr><td>ServerUrl</td><td>http://39.108.127.76/k3cloud</td></tr>
+                <tr><td>AcctID</td><td>693bff83061bf1</td></tr>
+                <tr><td>AppID</td><td>331221_R6av3Zjs2oD...</td></tr>
+                <tr><td>UserName</td><td>办公协同</td></tr>
+                <tr><td>LCID</td><td>2052 (简体中文)</td></tr>
+                <tr><td>ProductCode</td><td>QJDG-DMOG-OPNZ-CLUQ-AJKT</td></tr>
+            </table>
+        </div>
+        <div class="panel">
+            <h3>认证方式：LoginByAppSecret</h3>
+            <div class="code-block"><span class="comment"># 签名算法</span>
+<span class="key">signature</span> = HMAC-SHA256(
+    appId + timestamp,
+    appSecret
+)
+
+<span class="comment"># 请求头</span>
+AppKey: {appId}
+Timestamp: {timestamp}
+Signature: {signature}
+
+<span class="comment"># 请求体</span>
+{
+    acctID, appId, appSecret,
+    timestamp, signature, lcId
+}
+
+<span class="comment"># 响应 Cookie</span>
+ASP.NET_SessionId + kdservice-sessionid</div>
+        </div>
+    </div>
+</div>
+
+<!-- API 接口清单 -->
+<div class="section">
+    <div class="section-title"><span class="icon green">📡</span>已实现的 API 接口</div>
+    <div class="grid2">
+        <div class="panel">
+            <h3>1. k3_login() — 登录认证</h3>
+            <div class="code-block">POST /k3cloud/Kingdee.BOS.WebApi.
+    ServicesStub.AuthService.
+    LoginByAppSecret.common.kdsvc
+
+<span class="comment">→ 返回 session_id</span>
+<span class="comment">→ 后续请求携带 Cookie</span></div>
+        </div>
+        <div class="panel">
+            <h3>2. k3_query() — 单据查询</h3>
+            <div class="code-block">POST /k3cloud/Kingdee.BOS.WebApi.
+    ServicesStub.DynamicFormService.
+    ExecuteBillQuery.common.kdsvc
+
+<span class="comment">→ formId: BD_Customer / BD_Department / BD_Material</span>
+<span class="comment">→ fieldKeys: "FNumber,FName"</span>
+<span class="comment">→ 返回 data.frame</span></div>
+        </div>
+        <div class="panel">
+            <h3>3. k3_view() — 查看详情</h3>
+            <div class="code-block">POST /k3cloud/Kingdee.BOS.WebApi.
+    ServicesStub.DynamicFormService.
+    View.common.kdsvc
+
+<span class="comment">→ formId + data.Id</span>
+<span class="comment">→ 返回完整业务对象</span></div>
+        </div>
+        <div class="panel">
+            <h3>4. k3_save() — 保存单据</h3>
+            <div class="code-block">POST /k3cloud/Kingdee.BOS.WebApi.
+    ServicesStub.DynamicFormService.
+    Save.common.kdsvc
+
+<span class="comment">→ formId + model (业务对象)</span>
+<span class="comment">→ 返回 Id + Number</span></div>
+        </div>
+    </div>
+</div>
+
+<!-- 测试脚本 -->
+<div class="section">
+    <div class="section-title"><span class="icon orange">🧪</span>测试脚本 & 调用方式</div>
+    <div class="panel">
+        <h3>方式一：R 命令行直接测试</h3>
+        <div class="code-block">cd D:\GitHub\SuperITOM2
+R --no-init-file --no-restore --no-save \
+  -e "source('Test/test_kingdee_k3cloud.r')"</div>
+    </div>
+    <div class="panel">
+        <h3>方式二：SuperITOM2 集成模块内调用</h3>
+        <div class="code-block"><span class="comment"># 在 server.R 中已 source</span>
+<span class="comment"># 直接调用函数即可</span>
+
+<span class="comment"># 登录</span>
+login &lt;- k3_login()
+<span class="key">if</span> (login<span class="key">$</span>success) {
+  sid &lt;- login<span class="key">$</span>session_id
+
+  <span class="comment"># 查询客户</span>
+  customers &lt;- k3_query(
+    <span class="str">"BD_Customer"</span>,
+    <span class="str">"FNumber,FName"</span>,
+    <span class="str">""</span>, sid
+  )
+
+  <span class="comment"># 查看单据</span>
+  detail &lt;- k3_view(
+    <span class="str">"BD_Customer"</span>,
+    <span class="num">10001</span>, sid
+  )
+
+  <span class="comment"># 保存单据</span>
+  result &lt;- k3_save(
+    <span class="str">"BD_Customer"</span>,
+    <span class="key">list</span>(
+      FName = <span class="str">"测试客户"</span>,
+      FNumber = <span class="str">"TEST001"</span>
+    ), sid
+  )
+}</div>
+    </div>
+    <div class="panel">
+        <h3>方式三：cURL 直接测试（内网环境）</h3>
+        <div class="code-block"><span class="comment"># 登录</span>
+curl -X POST \
+  http://39.108.127.76/k3cloud/Kingdee.BOS.WebApi.ServicesStub.AuthService.LoginByAppSecret.common.kdsvc \
+  -H "Content-Type: application/json" \
+  -H "AppKey: 331221_R6av3Zjs2oD/28TsS7wMQwSL4uRdQqsK" \
+  -H "Timestamp: $(date +%s)" \
+  -d '{"acctID":"693bff83061bf1","appId":"331221_R6av3Zjs2oD/28TsS7wMQwSL4uRdQqsK","appSecret":"692b1f15a0d34af7b1dbb1f375afbf4e","lcId":2052}'
+
+<span class="comment"># 查询客户（需替换 SESSION_ID）</span>
+curl -X POST \
+  http://39.108.127.76/k3cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.ExecuteBillQuery.common.kdsvc \
+  -H "Content-Type: application/json" \
+  -b "ASP.NET_SessionId=SESSION_ID; kdservice-sessionid=SESSION_ID" \
+  -d '{"formId":"BD_Customer","fieldKeys":"FNumber,FName","filterString":"","orderString":"","startRow":0,"limit":100,"topRowCount":0}'</div>
+    </div>
+</div>
+
+<!-- 架构流程图 -->
+<div class="section">
+    <div class="section-title"><span class="icon blue">🔄</span>集成架构流程</div>
+    <div class="chart-card">
+        <div id="flowChart" class="chart-container" style="height:350px;"></div>
+    </div>
+</div>
+
+<div class="footer">
+    方案 SOL20260731001 · Kingdee K3 Cloud WebAPI · SuperITOM2 集成模块 · 2026-08-03
+</div>
+
+<script>
+// 架构流程图（Sankey 风格用 graph）
+const flowChart = echarts.init(document.getElementById('flowChart'));
+flowChart.setOption({
+    tooltip: { trigger: 'item', backgroundColor: 'rgba(0,0,0,.8)', borderColor: '#00d4ff', textStyle: { color: '#fff' } },
+    series: [{
+        type: 'graph',
+        layout: 'force',
+        force: { repulsion: 300, edgeLength: [180, 300] },
+        roam: false,
+        draggable: false,
+        data: [
+            { name: 'SuperITOM2', symbolSize: 50, itemStyle: { color: '#7b2cbf' }, label: { show: true, color: '#fff', fontSize: 13 } },
+            { name: 'HMAC-SHA256\n签名', symbolSize: 35, itemStyle: { color: '#ffd700' }, label: { show: true, color: '#ccc', fontSize: 10 } },
+            { name: 'LoginByAppSecret\n认证', symbolSize: 40, itemStyle: { color: '#00d4ff' }, label: { show: true, color: '#fff', fontSize: 11 } },
+            { name: 'K3 Cloud\n服务器', symbolSize: 55, itemStyle: { color: '#00e676' }, label: { show: true, color: '#fff', fontSize: 12 } },
+            { name: 'Cookie\nSessionId', symbolSize: 30, itemStyle: { color: '#ff9f43' }, label: { show: true, color: '#ccc', fontSize: 10 } },
+            { name: 'ExecuteBillQuery\n查询', symbolSize: 40, itemStyle: { color: '#54a0ff' }, label: { show: true, color: '#fff', fontSize: 11 } },
+            { name: 'Save\n保存', symbolSize: 35, itemStyle: { color: '#f368e0' }, label: { show: true, color: '#fff', fontSize: 11 } },
+            { name: 'View\n查看', symbolSize: 35, itemStyle: { color: '#5f27cd' }, label: { show: true, color: '#fff', fontSize: 11 } },
+            { name: 'data.frame\nR 数据', symbolSize: 40, itemStyle: { color: '#00e676' }, label: { show: true, color: '#fff', fontSize: 11 } }
+        ],
+        links: [
+            { source: 'SuperITOM2', target: 'HMAC-SHA256\n签名', lineStyle: { color: '#7b2cbf', width: 2 } },
+            { source: 'HMAC-SHA256\n签名', target: 'LoginByAppSecret\n认证', lineStyle: { color: '#ffd700', width: 2 } },
+            { source: 'LoginByAppSecret\n认证', target: 'K3 Cloud\n服务器', lineStyle: { color: '#00d4ff', width: 3 } },
+            { source: 'K3 Cloud\n服务器', target: 'Cookie\nSessionId', lineStyle: { color: '#00e676', width: 2 } },
+            { source: 'Cookie\nSessionId', target: 'ExecuteBillQuery\n查询', lineStyle: { color: '#ff9f43', width: 2 } },
+            { source: 'Cookie\nSessionId', target: 'Save\n保存', lineStyle: { color: '#ff9f43', width: 2 } },
+            { source: 'Cookie\nSessionId', target: 'View\n查看', lineStyle: { color: '#ff9f43', width: 2 } },
+            { source: 'ExecuteBillQuery\n查询', target: 'data.frame\nR 数据', lineStyle: { color: '#54a0ff', width: 2 } },
+            { source: 'View\n查看', target: 'data.frame\nR 数据', lineStyle: { color: '#5f27cd', width: 2 } },
+            { source: 'Save\n保存', target: 'data.frame\nR 数据', lineStyle: { color: '#f368e0', width: 2 } }
+        ],
+        lineStyle: { curveness: 0.1, opacity: 0.7 }
+    }]
+});
+
+window.addEventListener('resize', () => flowChart.resize());
+</script>
+</body>
+</html>

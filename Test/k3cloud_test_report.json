@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-08-03 18:14:04",
+  "config": {
+    "server": "http://39.108.127.76/k3cloud",
+    "acct": "693bff83061bf1",
+    "user": "办公协同",
+    "lcId": 2052
+  },
+  "login": {
+    "success": false,
+    "session_id": {},
+    "message": "请求异常: Could not connect to server [39.108.127.76]:\ngetsockname() failed with errno 10022: Invalid arguments",
+    "raw_response": {},
+    "status_code": null
+  },
+  "queries": [],
+  "diagnostics": {
+    "timestamp_raw": "1785752045",
+    "app_id_preview": "331221_R...",
+    "error": "请求异常: Could not connect to server [39.108.127.76]:\ngetsockname() failed with errno 10022: Invalid arguments"
+  }
+}
