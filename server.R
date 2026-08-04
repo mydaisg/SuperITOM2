@@ -2089,10 +2089,10 @@ server <- function(input, output, session) {
 
   observeEvent(input$org_deselect, { org_selected_dept(NULL); org_selected_type(NULL) })
 
-  # IT 工作模型 Mermaid 流程图
-  output$itwm_chart <- renderUI({
+  # 工作模型 Mermaid 流程图
+  output$work_model_chart <- renderUI({
     req(rv$logged_in)
-    it_work_model_mermaid()
+    work_model_mermaid("IT部")
   })
 
   # 全部展开

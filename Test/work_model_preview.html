@@ -1,0 +1,168 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script><style>body{font-family:-apple-system,"Microsoft YaHei",sans-serif;background:#fff;margin:20px;padding:0}</style></head><body><style>
+      .wm-page { font-family:'Microsoft YaHei',sans-serif; padding:20px 12px; background:linear-gradient(160deg,#f8fafc,#e2e8f0); min-height:85vh; }
+      .wm-title { text-align:center; margin-bottom:16px; font-family:'Microsoft YaHei',sans-serif; }
+      .wm-title h2 { font-size:22px; font-weight:800; color:#1e293b; margin:0; font-family:'Microsoft YaHei',sans-serif; }
+      .wm-canvas { position:relative; max-width:1060px; margin:0 auto; height:540px; overflow:visible; }
+      .wm-canvas svg { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:1; overflow:visible; }
+      .wm-canvas svg line { stroke:#94a3b8; stroke-width:2.5; stroke-linecap:round; }
+      .wm-canvas svg line.dash { stroke-dasharray:7 5; stroke-width:2; }
+      .wm-canvas svg line.xfer { stroke:#94a3b8; stroke-width:3.5; stroke-dasharray:7 5; }
+      .wm-canvas svg polyline { fill:none; stroke-width:2; }
+      .wm-canvas svg polyline.xfer { stroke:#94a3b8; stroke-width:3.5; }
+
+      .wm-box { position:absolute; background:#fff; border-radius:14px; padding:10px 14px; box-shadow:0 2px 10px rgba(0,0,0,0.05); z-index:2; display:flex; flex-direction:column; }
+      .wm-box-tag { font-size:12px; font-weight:700; padding:3px 12px; border-radius:4px; color:#fff; margin-bottom:6px; font-family:'Microsoft YaHei',sans-serif; align-self:flex-start; }
+      .wm-box-tag.c1 { background:#3b82f6; }
+      .wm-box-tag.c2 { background:#ef4444; }
+      .wm-box-tag.c3 { background:#f59e0b; }
+      .wm-box-tag.c4 { background:#8b5cf6; }
+      .wm-box-tag.c5 { background:#06b6d4; }
+      .wm-box-tag.c6 { background:#10b981; }
+
+      .wm-flow { display:flex; align-items:center; gap:0; flex-wrap:nowrap; }
+      .wm-node { padding:5px 10px; border-radius:20px; font-size:12px; font-weight:600; white-space:nowrap; font-family:'Microsoft YaHei',sans-serif; }
+      .wm-node.c1 { background:#dbeafe; color:#1e40af; }
+      .wm-node.c2 { background:#fee2e2; color:#991b1b; }
+      .wm-node.c3 { background:#fef3c7; color:#92400e; }
+      .wm-node.c4 { background:#ede9fe; color:#5b21b6; }
+      .wm-node.c5 { background:#cffafe; color:#155e75; }
+      .wm-node.c6 { background:#d1fae5; color:#065f46; }
+      .wm-node.done { background:#22c55e; color:#fff; }
+      .wm-node.xfer { background:#f1f5f9; color:#475569; border:1.5px solid #cbd5e1; padding:4px 8px; font-size:11px; }
+      .wm-arrow { font-size:14px; color:#94a3b8; margin:0 5px; flex-shrink:0; font-weight:800; }
+      .wm-arrow-sep { font-size:14px; color:#94a3b8; margin:0 4px; flex-shrink:0; font-weight:800; }
+      .wm-vlist { display:flex; flex-direction:column; gap:3px; align-items:center; }
+
+      .wm-legends { display:flex; justify-content:center; gap:14px; margin-top:12px; flex-wrap:wrap; font-family:'Microsoft YaHei',sans-serif; }
+      .wm-legends span { font-size:11px; color:#64748b; display:flex; align-items:center; gap:4px; }
+      .wm-legends .dot { width:9px; height:9px; border-radius:2px; }
+    </style>
+<div class="wm-page">
+  <div class="wm-title">
+    <h2>研发中心-IT部 工作模型</h2>
+  </div>
+  <div class="wm-canvas">
+    <svg>
+      <defs>
+        <marker id="arrowXfer" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"></polygon>
+        </marker>
+      </defs>
+      <line x1="280" y1="135" x2="420" y2="200" stroke="#94a3b8" class="xfer" marker-end="url(#arrowXfer)"></line>
+      <line x1="730" y1="135" x2="590" y2="200" stroke="#94a3b8" class="xfer" marker-end="url(#arrowXfer)"></line>
+      <line x1="510" y1="275" x2="510" y2="365" stroke="#94a3b8" class="xfer" marker-end="url(#arrowXfer)"></line>
+    </svg>
+    <div class="wm-box" style="left:20px; top:18px; width:450px;">
+      <div class="wm-box-tag c1">1、IT巡检巡查</div>
+      <div class="wm-flow">
+        <span class="wm-node c1">计划</span>
+        <span class="wm-arrow">→</span>
+        <span class="wm-node c1">检查任务</span>
+        <span class="wm-arrow">→</span>
+        <span class="wm-node c1">反馈</span>
+        <span class="wm-arrow">→</span>
+        <span class="wm-node done">完结</span>
+        <span class="wm-arrow-sep">|</span>
+        <span class="wm-node xfer">转问题</span>
+      </div>
+    </div>
+    <div class="wm-box" style="left:510px; top:18px; width:450px;">
+      <div class="wm-box-tag c2">2、IT服务工单</div>
+      <div class="wm-flow">
+        <span class="wm-node c2">服务请求</span>
+        <span class="wm-node c2">IT事件</span>
+        <span class="wm-node c2">IT需求</span>
+        <span class="wm-arrow">→</span>
+        <span class="wm-node c2">作业反馈</span>
+        <span class="wm-arrow">→</span>
+        <span class="wm-node done">交付</span>
+        <span class="wm-arrow-sep">|</span>
+        <span class="wm-node xfer">转问题</span>
+      </div>
+    </div>
+    <div class="wm-box" style="left:290px; top:200px; width:400px;">
+      <div class="wm-box-tag c3">3、IT问题管理</div>
+      <div class="wm-flow">
+        <span class="wm-node c3">调研</span>
+        <span class="wm-arrow">→</span>
+        <span class="wm-node c3">方案</span>
+        <span class="wm-arrow">→</span>
+        <span class="wm-node c3">执行/验证</span>
+        <span class="wm-arrow">→</span>
+        <span class="wm-node done">交付结案</span>
+        <span class="wm-arrow-sep">|</span>
+        <span class="wm-node xfer">转项目</span>
+      </div>
+    </div>
+    <div class="wm-box" style="left:20px; top:385px; width:210px;">
+      <div class="wm-box-tag c5">5、流程·发起</div>
+      <div class="wm-vlist">
+        <span class="wm-node c5">采购申请</span>
+        <span class="wm-node c5">合同</span>
+        <span class="wm-node c5">培训</span>
+        <span class="wm-node c5">费用</span>
+        <span class="wm-node c5">......</span>
+      </div>
+    </div>
+    <div class="wm-box" style="left:255px; top:385px; width:470px;">
+      <div class="wm-box-tag c4">4、项目管理</div>
+      <div class="wm-vlist">
+        <span class="wm-node c4">目标范围</span>
+        <span class="wm-arrow">↓</span>
+        <span class="wm-node c4">阶段</span>
+        <span class="wm-arrow">↓</span>
+        <span class="wm-node c4">工作包</span>
+        <span class="wm-arrow">↓</span>
+        <span class="wm-node c4">任务</span>
+        <span class="wm-arrow">↓</span>
+        <span class="wm-node c4">作业反馈</span>
+        <span class="wm-arrow">↓</span>
+        <span class="wm-node done">结案</span>
+      </div>
+    </div>
+    <div class="wm-box" style="left:750px; top:385px; width:230px;">
+      <div class="wm-box-tag c6">6、流程·处理</div>
+      <div class="wm-vlist">
+        <span class="wm-node c6">账号/权限/变更/优化申请</span>
+        <span class="wm-node c6">工单</span>
+        <span class="wm-node c6">资产</span>
+        <span class="wm-node c6">......</span>
+      </div>
+    </div>
+  </div>
+  <div class="wm-legends">
+    <span>
+      <span class="dot" style="background:#3b82f6;"></span>
+      巡检
+    </span>
+    <span>
+      <span class="dot" style="background:#ef4444;"></span>
+      工单
+    </span>
+    <span>
+      <span class="dot" style="background:#f59e0b;"></span>
+      问题
+    </span>
+    <span>
+      <span class="dot" style="background:#8b5cf6;"></span>
+      项目
+    </span>
+    <span>
+      <span class="dot" style="background:#06b6d4;"></span>
+      发起
+    </span>
+    <span>
+      <span class="dot" style="background:#10b981;"></span>
+      处理
+    </span>
+    <span>
+      <span class="dot" style="background:#22c55e;"></span>
+      完结/交付/结案
+    </span>
+    <span>
+      <span class="dot" style="background:#f1f5f9; border:1px solid #cbd5e1;"></span>
+      转问题/转项目
+    </span>
+    <span>— 虚线 = 跨模块关联</span>
+  </div>
+</div></body></html>

@@ -54,8 +54,8 @@ source("Script/seat_map_v2_ui.r")
 # 加载岗职模块
 source("Script/duty_matrix_ui.r")
 
-# 加载 IT 工作模型
-source("Script/it_work_model.r")
+# 加载工作模型
+source("Script/work_model.r")
 
 # RBAC 管理函数（权限检查需要）
 source("Script/rbac_management.r")
@@ -926,15 +926,15 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
           )
         )
       ),
-      # IT 工作模型（组织架构下方，系统设置上方）
+      # 工作模型（组织架构下方，系统设置上方）
       if (can_admin("admin_system")) tabPanel(
-        "IT工作模型",
+        "工作模型",
         icon = icon("cubes"),
         fluidPage(
           div(style = "width:100%; min-height:80vh; background:#fff; border-radius:12px; padding:16px;",
             h3("研发中心-IT部 工作模型", style = "text-align:center; color:#1e293b; margin-bottom:4px;"),
             p("IT运维全生命周期管理体系 · 关系架构图", style = "text-align:center; color:#94a3b8; font-size:13px; margin-bottom:16px;"),
-            uiOutput("itwm_chart")
+            uiOutput("work_model_chart")
           )
         )
       ),
