@@ -4,6 +4,18 @@
 
 performance_server <- function(input, output, session, rv) {
   perf_refresh <- reactiveVal(0)
+
+  # 延迟注册动态输出（perf_matched_table 等由 renderUI 创建，需等首次渲染后）
+  observe({
+    req(rv$logged_in)
+    session$onFlushed(function() {
+      tryCatch({
+        outputOptions(output, "perf_matched_table", suspendWhenHidden = FALSE)
+        outputOptions(output, "perf_summary_table", suspendWhenHidden = FALSE)
+        outputOptions(output, "perf_work_source_table", suspendWhenHidden = FALSE)
+      }, error = function(e) NULL)
+    }, once = TRUE)
+  })
   is_admin <- reactive({
     !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
   })
