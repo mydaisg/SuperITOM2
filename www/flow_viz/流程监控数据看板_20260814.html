@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>流程监控数据看板</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh; color: #fff; padding: 20px;
+        }
+        .header { text-align: center; padding: 30px 0; margin-bottom: 20px; }
+        .header h1 {
+            font-size: 36px; font-weight: 700;
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text; margin-bottom: 10px;
+        }
+        .header .subtitle { color: #8892b0; font-size: 16px; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .kpi-card {
+            background: rgba(255, 255, 255, 0.05); border-radius: 16px; padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1); transition: all 0.3s ease;
+        }
+        .kpi-card:hover { transform: translateY(-5px); border-color: rgba(0, 212, 255, 0.3); box-shadow: 0 10px 40px rgba(0, 212, 255, 0.1); }
+        .kpi-label { color: #8892b0; font-size: 14px; margin-bottom: 8px; }
+        .kpi-value { font-size: 32px; font-weight: 700; color: #fff; }
+        .kpi-value.warn { color: #ffd700; }
+        .kpi-value.danger { color: #ff5252; }
+        .kpi-value.success { color: #00e676; }
+        .kpi-change { font-size: 14px; margin-top: 8px; }
+        .kpi-change.up { color: #ff5252; }
+        .kpi-change.down { color: #00e676; }
+        .chart-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 30px; }
+        .chart-card {
+            background: rgba(255, 255, 255, 0.05); border-radius: 16px; padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .chart-card.full-width { grid-column: 1 / -1; }
+        .chart-title { font-size: 18px; font-weight: 600; margin-bottom: 20px; color: #fff; }
+        .chart-container { width: 100%; height: 350px; }
+        .chart-container-tall { width: 100%; height: 450px; }
+        .ranking-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .ranking-table th, .ranking-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+        .ranking-table th { color: #8892b0; font-weight: 500; font-size: 12px; text-transform: uppercase; }
+        .ranking-table td { font-size: 14px; }
+        .ranking-table tr:hover { background: rgba(255, 255, 255, 0.05); }
+        .rank-badge {
+            display: inline-block; width: 28px; height: 28px; line-height: 28px;
+            text-align: center; border-radius: 50%; font-weight: 600; font-size: 12px;
+        }
+        .rank-badge.gold { background: linear-gradient(135deg, #ffd700, #ffb700); color: #000; }
+        .rank-badge.silver { background: linear-gradient(135deg, #c0c0c0, #a0a0a0); color: #000; }
+        .rank-badge.bronze { background: linear-gradient(135deg, #cd7f32, #b87333); color: #000; }
+        .rank-badge.default { background: rgba(255, 255, 255, 0.1); color: #8892b0; }
+        .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+        .status-dot.done { background: #00e676; }
+        .status-dot.active { background: #ffd700; }
+        .progress-bar-bg { width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 4px; }
+        .progress-bar-fill { height: 6px; border-radius: 3px; transition: width 0.5s; }
+        .footer { text-align: center; padding: 30px; color: #8892b0; font-size: 14px; }
+        @media (max-width: 1200px) { .chart-grid { grid-template-columns: 1fr; } }
+        @media (max-width: 768px) { .kpi-grid { grid-template-columns: 1fr; } .header h1 { font-size: 24px; } .kpi-value { font-size: 24px; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>流程监控数据看板</h1>
+        <div class="subtitle">数据周期：2026年08月01日 - 2026年08月14日 | 总流程数：1883</div>
+    </div>
+
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-label">流程总数</div>
+            <div class="kpi-value">1883</div>
+            <div class="kpi-change">14天监控周期</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">已完成流程</div>
+            <div class="kpi-value success">1106</div>
+            <div class="kpi-change down">完成率 58.7%</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">进行中流程</div>
+            <div class="kpi-value warn">777</div>
+            <div class="kpi-change up">待处理占比 41.3%</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">日均发起量</div>
+            <div class="kpi-value">134</div>
+            <div class="kpi-change">日均完成 79</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">流程类型数</div>
+            <div class="kpi-value">261</div>
+            <div class="kpi-change">TOP5占比 40.8%</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">参与人数</div>
+            <div class="kpi-value">373</div>
+            <div class="kpi-change">发起人总数</div>
+        </div>
+    </div>
+
+    <div class="chart-grid">
+        <div class="chart-card full-width">
+            <div class="chart-title">每日流程发起与完成趋势</div>
+            <div id="dailyTrend" class="chart-container-tall"></div>
+        </div>
+    </div>
+
+    <div class="chart-grid">
+        <div class="chart-card full-width">
+            <div class="chart-title">流程类型分布清单 (全部261种)</div>
+            <div style="max-height:600px;overflow-y:auto;">
+                <table class="ranking-table" id="flowTypeTable">
+                    <thead>
+                        <tr><th style="width:50px;">排名</th><th>流程类型</th><th style="width:70px;">总数</th><th style="width:70px;">已完成</th><th style="width:70px;">进行中</th><th style="width:80px;">完成率</th><th>完成进度</th></tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="chart-grid">
+        <div class="chart-card">
+            <div class="chart-title">流程状态仪表盘</div>
+            <div id="statusGauge" class="chart-container"></div>
+        </div>
+        <div class="chart-card">
+            <div class="chart-title">流程类型分布饼图 (Top 12 + 其他)</div>
+            <div id="flowTypePie" class="chart-container"></div>
+        </div>
+    </div>
+
+    <div class="chart-grid">
+        <div class="chart-card full-width">
+            <div class="chart-title">阻塞节点分析 (进行中流程当前所在节点)</div>
+            <div id="blockingNodes" class="chart-container-tall"></div>
+        </div>
+    </div>
+
+    <div class="chart-grid">
+        <div class="chart-card">
+            <div class="chart-title">发起人流程数量排名 (Top 15)</div>
+            <div id="initiatorRank" class="chart-container-tall"></div>
+        </div>
+        <div class="chart-card">
+            <div class="chart-title">各类型流程完成率</div>
+            <div id="typeCompletionRate" class="chart-container-tall"></div>
+        </div>
+    </div>
+
+    <div class="chart-grid">
+        <div class="chart-card full-width">
+            <div class="chart-title">每日各流程类型发起量堆叠</div>
+            <div id="dailyTypeStack" class="chart-container-tall"></div>
+        </div>
+    </div>
+
+    <div class="chart-grid">
+        <div class="chart-card full-width">
+            <div class="chart-title">进行中流程阻塞节点详情 (Top 20)</div>
+            <table class="ranking-table" id="blockingTable">
+                <thead>
+                    <tr><th>排名</th><th>阻塞节点</th><th>卡住流程数</th><th>涉及流程类型</th><th>占比</th></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="footer">
+        数据来源：流程监控导出数据 | 报表生成：Tai_WorkBuddy | 更新日期：2026年08月14日
+    </div>
+
+    <script>
+        const dailyData = {"dates":["2026-08-01","2026-08-02","2026-08-03","2026-08-04","2026-08-05","2026-08-06","2026-08-07","2026-08-08","2026-08-09","2026-08-10","2026-08-11","2026-08-12","2026-08-13","2026-08-14"],"total":[76,40,108,135,163,183,144,125,68,152,158,123,253,155],"completed":[59,26,93,111,126,144,85,77,18,97,101,68,76,25],"active":[17,14,15,24,37,39,59,48,50,55,57,55,177,130]};
+        const flowTypeData = [{"name":"售后服务工单","total":209,"completed":141,"active":68},{"name":"小区欠款处理表申请","total":178,"completed":149,"active":29},{"name":"设备切换平台","total":135,"completed":127,"active":8},{"name":"MRB评审单","total":131,"completed":101,"active":30},{"name":"服务费和手续费开票申请表","total":115,"completed":83,"active":32},{"name":"对公付款申请流程","total":114,"completed":46,"active":68},{"name":"通用用印流程","total":96,"completed":88,"active":8},{"name":"排产计划","total":96,"completed":22,"active":74},{"name":"公司运营充电桩设备验收申请","total":81,"completed":0,"active":81},{"name":"试用期员工工作情况跟踪","total":63,"completed":0,"active":63},{"name":"试用期员工自评","total":63,"completed":0,"active":63},{"name":"采购申请流程","total":49,"completed":8,"active":41},{"name":"数据调取","total":37,"completed":23,"active":14},{"name":"定制产品采购申请","total":20,"completed":3,"active":17},{"name":"二维码收款申请","total":18,"completed":16,"active":2},{"name":"通用费用报销","total":18,"completed":2,"active":16},{"name":"接待客户审批","total":16,"completed":10,"active":6},{"name":"维修服务申请","total":16,"completed":7,"active":9},{"name":"系统权限审批","total":15,"completed":14,"active":1},{"name":"平台结算打款申请表","total":13,"completed":10,"active":3},{"name":"相对方信息新增或变更申请","total":12,"completed":12,"active":0},{"name":"系统账户开通审批","total":11,"completed":11,"active":0},{"name":"合同审批单","total":10,"completed":9,"active":1},{"name":"数智技术工厂服务工单","total":10,"completed":9,"active":1},{"name":"包厢预定","total":10,"completed":1,"active":9},{"name":"IT服务工单","total":9,"completed":9,"active":0},{"name":"余额退款申请表","total":9,"completed":8,"active":1},{"name":"合同用印流程","total":9,"completed":5,"active":4},{"name":"差旅费报销","total":9,"completed":1,"active":8},{"name":"业务招待费用报销","total":8,"completed":6,"active":2},{"name":"设备出厂标准","total":7,"completed":4,"active":3},{"name":"流程及表单新建、优化申请","total":6,"completed":5,"active":1},{"name":"员工入住宿舍确认单","total":6,"completed":4,"active":2},{"name":"宿舍入住申请单","total":5,"completed":5,"active":0},{"name":"借款申请","total":5,"completed":4,"active":1},{"name":"电子充电卡特殊收费","total":5,"completed":4,"active":1},{"name":"系统权限开通审批","total":5,"completed":4,"active":1},{"name":"员工调岗申请","total":5,"completed":3,"active":2},{"name":"免费赠送申请流程","total":5,"completed":0,"active":5},{"name":"批量试产单","total":5,"completed":0,"active":5},{"name":"宿舍退住申请单","total":4,"completed":4,"active":0},{"name":"外部平台注册账号申请","total":4,"completed":3,"active":1},{"name":"服务费更改申请表","total":4,"completed":3,"active":1},{"name":"扣款审批","total":4,"completed":2,"active":2},{"name":"请假申请","total":3,"completed":2,"active":1},{"name":"出差申请","total":2,"completed":2,"active":0},{"name":"标书、图纸制作及勘探业务申请","total":2,"completed":2,"active":0},{"name":"物料涨价审批","total":2,"completed":2,"active":0},{"name":"监控查看权限申请","total":2,"completed":2,"active":0},{"name":"计划投放申请表","total":2,"completed":2,"active":0},{"name":"资产入库申请流程","total":2,"completed":2,"active":0},{"name":"1X","total":2,"completed":1,"active":1},{"name":"MRB评审单流程","total":2,"completed":1,"active":1},{"name":"信息系统升级申请单","total":2,"completed":1,"active":1},{"name":"工作机、工作手机卡交接申请","total":2,"completed":1,"active":1},{"name":"广告与安心充电业务流程","total":2,"completed":1,"active":1},{"name":"技术对接申请","total":2,"completed":0,"active":2},{"name":"补开发票申请","total":2,"completed":0,"active":2},{"name":"质检报告信息收集","total":2,"completed":0,"active":2},{"name":"10.10.50.50访问权限被莫名取消问题 ITS202608060","total":1,"completed":1,"active":0},{"name":"2026年7月腾讯优量汇结算单用印_驴充充充电技术 TYYY202608090","total":1,"completed":1,"active":0},{"name":"2026年7月腾讯优量汇结算单用印_驴充充物联网 TYYY202608089","total":1,"completed":1,"active":0},{"name":"2560","total":1,"completed":1,"active":0},{"name":"2ZD480","total":1,"completed":1,"active":0},{"name":"ERP批量导出3C的三级料号 ITS202608061","total":1,"completed":1,"active":0},{"name":"KKKKK ITS202608057","total":1,"completed":1,"active":0},{"name":"MRB评审单抄送取消 ITS202608086","total":1,"completed":1,"active":0},{"name":"ZD","total":1,"completed":1,"active":0},{"name":"stc isp软件安装 ITS202608081","total":1,"completed":1,"active":0},{"name":"【服务费更改申请表】表单数字关联附件 ITS202608018","total":1,"completed":1,"active":0},{"name":"业务招待报销流程优化 ITS202608038","total":1,"completed":1,"active":0},{"name":"两轮车强标所需木板，鳄鱼夹 采购申请（0库存） CGSQ202608013","total":1,"completed":1,"active":0},{"name":"个人待办","total":1,"completed":1,"active":0},{"name":"主机总死机 ITS202608082","total":1,"completed":1,"active":0},{"name":"五楼A区打印机黑色碳粉已用尽 ITS202608100","total":1,"completed":1,"active":0},{"name":"人事资源管理","total":1,"completed":1,"active":0},{"name":"借款流程问题 ITS202608078","total":1,"completed":1,"active":0},{"name":"借款申请 ITS202608035","total":1,"completed":1,"active":0},{"name":"借款申请审批问题反馈 ITS202608120","total":1,"completed":1,"active":0},{"name":"储充一体产品合作开发协议 HTSP202608004","total":1,"completed":1,"active":0},{"name":"公盘权限开通 ITS202608098","total":1,"completed":1,"active":0},{"name":"关于建筑消防设施维护保养报告书盖章的申请 TYYY202608052","total":1,"completed":1,"active":0},{"name":"关于研发中心7月经费明细的用印申请 TYYY202608082","total":1,"completed":1,"active":0},{"name":"关于调整研发中心绩效考核奖励与职级晋级管理制度的通知 TYYY202608011","total":1,"completed":1,"active":0},{"name":"内部单位付款流程","total":1,"completed":1,"active":0},{"name":"加班流程修改 ITS202608040","total":1,"completed":1,"active":0},{"name":"加班申请","total":1,"completed":1,"active":0},{"name":"升级电脑WPS或处理器 ITS202608153","total":1,"completed":1,"active":0},{"name":"合同审批单及流水号修改 ITS202608030","total":1,"completed":1,"active":0},{"name":"合同审批单完成后不能直接到用印流程 ITS202608107","total":1,"completed":1,"active":0},{"name":"团建申请流程优化 ITS202608052","total":1,"completed":1,"active":0},{"name":"外出","total":1,"completed":1,"active":0},{"name":"外出审批流程修改 ITS202608104","total":1,"completed":1,"active":0},{"name":"定制产品采购申请，抄送人去掉李甜甜 ITS202608089","total":1,"completed":1,"active":0},{"name":"宿舍维修申请单","total":1,"completed":1,"active":0},{"name":"对公付款流程","total":1,"completed":1,"active":0},{"name":"对公付款流程 ITS202608092","total":1,"completed":1,"active":0},{"name":"对公付款流程 ITS202608131","total":1,"completed":1,"active":0},{"name":"对公付款流程优化调整 ITS202608023","total":1,"completed":1,"active":0},{"name":"对公付款流程打印显示问题 ITS202608137","total":1,"completed":1,"active":0},{"name":"对公付款流程，发票税率填写问题 ITS202608091","total":1,"completed":1,"active":0},{"name":"导出钉钉流程业务招待申请流程 ITS202608019","total":1,"completed":1,"active":0},{"name":"小区欠款处理表申请取消 财务主管审批节点 ITS202608053","total":1,"completed":1,"active":0},{"name":"工作流统计中导出按钮如何隐藏或控制 ITS202608010","total":1,"completed":1,"active":0},{"name":"工作通知提醒优化 ITS202608087","total":1,"completed":1,"active":0},{"name":"工作需要，增加一台显示器 ITS202608158","total":1,"completed":1,"active":0},{"name":"工单流程提醒优化 ITS202608016","total":1,"completed":1,"active":0},{"name":"差旅报销发票限制要放开，不要单选 ITS202608025","total":1,"completed":1,"active":0},{"name":"差旅报销这里只能上传一张发票 ITS202608022","total":1,"completed":1,"active":0},{"name":"差旅费报销  业务招待费报销   通用费用报销   借款申请   内部单位付款流程   出差申请    业务招待申请   团建申请 ITS202608117","total":1,"completed":1,"active":0},{"name":"平台结算打款申请表审批流调整 ITS202608135","total":1,"completed":1,"active":0},{"name":"手机和手机卡交接流程 ITS202608050","total":1,"completed":1,"active":0},{"name":"打印机打印不清晰 ITS202608096","total":1,"completed":1,"active":0},{"name":"打印机故障处理 ITS202608150","total":1,"completed":1,"active":0},{"name":"扣款审批流程财务审批人应付会计曹恋 ITS202608147","total":1,"completed":1,"active":0},{"name":"批准后可以自动进入下一笔待办审批优化 ITS202608056","total":1,"completed":1,"active":0},{"name":"批量打印和表单里的打印按钮权限控制 ITS202608012","total":1,"completed":1,"active":0},{"name":"报销上传发票很慢 ITS202608024","total":1,"completed":1,"active":0},{"name":"报销的工资卡不能选择 ITS202608115","total":1,"completed":1,"active":0},{"name":"报销问题 ITS202608088","total":1,"completed":1,"active":0},{"name":"改审批架构 ITS202608029","total":1,"completed":1,"active":0},{"name":"数字运营中心服务工单","total":1,"completed":1,"active":0},{"name":"数智技术工厂供货方资金迁移","total":1,"completed":1,"active":0},{"name":"来访单位:测试，来访时间:2026","total":1,"completed":1,"active":0},{"name":"来访单位:赣江传媒，来访时间:2026","total":1,"completed":1,"active":0},{"name":"椭圆形双面护线圈 采购申请（0库存） CGSQ202608024","total":1,"completed":1,"active":0},{"name":"泛微平台附件无法在线预览显示，必须下载 ITS202608058","total":1,"completed":1,"active":0},{"name":"流程待阅","total":1,"completed":1,"active":0},{"name":"流程提交失败","total":1,"completed":1,"active":0},{"name":"流程测试","total":1,"completed":1,"active":0},{"name":"流程类型问题反馈 ITS202608079","total":1,"completed":1,"active":0},{"name":"流程编号  TYYY202607011  催促处理 ITS202608034","total":1,"completed":1,"active":0},{"name":"测试流程没办法发起 ITS202608105","total":1,"completed":1,"active":0},{"name":"物料涨价审批 ITS202608145","total":1,"completed":1,"active":0},{"name":"特殊设备服务费修改申请","total":1,"completed":1,"active":0},{"name":"用印没有行政办公室 ITS202608014","total":1,"completed":1,"active":0},{"name":"用印流程无法提交 ITS202608080","total":1,"completed":1,"active":0},{"name":"管理调岗人员智慧工厂 ITS202608033","total":1,"completed":1,"active":0},{"name":"系统权限审批取消抄送郭晓惠 ITS202608090","total":1,"completed":1,"active":0},{"name":"系统账户开通审批BUG","total":1,"completed":1,"active":0},{"name":"系统账户开通审批取消抄送郭晓惠 ITS202608041","total":1,"completed":1,"active":0},{"name":"经手的流程可以通过评论的字段快速查找 ITS202608011","total":1,"completed":1,"active":0},{"name":"维修服务申请 ITS202608048","total":1,"completed":1,"active":0},{"name":"耗材派发流程","total":1,"completed":1,"active":0},{"name":"耗材管理流程优化 ITS202608017","total":1,"completed":1,"active":0},{"name":"营销推广费退费申请","total":1,"completed":1,"active":0},{"name":"营销推广退费申请及余额退款申请表 转线上审批节点添加 ITS202608133","total":1,"completed":1,"active":0},{"name":"补卡流程","total":1,"completed":1,"active":0},{"name":"要开通发票报销，费用中心里面的文件 识别发票 ITS202608043","total":1,"completed":1,"active":0},{"name":"请假流程备注修改 ITS202608031","total":1,"completed":1,"active":0},{"name":"请假申请、 出差流程提交后第一个节点增加抄送考勤组四人 ITS202608059","total":1,"completed":1,"active":0},{"name":"调岗申请 ITS202608128","total":1,"completed":1,"active":0},{"name":"调整“离职申请”的抄送人 ITS202608103","total":1,"completed":1,"active":0},{"name":"财务费用管理类模块所有流程增加退回时可选择直达本节点选项 ITS202608074","total":1,"completed":1,"active":0},{"name":"质检信息收集流程修改表单内容 ITS202608134","total":1,"completed":1,"active":0},{"name":"费用报销","total":1,"completed":1,"active":0},{"name":"费用报销打印时出线乱码情况 ITS202608157","total":1,"completed":1,"active":0},{"name":"费用报销的发票不能批量上传，然后那个开户银行没办法填上去 ITS202608076","total":1,"completed":1,"active":0},{"name":"费用报销类 ITS202608101","total":1,"completed":1,"active":0},{"name":"资产处置流程问题 ITS202608070","total":1,"completed":1,"active":0},{"name":"资产处置流程问题 ITS202608071","total":1,"completed":1,"active":0},{"name":"资产申领流程","total":1,"completed":1,"active":0},{"name":"资产管理问题 ITS202608068","total":1,"completed":1,"active":0},{"name":"软件OTA升级流程&设备出厂标准流程中备注栏高度和输入字符数量调整 ITS202608065","total":1,"completed":1,"active":0},{"name":"软件OTA升级流程调整 ITS202608066","total":1,"completed":1,"active":0},{"name":"迟到原因说明 ITS202608037","total":1,"completed":1,"active":0},{"name":"退库流程问题 ITS202608069","total":1,"completed":1,"active":0},{"name":"通用报销流程 团建费必须关联流程过度期调整优化 ITS202608083","total":1,"completed":1,"active":0},{"name":"通用费用报销   业务招待费报销    差旅费报销 ITS202608051","total":1,"completed":1,"active":0},{"name":"采购申请单明细的链接一行显示 ITS202608138","total":1,"completed":1,"active":0},{"name":"采购申请流程上传不了cdr文件 ITS202608140","total":1,"completed":1,"active":0},{"name":"采购申请流程上传不了stp文件 ITS202608099","total":1,"completed":1,"active":0},{"name":"金蝶数据 ITS202608142","total":1,"completed":1,"active":0},{"name":"钉钉报销单/付款申请流程导出 ITS202608095","total":1,"completed":1,"active":0},{"name":"问题：采购申请流程","total":1,"completed":1,"active":0},{"name":"需求：增加\"接待客户审批\"的查看与导出功能 ITS202608111","total":1,"completed":1,"active":0},{"name":"需要MacMini一台 ITS202608143","total":1,"completed":1,"active":0},{"name":"需要安装7","total":1,"completed":1,"active":0},{"name":"预览附件里面的xlsx文件  格式显示异常 ITS202608148","total":1,"completed":1,"active":0},{"name":"风冷终端机铝排 打样申请 CGSQ202608008","total":1,"completed":1,"active":0},{"name":"1600PDU电子物料 采购申请 CGSQ202608010","total":1,"completed":0,"active":1},{"name":"1LZD800A","total":1,"completed":0,"active":1},{"name":"1OA22","total":1,"completed":0,"active":1},{"name":"1OA7","total":1,"completed":0,"active":1},{"name":"2026年度7月售后绩效奖励借款","total":1,"completed":0,"active":1},{"name":"2ZA7","total":1,"completed":0,"active":1},{"name":"2寸PU万向轮 采购申请（新物料，0库存） CGSQ202608085","total":1,"completed":0,"active":1},{"name":"4.3寸触摸显示屏（11010030003）玻璃和钣金整套(双枪)（11020020022 ） CGSQ202608077","total":1,"completed":0,"active":1},{"name":"40KW充电枪（11010570144），电子连接线（11050040067），不锈钢丝网（11020210320），初效过滤网（11020210330） CGSQ202608083","total":1,"completed":0,"active":1},{"name":"7kW高频开关整流模块、7KW直流充电枪   采购申请（0库存） CGSQ202608020","total":1,"completed":0,"active":1},{"name":"Test","total":1,"completed":0,"active":1},{"name":"XJZD2560","total":1,"completed":0,"active":1},{"name":"XZD1280M1主板测试治具 采购申请 CGSQ202608074","total":1,"completed":0,"active":1},{"name":"erp审核工单和创建工单数据导出 ITS202608146","total":1,"completed":0,"active":1},{"name":"业务招待费用报销，费用类型填写的时候默认是”业务招待费“，但是提交后又变成“其他费用”了 ITS202608093","total":1,"completed":0,"active":1},{"name":"二十路电压检测板V2.0版 打样申请（资料已上传至嘉立创，加急安排） CGSQ202608062","total":1,"completed":0,"active":1},{"name":"交流桩欧标设备电子料 采购申请（0库存） CGSQ202608049","total":1,"completed":0,"active":1},{"name":"人员入职流程反馈 ITS202608108","total":1,"completed":0,"active":1},{"name":"人员入职流程反馈 ITS202608109","total":1,"completed":0,"active":1},{"name":"企微审批流程需要更新组织架构 ITS202608063","total":1,"completed":0,"active":1},{"name":"企微消息问题 ITS202608159","total":1,"completed":0,"active":1},{"name":"借款单   报销单 ITS202608152","total":1,"completed":0,"active":1},{"name":"入职流程 ITS202608125","total":1,"completed":0,"active":1},{"name":"关于研发中心7月经费明细的对公付款申请 DGFK202608094","total":1,"completed":0,"active":1},{"name":"出差流程 ITS202608042","total":1,"completed":0,"active":1},{"name":"出纳节点（杨泽梅）批量审批 ITS202608156","total":1,"completed":0,"active":1},{"name":"加班流程","total":1,"completed":0,"active":1},{"name":"单枪1ZD120","total":1,"completed":0,"active":1},{"name":"同中心流程分流审批 ITS202608113","total":1,"completed":0,"active":1},{"name":"员工转正申请反馈 ITS202608112","total":1,"completed":0,"active":1},{"name":"四代一体480kW铝排 采购申请（0库存） CGSQ202608005","total":1,"completed":0,"active":1},{"name":"四代一体480送检样机差异物料 采购申请 CGSQ202608004","total":1,"completed":0,"active":1},{"name":"四代一体单枪直流桩120KW铜排、铝排 打样申请 CGSQ202608001","total":1,"completed":0,"active":1},{"name":"固定资产归属问题 ITS202608073","total":1,"completed":0,"active":1},{"name":"工业用插头 采购申请（新物料） CGSQ202608087","total":1,"completed":0,"active":1},{"name":"差旅费报销 ITS202608049","total":1,"completed":0,"active":1},{"name":"带线插座 采购申请（0库存） CGSQ202608057","total":1,"completed":0,"active":1},{"name":"手机或手机卡申请流程","total":1,"completed":0,"active":1},{"name":"打印机维修 ITS202608094","total":1,"completed":0,"active":1},{"name":"批量试产单 ITS202608084","total":1,"completed":0,"active":1},{"name":"排产计划 ITS202608141","total":1,"completed":0,"active":1},{"name":"提“通用费用报销”流程时，上传发票一直显示查验状态不支持报销 ITS202608047","total":1,"completed":0,"active":1},{"name":"支付 信息安全、信息服务体系认证费用 DGFK202608049","total":1,"completed":0,"active":1},{"name":"杜邦线 采购申请（新物料） CGSQ202608023","total":1,"completed":0,"active":1},{"name":"欧标40KW亚克力模板防水测试板 打样申请 CGSQ202608084","total":1,"completed":0,"active":1},{"name":"汽车连接器 采购申请（新物料，特急，按链接购买） CGSQ202608027","total":1,"completed":0,"active":1},{"name":"洗车机三合一鼓定制贴纸（消毒、充气、吹尘）采购申请（0库存） CGSQ202608046","total":1,"completed":0,"active":1},{"name":"流程列表中提示 收款账户名称  本次申请支付金额 付款事由 ITS202608046","total":1,"completed":0,"active":1},{"name":"流程首页","total":1,"completed":0,"active":1},{"name":"用车申请 ITS202608139","total":1,"completed":0,"active":1},{"name":"电脑无法解压 ITS202608039","total":1,"completed":0,"active":1},{"name":"电脑无网络 ITS202608144","total":1,"completed":0,"active":1},{"name":"直流桩研发电子物料 采购申请（库存不足的请安排下单或从委外厂调回） CGSQ202608079","total":1,"completed":0,"active":1},{"name":"研发实验室回馈式负载设备所需线材及辅料 采购申请（0库存，加急安排） CGSQ202608086","total":1,"completed":0,"active":1},{"name":"离职申请 ITS202608130","total":1,"completed":0,"active":1},{"name":"离职申请与离职交接反馈 ITS202608054","total":1,"completed":0,"active":1},{"name":"第四代液冷终端绝缘板 打样申请（加急安排！） CGSQ202608061","total":1,"completed":0,"active":1},{"name":"系统升级流程优化 ITS202608155","total":1,"completed":0,"active":1},{"name":"耗材仓库管理 ITS202608064","total":1,"completed":0,"active":1},{"name":"耗材派发 ITS202608067","total":1,"completed":0,"active":1},{"name":"营销中心的接待、出差、请假、离职、调岗都需要抄送给刘洁和朱泽涵 ITS202608151","total":1,"completed":0,"active":1},{"name":"试用期员工工作情况跟踪流程反馈 ITS202608055","total":1,"completed":0,"active":1},{"name":"试用期员工自评反馈 ITS202608110","total":1,"completed":0,"active":1},{"name":"账号临时解锁申请","total":1,"completed":0,"active":1},{"name":"费用报销单打印时出现乱码及一些不必要的打印页面 ITS202608136","total":1,"completed":0,"active":1},{"name":"资产修改 ITS202608126","total":1,"completed":0,"active":1},{"name":"资产借用 ITS202608121","total":1,"completed":0,"active":1},{"name":"资产入库流程 ITS202608072","total":1,"completed":0,"active":1},{"name":"资产关联 ITS202608127","total":1,"completed":0,"active":1},{"name":"资产回收 ITS202608124","total":1,"completed":0,"active":1},{"name":"资产模块权限开通 ITS202608062","total":1,"completed":0,"active":1},{"name":"资产派发 ITS202608129","total":1,"completed":0,"active":1},{"name":"资产申领 ITS202608118","total":1,"completed":0,"active":1},{"name":"资产维修流程","total":1,"completed":0,"active":1},{"name":"资产维修流程 ITS202608123","total":1,"completed":0,"active":1},{"name":"资产调拨 ITS202608119","total":1,"completed":0,"active":1},{"name":"资产调拨流程 ITS202608075","total":1,"completed":0,"active":1},{"name":"问题 ITS202608015","total":1,"completed":0,"active":1},{"name":"问题 ITS202608097","total":1,"completed":0,"active":1},{"name":"防尘过滤棉（12040250054，XSD202608120037） CGSQ202608073","total":1,"completed":0,"active":1},{"name":"风冷终端机钣金件 采购申请 CGSQ202608009","total":1,"completed":0,"active":1}];
+        const blockingNodes = [{"name":"审核是否合规","count":81,"types":"公司运营充电桩设备验收申请(81)"},{"name":"发起节点","count":67,"types":"MRB评审单(13) 售后服务工单(9) 包厢预定(8) 小区欠款处理表申请(7) 服务费和手续费开票申请表(6)"},{"name":"发起人","count":65,"types":"试用期员工工作情况跟踪(63) 员工调岗申请(2)"},{"name":"员工填写（自动触发）","count":63,"types":"试用期员工自评(63)"},{"name":"采购主管","count":49,"types":"采购申请流程(26) 1600PDU电子物料 采购申请 CGSQ202608010(1) 1LZD800A(1) 1OA22(1) 1OA7(1)"},{"name":"发起人评分","count":41,"types":"售后服务工单(41)"},{"name":"入库（直流）","count":37,"types":"排产计划(37)"},{"name":"发起人确认","count":29,"types":"服务费和手续费开票申请表(13) 小区欠款处理表申请(8) 排产计划(4) 补开发票申请(2) 平台结算打款申请表(1)"},{"name":"处理反馈","count":25,"types":"erp审核工单和创建工单数据导出 ITS202608146(1) MRB评审单流程(1) 差旅费报销 ITS202608049(1) 打印机维修 ITS202608094(1) 电脑无法解压 ITS202608039(1)"},{"name":"工单处理","count":21,"types":"出差流程 ITS202608042(1) 出纳节点（杨泽梅）批量审批 ITS202608156(1) 费用报销单打印时出现乱码及一些不必要的打印页面 ITS202608136(1) 固定资产归属问题 ITS202608073(1) 耗材派发 ITS202608067(1)"},{"name":"财务中心总经理审核","count":20,"types":"对公付款申请流程(19) 关于研发中心7月经费明细的对公付款申请 DGFK202608094(1)"},{"name":"发票提交","count":17,"types":"对公付款申请流程(17)"},{"name":"单据打印","count":13,"types":"对公付款申请流程(13)"},{"name":"会计助理审批","count":12,"types":"服务费和手续费开票申请表(11) 余额退款申请表(1)"},{"name":"出纳付款审核","count":11,"types":"通用费用报销(6) 差旅费报销(3) 借款申请(1) 业务招待费用报销(1)"},{"name":"后端开发部审批","count":11,"types":"售后服务工单(11)"},{"name":"采购","count":11,"types":"MRB评审单(11)"},{"name":"供应链中心","count":8,"types":"采购申请流程(2) 2寸PU万向轮 采购申请（新物料，0库存） CGSQ202608085(1) 40KW充电枪（11010570144），电子连接线（11050040067），不锈钢丝网（11020210320），初效过滤网（11020210330） CGSQ202608083(1) 工业用插头 采购申请（新物料） CGSQ202608087(1) 欧标40KW亚克力模板防水测试板 打样申请 CGSQ202608084(1)"},{"name":"安排采购","count":8,"types":"定制产品采购申请(8)"},{"name":"直接上级审批","count":8,"types":"设备切换平台(3) 小区欠款处理表申请(2) 定制产品采购申请(1) 服务费和手续费开票申请表(1) 系统权限开通审批(1)"},{"name":"发起人自己","count":7,"types":"采购申请流程(7)"},{"name":"测试入库（直流）","count":7,"types":"排产计划(7)"},{"name":"审核是否可以添加欠款","count":6,"types":"小区欠款处理表申请(6)"},{"name":"执行操作添加欠款","count":6,"types":"小区欠款处理表申请(6)"},{"name":"收到数据后同意","count":6,"types":"数据调取(6)"},{"name":"测试入库（交流）","count":6,"types":"排产计划(6)"},{"name":"调取数据","count":6,"types":"数据调取(6)"},{"name":"发起人打印","count":5,"types":"通用费用报销(4) 差旅费报销(1)"},{"name":"发起人验收是否维修完成","count":5,"types":"维修服务申请(5)"},{"name":"安排生产（直流）","count":5,"types":"排产计划(5)"},{"name":"安排计划任务（直流）","count":5,"types":"排产计划(5)"},{"name":"安排食堂用餐","count":5,"types":"接待客户审批(5)"},{"name":"直接上级","count":5,"types":"对公付款申请流程(4) 业务招待费用报销(1)"},{"name":"费用会计审核","count":5,"types":"对公付款申请流程(3) 通用费用报销(2)"},{"name":"产品项目部/技术支持部主管审批","count":4,"types":"定制产品采购申请(4)"},{"name":"执行采购组或签","count":4,"types":"批量试产单(4)"},{"name":"核查设备故障","count":4,"types":"售后服务工单(4)"},{"name":"用印（对外函告/说明）","count":4,"types":"通用用印流程(4)"},{"name":"营销中心总经理审批","count":4,"types":"免费赠送申请流程(4)"},{"name":"财务审批","count":4,"types":"采购申请流程(4)"},{"name":"SQE工程师审批交流桩","count":3,"types":"MRB评审单(3)"},{"name":"出纳","count":3,"types":"对公付款申请流程(2) 支付 信息安全、信息服务体系认证费用 DGFK202608049(1)"},{"name":"分管高管","count":3,"types":"对公付款申请流程(3)"},{"name":"安排生产（交流）","count":3,"types":"排产计划(3)"},{"name":"安排计划任务（交流）","count":3,"types":"排产计划(3)"},{"name":"总账","count":3,"types":"对公付款申请流程(3)"},{"name":"经办人处理","count":3,"types":"合同用印流程(3)"},{"name":"行政审核","count":3,"types":"差旅费报销(3)"},{"name":"质量","count":3,"types":"MRB评审单(3)"},{"name":"采购审批","count":3,"types":"维修服务申请(3)"},{"name":"出纳审批","count":2,"types":"服务费更改申请表(1) 服务费和手续费开票申请表(1)"},{"name":"分管领导","count":2,"types":"通用费用报销(2)"},{"name":"创建工单","count":2,"types":"Test(1) 批量试产单 ITS202608084(1)"},{"name":"审核图纸（交流)","count":2,"types":"定制产品采购申请(2)"},{"name":"物联网费用会计","count":2,"types":"设备切换平台(2)"},{"name":"直流桩产品研发部审批","count":2,"types":"售后服务工单(2)"},{"name":"确认用印事由/业务真实性（对外函告/说明）","count":2,"types":"通用用印流程(2)"},{"name":"采购部主管审批","count":2,"types":"扣款审批(2)"},{"name":"上传质检报告草稿件","count":1,"types":"质检报告信息收集(1)"},{"name":"上级逐级审批","count":1,"types":"质检报告信息收集(1)"},{"name":"业务支持组组长审批","count":1,"types":"免费赠送申请流程(1)"},{"name":"交流MC审批","count":1,"types":"批量试产单(1)"},{"name":"交流桩产品研发部软件经理二次审批","count":1,"types":"设备出厂标准(1)"},{"name":"合规督查组审批","count":1,"types":"账号临时解锁申请(1)"},{"name":"后端开发部主管助理核对","count":1,"types":"技术对接申请(1)"},{"name":"审批是否开通","count":1,"types":"系统权限审批(1)"},{"name":"审批是否有现成手机卡协调，若无则需新办理","count":1,"types":"手机或手机卡申请流程(1)"},{"name":"宿管确认","count":1,"types":"员工入住宿舍确认单(1)"},{"name":"平台运维部主管助理审批","count":1,"types":"信息系统升级申请单(1)"},{"name":"总账审核","count":1,"types":"平台结算打款申请表(1)"},{"name":"执行操作","count":1,"types":"电子充电卡特殊收费(1)"},{"name":"投诉处理组组长审批","count":1,"types":"技术对接申请(1)"},{"name":"核对收款信息，审核智慧工厂回单","count":1,"types":"二维码收款申请(1)"},{"name":"测试部主管审批","count":1,"types":"设备出厂标准(1)"},{"name":"申请人","count":1,"types":"请假申请(1)"},{"name":"直接上级审核","count":1,"types":"售后服务工单(1)"},{"name":"确认交接无误","count":1,"types":"工作机、工作手机卡交接申请(1)"},{"name":"经办人确认是否用印","count":1,"types":"合同审批单(1)"},{"name":"结果确认","count":1,"types":"流程及表单新建、优化申请(1)"},{"name":"自动触发","count":1,"types":"合同用印流程(1)"},{"name":"补充用印文件","count":1,"types":"通用用印流程(1)"},{"name":"规模增长业务组用户运营","count":1,"types":"设备切换平台(1)"},{"name":"讲解员审批,操作LED欢迎词","count":1,"types":"接待客户审批(1)"},{"name":"评估变更风险，审批并执行","count":1,"types":"数智技术工厂服务工单(1)"},{"name":"财务中心总经理审批","count":1,"types":"平台结算打款申请表(1)"},{"name":"财务主管审核","count":1,"types":"对公付款申请流程(1)"},{"name":"采购部","count":1,"types":"采购申请流程(1)"},{"name":"采购部&IT部","count":1,"types":"资产维修流程(1)"},{"name":"食堂用餐安排","count":1,"types":"包厢预定(1)"}];
+        const initiatorData = [{"name":"曾霞","total":90,"completed":6,"active":84},{"name":"鲁冬霞","total":58,"completed":14,"active":44},{"name":"廖灵珠","total":39,"completed":14,"active":25},{"name":"王雅丽","total":38,"completed":17,"active":21},{"name":"蔡玉莲","total":33,"completed":22,"active":11},{"name":"曾小燕","total":27,"completed":15,"active":12},{"name":"黄志华","total":23,"completed":20,"active":3},{"name":"张梦姣","total":22,"completed":6,"active":16},{"name":"曾凡香","total":22,"completed":22,"active":0},{"name":"田予初","total":21,"completed":20,"active":1},{"name":"黄燕萍","total":20,"completed":18,"active":2},{"name":"张芷煊","total":19,"completed":19,"active":0},{"name":"谢竞英","total":19,"completed":17,"active":2},{"name":"陈先红","total":19,"completed":19,"active":0},{"name":"陈平","total":19,"completed":18,"active":1}];
+        const dailyTypeData = {"售后服务工单":[9,12,23,22,23,18,14,17,5,14,18,12,12,10],"小区欠款处理表申请":[11,6,29,11,22,14,8,6,7,11,14,11,16,12],"设备切换平台":[4,6,7,12,5,13,9,15,3,15,12,15,13,6],"MRB评审单":[10,2,8,7,11,24,12,8,0,13,20,8,8,0],"服务费和手续费开票申请表":[2,0,7,19,9,18,6,10,3,10,5,6,9,11],"对公付款申请流程":[1,0,4,14,7,14,7,2,1,14,18,9,16,7],"通用用印流程":[9,1,2,7,15,10,9,6,0,8,11,8,6,4],"排产计划":[2,0,0,0,4,11,10,11,1,14,10,5,18,10],"公司运营充电桩设备验收申请":[0,0,0,0,0,0,0,0,0,0,0,0,81,0],"试用期员工工作情况跟踪":[0,6,0,0,0,0,11,0,23,0,0,0,0,23],"试用期员工自评":[0,6,0,0,0,0,11,0,23,0,0,0,0,23],"采购申请流程":[3,0,3,5,5,7,8,2,0,5,4,4,3,0],"其他":[25,1,25,38,62,54,39,48,2,48,46,45,71,49]};
+        const typeNames = ["售后服务工单","小区欠款处理表申请","设备切换平台","MRB评审单","服务费和手续费开票申请表","对公付款申请流程","通用用印流程","排产计划","公司运营充电桩设备验收申请","试用期员工工作情况跟踪","试用期员工自评","采购申请流程","其他"];
+        const typeCompletionData = [{"name":"售后服务工单","total":209,"completed":141,"active":68},{"name":"小区欠款处理表申请","total":178,"completed":149,"active":29},{"name":"设备切换平台","total":135,"completed":127,"active":8},{"name":"MRB评审单","total":131,"completed":101,"active":30},{"name":"服务费和手续费开票申请表","total":115,"completed":83,"active":32},{"name":"对公付款申请流程","total":114,"completed":46,"active":68},{"name":"通用用印流程","total":96,"completed":88,"active":8},{"name":"排产计划","total":96,"completed":22,"active":74},{"name":"公司运营充电桩设备验收申请","total":81,"completed":0,"active":81},{"name":"试用期员工工作情况跟踪","total":63,"completed":0,"active":63},{"name":"试用期员工自评","total":63,"completed":0,"active":63},{"name":"采购申请流程","total":49,"completed":8,"active":41}];
+        const totalFlows = 1883;
+        const activeFlows = 777;
+        const completionRate = 58.7;
+
+        function formatPct(value, total) {
+            return (value / total * 100).toFixed(1) + "%";
+        }
+
+        // ==================== 每日趋势图 ====================
+        const dailyTrendChart = echarts.init(document.getElementById("dailyTrend"));
+        dailyTrendChart.setOption({
+            tooltip: {
+                trigger: "axis",
+                backgroundColor: "rgba(0,0,0,0.8)",
+                borderColor: "#00d4ff",
+                textStyle: { color: "#fff" },
+                formatter: function(params) {
+                    let result = "<div style=\"font-weight:600;margin-bottom:8px;\">" + params[0].axisValue + "</div>";
+                    params.forEach(p => {
+                        result += "<div style=\"display:flex;align-items:center;margin:4px 0;\"><span style=\"display:inline-block;width:10px;height:10px;background:" + p.color + ";border-radius:50%;margin-right:8px;\"></span>" + p.seriesName + ": <strong>" + p.value + "</strong></div>";
+                    });
+                    return result;
+                }
+            },
+            legend: {
+                data: ["发起总数", "已完成", "进行中"],
+                textStyle: { color: "#8892b0" },
+                top: 0
+            },
+            grid: { left: "3%", right: "4%", bottom: "3%", containLabel: true },
+            xAxis: {
+                type: "category",
+                data: dailyData.dates,
+                axisLine: { lineStyle: { color: "#2d3748" } },
+                axisLabel: { color: "#8892b0" }
+            },
+            yAxis: {
+                type: "value",
+                name: "流程数",
+                axisLine: { lineStyle: { color: "#2d3748" } },
+                axisLabel: { color: "#8892b0" },
+                splitLine: { lineStyle: { color: "rgba(255,255,255,0.05)" } }
+            },
+            series: [
+                {
+                    name: "发起总数",
+                    type: "line",
+                    data: dailyData.total,
+                    smooth: true,
+                    itemStyle: { color: "#00d4ff" },
+                    lineStyle: { width: 3 },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: "rgba(0, 212, 255, 0.3)" },
+                            { offset: 1, color: "rgba(0, 212, 255, 0)" }
+                        ])
+                    }
+                },
+                {
+                    name: "已完成",
+                    type: "bar",
+                    data: dailyData.completed,
+                    itemStyle: { color: "rgba(0, 230, 118, 0.7)" },
+                    barWidth: "25%"
+                },
+                {
+                    name: "进行中",
+                    type: "bar",
+                    data: dailyData.active,
+                    itemStyle: { color: "rgba(255, 215, 0, 0.7)" },
+                    barWidth: "25%"
+                }
+            ]
+        });
+
+        // ==================== 流程类型饼图 ====================
+        const flowTypePieChart = echarts.init(document.getElementById("flowTypePie"));
+        const top12 = flowTypeData.slice(0, 12);
+        const otherTotal = flowTypeData.slice(12).reduce((sum, f) => sum + f.total, 0);
+        const otherActive = flowTypeData.slice(12).reduce((sum, f) => sum + f.active, 0);
+        const pieColors = ["#00d4ff", "#7b2cbf", "#00e676", "#ffd700", "#ff6b6b", "#ff9f43", "#a55eea", "#54a0ff", "#5f27cd", "#01a3a4", "#f368e0", "#ff6348"];
+        const pieData = top12.map((f, i) => ({
+            name: f.name, value: f.total, active: f.active,
+            itemStyle: { color: pieColors[i % 12] }
+        }));
+        pieData.push({ name: "其他(" + (flowTypeData.length - 12) + "种)", value: otherTotal, active: otherActive, itemStyle: { color: "#8892b0" } });
+        flowTypePieChart.setOption({
+            tooltip: {
+                trigger: "item",
+                backgroundColor: "rgba(0,0,0,0.8)",
+                borderColor: "#00d4ff",
+                textStyle: { color: "#fff" },
+                formatter: function(params) {
+                    return "<div style=\"font-weight:600;\">" + params.name + "</div>" +
+                        "<div>总数: " + params.value + "</div>" +
+                        "<div>进行中: " + (params.data.active || 0) + "</div>" +
+                        "<div>占比: " + params.percent.toFixed(1) + "%</div>";
+                }
+            },
+            legend: {
+                orient: "vertical",
+                right: "3%",
+                top: "center",
+                textStyle: { color: "#8892b0", fontSize: 10 },
+                formatter: function(name) { return name.length > 8 ? name.substring(0, 8) + ".." : name; }
+            },
+            series: [{
+                type: "pie",
+                radius: ["35%", "65%"],
+                center: ["35%", "50%"],
+                avoidLabelOverlap: false,
+                itemStyle: { borderRadius: 8, borderColor: "#1a1a2e", borderWidth: 2 },
+                label: { show: false },
+                emphasis: {
+                    label: { show: true, fontSize: 14, fontWeight: "bold", color: "#fff" },
+                    itemStyle: { shadowBlur: 20, shadowColor: "rgba(0, 212, 255, 0.5)" }
+                },
+                data: pieData
+            }]
+        });
+
+        // ==================== 状态仪表盘 ====================
+        const statusGaugeChart = echarts.init(document.getElementById("statusGauge"));
+        statusGaugeChart.setOption({
+            tooltip: {
+                formatter: "完成率: {c}%",
+                backgroundColor: "rgba(0,0,0,0.8)",
+                borderColor: "#00d4ff",
+                textStyle: { color: "#fff" }
+            },
+            series: [{
+                type: "gauge",
+                startAngle: 210,
+                endAngle: -30,
+                center: ["50%", "55%"],
+                radius: "85%",
+                min: 0,
+                max: 100,
+                splitNumber: 10,
+                axisLine: {
+                    show: true,
+                    lineStyle: {
+                        width: 20,
+                        color: [
+                            [0.3, "#ff5252"],
+                            [0.6, "#ffd700"],
+                            [1, "#00e676"]
+                        ]
+                    }
+                },
+                pointer: {
+                    icon: "path://M12.8,0.7l12,40.1H0.7L12.8,0.7z",
+                    length: "60%",
+                    width: 8,
+                    itemStyle: { color: "auto" }
+                },
+                axisTick: { length: 10, lineStyle: { color: "auto", width: 2 } },
+                splitLine: { length: 20, lineStyle: { color: "auto", width: 4 } },
+                axisLabel: { color: "#8892b0", fontSize: 12, distance: 25, formatter: "{value}%" },
+                title: { offsetCenter: [0, "80%"], fontSize: 16, color: "#8892b0" },
+                detail: {
+                    fontSize: 36, offsetCenter: [0, "50%"],
+                    valueAnimation: true, formatter: "{value}%",
+                    color: "#fff", fontWeight: "bold"
+                },
+                data: [{ value: completionRate, name: "流程完成率" }]
+            }]
+        });
+
+        // ==================== 阻塞节点分析 ====================
+        const blockingNodesChart = echarts.init(document.getElementById("blockingNodes"));
+        const bnReversed = blockingNodes.slice().reverse();
+        blockingNodesChart.setOption({
+            tooltip: {
+                trigger: "axis",
+                axisPointer: { type: "shadow" },
+                backgroundColor: "rgba(0,0,0,0.8)",
+                borderColor: "#ffd700",
+                textStyle: { color: "#fff" },
+                formatter: function(params) {
+                    const data = blockingNodes[params[0].dataIndex];
+                    return "<div style=\"font-weight:600;\">" + data.name + "</div>" +
+                        "<div>卡住流程数: <strong>" + data.count + "</strong></div>" +
+                        "<div>涉及类型: " + data.types + "</div>";
+                }
+            },
+            grid: { left: "3%", right: "15%", bottom: "3%", containLabel: true },
+            xAxis: {
+                type: "value",
+                name: "卡住流程数",
+                axisLine: { lineStyle: { color: "#2d3748" } },
+                axisLabel: { color: "#8892b0" },
+                splitLine: { lineStyle: { color: "rgba(255,255,255,0.05)" } }
+            },
+            yAxis: {
+                type: "category",
+                data: bnReversed.map(n => n.name.length > 10 ? n.name.substring(0, 10) + ".." : n.name),
+                axisLine: { lineStyle: { color: "#2d3748" } },
+                axisLabel: { color: "#8892b0", fontSize: 11 }
+            },
+            series: [{
+                type: "bar",
+                data: bnReversed.map((n, i) => ({
+                    value: n.count,
+                    itemStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                            { offset: 0, color: i < 3 ? "#ff5252" : i < 6 ? "#ffd700" : "#ff9f43" },
+                            { offset: 1, color: i < 3 ? "#cc0000" : i < 6 ? "#cc9900" : "#cc6600" }
+                        ])
+                    }
+                })),
+                barWidth: "60%",
+                label: { show: true, position: "right", color: "#8892b0", fontSize: 12, formatter: "{c}" }
+            }]
+        });
+
+        // ==================== 发起人排名 ====================
+        const initiatorRankChart = echarts.init(document.getElementById("initiatorRank"));
+        initiatorRankChart.setOption({
+            tooltip: {
+                trigger: "axis",
+                axisPointer: { type: "shadow" },
+                backgroundColor: "rgba(0,0,0,0.8)",
+                borderColor: "#00d4ff",
+                textStyle: { color: "#fff" },
+                formatter: function(params) {
+                    const data = initiatorData[params[0].dataIndex];
+                    return "<div style=\"font-weight:600;\">" + data.name + "</div>" +
+                        "<div>总流程: " + data.total + "</div>" +
+                        "<div>进行中: <span style=\"color:#ffd700\">" + data.active + "</span></div>" +
+                        "<div>已完成: <span style=\"color:#00e676\">" + data.completed + "</span></div>";
+                }
+            },
+            legend: {
+                data: ["已完成", "进行中"],
+                textStyle: { color: "#8892b0" },
+                top: 0
+            },
+            grid: { left: "3%", right: "10%", bottom: "3%", containLabel: true },
+            xAxis: {
+                type: "value",
+                axisLine: { lineStyle: { color: "#2d3748" } },
+                axisLabel: { color: "#8892b0" },
+                splitLine: { lineStyle: { color: "rgba(255,255,255,0.05)" } }
+            },
+            yAxis: {
+                type: "category",
+                data: initiatorData.slice().reverse().map(o => o.name),
+                axisLine: { lineStyle: { color: "#2d3748" } },
+                axisLabel: { color: "#8892b0", fontSize: 12 }
+            },
+            series: [
+                {
+                    name: "已完成",
+                    type: "bar",
+                    stack: "total",
+                    data: initiatorData.slice().reverse().map(o => o.completed),
+                    itemStyle: { color: "rgba(0, 230, 118, 0.7)" },
+                    barWidth: "50%"
+                },
+                {
+                    name: "进行中",
+                    type: "bar",
+                    stack: "total",
+                    data: initiatorData.slice().reverse().map(o => o.active),
+                    itemStyle: { color: "rgba(255, 215, 0, 0.7)" },
+                    barWidth: "50%"
+                }
+            ]
+        });
+
+        // ==================== 各类型完成率 ====================
+        const typeCompletionRateChart = echarts.init(document.getElementById("typeCompletionRate"));
+        const tcData = typeCompletionData.slice().reverse();
+        const avgRate = completionRate;
+        typeCompletionRateChart.setOption({
+            tooltip: {
+                trigger: "axis",
+                axisPointer: { type: "shadow" },
+                backgroundColor: "rgba(0,0,0,0.8)",
+                borderColor: "#00d4ff",
+                textStyle: { color: "#fff" },
+                formatter: function(params) {
+                    const data = tcData[params[0].dataIndex];
+                    const rate = (data.completed / data.total * 100).toFixed(1);
+                    return "<div style=\"font-weight:600;\">" + data.name + "</div>" +
+                        "<div>完成率: <strong>" + rate + "%</strong></div>" +
+                        "<div>已完成: " + data.completed + " / 总数: " + data.total + "</div>";
+                }
+            },
+            grid: { left: "3%", right: "10%", bottom: "3%", containLabel: true },
+            xAxis: {
+                type: "value",
+                max: 100,
+                axisLine: { lineStyle: { color: "#2d3748" } },
+                axisLabel: { color: "#8892b0", formatter: "{value}%" },
+                splitLine: { lineStyle: { color: "rgba(255,255,255,0.05)" } }
+            },
+            yAxis: {
+                type: "category",
+                data: tcData.map(f => f.name.length > 10 ? f.name.substring(0, 10) + ".." : f.name),
+                axisLine: { lineStyle: { color: "#2d3748" } },
+                axisLabel: { color: "#8892b0", fontSize: 10 }
+            },
+            series: [{
+                type: "bar",
+                data: tcData.map(f => ({
+                    value: (f.completed / f.total * 100).toFixed(1),
+                    itemStyle: {
+                        color: (f.completed / f.total) >= 0.8 ? "#00e676" :
+                               (f.completed / f.total) >= 0.5 ? "#ffd700" : "#ff5252"
+                    }
+                })),
+                barWidth: "60%",
+                label: { show: true, position: "right", color: "#8892b0", fontSize: 11, formatter: "{c}%" },
+                markLine: {
+                    silent: true,
+                    data: [{ xAxis: avgRate, label: { formatter: "平均 " + avgRate + "%", color: "#8892b0" }, lineStyle: { color: "#00d4ff", type: "dashed" } }]
+                }
+            }]
+        });
+
+        // ==================== 每日各类型堆叠图 ====================
+        const dailyTypeStackChart = echarts.init(document.getElementById("dailyTypeStack"));
+        const stackColors = ["#00d4ff", "#7b2cbf", "#00e676", "#ffd700", "#ff6b6b", "#ff9f43", "#a55eea", "#54a0ff", "#5f27cd", "#01a3a4", "#f368e0", "#ff6348", "#8892b0"];
+        dailyTypeStackChart.setOption({
+            tooltip: {
+                trigger: "axis",
+                backgroundColor: "rgba(0,0,0,0.8)",
+                borderColor: "#00d4ff",
+                textStyle: { color: "#fff" }
+            },
+            legend: {
+                data: typeNames,
+                textStyle: { color: "#8892b0", fontSize: 10 },
+                top: 0,
+                type: "scroll"
+            },
+            grid: { left: "3%", right: "4%", bottom: "3%", top: "15%", containLabel: true },
+            xAxis: {
+                type: "category",
+                data: dailyData.dates,
+                axisLine: { lineStyle: { color: "#2d3748" } },
+                axisLabel: { color: "#8892b0" }
+            },
+            yAxis: {
+                type: "value",
+                name: "流程数",
+                axisLine: { lineStyle: { color: "#2d3748" } },
+                axisLabel: { color: "#8892b0" },
+                splitLine: { lineStyle: { color: "rgba(255,255,255,0.05)" } }
+            },
+            series: typeNames.map((name, i) => ({
+                name: name,
+                type: "bar",
+                stack: "total",
+                data: dailyTypeData[name],
+                emphasis: { focus: "series" },
+                itemStyle: { color: stackColors[i % 13] }
+            }))
+        });
+
+        // ==================== 流程类型完整清单表格 ====================
+        const ftTableBody = document.querySelector("#flowTypeTable tbody");
+        flowTypeData.forEach((ft, index) => {
+            const row = document.createElement("tr");
+            const rankBadge = index < 3
+                ? "<span class=\"rank-badge " + ["gold", "silver", "bronze"][index] + "\">" + (index + 1) + "</span>"
+                : "<span class=\"rank-badge default\">" + (index + 1) + "</span>";
+            const rate = (ft.completed / ft.total * 100).toFixed(1);
+            const barColor = rate >= 80 ? "#00e676" : rate >= 50 ? "#ffd700" : "#ff5252";
+            row.innerHTML = "<td>" + rankBadge + "</td>" +
+                "<td>" + ft.name + "</td>" +
+                "<td style=\"font-weight:600;\">" + ft.total + "</td>" +
+                "<td style=\"color:#00e676;\">" + ft.completed + "</td>" +
+                "<td style=\"color:#ffd700;\">" + ft.active + "</td>" +
+                "<td style=\"color:" + barColor + ";font-weight:600;\">" + rate + "%</td>" +
+                "<td>" +
+                    "<div style=\"display:flex;align-items:center;gap:8px;\">" +
+                        "<div class=\"progress-bar-bg\" style=\"flex:1;\"><div class=\"progress-bar-fill\" style=\"width:" + rate + "%;background:" + barColor + ";\"></div></div>" +
+                    "</div>" +
+                "</td>";
+            ftTableBody.appendChild(row);
+        });
+
+        // ==================== 阻塞节点表格 ====================
+        const tableBody = document.querySelector("#blockingTable tbody");
+        blockingNodes.slice(0, 20).forEach((node, index) => {
+            const row = document.createElement("tr");
+            const rankBadge = index < 3
+                ? "<span class=\"rank-badge " + ["gold", "silver", "bronze"][index] + "\">" + (index + 1) + "</span>"
+                : "<span class=\"rank-badge default\">" + (index + 1) + "</span>";
+            const pct = (node.count / activeFlows * 100).toFixed(1);
+            const barColor = index < 3 ? "#ff5252" : index < 6 ? "#ffd700" : "#ff9f43";
+            row.innerHTML = "<td>" + rankBadge + "</td>" +
+                "<td><span class=\"status-dot active\"></span>" + node.name + "</td>" +
+                "<td style=\"color: " + barColor + ";font-weight:600;\">" + node.count + "</td>" +
+                "<td style=\"font-size:12px;color:#8892b0;\">" + node.types + "</td>" +
+                "<td>" +
+                    "<div style=\"display:flex;align-items:center;gap:8px;\">" +
+                        "<span>" + pct + "%</span>" +
+                        "<div class=\"progress-bar-bg\" style=\"flex:1;\"><div class=\"progress-bar-fill\" style=\"width:" + pct + "%;background:" + barColor + ";\"></div></div>" +
+                    "</div>" +
+                "</td>";
+            tableBody.appendChild(row);
+        });
+
+        // ==================== 响应式 ====================
+        window.addEventListener("resize", function() {
+            dailyTrendChart.resize();
+            flowTypePieChart.resize();
+            statusGaugeChart.resize();
+            blockingNodesChart.resize();
+            initiatorRankChart.resize();
+            typeCompletionRateChart.resize();
+            dailyTypeStackChart.resize();
+        });
+    </script>
+</body>
+</html>

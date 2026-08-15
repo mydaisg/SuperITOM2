@@ -18,6 +18,9 @@ source("Script/data_center_server.r")   # 数据中心模块（数据归集）
 source("Script/integration_management.r") # 集成模块数据层
 source("Script/integration_server.r")     # 集成模块服务端
 source("Script/tools_server.r")         # 工具模块
+source("Script/flow_visualization.r")    # 流程数据可视化（数据层）
+source("Script/flow_visualization_server.r")  # 流程数据可视化（服务端）
+source("Script/flow_monitor_server.r")    # 流程监控数据（服务端）
 source("Script/ai_management.r")       # AI 模块数据层
 source("Script/ai_server.r")           # AI 模块
 source("Script/process_engine.r")       # 流程引擎核心（定义 %||% 等工具函数，network_test.r 依赖）
@@ -1154,7 +1157,7 @@ server <- function(input, output, session) {
     req(rv$logged_in)
     parsed <- rv$batch_parsed
     if (is.null(parsed) || !parsed$success) {
-      showNotification("请先粘贴日报文本并确认预览无误", type = "warning")
+      showNotification("请先粘贴总结文本并确认预览无误", type = "warning")
       return()
     }
     
@@ -2891,7 +2894,7 @@ server <- function(input, output, session) {
     perms$component <- ifelse(is.na(perms$component) | perms$component == "", "(通用)", perms$component)
     # 按实际导航栏顺序排列模块
     nav_order <- c("首页","项目","巡检","工单","资产","记事","标准化","测试",
-                   "性能","日报","收集器","集成","数据","岗职","绩效","模型","可视化","管理")
+                   "性能","总结","收集器","集成","数据","岗职","绩效","模型","可视化","管理")
     modules <- intersect(nav_order, unique(perms$module))
     tagList(
       tags$style(HTML("
@@ -2975,7 +2978,7 @@ server <- function(input, output, session) {
     all_perms$component <- ifelse(is.na(all_perms$component) | all_perms$component == "", "(通用)", all_perms$component)
     # 按实际导航栏顺序排列模块
     navbar_order <- c("首页","项目","巡检","工单","资产","记事","标准化","测试",
-                      "性能","日报","收集器","集成","数据","岗职","绩效","模型","可视化","管理")
+                      "性能","总结","收集器","集成","数据","岗职","绩效","模型","可视化","管理")
     modules <- intersect(navbar_order, unique(all_perms$module))
 
     tagList(
@@ -3773,6 +3776,12 @@ server <- function(input, output, session) {
 
   # 工具模块逻辑
   tools_server(input, output, session, rv)
+
+  # 流程数据可视化逻辑
+  flow_viz_server(input, output, session, rv)
+
+  # 流程监控数据逻辑
+  flow_monitor_server(input, output, session, rv)
 
   # AI 模块逻辑
   ai_server(input, output, session, rv)

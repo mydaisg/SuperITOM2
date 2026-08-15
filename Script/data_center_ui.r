@@ -68,7 +68,7 @@ data_center_ui <- function() {
           div(class="module-title","平台验证"), htmlOutput(ns("nt_viz")))),
         column(4, div(class="data-module-card module-daily", id=ns("card_daily"),
           div(class="module-icon", icon("calendar-alt")),
-          div(class="module-title","工作日报"), htmlOutput(ns("dr_viz")))),
+          div(class="module-title","工作总结"), htmlOutput(ns("dr_viz")))),
         column(4, div(class="data-module-card module-asset", id=ns("card_asset"),
           div(class="module-icon", icon("laptop")),
           div(class="module-title","资产管理"), htmlOutput(ns("ast_viz"))))

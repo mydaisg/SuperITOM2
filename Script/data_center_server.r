@@ -127,7 +127,7 @@ data_center_server <- function(id, rv) {
   observeEvent(input$card_workorder,{navigate_to_tab("工单")})
   observeEvent(input$card_inspection,{navigate_to_tab("巡检")})
   observeEvent(input$card_network,{navigate_to_tab("测试")})
-  observeEvent(input$card_daily,{navigate_to_tab("日报")})
+  observeEvent(input$card_daily,{navigate_to_tab("总结")})
   observeEvent(input$card_asset,{navigate_to_tab("资产")})
   observeEvent(input$card_note,{navigate_to_tab("记事")})
   observeEvent(input$card_duty,{navigate_to_tab("岗职")})

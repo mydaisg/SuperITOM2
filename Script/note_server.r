@@ -990,7 +990,7 @@ note_server <- function(input, output, session, rv) {
         HTML(status_btns),
         actionButton("note_do_save", "💾 保存", class = "btn-primary btn-sm"),
         tags$button(class = "btn btn-info btn-sm note-wo-btn", `data-id` = note$id[1], "📋转工单"),
-        tags$button(class = "btn btn-warning btn-sm note-report-btn", `data-id` = note$id[1], "📅日报"),
+        tags$button(class = "btn btn-warning btn-sm note-report-btn", `data-id` = note$id[1], "📅总结"),
         tags$button(class = "btn btn-danger btn-sm note-del-btn", `data-id` = note$id[1], "🗑删除"),
         modalButton("关闭")
       ),

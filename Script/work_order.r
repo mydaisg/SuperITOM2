@@ -786,7 +786,7 @@ work_order_batch_parse <- function(text) {
   first_line <- lines[1]
   date_pattern <- "\\d{4}年\\d{1,2}月\\d{1,2}日"
   date_match <- regmatches(first_line, regexpr(date_pattern, first_line, perl = TRUE))
-  if (length(date_match) == 0) return(list(success = FALSE, message = "第一行未找到日期，格式应为：姓名 YYYY年M月D日 日报"))
+  if (length(date_match) == 0) return(list(success = FALSE, message = "第一行未找到日期，格式应为：姓名 YYYY年M月D日 总结"))
   date_str <- date_match[1]
   # 日期前面的部分就是处理人姓名
   handler_name <- trimws(sub(paste0(date_str, ".*"), "", first_line))
@@ -962,7 +962,7 @@ work_order_batch_create <- function(parsed, current_user = NULL) {
 
   if (!is.null(current_user) && nrow(current_user) > 0) {
     log_user_operation("批量补工单",
-      paste0(parsed$handler_name, " ", parsed$batch_date, "日报：", created_count, "条"),
+      paste0(parsed$handler_name, " ", parsed$batch_date, "总结：", created_count, "条"),
       current_user$username[1] %||% "系统")
   }
 

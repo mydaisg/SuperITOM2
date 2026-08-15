@@ -299,13 +299,13 @@ daily_report_ui <- function() {
       column(2, selectInput("dr_user_filter", "筛选人员",
         choices = c("全部人员" = "all"))),
       column(2, div(style = "margin-top:25px;",
-        actionButton("dr_refresh", "刷新日报", class = "btn-primary btn-sm", icon = icon("sync")))),
+        actionButton("dr_refresh", "刷新总结", class = "btn-primary btn-sm", icon = icon("sync")))),
       column(3, div(style = "margin-top:25px; text-align:right;",
-        actionButton("dr_copy_text", "复制文本日报", class = "btn-default btn-sm", icon = icon("copy"))))
+        actionButton("dr_copy_text", "复制文本总结", class = "btn-default btn-sm", icon = icon("copy"))))
     ),
     hr(),
     tabsetPanel(
-      tabPanel("人员日报", uiOutput("dr_report_content")),
+      tabPanel("人员总结", uiOutput("dr_report_content")),
       tabPanel("⏱ 时间流水", uiOutput("dr_timeline_content"))
     ),
     # 隐藏textarea用于存放纯文本日报
@@ -867,6 +867,6 @@ daily_report_server <- function(input, output, session, rv) {
 
   # 复制完成通知
   observeEvent(input$dr_copy_done, {
-    showNotification("日报文本已复制到剪贴板", type = "message")
+    showNotification("总结文本已复制到剪贴板", type = "message")
   })
 }

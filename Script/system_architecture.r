@@ -17,7 +17,7 @@ ARCH_MODULES <- list(
   list(icon="cogs",             name="标准化",   color="#009688"),
   list(icon="network-wired",    name="测试",     color="#3f51b5"),
   list(icon="heartbeat",        name="性能",     color="#ff5722"),
-  list(icon="calendar-day",     name="日报",     color="#0288d1"),
+  list(icon="calendar-day",     name="总结",     color="#0288d1"),
   list(icon="download",         name="收集器",   color="#689f38"),
   list(icon="plug",             name="集成",     color="#5e35b1"),
   list(icon="database",         name="数据",     color="#ff8f00"),
@@ -97,7 +97,7 @@ system_architecture_ui <- function() {
           list(icon="cogs",             name="标准化", color="#009688", svc=c("std_computer.r"),                         db="std_hosts"),
           list(icon="network-wired",    name="测试",   color="#3f51b5", svc=c("network_test.r"),                        db="config/init.json"),
           list(icon="heartbeat",        name="性能",   color="#ff5722", svc=c("sysmon_management.r","sysmon_server.r"), db="system_monitors"),
-          list(icon="calendar-day",     name="日报",   color="#0288d1", svc=c("daily_report.r"),                        db="(聚合查询)"),
+          list(icon="calendar-day",     name="总结",   color="#0288d1", svc=c("daily_report.r"),                        db="(聚合查询)"),
           list(icon="download",         name="收集器", color="#689f38", svc=c("information_collector.r"),                db="information_collectors"),
           list(icon="plug",             name="集成",   color="#5e35b1", svc=c("integration_management.r","integration_server.r"), db="integrations"),
           list(icon="database",         name="数据",   color="#ff8f00", svc=c("data_center_server.r"),                  db="(跨模块聚合)"),
@@ -330,7 +330,7 @@ system_architecture_ui <- function() {
         tags$table(class="arch-table",
           tags$tr(tags$th("操作"), tags$th("函数"), tags$th("说明")),
           tags$tr(tags$td("创建"), tags$td(tags$code("work_order_add(title, desc, ...)")), tags$td("ITS+日期+3位流水, 防并发重试")),
-          tags$tr(tags$td("批量"), tags$td(tags$code("work_order_batch_parse/create/delete/reopen/close")), tags$td("日报文本→工单, 批量操作Admin")),
+          tags$tr(tags$td("批量"), tags$td(tags$code("work_order_batch_parse/create/delete/reopen/close")), tags$td("总结文本→工单, 批量操作Admin")),
           tags$tr(tags$td("快速"), tags$td(tags$code("work_order_parse_quick_text()")), tags$td("格式化工单文本自动解析")),
           tags$tr(tags$td("派发"), tags$td(tags$code("work_order_assign(order_id, assignee_id)")), tags$td("指派处理人")),
           tags$tr(tags$td("状态"), tags$td(tags$code("start_handle/complete/close/update_status")), tags$td("pending→assigned→processing→completed→closed")),
@@ -397,7 +397,7 @@ system_architecture_ui <- function() {
           tags$tr(tags$td("提醒"), tags$td(tags$code("note_cancel_reminder() / extend_due()")), tags$td("取消提醒 / 延长到期日")),
           tags$tr(tags$td("转工单"), tags$td(tags$code("note_convert_to_work_order()")), tags$td("记事 → 工单 work_order_add")),
           tags$tr(tags$td("删除"), tags$td(tags$code("note_delete() / comment_delete()")), tags$td("软删除 (硬删除)")),
-          tags$tr(tags$td("日报"), tags$td(tags$code("note_get_today()")), tags$td("今日记事供日报聚合"))
+          tags$tr(tags$td("总结"), tags$td(tags$code("note_get_today()")), tags$td("今日记事供总结聚合"))
         ),
         # 权限 & 可见性
         tags$div(style="margin-top:10px;",
@@ -479,9 +479,9 @@ system_architecture_ui <- function() {
       )
     ),
 
-    # ========== 16. 日报模块 ==========
+    # ========== 16. 总结模块 ==========
     tags$div(class="arch-block", style="background:#e1f5fe;",
-      tags$h4(icon("calendar-day"), " 16. 日报模块"),
+      tags$h4(icon("calendar-day"), " 16. 总结模块"),
       tags$div(style="font-size:13px;",
         tags$div(style="margin-bottom:10px;",
           tags$b("📦 数据源: "),
@@ -496,7 +496,7 @@ system_architecture_ui <- function() {
           tags$tr(tags$td("任务"), tags$td(tags$code("daily_report_get_tasks()")), tags$td("按日期提取任务")),
           tags$tr(tags$td("日志"), tags$td(tags$code("daily_report_get_task_logs()")), tags$td("任务反馈日志")),
           tags$tr(tags$td("记事"), tags$td(tags$code("daily_report_get_note_comments()")), tags$td("记事评论按用户聚合")),
-          tags$tr(tags$td("复制"), tags$td(tags$code("dr_copy_text")), tags$td("复制纯文本日报: 工作日志 日期 (N条) 姓名")),
+          tags$tr(tags$td("复制"), tags$td(tags$code("dr_copy_text")), tags$td("复制纯文本总结: 工作日志 日期 (N条) 姓名")),
           tags$tr(tags$td("格式"), tags$td(tags$code("dr_cn_number()")), tags$td("中文序号: 一、二、三、...")
         )),
         tags$div(style="margin-top:8px;", tags$b("🔒 权限: "),

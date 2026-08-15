@@ -997,7 +997,7 @@ migrate_database <- function() {
         data.frame(module="巡检",   component="操作",     code="insp_create",     name="创建", description="创建巡检计划"),
         data.frame(module="巡检",   component="操作",     code="insp_execute",    name="执行", description="执行巡检任务"),
         data.frame(module="巡检",   component="操作",     code="insp_manage",     name="管理", description="管理计划和模板"),
-        data.frame(module="日报",   component="报表",     code="dr_view",         name="查看", description="查看日报"),
+        data.frame(module="总结",   component="报表",     code="dr_view",         name="查看", description="查看总结"),
         data.frame(module="岗职",   component="矩阵",     code="duty_view",       name="查看", description="查看岗位职责矩阵"),
         data.frame(module="岗职",   component="编辑",     code="duty_manage",     name="管理", description="编辑岗位/人员/职责"),
         data.frame(module="绩效",   component="报表",     code="perf_view",       name="查看", description="查看绩效数据"),
@@ -1027,6 +1027,17 @@ migrate_database <- function() {
           seed_perms$component[i], seed_perms$code[i]))
       }
     }
+    # 补充权限（幂等）：工具子模块等后续新增的权限码
+    supplement_perms <- rbind(
+      data.frame(module="流程数据可视化", component="面板", code="flowviz_view", name="查看", description="查看流程数据可视化"),
+      data.frame(module="流程监控数据", component="面板", code="flowmon_view", name="查看", description="查看流程监控数据")
+    )
+    for (i in seq_len(nrow(supplement_perms))) {
+      dbExecute(con, sprintf("INSERT OR IGNORE INTO rbac_permissions (module, component, code, name, description) VALUES ('%s','%s','%s','%s','%s')",
+        supplement_perms$module[i], supplement_perms$component[i], supplement_perms$code[i],
+        supplement_perms$name[i], supplement_perms$description[i]))
+    }
+
     # 初始化种子角色（idempotent）
     roles_exist <- dbGetQuery(con, "SELECT COUNT(*) as cnt FROM rbac_roles")$cnt[1]
     if (roles_exist == 0) {
@@ -1462,6 +1473,62 @@ migrate_database <- function() {
         UNIQUE(category, value)
       )")
       cat("数据库迁移完成：已创建 exec_config 表\n")
+    }
+
+    # ===============================================
+    # 流程数据可视化历史记录表
+    # ===============================================
+    if (!"flow_visualizations" %in% tables) {
+      dbExecute(con, "CREATE TABLE flow_visualizations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        record_no TEXT NOT NULL DEFAULT '',
+        src_name TEXT,
+        out_name TEXT,
+        total_flows INTEGER DEFAULT 0,
+        completed_flows INTEGER DEFAULT 0,
+        active_flows INTEGER DEFAULT 0,
+        completion_rate REAL DEFAULT 0,
+        date_min TEXT,
+        date_max TEXT,
+        created_by TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 flow_visualizations 表\n")
+    }
+    # 迁移：flow_visualizations 添加 html_content 列（HTML 内容备份，供移植重新导出）
+    fvz_cols <- dbGetQuery(con, "PRAGMA table_info(flow_visualizations)")
+    if (!("html_content" %in% fvz_cols$name)) {
+      dbExecute(con, "ALTER TABLE flow_visualizations ADD COLUMN html_content TEXT")
+      cat("数据库迁移完成：flow_visualizations 表已添加 html_content 列\n")
+    }
+
+    # ===============================================
+    # 流程监控数据表（Excel 明细存 SQLite）
+    # ===============================================
+    if (!"flow_monitor_batches" %in% tables) {
+      dbExecute(con, "CREATE TABLE flow_monitor_batches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        batch_no TEXT NOT NULL DEFAULT '',
+        src_name TEXT,
+        total INTEGER DEFAULT 0,
+        created_by TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 flow_monitor_batches 表\n")
+    }
+    if (!"flow_monitor_records" %in% tables) {
+      dbExecute(con, "CREATE TABLE flow_monitor_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        batch_id INTEGER NOT NULL,
+        flow_name TEXT,
+        current_node TEXT,
+        initiator TEXT,
+        start_time TEXT,
+        is_done INTEGER DEFAULT 0,
+        flow_type TEXT
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_fmr_batch ON flow_monitor_records(batch_id)")
+      cat("数据库迁移完成：已创建 flow_monitor_records 表及索引\n")
     }
 
   }, error = function(e) {

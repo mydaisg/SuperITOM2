@@ -186,6 +186,10 @@ tools_ui <- function() {
               uiOutput("tool_calc_history")
             )
           )
+        ),
+        tabPanel("流程数据可视化",
+          icon = icon("chart-area"),
+          flow_viz_ui()
         )
       )
     )

@@ -33,6 +33,7 @@ source("Script/daily_report.r")
 source("Script/data_center_ui.r")
 source("Script/integration_ui.r")
 source("Script/tools_ui.r")
+source("Script/flow_visualization_ui.r")
 source("Script/ai_ui.r")
 source("Script/solution_ui.r")
 
@@ -40,6 +41,9 @@ source("Script/solution_ui.r")
 source("Script/process_ui.r")
 source("Script/process_v2_ui.r")
 source("Script/process_v2_detail_ui.r")
+
+# 加载流程监控数据模块 UI
+source("Script/flow_monitor_ui.r")
 
 # 加载绩效模块
 source("Script/performance_ui.r")
@@ -98,7 +102,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
         '/tool': '工具',
         '/network_test': '测试',
         '/monitor': '性能',
-        '/daily_report': '日报',
+        '/daily_report': '总结',
         '/data': '数据',
         '/process': '流程',
         '/duty': '岗职',
@@ -204,7 +208,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
             Shiny.setInputValue('proj_enter_click', {id: String(id), name: name}, {priority:'event'});
           });
         ")),
-        titlePanel("欢迎使用 LVCC ITOM（Information Technology Operations Management）"),
+        titlePanel("Welcome LVCC ITOM（Information Technology Operations Management）"),
         br(),
         fluidRow(
           column(6,
@@ -696,8 +700,8 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
           column(12,
             wellPanel(style = "background:#f0f9fa;",
               h4("批量补工单"),
-              p("粘贴日报文本，自动拆解为多条工单。可在预览中修改「请求人」后再创建。", style = "color: #666; font-size: 12px;"),
-              pre('韩荣昌 2026年6月23日 日报
+              p("粘贴总结文本，自动拆解为多条工单。可在预览中修改「请求人」后再创建。", style = "color: #666; font-size: 12px;"),
+              pre('韩荣昌 2026年6月23日 总结
 
 1. IT支持与故障处理
 ● 处理蔡金萍反馈2号楼4楼打印报错问题...
@@ -706,7 +710,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
 2. 权限管理与安全
 ● 处理赖庆耀新更换的手机临时授权一天...', style = "font-size: 11px; background: #f5f5f5; padding: 8px;"),
               fluidRow(
-                column(12, textAreaInput("batch_work_order_text", "粘贴日报文本", rows = 5, placeholder = "第一行：姓名 日期 日报\n后续：● 开头的行为工单条目..."))
+                column(12, textAreaInput("batch_work_order_text", "粘贴总结文本", rows = 5, placeholder = "第一行：姓名 日期 总结\n后续：● 开头的行为工单条目..."))
               ),
               uiOutput("batch_work_order_preview"),
               div(style = "margin-top:8px;",
@@ -746,9 +750,9 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       sysmon_ui()
     ),
 
-    # 日报标签页
-    if (can_access("日报")) tabPanel(
-      "日报",
+    # 总结标签页
+    if (can_access("总结")) tabPanel(
+      "总结",
       icon = icon("calendar-day"),
       daily_report_ui()
     ),
@@ -773,7 +777,8 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       icon = icon("project-diagram"),
       tabsetPanel(
         tabPanel("旧版（企业微信风格）", process_ui()),
-        tabPanel(tags$span("新版", tags$sup(style = "color:#1890ff; font-size:10px;", "V2")), process_v2_ui())
+        tabPanel(tags$span("新版", tags$sup(style = "color:#1890ff; font-size:10px;", "V2")), process_v2_ui()),
+        tabPanel("流程监控", icon = icon("chart-area"), flow_monitor_ui())
       )
     ),
 

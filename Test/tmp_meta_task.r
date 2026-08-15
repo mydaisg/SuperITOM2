@@ -1,5 +1,0 @@
-con <- DBI::dbConnect(RSQLite::SQLite(), "DB/GH_ITOM.db")
-DBI::dbExecute(con, "PRAGMA busy_timeout = 5000")
-DBI::dbExecute(con, "DELETE FROM dev_logs WHERE id = 134")
-cat("Duplicate dev log 134 deleted\n")
-DBI::dbDisconnect(con)

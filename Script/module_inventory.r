@@ -120,7 +120,7 @@ MODULE_INVENTORY <- list(
       "work_order_get_comments() — 获取评论历史",
       "work_order_parse_quick_text() — 快速工单文本解析",
       "work_order_find_user_by_name() — 按姓名模糊查找用户ID",
-      "work_order_batch_parse() — 批量补工单:日报文本解析",
+      "work_order_batch_parse() — 批量补工单:总结文本解析",
       "work_order_batch_create() — 批量补工单:直接插入closed工单",
       "work_order_batch_delete() — 批量删除工单",
       "work_order_batch_reopen() — 批量激活(→pending)",
@@ -189,7 +189,7 @@ MODULE_INVENTORY <- list(
       "note_comment_mark_status() — 评论状态标记(completed等)",
       "note_comment_get_by_id() / get_last() / get_all() — 评论查询",
       "note_comment_update() / update_time() / delete() — 评论CRUD",
-      "note_get_today() — 今日记事(供日报用)",
+      "note_get_today() — 今日记事(供总结用)",
       "note_get_top_keywords() — Top N关键字提取(快速筛选)",
       "note_dispatch_set() — 记事派发(admin→多个user)",
       "note_dispatch_get_users() — 获取派发目标用户",
@@ -262,19 +262,19 @@ MODULE_INVENTORY <- list(
     )
   ),
   list(
-    module = "日报", icon = "calendar-day",
-    frontend = "日报标签页 → daily_report_ui()",
+    module = "总结", icon = "calendar-day",
+    frontend = "总结标签页 → daily_report_ui()",
     source = c("Script/daily_report.r"),
     tables = "- (从work_orders + project_tasks + notes聚合)",
     perms = list(
-      list(code="dr_view", name="查看日报")
+      list(code="dr_view", name="查看总结")
     ),
     key_funcs = c(
-      "daily_report_get_by_date() — 按日期提取日报",
+      "daily_report_get_by_date() — 按日期提取总结",
       "daily_report_get_by_person() — 按人提取工作记录",
-      "daily_report_copy_text() — 复制文本格式日报",
-      "daily_report_server() — 日报模块服务端",
-      "daily_report_ui() — 日报模块UI",
+      "daily_report_copy_text() — 复制文本格式总结",
+      "daily_report_server() — 总结模块服务端",
+      "daily_report_ui() — 总结模块UI",
       "自动聚合源: 工单操作记录 + 项目任务反馈日志 + 今日记事"
     )
   ),
@@ -311,6 +311,41 @@ MODULE_INVENTORY <- list(
     )
   ),
   list(
+    module = "流程数据可视化", icon = "chart-area", parent = "工具",
+    frontend = "工具 → 流程数据可视化（子标签页，位于记算之后）→ flow_viz_ui()",
+    source = c("Script/flow_visualization.r", "Script/flow_visualization_ui.r", "Script/flow_visualization_server.r"),
+    tables = "flow_visualizations",
+    perms = list(
+      list(code="flowviz_view", name="查看流程数据可视化")
+    ),
+    key_funcs = c(
+      "flow_viz_generate() — 读取Excel→聚合→生成ECharts HTML看板",
+      "flow_viz_aggregate() — 聚合统计(Excel与DB共用)",
+      "flow_viz_build_html() — HTML模板（每日趋势/类型分布/阻塞节点/发起人排名/堆叠图）",
+      "flow_viz_add_record() — 保存转换历史记录(含html_content备份)",
+      "flow_viz_get_history() — 获取历史记录",
+      "flow_viz_get_html() — 从DB读取某条记录的HTML内容",
+      "flow_viz_export_html() — 从DB重新导出HTML文件(移植重建)",
+      "flow_viz_generate_no() → FLV+YYYYMMDD+3位流水",
+      "flow_viz_output_dir() — HTML输出目录(www/flow_viz/)"
+    )
+  ),
+  list(
+    module = "流程监控数据", icon = "database", parent = "流程",
+    frontend = "流程 → 流程监控（子标签页）→ flow_monitor_ui()",
+    source = c("Script/flow_visualization.r", "Script/flow_monitor_ui.r", "Script/flow_monitor_server.r"),
+    tables = "flow_monitor_batches, flow_monitor_records",
+    perms = list(
+      list(code="flowmon_view", name="查看流程监控数据")
+    ),
+    key_funcs = c(
+      "flow_monitor_import_excel() — 导入Excel明细到SQLite(批次+明细)",
+      "flow_monitor_get_batches() — 获取所有数据批次",
+      "flow_monitor_get_data() — 获取某批次明细(还原4列data.frame)",
+      "flow_monitor_generate_html() — 从DB明细重新生成看板HTML"
+    )
+  ),
+  list(
     module = "集成", icon = "plug", parent = "工具",
     frontend = "工具 → 集成（子标签页）→ integration_ui()",
     source = c("Script/integration_management.r", "Script/integration_server.r", "Script/integration_ui.r"),
@@ -338,7 +373,7 @@ MODULE_INVENTORY <- list(
       list(code="dc_view", name="查看数据中心")
     ),
     key_funcs = c(
-      "data_center_get_stats() — 各模块统计聚合(工单/项目/巡检/测试/日报)",
+      "data_center_get_stats() — 各模块统计聚合(工单/项目/巡检/测试/总结)",
       "data_center_get_detail() — 明细穿透查询",
       "data_center_server() — 数据中心服务端(moduleServer)",
       "data_center_ui() — 数据中心UI(5个卡片+明细区域)"
@@ -469,7 +504,7 @@ NAV_ICONS <- list(
   "首页" = "home", "项目" = "project-diagram", "巡检" = "clipboard-check",
   "工单" = "clipboard-list", "资产" = "laptop", "记事" = "sticky-note",
   "工具" = "wrench", "测试" = "network-wired", "性能" = "heartbeat",
-  "日报" = "calendar-day", "流程" = "project-diagram", "AI" = "robot",
+  "总结" = "calendar-day", "流程" = "project-diagram", "AI" = "robot",
   "数据" = "database", "岗职" = "sitemap", "绩效" = "chart-bar",
   "模型" = "cogs", "可视化" = "chart-line", "管理" = "tools"
 )
