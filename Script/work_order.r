@@ -219,7 +219,8 @@ work_order_generate_number <- function() {
 
 # 创建工单
 work_order_add <- function(title, description, priority = "中", category = "一般",
-                           subcategory = "", request_user = NULL, current_user = NULL) {
+                           subcategory = "", request_user = NULL, current_user = NULL,
+                           created_at = NULL) {
   con <- db_connect()
   tryCatch({
     user_id <- ifelse(is.null(current_user), 1, current_user$id[1])
@@ -231,10 +232,17 @@ work_order_add <- function(title, description, priority = "中", category = "一
     req_user_part <- ifelse(is.null(request_user) || request_user == "", "NULL",
                             sprintf("'%s'", gsub("'", "''", request_user)))
 
+    # 创建时间：补录工单可传入 created_at（如 "2026-08-15 09:00:00"），默认当前时间
+    created_at_val <- if (is.null(created_at) || is.na(created_at) || created_at == "") {
+      "CURRENT_TIMESTAMP"
+    } else {
+      sprintf("'%s'", gsub("'", "''", as.character(created_at)))
+    }
+
     query <- sprintf("INSERT INTO work_orders
                      (order_no, title, description, priority, status, category, subcategory, request_user, created_by, created_at)
-                     VALUES ('%s', '%s', '%s', '%s', 'pending', '%s', '%s', %s, %d, CURRENT_TIMESTAMP)",
-                     order_no, title, description, priority, category, subcategory, req_user_part, user_id)
+                     VALUES ('%s', '%s', '%s', '%s', 'pending', '%s', '%s', %s, %d, %s)",
+                     order_no, title, description, priority, category, subcategory, req_user_part, user_id, created_at_val)
     dbExecute(con, query)
     
     # 记录日志

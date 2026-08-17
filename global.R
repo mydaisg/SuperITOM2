@@ -1525,10 +1525,18 @@ migrate_database <- function() {
         initiator TEXT,
         start_time TEXT,
         is_done INTEGER DEFAULT 0,
-        flow_type TEXT
+        flow_type TEXT,
+        workflow TEXT
       )")
       dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_fmr_batch ON flow_monitor_records(batch_id)")
       cat("数据库迁移完成：已创建 flow_monitor_records 表及索引\n")
+    } else {
+      # 旧表补充 workflow（所属工作流）列
+      cols <- dbListFields(con, "flow_monitor_records")
+      if (!"workflow" %in% cols) {
+        dbExecute(con, "ALTER TABLE flow_monitor_records ADD COLUMN workflow TEXT")
+        cat("数据库迁移完成：flow_monitor_records 表新增 workflow 列\n")
+      }
     }
 
   }, error = function(e) {

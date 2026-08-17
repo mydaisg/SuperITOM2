@@ -34,6 +34,24 @@ flow_viz_ensure_dir <- function() {
   d
 }
 
+# 从流程名称提取"流程类型"：去掉末尾的单号 token（如 CGSQ202608017 / ITS202608005）
+# 规则：按空格拆分，若最后一个 token 形如「2-6位大写字母 + 5位以上数字」则视为单号剔除，
+#       其余内容完整保留（不再按 "-" 截断，避免把 1X-A、IT服务工单-xxx 之类的名称截碎）。
+flow_viz_extract_type <- function(name) {
+  name <- as.character(name)
+  vapply(name, function(s) {
+    s <- trimws(s)
+    if (is.na(s) || nchar(s) == 0) return("")
+    parts <- strsplit(s, "\\s+")[[1]]
+    # 末尾单号：字母前缀 + 数字流水，如 ITS202608005 / CGSQ202608017 / MRBPS202608030
+    last <- parts[length(parts)]
+    if (grepl("^[A-Za-z]{2,6}[0-9]{5,}$", last)) {
+      parts <- parts[-length(parts)]
+    }
+    paste(parts, collapse = " ")
+  }, character(1), USE.NAMES = FALSE)
+}
+
 # 核心生成函数：读取 Excel → 聚合 → 生成 HTML
 # 参数：
 #   src_path  : 上传的 Excel 临时文件路径
@@ -83,7 +101,23 @@ flow_viz_aggregate <- function(df) {
 
   # ---- 预处理 ----
   df$is_done <- grepl("结束", df$当前节点)           # 完成标志：当前节点含"结束"
-  df$type    <- sub("-.*", "", df$流程名称)          # 流程类型：第一个 "-" 之前
+  # 流程类型：优先使用「所属工作流」列（流程本体）；缺失时回退到从流程名称提取
+  if ("所属工作流" %in% names(df)) {
+    raw_type <- df$所属工作流
+  } else {
+    raw_type <- flow_viz_extract_type(df$流程名称)
+  }
+  raw_type <- trimws(raw_type)
+  raw_type[is.na(raw_type) | raw_type == ""] <- "未分类"
+
+  # 拆解「流程本体」与「版本」：所属工作流形如 售后服务工单【历史版本V2】
+  # 本体 = 去掉【...版本Vx】后缀；版本 = 方括号内的 活动/历史版本Vn
+  df$type    <- sub("【[^】]*】$", "", raw_type)       # 流程本体（合并多版本）
+  df$type    <- trimws(df$type)
+  df$type[df$type == ""] <- "未分类"
+  df$version <- ifelse(grepl("【[^】]*】$", raw_type),
+                       sub("^.*【([^】]*)】$", "\\1", raw_type),
+                       "")                            # 版本名（无版本为空）
   df$date    <- substr(df$发起时间, 1, 10)           # 发起日期
 
   total_flows     <- nrow(df)
@@ -124,6 +158,30 @@ flow_viz_aggregate <- function(df) {
   rownames(type_tbl) <- NULL
 
   top5_pct <- round(sum(head(type_tbl$total, 5)) / total_flows * 100, 1)
+
+  # ---- 版本分项（同一流程本体下的各版本下级数据） ----
+  # 仅统计存在多版本的本体；单版本本体无下级分项
+  version_tbl <- data.frame()
+  has_version <- df$version != ""
+  if (any(has_version)) {
+    vdf <- df[has_version, c("type", "version", "is_done")]
+    # 统计每个本体的「不同版本数量」，只保留存在多个版本的本体
+    uniq_version_count <- tapply(vdf$version, vdf$type, function(x) length(unique(x)))
+    multi <- names(uniq_version_count)[uniq_version_count > 1]
+    if (length(multi) > 0) {
+      vdf <- vdf[vdf$type %in% multi, ]
+      # 按本体+版本聚合
+      vt <- as.data.frame(table(vdf$type, vdf$version), stringsAsFactors = FALSE)
+      names(vt) <- c("name", "version", "total")
+      vt$completed <- mapply(function(nm, vn) sum(vdf$is_done[vdf$type == nm & vdf$version == vn]),
+                             vt$name, vt$version)
+      vt$active <- vt$total - vt$completed
+      vt <- vt[vt$total > 0, ]
+      vt <- vt[order(-vt$total, vt$name, vt$version), ]
+      rownames(vt) <- NULL
+      version_tbl <- vt
+    }
+  }
 
   # ---- 阻塞节点（进行中流程的当前节点） ----
   active_df <- df[!df$is_done, ]
@@ -168,11 +226,16 @@ flow_viz_aggregate <- function(df) {
   dailyTypeData_json   <- to_json(dailyTypeData)
   typeNames_json       <- to_json(type_names_full)
   typeCompletionData_json <- to_json(typeCompletionData[, c("name", "total", "completed", "active")])
+  if (nrow(version_tbl) > 0) {
+    versionData_json <- to_json(version_tbl[, c("name", "version", "total", "completed", "active")])
+  } else {
+    versionData_json <- "[]"
+  }
 
   # ---- 生成 HTML ----
   html <- flow_viz_build_html(
     dailyData_json, flowTypeData_json, blockingNodes_json, initiatorData_json,
-    dailyTypeData_json, typeNames_json, typeCompletionData_json,
+    dailyTypeData_json, typeNames_json, typeCompletionData_json, versionData_json,
     total_flows, completed_flows, active_flows, completion_rate,
     date_min, date_max, n_days, daily_avg_total, daily_avg_done,
     type_count, initiator_count, top5_pct)
@@ -188,7 +251,8 @@ flow_viz_aggregate <- function(df) {
 # HTML 模板（ECharts 交互式看板）
 flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes_json,
                                 initiatorData_json, dailyTypeData_json, typeNames_json,
-                                typeCompletionData_json, total_flows, completed_flows,
+                                typeCompletionData_json, versionData_json,
+                                total_flows, completed_flows,
                                 active_flows, completion_rate, date_min, date_max, n_days,
                                 daily_avg_total, daily_avg_done, type_count,
                                 initiator_count, top5_pct) {
@@ -236,6 +300,14 @@ flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes
         .status-dot.active { background: #ffd700; }
         .progress-bar-bg { width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 4px; }
         .progress-bar-fill { height: 6px; border-radius: 3px; transition: width 0.5s; }
+        .type-main-row { cursor: pointer; }
+        .type-main-row:hover { background: rgba(255,255,255,0.08); }
+        .type-expand-icon { display: inline-block; width: 16px; text-align: center; color: #00d4ff; transition: transform 0.2s; margin-right: 4px; }
+        .type-main-row.open .type-expand-icon { transform: rotate(90deg); }
+        .version-row { display: none; background: rgba(0,0,0,0.2); }
+        .version-row.show { display: table-row; }
+        .version-row td { padding: 6px 12px; font-size: 13px; color: #c0c8dd; }
+        .version-tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; margin-left: 20px; }
         .footer { text-align: center; padding: 30px; color: #8892b0; font-size: 14px; }
         @media (max-width: 1200px) { .chart-grid { grid-template-columns: 1fr; } }
         @media (max-width: 768px) { .kpi-grid { grid-template-columns: 1fr; } .header h1 { font-size: 24px; } .kpi-value { font-size: 24px; } }
@@ -255,7 +327,7 @@ flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes
         <div class="kpi-card"><div class="kpi-label">参与人数</div><div class="kpi-value">', initiator_count, '</div><div class="kpi-change">发起人总数</div></div>
     </div>
     <div class="chart-grid"><div class="chart-card full-width"><div class="chart-title">每日流程发起与完成趋势</div><div id="dailyTrend" class="chart-container-tall"></div></div></div>
-    <div class="chart-grid"><div class="chart-card full-width"><div class="chart-title">流程类型分布清单 (全部', type_count, '种)</div><div style="max-height:600px;overflow-y:auto;"><table class="ranking-table" id="flowTypeTable"><thead><tr><th style="width:50px;">排名</th><th>流程类型</th><th style="width:70px;">总数</th><th style="width:70px;">已完成</th><th style="width:70px;">进行中</th><th style="width:80px;">完成率</th><th>完成进度</th></tr></thead><tbody></tbody></table></div></div></div>
+    <div class="chart-grid"><div class="chart-card full-width"><div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;"><div class="chart-title" style="margin-bottom:0;">流程类型分布清单 (共', type_count, '种)</div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><select id="flowTypeShowCount" style="background:#1e2a44;color:#fff;border:1px solid #2d3748;border-radius:6px;padding:4px 8px;font-size:12px;"><option value="20">显示 20 行</option><option value="50">显示 50 行</option><option value="all">全部显示</option></select><button type="button" id="ftExpandAll" style="background:#1e2a44;color:#00d4ff;border:1px solid #2d3748;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;">全部展开</button><button type="button" id="ftCollapseAll" style="background:#1e2a44;color:#8892b0;border:1px solid #2d3748;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;">全部收缩</button></div></div><div><table class="ranking-table" id="flowTypeTable"><thead><tr><th style="width:50px;">排名</th><th>流程类型</th><th style="width:70px;">总数</th><th style="width:70px;">已完成</th><th style="width:70px;">进行中</th><th style="width:80px;">完成率</th><th>完成进度</th></tr></thead><tbody></tbody></table></div></div></div>
     <div class="chart-grid">
         <div class="chart-card"><div class="chart-title">流程状态仪表盘</div><div id="statusGauge" class="chart-container"></div></div>
         <div class="chart-card"><div class="chart-title">流程类型分布饼图 (Top 12 + 其他)</div><div id="flowTypePie" class="chart-container"></div></div>
@@ -276,6 +348,7 @@ flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes
         const dailyTypeData = ', dailyTypeData_json, ';
         const typeNames = ', typeNames_json, ';
         const typeCompletionData = ', typeCompletionData_json, ';
+        const versionData = ', versionData_json, ';
         const totalFlows = ', total_flows, ';
         const activeFlows = ', active_flows, ';
         const completionRate = ', completion_rate, ';
@@ -359,13 +432,68 @@ flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes
         });
 
         const ftTableBody = document.querySelector("#flowTypeTable tbody");
-        flowTypeData.forEach((ft, index) => {
-            const row = document.createElement("tr");
-            const rankBadge = index < 3 ? "<span class=\\"rank-badge " + ["gold","silver","bronze"][index] + "\\">" + (index+1) + "</span>" : "<span class=\\"rank-badge default\\">" + (index+1) + "</span>";
-            const rate = (ft.completed/ft.total*100).toFixed(1);
-            const barColor = rate >= 80 ? "#00e676" : rate >= 50 ? "#ffd700" : "#ff5252";
-            row.innerHTML = "<td>" + rankBadge + "</td><td>" + ft.name + "</td><td style=\\"font-weight:600;\\">" + ft.total + "</td><td style=\\"color:#00e676;\\">" + ft.completed + "</td><td style=\\"color:#ffd700;\\">" + ft.active + "</td><td style=\\"color:" + barColor + ";font-weight:600;\\">" + rate + "%</td><td><div style=\\"display:flex;align-items:center;gap:8px;\\"><div class=\\"progress-bar-bg\\" style=\\"flex:1;\\"><div class=\\"progress-bar-fill\\" style=\\"width:" + rate + "%;background:" + barColor + ";\\"></div></div></div></td>";
-            ftTableBody.appendChild(row);
+        let ftShowCount = 20;                        // 默认显示前 20 个本体
+        const ftExpanded = new Set();                // 已展开（下级）的本体名集合
+
+        // 根据当前显示数量 + 展开状态重绘流程类型清单
+        function renderFlowTypeTable() {
+            ftTableBody.innerHTML = "";
+            const limit = ftShowCount === "all" ? flowTypeData.length : Math.min(ftShowCount, flowTypeData.length);
+            flowTypeData.slice(0, limit).forEach((ft, index) => {
+                const row = document.createElement("tr");
+                row.className = "type-main-row";
+                const rankBadge = index < 3 ? "<span class=\\"rank-badge " + ["gold","silver","bronze"][index] + "\\">" + (index+1) + "</span>" : "<span class=\\"rank-badge default\\">" + (index+1) + "</span>";
+                const rate = (ft.completed/ft.total*100).toFixed(1);
+                const barColor = rate >= 80 ? "#00e676" : rate >= 50 ? "#ffd700" : "#ff5252";
+                const subs = versionData.filter(v => v.name === ft.name);
+                const hasSub = subs.length > 0;
+                const isOpen = ftExpanded.has(ft.name);
+                if (isOpen) row.classList.add("open");
+                const expandIcon = hasSub ? "<span class=\\"type-expand-icon\\">&#9654;</span>" : "";
+                const nameCell = expandIcon + ft.name + (hasSub ? "<span style=\\"font-size:11px;color:#8892b0;\\">(" + subs.length + "版本)</span>" : "");
+                row.innerHTML = "<td>" + rankBadge + "</td><td>" + nameCell + "</td><td style=\\"font-weight:600;\\">" + ft.total + "</td><td style=\\"color:#00e676;\\">" + ft.completed + "</td><td style=\\"color:#ffd700;\\">" + ft.active + "</td><td style=\\"color:" + barColor + ";font-weight:600;\\">" + rate + "%</td><td><div style=\\"display:flex;align-items:center;gap:8px;\\"><div class=\\"progress-bar-bg\\" style=\\"flex:1;\\"><div class=\\"progress-bar-fill\\" style=\\"width:" + rate + "%;background:" + barColor + ";\\"></div></div></div></td>";
+                ftTableBody.appendChild(row);
+
+                if (hasSub) {
+                    subs.forEach(v => {
+                        const vrow = document.createElement("tr");
+                        vrow.className = "version-row" + (isOpen ? " show" : "");
+                        const vrate = (v.completed/v.total*100).toFixed(1);
+                        const vbarColor = vrate >= 80 ? "#00e676" : vrate >= 50 ? "#ffd700" : "#ff5252";
+                        const verColor = v.version.indexOf("活动") === 0 ? "#00d4ff" : "#8892b0";
+                        vrow.innerHTML = "<td></td><td><span class=\\"version-tag\\" style=\\"background:" + (v.version.indexOf("活动") === 0 ? "rgba(0,212,255,0.15)" : "rgba(136,146,176,0.15)") + ";color:" + verColor + ";\\">" + v.version + "</span></td><td style=\\"font-weight:600;\\">" + v.total + "</td><td style=\\"color:#00e676;\\">" + v.completed + "</td><td style=\\"color:#ffd700;\\">" + v.active + "</td><td style=\\"color:" + vbarColor + ";font-weight:600;\\">" + vrate + "%</td><td><div style=\\"display:flex;align-items:center;gap:8px;\\"><div class=\\"progress-bar-bg\\" style=\\"flex:1;\\"><div class=\\"progress-bar-fill\\" style=\\"width:" + vrate + "%;background:" + vbarColor + ";\\"></div></div></div></td>";
+                        ftTableBody.appendChild(vrow);
+                    });
+                    row.addEventListener("click", function() {
+                        if (ftExpanded.has(ft.name)) ftExpanded.delete(ft.name);
+                        else ftExpanded.add(ft.name);
+                        renderFlowTypeTable();
+                    });
+                }
+            });
+        }
+
+        // 初始渲染
+        renderFlowTypeTable();
+
+        // 显示行数切换
+        const ftShowSel = document.getElementById("flowTypeShowCount");
+        ftShowSel.addEventListener("change", function() {
+            ftShowCount = this.value === "all" ? "all" : parseInt(this.value, 10);
+            renderFlowTypeTable();
+        });
+
+        // 全部展开 / 全部收缩
+        document.getElementById("ftExpandAll").addEventListener("click", function() {
+            const limit = ftShowCount === "all" ? flowTypeData.length : Math.min(ftShowCount, flowTypeData.length);
+            flowTypeData.slice(0, limit).forEach(ft => {
+                if (versionData.some(v => v.name === ft.name)) ftExpanded.add(ft.name);
+            });
+            renderFlowTypeTable();
+        });
+        document.getElementById("ftCollapseAll").addEventListener("click", function() {
+            ftExpanded.clear();
+            renderFlowTypeTable();
         });
 
         const tableBody = document.querySelector("#blockingTable tbody");
@@ -461,6 +589,14 @@ flow_monitor_import_excel <- function(src_path, src_name, operator = "系统") {
     if (length(miss) > 0)
       return(list(success = FALSE, message = paste("Excel 缺少必需列:", paste(miss, collapse = ", "))))
 
+    # 「所属工作流」为流程本体（类型）列，若 Excel 未提供则留空
+    has_workflow <- "所属工作流" %in% names(df)
+    if (has_workflow) {
+      workflow_col <- as.character(df$所属工作流)
+    } else {
+      workflow_col <- rep("", nrow(df))
+    }
+
     con <- db_connect()
     tryCatch({
       # 生成批次号
@@ -475,19 +611,19 @@ flow_monitor_import_excel <- function(src_path, src_name, operator = "系统") {
 
       # 批量插入明细
       is_done <- as.integer(grepl("结束", df$当前节点))
-      flow_type <- sub("-.*", "", df$流程名称)
       n <- nrow(df)
       for (i in seq_len(n)) {
         dbExecute(con, sprintf(
-          "INSERT INTO flow_monitor_records (batch_id, flow_name, current_node, initiator, start_time, is_done, flow_type)
-           VALUES (%d,'%s','%s','%s','%s',%d,'%s')",
+          "INSERT INTO flow_monitor_records (batch_id, flow_name, current_node, initiator, start_time, is_done, flow_type, workflow)
+           VALUES (%d,'%s','%s','%s','%s',%d,'%s','%s')",
           batch_id,
           gsub("'","''", df$流程名称[i]),
           gsub("'","''", df$当前节点[i]),
           gsub("'","''", df$发起人[i]),
           gsub("'","''", as.character(df$发起时间[i])),
           is_done[i],
-          gsub("'","''", flow_type[i])))
+          gsub("'","''", flow_viz_extract_type(df$流程名称)[i]),
+          gsub("'","''", workflow_col[i])))
       }
       list(success = TRUE, batch_no = batch_no, batch_id = batch_id, count = n)
     }, finally = { db_disconnect(con) })
@@ -508,7 +644,7 @@ flow_monitor_get_data <- function(batch_id) {
   con <- db_connect()
   tryCatch({
     r <- dbGetQuery(con, sprintf(
-      "SELECT flow_name AS 流程名称, current_node AS 当前节点, initiator AS 发起人, start_time AS 发起时间
+      "SELECT flow_name AS 流程名称, current_node AS 当前节点, initiator AS 发起人, start_time AS 发起时间, workflow AS 所属工作流
        FROM flow_monitor_records WHERE batch_id=%d ORDER BY id", as.integer(batch_id)))
     r
   }, error = function(e) data.frame(), finally = { db_disconnect(con) })

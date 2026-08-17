@@ -22,7 +22,7 @@ flow_viz_ui <- function() {
       column(12,
         h4(icon("file-excel"), " 上传流程数据 Excel，自动生成可视化看板"),
         p(style = "color:#666; font-size:12px;",
-          "要求 Excel 包含列：流程名称、当前节点、发起人、发起时间。完成标志以「当前节点」含“结束”判定。")
+          "要求 Excel 包含列：所属工作流、流程名称、当前节点、发起人、发起时间。完成标志以「当前节点」含“结束”判定。")
       )
     ),
     fluidRow(

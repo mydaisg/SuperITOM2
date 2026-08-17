@@ -40,7 +40,7 @@ network_test_ui <- function() {
       .nt-details[open] summary { background:#e9ecef; }
       .nt-details { border:1px solid #dee2e6; border-radius:6px; padding:6px 10px 10px; margin-bottom:8px; }
     "))),
-    titlePanel("网络测试"),
+    titlePanel("平台检测"),
     br(),
     fluidRow(
       # ========== 左侧：测试面板（独立滚动，collapsible + 网格布局） ==========

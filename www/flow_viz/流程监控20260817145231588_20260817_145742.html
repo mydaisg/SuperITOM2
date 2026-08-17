@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>流程监控数据看板</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); min-height: 100vh; color: #fff; padding: 20px; }
+        .header { text-align: center; padding: 30px 0; margin-bottom: 20px; }
+        .header h1 { font-size: 36px; font-weight: 700; background: linear-gradient(90deg, #00d4ff, #7b2cbf); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 10px; }
+        .header .subtitle { color: #8892b0; font-size: 16px; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .kpi-card { background: rgba(255,255,255,0.05); border-radius: 16px; padding: 24px; border: 1px solid rgba(255,255,255,0.1); transition: all 0.3s ease; }
+        .kpi-card:hover { transform: translateY(-5px); border-color: rgba(0,212,255,0.3); box-shadow: 0 10px 40px rgba(0,212,255,0.1); }
+        .kpi-label { color: #8892b0; font-size: 14px; margin-bottom: 8px; }
+        .kpi-value { font-size: 32px; font-weight: 700; color: #fff; }
+        .kpi-value.warn { color: #ffd700; } .kpi-value.success { color: #00e676; }
+        .kpi-change { font-size: 14px; margin-top: 8px; color:#8892b0; }
+        .chart-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 30px; }
+        .chart-card { background: rgba(255,255,255,0.05); border-radius: 16px; padding: 24px; border: 1px solid rgba(255,255,255,0.1); }
+        .chart-card.full-width { grid-column: 1 / -1; }
+        .chart-title { font-size: 18px; font-weight: 600; margin-bottom: 20px; color: #fff; }
+        .chart-container { width: 100%; height: 350px; }
+        .chart-container-tall { width: 100%; height: 450px; }
+        .ranking-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .ranking-table th, .ranking-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .ranking-table th { color: #8892b0; font-weight: 500; font-size: 12px; text-transform: uppercase; }
+        .ranking-table td { font-size: 14px; }
+        .ranking-table tr:hover { background: rgba(255,255,255,0.05); }
+        .rank-badge { display: inline-block; width: 28px; height: 28px; line-height: 28px; text-align: center; border-radius: 50%; font-weight: 600; font-size: 12px; }
+        .rank-badge.gold { background: linear-gradient(135deg,#ffd700,#ffb700); color:#000; }
+        .rank-badge.silver { background: linear-gradient(135deg,#c0c0c0,#a0a0a0); color:#000; }
+        .rank-badge.bronze { background: linear-gradient(135deg,#cd7f32,#b87333); color:#000; }
+        .rank-badge.default { background: rgba(255,255,255,0.1); color:#8892b0; }
+        .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+        .status-dot.active { background: #ffd700; }
+        .progress-bar-bg { width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 4px; }
+        .progress-bar-fill { height: 6px; border-radius: 3px; transition: width 0.5s; }
+        .type-main-row { cursor: pointer; }
+        .type-main-row:hover { background: rgba(255,255,255,0.08); }
+        .type-expand-icon { display: inline-block; width: 16px; text-align: center; color: #00d4ff; transition: transform 0.2s; margin-right: 4px; }
+        .type-main-row.open .type-expand-icon { transform: rotate(90deg); }
+        .version-row { display: none; background: rgba(0,0,0,0.2); }
+        .version-row.show { display: table-row; }
+        .version-row td { padding: 6px 12px; font-size: 13px; color: #c0c8dd; }
+        .version-tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; margin-left: 20px; }
+        .footer { text-align: center; padding: 30px; color: #8892b0; font-size: 14px; }
+        @media (max-width: 1200px) { .chart-grid { grid-template-columns: 1fr; } }
+        @media (max-width: 768px) { .kpi-grid { grid-template-columns: 1fr; } .header h1 { font-size: 24px; } .kpi-value { font-size: 24px; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>流程监控数据看板</h1>
+        <div class="subtitle">数据周期：2026年08月01日 - 2026年08月17日 | 总流程数：2285</div>
+    </div>
+    <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-label">流程总数</div><div class="kpi-value">2285</div><div class="kpi-change">17天监控周期</div></div>
+        <div class="kpi-card"><div class="kpi-label">已完成流程</div><div class="kpi-value success">1369</div><div class="kpi-change">完成率 59.9%</div></div>
+        <div class="kpi-card"><div class="kpi-label">进行中流程</div><div class="kpi-value warn">916</div><div class="kpi-change">待处理占比 40.1%</div></div>
+        <div class="kpi-card"><div class="kpi-label">日均发起量</div><div class="kpi-value">134</div><div class="kpi-change">日均完成 81</div></div>
+        <div class="kpi-card"><div class="kpi-label">流程类型数</div><div class="kpi-value">75</div><div class="kpi-change">TOP5占比 42.1%</div></div>
+        <div class="kpi-card"><div class="kpi-label">参与人数</div><div class="kpi-value">416</div><div class="kpi-change">发起人总数</div></div>
+    </div>
+    <div class="chart-grid"><div class="chart-card full-width"><div class="chart-title">每日流程发起与完成趋势</div><div id="dailyTrend" class="chart-container-tall"></div></div></div>
+    <div class="chart-grid"><div class="chart-card full-width"><div class="chart-title">流程类型分布清单 (全部75种)</div><div style="max-height:600px;overflow-y:auto;"><table class="ranking-table" id="flowTypeTable"><thead><tr><th style="width:50px;">排名</th><th>流程类型</th><th style="width:70px;">总数</th><th style="width:70px;">已完成</th><th style="width:70px;">进行中</th><th style="width:80px;">完成率</th><th>完成进度</th></tr></thead><tbody></tbody></table></div></div></div>
+    <div class="chart-grid">
+        <div class="chart-card"><div class="chart-title">流程状态仪表盘</div><div id="statusGauge" class="chart-container"></div></div>
+        <div class="chart-card"><div class="chart-title">流程类型分布饼图 (Top 12 + 其他)</div><div id="flowTypePie" class="chart-container"></div></div>
+    </div>
+    <div class="chart-grid"><div class="chart-card full-width"><div class="chart-title">阻塞节点分析 (进行中流程当前所在节点)</div><div id="blockingNodes" class="chart-container-tall"></div></div></div>
+    <div class="chart-grid">
+        <div class="chart-card"><div class="chart-title">发起人流程数量排名 (Top 15)</div><div id="initiatorRank" class="chart-container-tall"></div></div>
+        <div class="chart-card"><div class="chart-title">各类型流程完成率</div><div id="typeCompletionRate" class="chart-container-tall"></div></div>
+    </div>
+    <div class="chart-grid"><div class="chart-card full-width"><div class="chart-title">每日各流程类型发起量堆叠</div><div id="dailyTypeStack" class="chart-container-tall"></div></div></div>
+    <div class="chart-grid"><div class="chart-card full-width"><div class="chart-title">进行中流程阻塞节点详情 (Top 20)</div><table class="ranking-table" id="blockingTable"><thead><tr><th>排名</th><th>阻塞节点</th><th>卡住流程数</th><th>涉及流程类型</th><th>占比</th></tr></thead><tbody></tbody></table></div></div>
+    <div class="footer">数据来源：流程监控导出数据 | 报表生成：LVCC ITOM | 更新日期：2026年08月17日</div>
+    <script>
+        const dailyData = {"dates":["2026-08-01","2026-08-02","2026-08-03","2026-08-04","2026-08-05","2026-08-06","2026-08-07","2026-08-08","2026-08-09","2026-08-10","2026-08-11","2026-08-12","2026-08-13","2026-08-14","2026-08-15","2026-08-16","2026-08-17"],"total":[76,40,108,135,163,182,144,125,68,149,156,121,250,272,140,51,105],"completed":[60,26,94,111,128,147,91,83,18,104,113,78,102,114,57,17,26],"active":[16,14,14,24,35,35,53,42,50,45,43,43,148,158,83,34,79]};
+        const flowTypeData = [{"name":"售后服务工单","total":257,"completed":175,"active":82},{"name":"小区欠款处理表申请","total":212,"completed":173,"active":39},{"name":"设备切换平台","total":174,"completed":156,"active":18},{"name":"IT服务工单","total":165,"completed":118,"active":47},{"name":"对公付款申请流程","total":154,"completed":69,"active":85},{"name":"MRB评审单","total":145,"completed":104,"active":41},{"name":"排产计划","total":132,"completed":33,"active":99},{"name":"服务费和手续费开票申请表","total":117,"completed":98,"active":19},{"name":"通用用印流程","total":114,"completed":97,"active":17},{"name":"采购申请流程","total":99,"completed":24,"active":75},{"name":"公司运营充电桩设备验收申请","total":81,"completed":0,"active":81},{"name":"试用期员工工作情况跟踪","total":71,"completed":0,"active":71},{"name":"试用期员工自评","total":71,"completed":0,"active":71},{"name":"二维码收款申请","total":48,"completed":46,"active":2},{"name":"数据调取","total":44,"completed":33,"active":11},{"name":"系统权限审批","total":28,"completed":24,"active":4},{"name":"接待客户审批","total":27,"completed":19,"active":8},{"name":"通用费用报销","total":27,"completed":9,"active":18},{"name":"定制产品采购申请","total":26,"completed":7,"active":19},{"name":"维修服务申请","total":18,"completed":7,"active":11},{"name":"包厢预定","total":16,"completed":1,"active":15},{"name":"相对方信息新增或变更申请","total":14,"completed":14,"active":0},{"name":"平台结算打款申请表","total":14,"completed":10,"active":4},{"name":"合同审批单","total":13,"completed":11,"active":2},{"name":"系统账户开通审批","total":12,"completed":12,"active":0},{"name":"差旅费报销","total":11,"completed":1,"active":10},{"name":"数智技术工厂服务工单","total":10,"completed":9,"active":1},{"name":"设备出厂标准","total":10,"completed":8,"active":2},{"name":"合同用印流程","total":10,"completed":7,"active":3},{"name":"余额退款申请表","total":9,"completed":8,"active":1},{"name":"业务招待费用报销","total":9,"completed":5,"active":4},{"name":"免费赠送申请流程","total":9,"completed":2,"active":7},{"name":"借款申请","total":8,"completed":5,"active":3},{"name":"流程及表单新建、优化申请","total":7,"completed":7,"active":0},{"name":"广告与安心充电业务流程","total":7,"completed":4,"active":3},{"name":"电子充电卡特殊收费","total":6,"completed":5,"active":1},{"name":"员工入住宿舍确认单","total":6,"completed":4,"active":2},{"name":"调试","total":6,"completed":0,"active":6},{"name":"批量试产单","total":6,"completed":0,"active":6},{"name":"宿舍入住申请单","total":5,"completed":5,"active":0},{"name":"出差申请","total":5,"completed":4,"active":1},{"name":"技术对接申请","total":5,"completed":4,"active":1},{"name":"员工调岗申请","total":5,"completed":4,"active":1},{"name":"扣款审批","total":5,"completed":3,"active":2},{"name":"账号临时解锁申请","total":5,"completed":3,"active":2},{"name":"工作机、工作手机卡交接申请","total":5,"completed":1,"active":4},{"name":"宿舍退住申请单","total":4,"completed":4,"active":0},{"name":"服务费更改申请表","total":4,"completed":3,"active":1},{"name":"外部平台注册账号申请","total":4,"completed":3,"active":1},{"name":"计划投放申请表","total":3,"completed":2,"active":1},{"name":"请假申请","total":3,"completed":2,"active":1},{"name":"信息系统升级申请单","total":3,"completed":1,"active":2},{"name":"标书、图纸制作及勘探业务申请","total":2,"completed":2,"active":0},{"name":"访客申请","total":2,"completed":2,"active":0},{"name":"监控查看权限申请","total":2,"completed":2,"active":0},{"name":"内部单位付款流程","total":2,"completed":2,"active":0},{"name":"数智技术工厂供货方资金迁移","total":2,"completed":2,"active":0},{"name":"物料涨价审批","total":2,"completed":2,"active":0},{"name":"资产入库申请流程","total":2,"completed":2,"active":0},{"name":"加班申请","total":2,"completed":1,"active":1},{"name":"数字运营中心服务工单","total":2,"completed":1,"active":1},{"name":"特殊设备服务费修改申请","total":2,"completed":1,"active":1},{"name":"营销推广费退费申请","total":2,"completed":1,"active":1},{"name":"补开发票申请","total":2,"completed":0,"active":2},{"name":"质检报告信息收集","total":2,"completed":0,"active":2},{"name":"补卡流程","total":1,"completed":1,"active":0},{"name":"耗材派发流程","total":1,"completed":1,"active":0},{"name":"合同纸质回收流程","total":1,"completed":1,"active":0},{"name":"宿舍维修申请单","total":1,"completed":1,"active":0},{"name":"外出","total":1,"completed":1,"active":0},{"name":"信息系统数据库变更申请单","total":1,"completed":1,"active":0},{"name":"资产申领流程","total":1,"completed":1,"active":0},{"name":"手机或手机卡申请流程","total":1,"completed":0,"active":1},{"name":"团建活动申请表","total":1,"completed":0,"active":1},{"name":"资产维修流程","total":1,"completed":0,"active":1}];
+        const blockingNodes = [{"name":"发起节点","count":91,"types":"MRB评审单(14) 包厢预定(12) 设备切换平台(11) 售后服务工单(11) 小区欠款处理表申请(10)"},{"name":"审核是否合规","count":81,"types":"公司运营充电桩设备验收申请(81)"},{"name":"发起人","count":72,"types":"试用期员工工作情况跟踪(71) 员工调岗申请(1)"},{"name":"员工填写（自动触发）","count":71,"types":"试用期员工自评(71)"},{"name":"发起人评分","count":58,"types":"售后服务工单(58)"},{"name":"入库（直流）","count":55,"types":"排产计划(55)"},{"name":"采购主管","count":54,"types":"采购申请流程(54)"},{"name":"发票提交","count":45,"types":"对公付款申请流程(45)"},{"name":"发起人确认","count":44,"types":"小区欠款处理表申请(20) 服务费和手续费开票申请表(14) 排产计划(7) 补开发票申请(2) 平台结算打款申请表(1)"},{"name":"处理反馈","count":31,"types":"IT服务工单(31)"},{"name":"财务中心总经理审核","count":16,"types":"对公付款申请流程(13) 借款申请(1) 通用费用报销(1) 业务招待费用报销(1)"},{"name":"工单处理","count":15,"types":"IT服务工单(15)"},{"name":"质量","count":15,"types":"MRB评审单(15)"},{"name":"费用会计审核","count":12,"types":"对公付款申请流程(6) 通用费用报销(5) 业务招待费用报销(1)"},{"name":"直接上级审批","count":11,"types":"工作机、工作手机卡交接申请(3) 小区欠款处理表申请(3) 系统权限审批(2) 定制产品采购申请(1) 设备切换平台(1)"},{"name":"发起人自己","count":10,"types":"采购申请流程(10)"},{"name":"直接上级","count":10,"types":"对公付款申请流程(3) 采购申请流程(2) 通用费用报销(2) 差旅费报销(1) 加班申请(1)"},{"name":"安排采购","count":9,"types":"定制产品采购申请(9)"},{"name":"采购","count":9,"types":"MRB评审单(9)"},{"name":"测试入库（直流）","count":9,"types":"排产计划(9)"},{"name":"收到数据后同意","count":9,"types":"数据调取(9)"},{"name":"出纳","count":8,"types":"对公付款申请流程(8)"},{"name":"出纳付款审核","count":8,"types":"通用费用报销(4) 差旅费报销(3) 业务招待费用报销(1)"},{"name":"测试入库（交流）","count":7,"types":"排产计划(7)"},{"name":"发起人验收是否维修完成","count":7,"types":"维修服务申请(7)"},{"name":"用印（对外函告/说明）","count":7,"types":"通用用印流程(7)"},{"name":"1级审批","count":6,"types":"调试(6)"},{"name":"营销中心总经理审批","count":6,"types":"免费赠送申请流程(5) 特殊设备服务费修改申请(1)"},{"name":"安排食堂用餐","count":5,"types":"接待客户审批(5)"},{"name":"发起人打印","count":5,"types":"通用费用报销(4) 差旅费报销(1)"},{"name":"供应链中心","count":5,"types":"采购申请流程(5)"},{"name":"后端开发部审批","count":5,"types":"售后服务工单(5)"},{"name":"执行采购组或签","count":5,"types":"批量试产单(5)"},{"name":"执行操作添加欠款","count":5,"types":"小区欠款处理表申请(5)"},{"name":"安排计划任务（直流）","count":4,"types":"排产计划(4)"},{"name":"安排生产（交流）","count":4,"types":"排产计划(4)"},{"name":"安排生产（直流）","count":4,"types":"排产计划(4)"},{"name":"财务中心总经理审批","count":4,"types":"平台结算打款申请表(2) 营销推广费退费申请(1) 余额退款申请表(1)"},{"name":"核查设备故障","count":4,"types":"售后服务工单(4)"},{"name":"确认用印事由/业务真实性（对外函告/说明）","count":4,"types":"通用用印流程(4)"},{"name":"食堂用餐安排","count":3,"types":"包厢预定(3)"},{"name":"总账","count":3,"types":"对公付款申请流程(2) 通用费用报销(1)"},{"name":"SQE工程师审批直流桩","count":2,"types":"MRB评审单(2)"},{"name":"财务审核","count":2,"types":"合同审批单(2)"},{"name":"采购部主管审批","count":2,"types":"扣款审批(2)"},{"name":"采购审批","count":2,"types":"维修服务申请(2)"},{"name":"产品项目部/技术支持部主管审批","count":2,"types":"定制产品采购申请(2)"},{"name":"单据审核","count":2,"types":"借款申请(2)"},{"name":"合规督查组审批","count":2,"types":"账号临时解锁申请(2)"},{"name":"会计助理审批","count":2,"types":"服务费和手续费开票申请表(2)"},{"name":"讲解员审批","count":2,"types":"接待客户审批(2)"},{"name":"经办人处理","count":2,"types":"合同用印流程(2)"},{"name":"上传质检报告草稿件","count":2,"types":"质检报告信息收集(2)"},{"name":"申请人","count":2,"types":"出差申请(1) 请假申请(1)"},{"name":"审核图纸（交流)","count":2,"types":"定制产品采购申请(2)"},{"name":"审批是否开通","count":2,"types":"系统权限审批(2)"},{"name":"售后技术部","count":2,"types":"设备切换平台(2)"},{"name":"物联网费用会计","count":2,"types":"设备切换平台(2)"},{"name":"行政审核","count":2,"types":"差旅费报销(2)"},{"name":"研发中心总经理审批","count":2,"types":"计划投放申请表(1) 批量试产单(1)"},{"name":"业管审批","count":2,"types":"排产计划(2)"},{"name":"直流桩产品研发部审批","count":2,"types":"售后服务工单(2)"},{"name":"中心总经理","count":2,"types":"采购申请流程(2)"},{"name":"SQE工程师审批交流桩","count":1,"types":"MRB评审单(1)"},{"name":"安排计划任务（交流）","count":1,"types":"排产计划(1)"},{"name":"财务主管审核","count":1,"types":"对公付款申请流程(1)"},{"name":"采购部","count":1,"types":"采购申请流程(1)"},{"name":"采购部&IT部","count":1,"types":"资产维修流程(1)"},{"name":"出纳审批","count":1,"types":"服务费更改申请表(1)"},{"name":"创建工单","count":1,"types":"IT服务工单(1)"},{"name":"分管领导","count":1,"types":"通用费用报销(1)"},{"name":"规模增长业务组用户运营","count":1,"types":"设备切换平台(1)"},{"name":"规模增长业务组用户运营初审","count":1,"types":"广告与安心充电业务流程(1)"},{"name":"规模增长业务组用户运营复审","count":1,"types":"广告与安心充电业务流程(1)"},{"name":"核对收款信息，审核智慧工厂回单","count":1,"types":"二维码收款申请(1)"},{"name":"基建组水电工维修完成后点击通过","count":1,"types":"维修服务申请(1)"},{"name":"交流桩产品研发部软件经理二次审批","count":1,"types":"设备出厂标准(1)"},{"name":"交流桩产品研发部主管助理初审","count":1,"types":"设备出厂标准(1)"},{"name":"票据审核","count":1,"types":"对公付款申请流程(1)"},{"name":"平台软件部部长审批","count":1,"types":"数字运营中心服务工单(1)"},{"name":"平台项目部主管审批","count":1,"types":"技术对接申请(1)"},{"name":"平台运维部主管助理审批","count":1,"types":"信息系统升级申请单(1)"},{"name":"评估变更风险，审批并执行","count":1,"types":"数智技术工厂服务工单(1)"},{"name":"评估风险，确认统一升级点通过","count":1,"types":"信息系统升级申请单(1)"},{"name":"确认交接无误","count":1,"types":"工作机、工作手机卡交接申请(1)"},{"name":"确认用印事由/业务真实性（协议/合同）","count":1,"types":"通用用印流程(1)"},{"name":"入库（交流）","count":1,"types":"排产计划(1)"},{"name":"上传5张团建照片","count":1,"types":"团建活动申请表(1)"},{"name":"审核BOM（交流）","count":1,"types":"定制产品采购申请(1)"},{"name":"审核内容（对外函告/说明）","count":1,"types":"通用用印流程(1)"},{"name":"审核是否可以添加欠款","count":1,"types":"小区欠款处理表申请(1)"},{"name":"审批是否能二维码收款","count":1,"types":"二维码收款申请(1)"},{"name":"审批是否有现成手机卡协调，若无则需新办理","count":1,"types":"手机或手机卡申请流程(1)"},{"name":"数字运营中心副总经理审批","count":1,"types":"设备切换平台(1)"},{"name":"宿管确认","count":1,"types":"员工入住宿舍确认单(1)"},{"name":"贴牌商备案 、云快充绑码备案","count":1,"types":"定制产品采购申请(1)"},{"name":"用印（协议/合同）","count":1,"types":"通用用印流程(1)"},{"name":"用印（员工证明材料）","count":1,"types":"通用用印流程(1)"},{"name":"执行操作","count":1,"types":"电子充电卡特殊收费(1)"},{"name":"直接上级审核","count":1,"types":"售后服务工单(1)"},{"name":"自动触发","count":1,"types":"合同用印流程(1)"}];
+        const initiatorData = [{"name":"曾霞","total":92,"completed":9,"active":83},{"name":"鲁冬霞","total":66,"completed":20,"active":46},{"name":"廖灵珠","total":44,"completed":18,"active":26},{"name":"王雅丽","total":43,"completed":20,"active":23},{"name":"蔡玉莲","total":37,"completed":30,"active":7},{"name":"曾琳","total":37,"completed":1,"active":36},{"name":"曾小燕","total":30,"completed":22,"active":8},{"name":"黄志华","total":28,"completed":25,"active":3},{"name":"曾凡香","total":25,"completed":22,"active":3},{"name":"田予初","total":25,"completed":24,"active":1},{"name":"陈平","total":24,"completed":23,"active":1},{"name":"黄燕萍","total":22,"completed":19,"active":3},{"name":"张梦姣","total":22,"completed":6,"active":16},{"name":"韩敏","total":21,"completed":19,"active":2},{"name":"张芷煊","total":21,"completed":21,"active":0}];
+        const dailyTypeData = {"售后服务工单":[9,12,23,22,23,18,14,17,5,13,18,11,12,17,21,11,11],"小区欠款处理表申请":[11,6,29,11,22,14,8,6,7,11,14,11,16,19,7,11,9],"设备切换平台":[4,6,7,12,5,13,9,15,3,15,12,15,13,20,12,3,10],"IT服务工单":[2,0,5,19,28,31,24,23,0,5,4,3,6,7,5,0,3],"对公付款申请流程":[1,0,4,14,7,14,8,3,1,14,18,10,16,32,9,2,1],"MRB评审单":[10,2,8,7,11,24,12,8,0,13,20,8,8,6,4,1,3],"排产计划":[2,0,0,0,4,10,10,11,1,14,10,5,18,23,11,3,10],"服务费和手续费开票申请表":[2,0,7,19,9,18,6,10,3,9,4,5,9,15,0,0,1],"通用用印流程":[9,1,3,7,15,10,10,6,0,8,11,11,6,8,4,0,5],"采购申请流程":[6,0,6,10,9,8,11,2,0,9,5,9,6,7,5,0,6],"公司运营充电桩设备验收申请":[0,0,0,0,0,0,0,0,0,0,0,0,81,0,0,0,0],"试用期员工工作情况跟踪":[0,6,0,0,0,0,11,0,23,0,0,0,0,23,0,8,0],"其他":[20,7,16,14,30,22,21,24,25,38,40,33,59,95,62,12,46]};
+        const typeNames = ["售后服务工单","小区欠款处理表申请","设备切换平台","IT服务工单","对公付款申请流程","MRB评审单","排产计划","服务费和手续费开票申请表","通用用印流程","采购申请流程","公司运营充电桩设备验收申请","试用期员工工作情况跟踪","其他"];
+        const typeCompletionData = [{"name":"售后服务工单","total":257,"completed":175,"active":82},{"name":"小区欠款处理表申请","total":212,"completed":173,"active":39},{"name":"设备切换平台","total":174,"completed":156,"active":18},{"name":"IT服务工单","total":165,"completed":118,"active":47},{"name":"对公付款申请流程","total":154,"completed":69,"active":85},{"name":"MRB评审单","total":145,"completed":104,"active":41},{"name":"排产计划","total":132,"completed":33,"active":99},{"name":"服务费和手续费开票申请表","total":117,"completed":98,"active":19},{"name":"通用用印流程","total":114,"completed":97,"active":17},{"name":"采购申请流程","total":99,"completed":24,"active":75},{"name":"公司运营充电桩设备验收申请","total":81,"completed":0,"active":81},{"name":"试用期员工工作情况跟踪","total":71,"completed":0,"active":71}];
+        const versionData = [{"name":"售后服务工单","version":"历史版本V2","total":210,"completed":150,"active":60},{"name":"IT服务工单","version":"活动版本V2","total":142,"completed":96,"active":46},{"name":"对公付款申请流程","version":"历史版本V3","total":142,"completed":69,"active":73},{"name":"小区欠款处理表申请","version":"活动版本V2","total":135,"completed":100,"active":35},{"name":"排产计划","version":"历史版本V1","total":91,"completed":28,"active":63},{"name":"设备切换平台","version":"历史版本V2","total":79,"completed":79,"active":0},{"name":"小区欠款处理表申请","version":"历史版本V1","total":77,"completed":73,"active":4},{"name":"设备切换平台","version":"历史版本V3","total":71,"completed":62,"active":9},{"name":"通用用印流程","version":"历史版本V1","total":63,"completed":60,"active":3},{"name":"通用用印流程","version":"活动版本V2","total":51,"completed":37,"active":14},{"name":"排产计划","version":"活动版本V3","total":30,"completed":2,"active":28},{"name":"数据调取","version":"活动版本V3","total":27,"completed":18,"active":9},{"name":"售后服务工单","version":"活动版本V3","total":25,"completed":7,"active":18},{"name":"IT服务工单","version":"历史版本V1","total":23,"completed":22,"active":1},{"name":"系统权限审批","version":"活动版本V2","total":23,"completed":20,"active":3},{"name":"售后服务工单","version":"历史版本V1","total":22,"completed":18,"active":4},{"name":"设备切换平台","version":"活动版本V4","total":21,"completed":12,"active":9},{"name":"数据调取","version":"历史版本V1","total":13,"completed":11,"active":2},{"name":"维修服务申请","version":"活动版本V2","total":13,"completed":5,"active":8},{"name":"对公付款申请流程","version":"活动版本V4","total":12,"completed":0,"active":12},{"name":"排产计划","version":"历史版本V2","total":11,"completed":3,"active":8},{"name":"平台结算打款申请表","version":"历史版本V1","total":9,"completed":8,"active":1},{"name":"系统账户开通审批","version":"活动版本V2","total":7,"completed":7,"active":0},{"name":"余额退款申请表","version":"历史版本V1","total":7,"completed":7,"active":0},{"name":"流程及表单新建、优化申请","version":"历史版本V1","total":6,"completed":6,"active":0},{"name":"差旅费报销","version":"历史版本V2","total":5,"completed":1,"active":4},{"name":"电子充电卡特殊收费","version":"活动版本V2","total":5,"completed":4,"active":1},{"name":"免费赠送申请流程","version":"活动版本V2","total":5,"completed":1,"active":4},{"name":"平台结算打款申请表","version":"活动版本V2","total":5,"completed":2,"active":3},{"name":"维修服务申请","version":"历史版本V1","total":5,"completed":2,"active":3},{"name":"系统权限审批","version":"历史版本V1","total":5,"completed":4,"active":1},{"name":"系统账户开通审批","version":"历史版本V1","total":5,"completed":5,"active":0},{"name":"免费赠送申请流程","version":"历史版本V1","total":4,"completed":1,"active":3},{"name":"数据调取","version":"历史版本V2","total":4,"completed":4,"active":0},{"name":"差旅费报销","version":"活动版本V3","total":3,"completed":0,"active":3},{"name":"差旅费报销","version":"历史版本V1","total":3,"completed":0,"active":3},{"name":"服务费更改申请表","version":"活动版本V2","total":3,"completed":2,"active":1},{"name":"扣款审批","version":"活动版本V2","total":3,"completed":2,"active":1},{"name":"设备切换平台","version":"历史版本V1","total":3,"completed":3,"active":0},{"name":"外部平台注册账号申请","version":"历史版本V1","total":3,"completed":2,"active":1},{"name":"扣款审批","version":"历史版本V1","total":2,"completed":1,"active":1},{"name":"信息系统升级申请单","version":"历史版本V1","total":2,"completed":1,"active":1},{"name":"余额退款申请表","version":"活动版本V3","total":2,"completed":1,"active":1},{"name":"电子充电卡特殊收费","version":"历史版本V1","total":1,"completed":1,"active":0},{"name":"服务费更改申请表","version":"历史版本V1","total":1,"completed":1,"active":0},{"name":"流程及表单新建、优化申请","version":"活动版本V2","total":1,"completed":1,"active":0},{"name":"外部平台注册账号申请","version":"活动版本V2","total":1,"completed":1,"active":0},{"name":"信息系统升级申请单","version":"活动版本V2","total":1,"completed":0,"active":1},{"name":"营销推广费退费申请","version":"活动版本V3","total":1,"completed":0,"active":1},{"name":"营销推广费退费申请","version":"历史版本V1","total":1,"completed":1,"active":0}];
+        const totalFlows = 2285;
+        const activeFlows = 916;
+        const completionRate = 59.9;
+
+        const dailyTrendChart = echarts.init(document.getElementById("dailyTrend"));
+        dailyTrendChart.setOption({
+            tooltip: { trigger: "axis", backgroundColor: "rgba(0,0,0,0.8)", borderColor: "#00d4ff", textStyle: { color: "#fff" }, formatter: function(params) { let result = "<div style=\"font-weight:600;margin-bottom:8px;\">" + params[0].axisValue + "</div>"; params.forEach(p => { result += "<div style=\"display:flex;align-items:center;margin:4px 0;\"><span style=\"display:inline-block;width:10px;height:10px;background:" + p.color + ";border-radius:50%;margin-right:8px;\"></span>" + p.seriesName + ": <strong>" + p.value + "</strong></div>"; }); return result; } },
+            legend: { data: ["发起总数", "已完成", "进行中"], textStyle: { color: "#8892b0" }, top: 0 },
+            grid: { left: "3%", right: "4%", bottom: "3%", containLabel: true },
+            xAxis: { type: "category", data: dailyData.dates, axisLine: { lineStyle: { color: "#2d3748" } }, axisLabel: { color: "#8892b0" } },
+            yAxis: { type: "value", name: "流程数", axisLine: { lineStyle: { color: "#2d3748" } }, axisLabel: { color: "#8892b0" }, splitLine: { lineStyle: { color: "rgba(255,255,255,0.05)" } } },
+            series: [
+                { name: "发起总数", type: "line", data: dailyData.total, smooth: true, itemStyle: { color: "#00d4ff" }, lineStyle: { width: 3 }, areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:"rgba(0,212,255,0.3)"},{offset:1,color:"rgba(0,212,255,0)"}]) } },
+                { name: "已完成", type: "bar", data: dailyData.completed, itemStyle: { color: "rgba(0,230,118,0.7)" }, barWidth: "25%" },
+                { name: "进行中", type: "bar", data: dailyData.active, itemStyle: { color: "rgba(255,215,0,0.7)" }, barWidth: "25%" }
+            ]
+        });
+
+        const flowTypePieChart = echarts.init(document.getElementById("flowTypePie"));
+        const top12 = flowTypeData.slice(0, 12);
+        const otherTotal = flowTypeData.slice(12).reduce((s, f) => s + f.total, 0);
+        const otherActive = flowTypeData.slice(12).reduce((s, f) => s + f.active, 0);
+        const pieColors = ["#00d4ff","#7b2cbf","#00e676","#ffd700","#ff6b6b","#ff9f43","#a55eea","#54a0ff","#5f27cd","#01a3a4","#f368e0","#ff6348"];
+        const pieData = top12.map((f,i) => ({ name: f.name, value: f.total, active: f.active, itemStyle: { color: pieColors[i % 12] } }));
+        pieData.push({ name: "其他(" + (flowTypeData.length - 12) + "种)", value: otherTotal, active: otherActive, itemStyle: { color: "#8892b0" } });
+        flowTypePieChart.setOption({
+            tooltip: { trigger: "item", backgroundColor: "rgba(0,0,0,0.8)", borderColor: "#00d4ff", textStyle: { color: "#fff" }, formatter: function(p) { return "<div style=\"font-weight:600;\">" + p.name + "</div><div>总数: " + p.value + "</div><div>进行中: " + (p.data.active||0) + "</div><div>占比: " + p.percent.toFixed(1) + "%</div>"; } },
+            legend: { orient: "vertical", right: "3%", top: "center", textStyle: { color: "#8892b0", fontSize: 10 }, formatter: function(n) { return n.length > 8 ? n.substring(0,8) + ".." : n; } },
+            series: [{ type: "pie", radius: ["35%","65%"], center: ["35%","50%"], avoidLabelOverlap: false, itemStyle: { borderRadius: 8, borderColor: "#1a1a2e", borderWidth: 2 }, label: { show: false }, emphasis: { label: { show: true, fontSize: 14, fontWeight: "bold", color: "#fff" }, itemStyle: { shadowBlur: 20, shadowColor: "rgba(0,212,255,0.5)" } }, data: pieData }]
+        });
+
+        const statusGaugeChart = echarts.init(document.getElementById("statusGauge"));
+        statusGaugeChart.setOption({
+            tooltip: { formatter: "完成率: {c}%", backgroundColor: "rgba(0,0,0,0.8)", borderColor: "#00d4ff", textStyle: { color: "#fff" } },
+            series: [{ type: "gauge", startAngle: 210, endAngle: -30, center: ["50%","55%"], radius: "85%", min: 0, max: 100, splitNumber: 10, axisLine: { lineStyle: { width: 20, color: [[0.3,"#ff5252"],[0.6,"#ffd700"],[1,"#00e676"]] } }, pointer: { icon: "path://M12.8,0.7l12,40.1H0.7L12.8,0.7z", length: "60%", width: 8, itemStyle: { color: "auto" } }, axisTick: { length: 10, lineStyle: { color: "auto", width: 2 } }, splitLine: { length: 20, lineStyle: { color: "auto", width: 4 } }, axisLabel: { color: "#8892b0", fontSize: 12, distance: 25, formatter: "{value}%" }, title: { offsetCenter: [0,"80%"], fontSize: 16, color: "#8892b0" }, detail: { fontSize: 36, offsetCenter: [0,"50%"], valueAnimation: true, formatter: "{value}%", color: "#fff", fontWeight: "bold" }, data: [{ value: completionRate, name: "流程完成率" }] }]
+        });
+
+        const blockingNodesChart = echarts.init(document.getElementById("blockingNodes"));
+        const bnReversed = blockingNodes.slice().reverse();
+        blockingNodesChart.setOption({
+            tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, backgroundColor: "rgba(0,0,0,0.8)", borderColor: "#ffd700", textStyle: { color: "#fff" }, formatter: function(params) { const d = blockingNodes[params[0].dataIndex]; return "<div style=\"font-weight:600;\">" + d.name + "</div><div>卡住流程数: <strong>" + d.count + "</strong></div><div>涉及类型: " + d.types + "</div>"; } },
+            grid: { left: "3%", right: "15%", bottom: "3%", containLabel: true },
+            xAxis: { type: "value", name: "卡住流程数", axisLine: { lineStyle: { color: "#2d3748" } }, axisLabel: { color: "#8892b0" }, splitLine: { lineStyle: { color: "rgba(255,255,255,0.05)" } } },
+            yAxis: { type: "category", data: bnReversed.map(n => n.name.length > 10 ? n.name.substring(0,10) + ".." : n.name), axisLine: { lineStyle: { color: "#2d3748" } }, axisLabel: { color: "#8892b0", fontSize: 11 } },
+            series: [{ type: "bar", data: bnReversed.map((n,i) => ({ value: n.count, itemStyle: { color: new echarts.graphic.LinearGradient(0,0,1,0,[{offset:0,color:i<3?"#ff5252":i<6?"#ffd700":"#ff9f43"},{offset:1,color:i<3?"#cc0000":i<6?"#cc9900":"#cc6600"}]) } })), barWidth: "60%", label: { show: true, position: "right", color: "#8892b0", fontSize: 12, formatter: "{c}" } }]
+        });
+
+        const initiatorRankChart = echarts.init(document.getElementById("initiatorRank"));
+        initiatorRankChart.setOption({
+            tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, backgroundColor: "rgba(0,0,0,0.8)", borderColor: "#00d4ff", textStyle: { color: "#fff" }, formatter: function(params) { const d = initiatorData[params[0].dataIndex]; return "<div style=\"font-weight:600;\">" + d.name + "</div><div>总流程: " + d.total + "</div><div>进行中: <span style=\"color:#ffd700\">" + d.active + "</span></div><div>已完成: <span style=\"color:#00e676\">" + d.completed + "</span></div>"; } },
+            legend: { data: ["已完成","进行中"], textStyle: { color: "#8892b0" }, top: 0 },
+            grid: { left: "3%", right: "10%", bottom: "3%", containLabel: true },
+            xAxis: { type: "value", axisLine: { lineStyle: { color: "#2d3748" } }, axisLabel: { color: "#8892b0" }, splitLine: { lineStyle: { color: "rgba(255,255,255,0.05)" } } },
+            yAxis: { type: "category", data: initiatorData.slice().reverse().map(o => o.name), axisLine: { lineStyle: { color: "#2d3748" } }, axisLabel: { color: "#8892b0", fontSize: 12 } },
+            series: [
+                { name: "已完成", type: "bar", stack: "total", data: initiatorData.slice().reverse().map(o => o.completed), itemStyle: { color: "rgba(0,230,118,0.7)" }, barWidth: "50%" },
+                { name: "进行中", type: "bar", stack: "total", data: initiatorData.slice().reverse().map(o => o.active), itemStyle: { color: "rgba(255,215,0,0.7)" }, barWidth: "50%" }
+            ]
+        });
+
+        const typeCompletionRateChart = echarts.init(document.getElementById("typeCompletionRate"));
+        const tcData = typeCompletionData.slice().reverse();
+        const avgRate = completionRate;
+        typeCompletionRateChart.setOption({
+            tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, backgroundColor: "rgba(0,0,0,0.8)", borderColor: "#00d4ff", textStyle: { color: "#fff" }, formatter: function(params) { const d = tcData[params[0].dataIndex]; const rate = (d.completed/d.total*100).toFixed(1); return "<div style=\"font-weight:600;\">" + d.name + "</div><div>完成率: <strong>" + rate + "%</strong></div><div>已完成: " + d.completed + " / 总数: " + d.total + "</div>"; } },
+            grid: { left: "3%", right: "10%", bottom: "3%", containLabel: true },
+            xAxis: { type: "value", max: 100, axisLine: { lineStyle: { color: "#2d3748" } }, axisLabel: { color: "#8892b0", formatter: "{value}%" }, splitLine: { lineStyle: { color: "rgba(255,255,255,0.05)" } } },
+            yAxis: { type: "category", data: tcData.map(f => f.name.length > 10 ? f.name.substring(0,10) + ".." : f.name), axisLine: { lineStyle: { color: "#2d3748" } }, axisLabel: { color: "#8892b0", fontSize: 10 } },
+            series: [{ type: "bar", data: tcData.map(f => ({ value: (f.completed/f.total*100).toFixed(1), itemStyle: { color: (f.completed/f.total) >= 0.8 ? "#00e676" : (f.completed/f.total) >= 0.5 ? "#ffd700" : "#ff5252" } })), barWidth: "60%", label: { show: true, position: "right", color: "#8892b0", fontSize: 11, formatter: "{c}%" }, markLine: { silent: true, data: [{ xAxis: avgRate, label: { formatter: "平均 " + avgRate + "%", color: "#8892b0" }, lineStyle: { color: "#00d4ff", type: "dashed" } }] } }]
+        });
+
+        const dailyTypeStackChart = echarts.init(document.getElementById("dailyTypeStack"));
+        const stackColors = ["#00d4ff","#7b2cbf","#00e676","#ffd700","#ff6b6b","#ff9f43","#a55eea","#54a0ff","#5f27cd","#01a3a4","#f368e0","#ff6348","#8892b0"];
+        dailyTypeStackChart.setOption({
+            tooltip: { trigger: "axis", backgroundColor: "rgba(0,0,0,0.8)", borderColor: "#00d4ff", textStyle: { color: "#fff" } },
+            legend: { data: typeNames, textStyle: { color: "#8892b0", fontSize: 10 }, top: 0, type: "scroll" },
+            grid: { left: "3%", right: "4%", bottom: "3%", top: "15%", containLabel: true },
+            xAxis: { type: "category", data: dailyData.dates, axisLine: { lineStyle: { color: "#2d3748" } }, axisLabel: { color: "#8892b0" } },
+            yAxis: { type: "value", name: "流程数", axisLine: { lineStyle: { color: "#2d3748" } }, axisLabel: { color: "#8892b0" }, splitLine: { lineStyle: { color: "rgba(255,255,255,0.05)" } } },
+            series: typeNames.map((name, i) => ({ name: name, type: "bar", stack: "total", data: dailyTypeData[name], emphasis: { focus: "series" }, itemStyle: { color: stackColors[i % 13] } }))
+        });
+
+        const ftTableBody = document.querySelector("#flowTypeTable tbody");
+        flowTypeData.forEach((ft, index) => {
+            const row = document.createElement("tr");
+            row.className = "type-main-row";
+            const rankBadge = index < 3 ? "<span class=\"rank-badge " + ["gold","silver","bronze"][index] + "\">" + (index+1) + "</span>" : "<span class=\"rank-badge default\">" + (index+1) + "</span>";
+            const rate = (ft.completed/ft.total*100).toFixed(1);
+            const barColor = rate >= 80 ? "#00e676" : rate >= 50 ? "#ffd700" : "#ff5252";
+            const subs = versionData.filter(v => v.name === ft.name);
+            const hasSub = subs.length > 0;
+            const expandIcon = hasSub ? "<span class=\"type-expand-icon\">&#9654;</span>" : "";
+            const nameCell = expandIcon + ft.name + (hasSub ? "<span style=\"font-size:11px;color:#8892b0;\">(" + subs.length + "版本)</span>" : "");
+            row.innerHTML = "<td>" + rankBadge + "</td><td>" + nameCell + "</td><td style=\"font-weight:600;\">" + ft.total + "</td><td style=\"color:#00e676;\">" + ft.completed + "</td><td style=\"color:#ffd700;\">" + ft.active + "</td><td style=\"color:" + barColor + ";font-weight:600;\">" + rate + "%</td><td><div style=\"display:flex;align-items:center;gap:8px;\"><div class=\"progress-bar-bg\" style=\"flex:1;\"><div class=\"progress-bar-fill\" style=\"width:" + rate + "%;background:" + barColor + ";\"></div></div></div></td>";
+            ftTableBody.appendChild(row);
+
+            // 多版本本体：插入可折叠的版本下级行
+            if (hasSub) {
+                subs.forEach(v => {
+                    const vrow = document.createElement("tr");
+                    vrow.className = "version-row";
+                    const vrate = (v.completed/v.total*100).toFixed(1);
+                    const vbarColor = vrate >= 80 ? "#00e676" : vrate >= 50 ? "#ffd700" : "#ff5252";
+                    const verColor = v.version.indexOf("活动") === 0 ? "#00d4ff" : "#8892b0";
+                    vrow.innerHTML = "<td></td><td><span class=\"version-tag\" style=\"background:" + (v.version.indexOf("活动") === 0 ? "rgba(0,212,255,0.15)" : "rgba(136,146,176,0.15)") + ";color:" + verColor + ";\">" + v.version + "</span></td><td style=\"font-weight:600;\">" + v.total + "</td><td style=\"color:#00e676;\">" + v.completed + "</td><td style=\"color:#ffd700;\">" + v.active + "</td><td style=\"color:" + vbarColor + ";font-weight:600;\">" + vrate + "%</td><td><div style=\"display:flex;align-items:center;gap:8px;\"><div class=\"progress-bar-bg\" style=\"flex:1;\"><div class=\"progress-bar-fill\" style=\"width:" + vrate + "%;background:" + vbarColor + ";\"></div></div></div></td>";
+                    ftTableBody.appendChild(vrow);
+                });
+                row.addEventListener("click", function() {
+                    const isOpen = row.classList.contains("open");
+                    row.classList.toggle("open", !isOpen);
+                    const sibling = row.nextElementSibling;
+                    if (sibling && sibling.classList.contains("version-row")) {
+                        let cur = sibling;
+                        while (cur && cur.classList.contains("version-row")) {
+                            cur.classList.toggle("show", !isOpen);
+                            cur = cur.nextElementSibling;
+                        }
+                    }
+                });
+            }
+        });
+
+        const tableBody = document.querySelector("#blockingTable tbody");
+        blockingNodes.slice(0, 20).forEach((node, index) => {
+            const row = document.createElement("tr");
+            const rankBadge = index < 3 ? "<span class=\"rank-badge " + ["gold","silver","bronze"][index] + "\">" + (index+1) + "</span>" : "<span class=\"rank-badge default\">" + (index+1) + "</span>";
+            const pct = (node.count/activeFlows*100).toFixed(1);
+            const barColor = index < 3 ? "#ff5252" : index < 6 ? "#ffd700" : "#ff9f43";
+            row.innerHTML = "<td>" + rankBadge + "</td><td><span class=\"status-dot active\"></span>" + node.name + "</td><td style=\"color:" + barColor + ";font-weight:600;\">" + node.count + "</td><td style=\"font-size:12px;color:#8892b0;\">" + node.types + "</td><td><div style=\"display:flex;align-items:center;gap:8px;\"><span>" + pct + "%</span><div class=\"progress-bar-bg\" style=\"flex:1;\"><div class=\"progress-bar-fill\" style=\"width:" + pct + "%;background:" + barColor + ";\"></div></div></div></td>";
+            tableBody.appendChild(row);
+        });
+
+        window.addEventListener("resize", function() {
+            dailyTrendChart.resize(); flowTypePieChart.resize(); statusGaugeChart.resize();
+            blockingNodesChart.resize(); initiatorRankChart.resize();
+            typeCompletionRateChart.resize(); dailyTypeStackChart.resize();
+        });
+    </script>
+</body>
+</html>
