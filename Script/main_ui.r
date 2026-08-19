@@ -42,7 +42,7 @@ source("Script/process_ui.r")
 source("Script/process_v2_ui.r")
 source("Script/process_v2_detail_ui.r")
 
-# 加载流程监控数据模块 UI
+# 加载流程实例数据模块 UI
 source("Script/flow_monitor_ui.r")
 
 # 加载绩效模块
@@ -778,7 +778,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       tabsetPanel(
         tabPanel("旧版（企业微信风格）", process_ui()),
         tabPanel(tags$span("新版", tags$sup(style = "color:#1890ff; font-size:10px;", "V2")), process_v2_ui()),
-        tabPanel("流程监控", icon = icon("chart-area"), flow_monitor_ui())
+        tabPanel("流程实例", icon = icon("chart-area"), flow_monitor_ui())
       )
     ),
 
@@ -822,12 +822,12 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       )
     ),
     
-    # 数据可视化标签页（含流程监控）
+    # 数据可视化标签页（含流程实例）
     if (can_access("可视化")) tabPanel(
       "可视化",
       icon = icon("chart-line"),
       fluidPage(
-        # 流程监控指标卡片
+        # 流程实例指标卡片
         fluidRow(
           column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#e8f5e9;",
             h3(textOutput("viz_mtr_complete_rate"),style="margin:0;color:#2e7d32;font-size:24px;"),
@@ -859,7 +859,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
         sidebarLayout(
           sidebarPanel(
             selectInput("viz_type", "图表类型", choices = c("词云图", "柱状图", "折线图", "散点图", "饼图", "热力图"), selected = "词云图"),
-            selectInput("viz_data", "数据源", choices = c("记事数据", "ITOM数据", "模型数据", "流程监控"), selected = "记事数据"),
+            selectInput("viz_data", "数据源", choices = c("记事数据", "ITOM数据", "模型数据", "流程实例"), selected = "记事数据"),
             actionButton("generate_viz", "生成图表", class = "btn-primary"),
             hr(),
             tags$a("▸ 算法 / 代码", class="viz-code-toggle",

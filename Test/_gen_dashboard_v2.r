@@ -1,4 +1,4 @@
-# 从 xlsx 生成流程监控数据看板 HTML（修正版）
+# 从 xlsx 生成流程实例数据看板 HTML（修正版）
 # "结束节点" 或 "结束" = 已完成
 
 library(readxl)
@@ -136,7 +136,7 @@ initiator_json <- toJSON(initiator_list, auto_unbox = TRUE)
 daily_type_json <- toJSON(daily_type_data, auto_unbox = TRUE)
 
 # === 生成 HTML ===
-html_template <- readLines("D:/Tai_LVCC_2026/Tai_60_ProjectManagement/01.LVCC_ECS_试运行/流程量数据/流程监控数据看板_20260802.html", warn = FALSE)
+html_template <- readLines("D:/Tai_LVCC_2026/Tai_60_ProjectManagement/01.LVCC_ECS_试运行/流程量数据/流程实例数据看板_20260802.html", warn = FALSE)
 
 # 替换日期和总数
 html_template <- gsub("2026年7月27日 - 2026年8月1日",
@@ -179,7 +179,7 @@ html_template <- gsub("平均 54\\.\\d+%", paste0("平均 ", completion_rate, "%
 html_template <- gsub("node\\.count / 212", paste0("node.count / ", active_flows), html_template, fixed = TRUE)
 
 # 写入
-output_file <- "D:/Tai_LVCC_2026/Tai_60_ProjectManagement/01.LVCC_ECS_试运行/流程量数据/流程监控数据看板_20260807.html"
+output_file <- "D:/Tai_LVCC_2026/Tai_60_ProjectManagement/01.LVCC_ECS_试运行/流程量数据/流程实例数据看板_20260807.html"
 writeLines(html_template, output_file)
 cat("\n=== HTML written:", output_file, "===\n")
 cat("Size:", file.info(output_file)$size, "bytes\n")

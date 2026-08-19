@@ -1,5 +1,5 @@
 # 流程数据可视化模块 — 数据层
-# 功能：上传流程监控 Excel → 自动生成 ECharts HTML 看板 → 保存历史记录
+# 功能：上传流程实例 Excel → 自动生成 ECharts HTML 看板 → 保存历史记录
 # 表：flow_visualizations（每次转化的历史）
 
 ##################
@@ -183,6 +183,20 @@ flow_viz_aggregate <- function(df) {
     }
   }
 
+  # ---- 流程实例清单（所有实例明细，标注状态） ----
+  instance_data <- data.frame(
+    name      = df$流程名称,
+    version   = df$version,
+    initiator = df$发起人,
+    time      = as.character(df$发起时间),
+    node      = df$当前节点,
+    status    = ifelse(df$is_done, "已完成", "进行中"),
+    stringsAsFactors = FALSE
+  )
+  # 按发起时间倒序（最新在前）
+  instance_data <- instance_data[order(instance_data$time, decreasing = TRUE), ]
+  rownames(instance_data) <- NULL
+
   # ---- 阻塞节点（进行中流程的当前节点） ----
   active_df <- df[!df$is_done, ]
   blocking <- as.data.frame(table(active_df$当前节点), stringsAsFactors = FALSE)
@@ -231,11 +245,13 @@ flow_viz_aggregate <- function(df) {
   } else {
     versionData_json <- "[]"
   }
+  instanceData_json  <- to_json(instance_data[, c("name", "version", "initiator", "time", "node", "status")])
 
   # ---- 生成 HTML ----
   html <- flow_viz_build_html(
     dailyData_json, flowTypeData_json, blockingNodes_json, initiatorData_json,
     dailyTypeData_json, typeNames_json, typeCompletionData_json, versionData_json,
+    instanceData_json,
     total_flows, completed_flows, active_flows, completion_rate,
     date_min, date_max, n_days, daily_avg_total, daily_avg_done,
     type_count, initiator_count, top5_pct)
@@ -252,6 +268,7 @@ flow_viz_aggregate <- function(df) {
 flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes_json,
                                 initiatorData_json, dailyTypeData_json, typeNames_json,
                                 typeCompletionData_json, versionData_json,
+                                instanceData_json,
                                 total_flows, completed_flows,
                                 active_flows, completion_rate, date_min, date_max, n_days,
                                 daily_avg_total, daily_avg_done, type_count,
@@ -265,7 +282,7 @@ flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>流程监控数据看板</title>
+    <title>流程实例数据看板</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -308,6 +325,9 @@ flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes
         .version-row.show { display: table-row; }
         .version-row td { padding: 6px 12px; font-size: 13px; color: #c0c8dd; }
         .version-tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; margin-left: 20px; }
+        .status-badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+        .status-badge.done { background: rgba(0,230,118,0.15); color: #00e676; }
+        .status-badge.active { background: rgba(255,215,0,0.15); color: #ffd700; }
         .footer { text-align: center; padding: 30px; color: #8892b0; font-size: 14px; }
         @media (max-width: 1200px) { .chart-grid { grid-template-columns: 1fr; } }
         @media (max-width: 768px) { .kpi-grid { grid-template-columns: 1fr; } .header h1 { font-size: 24px; } .kpi-value { font-size: 24px; } }
@@ -315,7 +335,7 @@ flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes
 </head>
 <body>
     <div class="header">
-        <h1>流程监控数据看板</h1>
+        <h1>流程实例数据看板</h1>
         <div class="subtitle">数据周期：', date_min_fmt, ' - ', date_max_fmt, ' | 总流程数：', total_flows, '</div>
     </div>
     <div class="kpi-grid">
@@ -339,7 +359,8 @@ flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes
     </div>
     <div class="chart-grid"><div class="chart-card full-width"><div class="chart-title">每日各流程类型发起量堆叠</div><div id="dailyTypeStack" class="chart-container-tall"></div></div></div>
     <div class="chart-grid"><div class="chart-card full-width"><div class="chart-title">进行中流程阻塞节点详情 (Top 20)</div><table class="ranking-table" id="blockingTable"><thead><tr><th>排名</th><th>阻塞节点</th><th>卡住流程数</th><th>涉及流程类型</th><th>占比</th></tr></thead><tbody></tbody></table></div></div>
-    <div class="footer">数据来源：流程监控导出数据 | 报表生成：LVCC ITOM | 更新日期：', format(Sys.Date(), "%Y年%m月%d日"), '</div>
+    <div class="chart-grid"><div class="chart-card full-width"><div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;"><div class="chart-title" style="margin-bottom:0;">流程实例清单 (全部实例明细)</div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><input type="text" id="instSearch" placeholder="搜索流程名称/发起人" style="background:#1e2a44;color:#fff;border:1px solid #2d3748;border-radius:6px;padding:4px 10px;font-size:12px;width:180px;"><select id="instStatusFilter" style="background:#1e2a44;color:#fff;border:1px solid #2d3748;border-radius:6px;padding:4px 8px;font-size:12px;"><option value="all">全部状态</option><option value="进行中">进行中</option><option value="已完成">已完成</option></select><select id="instShowCount" style="background:#1e2a44;color:#fff;border:1px solid #2d3748;border-radius:6px;padding:4px 8px;font-size:12px;"><option value="50">显示 50 行</option><option value="100">显示 100 行</option><option value="all">全部显示</option></select></div></div><div><table class="ranking-table" id="instanceTable"><thead><tr><th style="width:50px;">#</th><th>流程名称</th><th style="width:90px;">发起人</th><th style="width:160px;">发起时间</th><th style="width:140px;">当前节点</th><th style="width:80px;">状态</th></tr></thead><tbody></tbody></table></div></div></div>
+    <div class="footer">数据来源：流程实例导出数据 | 报表生成：LVCC ITOM | 更新日期：', format(Sys.Date(), "%Y年%m月%d日"), '</div>
     <script>
         const dailyData = ', dailyData_json, ';
         const flowTypeData = ', flowTypeData_json, ';
@@ -349,6 +370,7 @@ flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes
         const typeNames = ', typeNames_json, ';
         const typeCompletionData = ', typeCompletionData_json, ';
         const versionData = ', versionData_json, ';
+        const instanceData = ', instanceData_json, ';
         const totalFlows = ', total_flows, ';
         const activeFlows = ', active_flows, ';
         const completionRate = ', completion_rate, ';
@@ -506,6 +528,47 @@ flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes
             tableBody.appendChild(row);
         });
 
+        // ---- 流程实例清单（所有实例明细 + 状态标注） ----
+        const instTableBody = document.querySelector("#instanceTable tbody");
+        let instShowCount = 50;                 // 默认显示前 50 条
+        let instKeyword = "";
+        let instStatus = "all";
+
+        function renderInstanceTable() {
+            instTableBody.innerHTML = "";
+            const kw = instKeyword.trim().toLowerCase();
+            const filtered = instanceData.filter(it => {
+                if (instStatus !== "all" && it.status !== instStatus) return false;
+                if (kw && it.name.toLowerCase().indexOf(kw) < 0 && it.initiator.toLowerCase().indexOf(kw) < 0) return false;
+                return true;
+            });
+            const limit = instShowCount === "all" ? filtered.length : Math.min(instShowCount, filtered.length);
+            filtered.slice(0, limit).forEach((it, i) => {
+                const row = document.createElement("tr");
+                const isDone = it.status === "已完成";
+                const badge = isDone
+                    ? "<span class=\\"status-badge done\\">已完成</span>"
+                    : "<span class=\\"status-badge active\\">进行中</span>";
+                const nodeColor = isDone ? "#00e676" : "#ffd700";
+                row.innerHTML = "<td style=\\"color:#8892b0;\\">" + (i+1) + "</td><td>" + it.name + "</td><td>" + it.initiator + "</td><td style=\\"color:#8892b0;\\">" + it.time + "</td><td style=\\"color:" + nodeColor + ";\\">" + it.node + "</td><td>" + badge + "</td>";
+                instTableBody.appendChild(row);
+            });
+        }
+        renderInstanceTable();
+
+        document.getElementById("instSearch").addEventListener("input", function() {
+            instKeyword = this.value;
+            renderInstanceTable();
+        });
+        document.getElementById("instStatusFilter").addEventListener("change", function() {
+            instStatus = this.value;
+            renderInstanceTable();
+        });
+        document.getElementById("instShowCount").addEventListener("change", function() {
+            instShowCount = this.value === "all" ? "all" : parseInt(this.value, 10);
+            renderInstanceTable();
+        });
+
         window.addEventListener("resize", function() {
             dailyTrendChart.resize(); flowTypePieChart.resize(); statusGaugeChart.resize();
             blockingNodesChart.resize(); initiatorRankChart.resize();
@@ -518,18 +581,43 @@ flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes
 }
 
 # 保存历史记录（html_content 可选：存 HTML 内容到 DB 供移植/重新导出）
-flow_viz_add_record <- function(record_no, src_name, out_name, stats, operator, html_content = NULL) {
+# kind: 'viz'=流程数据看板（默认），'log'=流程日志效率图
+flow_viz_add_record <- function(record_no, src_name, out_name, stats, operator, html_content = NULL, kind = "viz") {
   con <- db_connect()
   tryCatch({
     dbExecute(con, sprintf(
-      "INSERT INTO flow_visualizations (record_no, src_name, out_name, total_flows, completed_flows, active_flows, completion_rate, date_min, date_max, created_by, html_content, created_at)
-       VALUES ('%s','%s','%s',%d,%d,%d,%s,'%s','%s','%s',%s,datetime('now','localtime'))",
+      "INSERT INTO flow_visualizations (record_no, src_name, out_name, total_flows, completed_flows, active_flows, completion_rate, date_min, date_max, created_by, html_content, kind, created_at)
+       VALUES ('%s','%s','%s',%d,%d,%d,%s,'%s','%s','%s',%s,'%s',datetime('now','localtime'))",
       record_no,
       gsub("'","''", src_name),
       gsub("'","''", out_name),
       as.integer(stats$total), as.integer(stats$completed), as.integer(stats$active),
       stats$completion_rate,
       stats$date_min, stats$date_max,
+      gsub("'","''", operator),
+      if (is.null(html_content)) "NULL" else paste0("'", gsub("'", "''", html_content), "'"),
+      kind))
+    TRUE
+  }, error = function(e) FALSE, finally = { db_disconnect(con) })
+}
+
+# 保存流程日志效率图历史记录（kind='log'，字段语义映射为节点统计）
+flow_log_add_record <- function(record_no, src_name, out_name, stats, operator, html_content = NULL) {
+  con <- db_connect()
+  tryCatch({
+    # 映射：total_flows→节点数, completed_flows→已完成节点, active_flows→未完成节点
+    node_count <- as.integer(stats$node_count)
+    done_nodes <- as.integer(stats$done_nodes)
+    undone_nodes <- as.integer(stats$undone_nodes)
+    rate <- if (node_count > 0) round(done_nodes / node_count * 100, 1) else 0
+    dbExecute(con, sprintf(
+      "INSERT INTO flow_visualizations (record_no, src_name, out_name, total_flows, completed_flows, active_flows, completion_rate, date_min, date_max, created_by, html_content, kind, created_at)
+       VALUES ('%s','%s','%s',%d,%d,%d,%s,'%s','%s','%s',%s,'log',datetime('now','localtime'))",
+      record_no,
+      gsub("'","''", src_name),
+      gsub("'","''", out_name),
+      node_count, done_nodes, undone_nodes, rate,
+      stats$flow_start, stats$flow_end,
       gsub("'","''", operator),
       if (is.null(html_content)) "NULL" else paste0("'", gsub("'", "''", html_content), "'")))
     TRUE
@@ -540,7 +628,7 @@ flow_viz_add_record <- function(record_no, src_name, out_name, stats, operator, 
 flow_viz_get_history <- function() {
   con <- db_connect()
   tryCatch({
-    dbGetQuery(con, "SELECT id, record_no, src_name, out_name, total_flows, completed_flows, active_flows, completion_rate, date_min, date_max, created_by, created_at FROM flow_visualizations ORDER BY id DESC")
+    dbGetQuery(con, "SELECT id, record_no, src_name, out_name, total_flows, completed_flows, active_flows, completion_rate, date_min, date_max, created_by, kind, created_at FROM flow_visualizations ORDER BY id DESC")
   }, error = function(e) data.frame(), finally = { db_disconnect(con) })
 }
 
@@ -573,7 +661,7 @@ flow_viz_export_html <- function(record_id) {
 }
 
 ##################
-# 流程监控数据表（需求3：Excel 明细存 SQLite，可在流程板块重新生成看板）
+# 流程实例数据表（需求3：Excel 明细存 SQLite，可在流程板块重新生成看板）
 ##################
 
 # 导入 Excel 明细到数据库（幂等：同一批次删除后重导）
@@ -669,4 +757,332 @@ flow_monitor_generate_html <- function(batch_id, out_name = NULL) {
   close(con)
 
   list(success = TRUE, html_path = out_path, out_name = out_name, stats = res$stats)
+}
+
+##################
+# 流程日志效率图（需求：单个流程实例的状态日志 → 效率图 HTML）
+##################
+
+# Excel 日期序列号 → POSIXct（Windows Excel 基准 1899-12-30）
+flow_log_conv_time <- function(x) {
+  x <- as.numeric(x)
+  if (length(x) == 0 || is.na(x)) return(NA)
+  as.POSIXct(x * 86400, origin = "1899-12-30", tz = "Asia/Shanghai")
+}
+
+flow_log_fmt <- function(t) {
+  if (length(t) == 0 || is.na(t)) return("")
+  format(t, "%Y-%m-%d %H:%M:%S")
+}
+
+# 耗时文本 → 小时数（如 "1天8小时3分钟19秒" → 32.06）
+flow_log_dur_hours <- function(s) {
+  if (is.null(s) || is.na(s) || s == "") return(NA)
+  d <- h <- m <- sec <- 0
+  if (grepl("天", s)) d <- as.numeric(sub(".*?([0-9]+)天.*", "\\1", s))
+  if (grepl("小时", s)) h <- as.numeric(sub(".*?([0-9]+)小时.*", "\\1", s))
+  if (grepl("分钟", s)) m <- as.numeric(sub(".*?([0-9]+)分钟.*", "\\1", s))
+  if (grepl("秒", s)) sec <- as.numeric(sub(".*?([0-9]+)秒.*", "\\1", s))
+  d * 24 + h + m / 60 + sec / 3600
+}
+
+# 解析流程日志 Excel（无表头、9 列）
+# 返回：list(meta, timeline)
+#   meta：流程元信息（标题、总耗时、未完成节点、人次统计等）
+#   timeline：每个节点 list(seq, name, recv, op_time, dur, dur_hours, is_done, ops)
+flow_log_parse_excel <- function(src_path) {
+  if (!requireNamespace("readxl", quietly = TRUE))
+    stop("缺少 readxl 包")
+
+  df <- readxl::read_excel(src_path, col_names = FALSE)
+  if (nrow(df) < 26) stop("Excel 内容不完整，缺少流程节点数据")
+
+  getstr <- function(col, row) {
+    v <- df[[col]][row]
+    v <- as.character(v)
+    v[is.na(v)] <- ""
+    v
+  }
+
+  # 流程元信息（第1-22行，第一列）
+  # 提取纯数字（如 "36总人次" → "36"）
+  extract_num <- function(s) {
+    m <- regmatches(s, regexec("([0-9]+)", s))[[1]]
+    if (length(m) >= 2) m[2] else s
+  }
+  meta <- list(
+    title       = getstr(1, 1),
+    est_done    = flow_log_fmt(flow_log_conv_time(getstr(1, 9))),
+    total_dur   = getstr(1, 11),
+    undone_nodes = extract_num(getstr(1, 13)),
+    total_person = extract_num(getstr(1, 14)),
+    done_person = extract_num(getstr(1, 15)),
+    undone_person = extract_num(getstr(1, 16)),
+    viewed_person = extract_num(getstr(1, 17)),
+    unviewed_person = extract_num(getstr(1, 18))
+  )
+
+  # 解析节点和操作者（从第26行开始）
+  nodes <- list()
+  cur_idx <- 0
+  for (i in 26:nrow(df)) {
+    c2 <- getstr(2, i); c3 <- getstr(3, i); c4 <- getstr(4, i)
+
+    # 节点行：c2 纯数字 + c3 节点名 + c4 含"操作者总计"
+    if (grepl("^[0-9]+$", trimws(c2)) && nchar(trimws(c3)) > 0 && grepl("操作者总计", c4)) {
+      getn <- function(s, pat) {
+        m <- regmatches(s, regexec(pat, s))[[1]]
+        if (length(m) >= 2) as.integer(m[2]) else 0
+      }
+      nodes[[length(nodes) + 1]] <- list(
+        seq = as.integer(trimws(c2)),
+        name = trimws(c3),
+        total = getn(c4, "总计:(\\d+)"),
+        done = getn(getstr(5, i), "已操作:.(\\d+)"),
+        viewed = getn(getstr(6, i), "已查看:.(\\d+)"),
+        undone = getn(getstr(7, i), "未操作:.(\\d+)"),
+        unviewed = getn(getstr(8, i), "未查看:.(\\d+)"),
+        ops = list()
+      )
+      cur_idx <- length(nodes)
+      next
+    }
+
+    # 操作者行：c3 姓名 + c4 状态
+    if (cur_idx > 0 && nchar(trimws(c3)) > 0 && !grepl("^[0-9]+$", trimws(c2))) {
+      dur <- trimws(getstr(8, i))
+      nodes[[cur_idx]]$ops[[length(nodes[[cur_idx]]$ops) + 1]] <- list(
+        name = trimws(c3),
+        status = trimws(c4),
+        recv = flow_log_fmt(flow_log_conv_time(getstr(5, i))),
+        view = flow_log_fmt(flow_log_conv_time(getstr(6, i))),
+        op_time = flow_log_fmt(flow_log_conv_time(getstr(7, i))),
+        dur = if (dur == "NA") "" else dur,
+        src = trimws(getstr(9, i))
+      )
+    }
+  }
+
+  if (length(nodes) == 0) stop("未能解析出流程节点")
+
+  # 构建时间线（关键操作 = 批准/提交/转办）
+  timeline <- lapply(nodes, function(n) {
+    key_ops <- Filter(function(o) grepl("批准|提交|转办", o$status), n$ops)
+    is_done <- length(key_ops) > 0
+    if (is_done) {
+      recv <- min(sapply(key_ops, function(o) o$recv))
+      op_time <- max(sapply(key_ops, function(o) o$op_time))
+      key_dur <- key_ops[[1]]$dur
+      dur_h <- flow_log_dur_hours(key_dur)
+    } else {
+      recv_times <- sapply(n$ops, function(o) if (o$recv != "") o$recv else o$view)
+      recv_times <- recv_times[recv_times != "" & !is.na(recv_times)]
+      recv <- if (length(recv_times) > 0) min(recv_times) else ""
+      op_time <- ""; key_dur <- ""; dur_h <- NA
+    }
+    list(seq = n$seq, name = n$name, recv = recv, op_time = op_time,
+         dur = key_dur, dur_hours = ifelse(is.na(dur_h), 0, round(dur_h, 2)),
+         is_done = is_done, total = n$total, done = n$done, viewed = n$viewed,
+         ops = n$ops)
+  })
+
+  flow_start <- min(sapply(timeline, function(t) t$recv))
+  flow_end <- max(sapply(timeline, function(t) if (t$op_time != "") t$op_time else t$recv))
+
+  list(meta = meta, timeline = timeline, start = flow_start, end = flow_end)
+}
+
+# 生成流程效率图 HTML
+flow_log_build_html <- function(parsed) {
+  if (!requireNamespace("jsonlite", quietly = TRUE))
+    stop("缺少 jsonlite 包")
+
+  meta <- parsed$meta
+  timeline <- parsed$timeline
+  flow_start <- parsed$start
+  flow_end <- parsed$end
+
+  to_ms <- function(s) {
+    if (is.na(s) || s == "") return(NA)
+    as.numeric(as.POSIXct(s, tz = "Asia/Shanghai")) * 1000
+  }
+
+  gantt <- lapply(timeline, function(t) {
+    end_str <- if (t$op_time != "") t$op_time else "2026-08-19 09:45:00"
+    list(name = t$name, seq = t$seq, start = t$recv, end = end_str,
+         start_ms = to_ms(t$recv), end_ms = to_ms(end_str),
+         dur = t$dur, dur_hours = t$dur_hours, is_done = t$is_done)
+  })
+
+  done_nodes <- Filter(function(t) t$is_done, timeline)
+  bar_data <- lapply(done_nodes, function(t) list(name = t$name, value = t$dur_hours, dur = t$dur))
+
+  detail <- lapply(timeline, function(t) {
+    lapply(t$ops, function(o) {
+      list(node = t$name, name = o$name, status = o$status, recv = o$recv,
+           view = o$view, op_time = o$op_time, dur = o$dur, src = o$src)
+    })
+  })
+
+  to_json <- function(x) jsonlite::toJSON(x, auto_unbox = TRUE)
+  gantt_json <- to_json(gantt)
+  bar_json <- to_json(bar_data)
+  detail_json <- to_json(detail)
+
+  paste0('<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>流程效率图 - ', meta$title, '</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%); min-height:100vh; color:#fff; padding:20px; }
+.header { text-align:center; padding:30px 0; margin-bottom:20px; }
+.header h1 { font-size:30px; font-weight:700; background:linear-gradient(90deg,#00d4ff,#7b2cbf); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-bottom:10px; }
+.header .subtitle { color:#8892b0; font-size:15px; }
+.kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:16px; margin-bottom:30px; }
+.kpi-card { background:rgba(255,255,255,0.05); border-radius:14px; padding:20px; border:1px solid rgba(255,255,255,0.1); }
+.kpi-label { color:#8892b0; font-size:13px; margin-bottom:6px; }
+.kpi-value { font-size:26px; font-weight:700; color:#fff; }
+.kpi-value.warn { color:#ffd700; } .kpi-value.success { color:#00e676; }
+.kpi-change { font-size:12px; margin-top:4px; color:#8892b0; }
+.chart-card { background:rgba(255,255,255,0.05); border-radius:16px; padding:24px; border:1px solid rgba(255,255,255,0.1); margin-bottom:24px; }
+.chart-title { font-size:18px; font-weight:600; margin-bottom:20px; color:#fff; }
+.chart-container { width:100%; height:420px; }
+.detail-table { width:100%; border-collapse:collapse; margin-top:10px; }
+.detail-table th, .detail-table td { padding:8px 10px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.1); font-size:13px; }
+.detail-table th { color:#8892b0; font-weight:500; font-size:12px; }
+.status-badge { display:inline-block; padding:2px 10px; border-radius:10px; font-size:12px; font-weight:600; }
+.status-done { background:rgba(0,230,118,0.15); color:#00e676; }
+.status-active { background:rgba(255,215,0,0.15); color:#ffd700; }
+.status-view { background:rgba(0,212,255,0.15); color:#00d4ff; }
+.node-name { color:#00d4ff; font-weight:600; }
+.footer { text-align:center; padding:30px; color:#8892b0; font-size:13px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>流程效率图</h1>
+  <div class="subtitle">', meta$title, '</div>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi-card"><div class="kpi-label">预计总耗时</div><div class="kpi-value warn">', meta$total_dur, '</div><div class="kpi-change">预计完成 ', meta$est_done, '</div></div>
+  <div class="kpi-card"><div class="kpi-label">未完成节点</div><div class="kpi-value warn">', meta$undone_nodes, '</div><div class="kpi-change">共 ', length(timeline), ' 个节点</div></div>
+  <div class="kpi-card"><div class="kpi-label">总人次</div><div class="kpi-value">', meta$total_person, '</div><div class="kpi-change">已操作 ', meta$done_person, ' · 未操作 ', meta$undone_person, '</div></div>
+  <div class="kpi-card"><div class="kpi-label">已查看 / 未查看</div><div class="kpi-value">', meta$viewed_person, ' / ', meta$unviewed_person, '</div><div class="kpi-change">查看进度</div></div>
+  <div class="kpi-card"><div class="kpi-label">流程周期</div><div class="kpi-value" style="font-size:20px;">', flow_start, '</div><div class="kpi-change">至 ', flow_end, '</div></div>
+</div>
+
+<div class="chart-card">
+  <div class="chart-title">流程时间线（各节点处理时段）</div>
+  <div id="ganttChart" class="chart-container"></div>
+</div>
+
+<div class="chart-card">
+  <div class="chart-title">节点耗时排行（瓶颈分析）</div>
+  <div id="barChart" class="chart-container"></div>
+</div>
+
+<div class="chart-card">
+  <div class="chart-title">节点操作明细</div>
+  <div id="detailTable"></div>
+</div>
+
+<div class="footer">数据来源：流程状态日志 | 报表生成：LVCC ITOM | 更新日期：', format(Sys.Date(), "%Y年%m月%d日"), '</div>
+
+<script>
+const ganttData = ', gantt_json, ';
+const barData = ', bar_json, ';
+const detailData = ', detail_json, ';
+
+const ganttChart = echarts.init(document.getElementById("ganttChart"));
+const ganttSeries = ganttData.map((g, i) => ({
+  name: g.name,
+  value: [i, g.start_ms, g.end_ms, g.dur_hours],
+  itemStyle: { color: g.is_done ? "#00d4ff" : "#ffd700" }
+}));
+ganttChart.setOption({
+  tooltip: { backgroundColor:"rgba(0,0,0,0.8)", borderColor:"#00d4ff", textStyle:{color:"#fff"},
+    formatter: function(p) { const g = ganttData[p.dataIndex]; return "<b>" + g.name + "</b><br/>开始: " + g.start + "<br/>结束: " + (g.is_done ? g.end : "进行中") + "<br/>耗时: " + (g.dur || "—"); } },
+  grid: { left: "3%", right: "5%", bottom: "5%", top: "5%", containLabel: true },
+  xAxis: { type: "time", axisLine:{lineStyle:{color:"#2d3748"}}, axisLabel:{color:"#8892b0"}, splitLine:{lineStyle:{color:"rgba(255,255,255,0.05)"}} },
+  yAxis: { type: "category", data: ganttData.map(g => g.seq + ". " + g.name), axisLine:{lineStyle:{color:"#2d3748"}}, axisLabel:{color:"#c0c8dd", fontSize:11} },
+  series: [{ type: "custom", renderItem: function(params, api) {
+    const catIndex = api.value(0);
+    const start = api.coord([api.value(1), catIndex]);
+    const end = api.coord([api.value(2), catIndex]);
+    const height = api.size([0, 1])[1] * 0.5;
+    return { type: "rect", shape: { x: start[0], y: start[1] - height/2, width: Math.max(end[0] - start[0], 2), height: height },
+      style: api.style() };
+  }, encode: { x: [1, 2], y: 0 }, data: ganttSeries }]
+});
+
+const barChart = echarts.init(document.getElementById("barChart"));
+barChart.setOption({
+  tooltip: { backgroundColor:"rgba(0,0,0,0.8)", borderColor:"#00d4ff", textStyle:{color:"#fff"},
+    formatter: function(p) { const b = barData[p.dataIndex]; return "<b>" + b.name + "</b><br/>耗时: " + b.dur; } },
+  grid: { left: "3%", right: "8%", bottom: "3%", containLabel: true },
+  xAxis: { type: "value", name: "耗时(小时)", axisLine:{lineStyle:{color:"#2d3748"}}, axisLabel:{color:"#8892b0"}, splitLine:{lineStyle:{color:"rgba(255,255,255,0.05)"}} },
+  yAxis: { type: "category", data: barData.map(b => b.name).reverse(), axisLine:{lineStyle:{color:"#2d3748"}}, axisLabel:{color:"#c0c8dd", fontSize:11} },
+  series: [{ type: "bar", data: barData.map(b => b.value).reverse(), barWidth: "55%",
+    itemStyle: { color: function(p){ return new echarts.graphic.LinearGradient(0,0,1,0,[{offset:0,color:"#7b2cbf"},{offset:1,color:"#00d4ff"}]); } },
+    label: { show:true, position:"right", color:"#8892b0", formatter: function(p){ return barData[barData.length-1-p.dataIndex].dur; } } }]
+});
+
+const detailHtml = detailData.map(nodeOps => {
+  const nodeName = nodeOps[0].node;
+  const rows = nodeOps.map(o => {
+    const badge = o.status.indexOf("批准") >= 0 || o.status === "提交" ? "status-done" :
+                  o.status.indexOf("查看") >= 0 ? "status-view" : "status-active";
+    return "<tr><td>" + o.name + "</td><td><span class=\\"status-badge " + badge + "\\">" + o.status + "</span></td><td>" + o.recv + "</td><td>" + o.view + "</td><td>" + o.op_time + "</td><td>" + o.dur + "</td><td>" + o.src + "</td></tr>";
+  }).join("");
+  return "<div style=\\"margin-bottom:18px;\\"><div class=\\"node-name\\">◆ " + nodeName + "</div><table class=\\"detail-table\\"><thead><tr><th>操作人</th><th>状态</th><th>接收时间</th><th>查看时间</th><th>操作时间</th><th>操作耗时</th><th>来源</th></tr></thead><tbody>" + rows + "</tbody></table></div>";
+}).join("");
+document.getElementById("detailTable").innerHTML = detailHtml;
+
+window.addEventListener("resize", function() { ganttChart.resize(); barChart.resize(); });
+</script>
+</body>
+</html>')
+}
+
+# 主入口：解析流程日志 Excel → 生成效率图 HTML
+# 返回：list(success, message, html_path, out_name, stats)
+flow_log_generate <- function(src_path, src_name, operator = "系统") {
+  if (!requireNamespace("readxl", quietly = TRUE))
+    return(list(success = FALSE, message = "缺少 readxl 包，请先 install.packages('readxl')"))
+
+  tryCatch({
+    parsed <- flow_log_parse_excel(src_path)
+    html <- flow_log_build_html(parsed)
+
+    base <- tools::file_path_sans_ext(src_name)
+    safe_base <- gsub("[^0-9A-Za-z\u4e00-\u9fa5_-]+", "_", base)
+    # 若文件名已含"流程日志"前缀则不重复添加
+    out_name <- paste0(safe_base, "_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".html")
+    out_dir <- flow_viz_ensure_dir()
+    out_path <- file.path(out_dir, out_name)
+
+    con <- file(out_path, "wb")
+    writeBin(charToRaw(html), con)
+    close(con)
+
+    stats <- list(
+      title = parsed$meta$title,
+      node_count = length(parsed$timeline),
+      done_nodes = sum(sapply(parsed$timeline, function(t) t$is_done)),
+      undone_nodes = parsed$meta$undone_nodes,
+      total_person = parsed$meta$total_person,
+      flow_start = parsed$start,
+      flow_end = parsed$end
+    )
+
+    list(success = TRUE, message = "生成成功",
+         html_path = out_path, out_name = out_name, stats = stats, html_content = html)
+  }, error = function(e) {
+    list(success = FALSE, message = paste("生成失败:", e$message))
+  })
 }

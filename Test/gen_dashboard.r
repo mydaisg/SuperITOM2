@@ -1,14 +1,14 @@
-# 流程监控数据看板生成脚本
-# 源数据：流程监控20260814144725824.xlsx
-# 输出：流程监控数据看板_20260814.html
+# 流程实例数据看板生成脚本
+# 源数据：流程实例20260814144725824.xlsx
+# 输出：流程实例数据看板_20260814.html
 
 library(readxl)
 library(dplyr)
 library(jsonlite)
 
 data_dir <- "D:/Tai_LVCC_2026/Tai_60_ProjectManagement/01.LVCC_ECS_试运行/流程量数据"
-src_file <- file.path(data_dir, "流程监控20260814144725824.xlsx")
-out_file <- file.path(data_dir, "流程监控数据看板_20260814.html")
+src_file <- file.path(data_dir, "流程实例20260814144725824.xlsx")
+out_file <- file.path(data_dir, "流程实例数据看板_20260814.html")
 
 df <- read_excel(src_file)
 

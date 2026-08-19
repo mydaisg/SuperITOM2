@@ -1,4 +1,4 @@
-# 流程监控数据模块 — 服务端
+# 流程实例数据模块 — 服务端
 
 flow_monitor_server <- function(input, output, session, rv) {
 

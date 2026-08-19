@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>流程监控数据看板</title>
+    <title>流程实例数据看板</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -45,7 +45,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>流程监控数据看板</h1>
+        <h1>流程实例数据看板</h1>
         <div class="subtitle">数据周期：2026年08月01日 - 2026年08月17日 | 总流程数：255</div>
     </div>
     <div class="kpi-grid">
@@ -69,7 +69,7 @@
     </div>
     <div class="chart-grid"><div class="chart-card full-width"><div class="chart-title">每日各流程类型发起量堆叠</div><div id="dailyTypeStack" class="chart-container-tall"></div></div></div>
     <div class="chart-grid"><div class="chart-card full-width"><div class="chart-title">进行中流程阻塞节点详情 (Top 20)</div><table class="ranking-table" id="blockingTable"><thead><tr><th>排名</th><th>阻塞节点</th><th>卡住流程数</th><th>涉及流程类型</th><th>占比</th></tr></thead><tbody></tbody></table></div></div>
-    <div class="footer">数据来源：流程监控导出数据 | 报表生成：LVCC ITOM | 更新日期：2026年08月17日</div>
+    <div class="footer">数据来源：流程实例导出数据 | 报表生成：LVCC ITOM | 更新日期：2026年08月17日</div>
     <script>
         const dailyData = {"dates":["2026-08-01","2026-08-02","2026-08-03","2026-08-04","2026-08-05","2026-08-06","2026-08-07","2026-08-08","2026-08-09","2026-08-10","2026-08-11","2026-08-12","2026-08-13","2026-08-14","2026-08-15","2026-08-16","2026-08-17"],"total":[8,0,6,10,13,21,22,17,1,25,19,18,29,33,20,3,10],"completed":[4,0,3,3,6,7,6,4,0,2,7,4,14,6,1,0,0],"active":[4,0,3,7,7,14,16,13,1,23,12,14,15,27,19,3,10]};
         const flowTypeData = [{"name":"排产计划","total":130,"completed":33,"active":97},{"name":"采购申请流程","total":54,"completed":13,"active":41},{"name":"定制产品采购申请","total":26,"completed":7,"active":19},{"name":"计划投放申请表","total":2,"completed":2,"active":0},{"name":"物料涨价审批","total":2,"completed":2,"active":0},{"name":"1X","total":2,"completed":1,"active":1},{"name":"1LZD800A","total":2,"completed":0,"active":2},{"name":"2560","total":1,"completed":1,"active":0},{"name":"2ZD480","total":1,"completed":1,"active":0},{"name":"ZD","total":1,"completed":1,"active":0},{"name":"杜邦线 采购申请（新物料） CGSQ202608023","total":1,"completed":1,"active":0},{"name":"风冷终端机铝排 打样申请 CGSQ202608008","total":1,"completed":1,"active":0},{"name":"两轮车强标所需木板，鳄鱼夹 采购申请（0库存） CGSQ202608013","total":1,"completed":1,"active":0},{"name":"汽车连接器 采购申请（新物料，特急，按链接购买） CGSQ202608027","total":1,"completed":1,"active":0},{"name":"四代一体单枪直流桩120KW铜排、铝排 打样申请 CGSQ202608001","total":1,"completed":1,"active":0},{"name":"椭圆形双面护线圈 采购申请（0库存） CGSQ202608024","total":1,"completed":1,"active":0},{"name":"120KW直流充电枪（11010570208） CGSQ202608090","total":1,"completed":0,"active":1},{"name":"1600PDU电子物料 采购申请 CGSQ202608010","total":1,"completed":0,"active":1},{"name":"1OA22","total":1,"completed":0,"active":1},{"name":"1OA7","total":1,"completed":0,"active":1},{"name":"2ZA7","total":1,"completed":0,"active":1},{"name":"2寸PU万向轮 采购申请（新物料，0库存） CGSQ202608085","total":1,"completed":0,"active":1},{"name":"4.3寸触摸显示屏（11010030003）玻璃和钣金整套(双枪)（11020020022 ） CGSQ202608077","total":1,"completed":0,"active":1},{"name":"40KW充电枪（11010570144），电子连接线（11050040067），不锈钢丝网（11020210320），初效过滤网（11020210330） CGSQ202608083","total":1,"completed":0,"active":1},{"name":"7kW高频开关整流模块、7KW直流充电枪   采购申请（0库存） CGSQ202608020","total":1,"completed":0,"active":1},{"name":"MCS直流液冷充电枪 采购申请（新物料，厂商：泰格莱） CGSQ202608097","total":1,"completed":0,"active":1},{"name":"XJZD2560","total":1,"completed":0,"active":1},{"name":"XZD1280M1主板测试治具 采购申请 CGSQ202608074","total":1,"completed":0,"active":1},{"name":"插件电容（11010170012），插件安规电容（11010170076） CGSQ202608092","total":1,"completed":0,"active":1},{"name":"带线插座 采购申请（0库存） CGSQ202608057","total":1,"completed":0,"active":1},{"name":"单枪1ZD120","total":1,"completed":0,"active":1},{"name":"第四代液冷终端绝缘板 打样申请（加急安排！） CGSQ202608061","total":1,"completed":0,"active":1},{"name":"二十路电压检测板V2.0版 打样申请（资料已上传至嘉立创，加急安排） CGSQ202608062","total":1,"completed":0,"active":1},{"name":"防尘过滤棉（12040250054，XSD202608120037） CGSQ202608073","total":1,"completed":0,"active":1},{"name":"风冷终端机钣金件 采购申请 CGSQ202608009","total":1,"completed":0,"active":1},{"name":"工业用插头 采购申请（新物料） CGSQ202608087","total":1,"completed":0,"active":1},{"name":"交流桩欧标设备电子料 采购申请（0库存） CGSQ202608049","total":1,"completed":0,"active":1},{"name":"接线端子（11010470307），7KW接线座","total":1,"completed":0,"active":1},{"name":"欧标40KW亚克力模板防水测试板 打样申请 CGSQ202608084","total":1,"completed":0,"active":1},{"name":"四代一体480kW铝排 采购申请（0库存） CGSQ202608005","total":1,"completed":0,"active":1},{"name":"四代一体480送检样机差异物料 采购申请 CGSQ202608004","total":1,"completed":0,"active":1},{"name":"洗车机三合一鼓定制贴纸（消毒、充气、吹尘）采购申请（0库存） CGSQ202608046","total":1,"completed":0,"active":1},{"name":"研发实验室回馈式负载设备所需线材及辅料 采购申请（0库存，加急安排） CGSQ202608086","total":1,"completed":0,"active":1},{"name":"直流桩研发电子物料 采购申请（库存不足的请安排下单或从委外厂调回） CGSQ202608079","total":1,"completed":0,"active":1}];

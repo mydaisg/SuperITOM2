@@ -1,6 +1,6 @@
-# 从 xlsx 生成流程监控数据看板 HTML
+# 从 xlsx 生成流程实例数据看板 HTML
 # 输入: LVCC_流程中心_试运行_8月1-6数据.xlsx
-# 输出: 流程监控数据看板_20260807.html
+# 输出: 流程实例数据看板_20260807.html
 
 library(readxl)
 library(jsonlite)
@@ -216,7 +216,7 @@ daily_type_json <- toJSON(daily_type_data, auto_unbox = TRUE)
 cat("dailyTypeData:", daily_type_json, "\n")
 
 # === 生成 HTML ===
-html_template <- readLines("D:/Tai_LVCC_2026/Tai_60_ProjectManagement/01.LVCC_ECS_试运行/流程量数据/流程监控数据看板_20260802.html", warn = FALSE)
+html_template <- readLines("D:/Tai_LVCC_2026/Tai_60_ProjectManagement/01.LVCC_ECS_试运行/流程量数据/流程实例数据看板_20260802.html", warn = FALSE)
 
 # 替换数据周期
 html_template <- gsub("2026年7月27日 - 2026年8月1日",
@@ -240,7 +240,7 @@ html_template <- gsub(">188<", paste0(">", num_initiators, "<"), html_template, 
 html_template <- gsub("发起人总数", "发起人总数", html_template, fixed = TRUE)
 html_template <- gsub("全部53种", paste0("全部", num_types, "种"), html_template, fixed = TRUE)
 html_template <- gsub("更新日期：2026年8月2日", paste0("更新日期：", format(Sys.Date(), "%Y年%m月%d日")), html_template, fixed = TRUE)
-html_template <- gsub("流程监控20260802085103869.xlsx", "LVCC_流程中心_试运行_8月1-6数据.xlsx", html_template, fixed = TRUE)
+html_template <- gsub("流程实例20260802085103869.xlsx", "LVCC_流程中心_试运行_8月1-6数据.xlsx", html_template, fixed = TRUE)
 
 # 替换 dailyData
 # 找到 const dailyData = { 到 }; 之间的内容
@@ -284,7 +284,7 @@ html_template <- gsub("平均 54\\.\\d+%", paste0("平均 ", completion_rate, "%
 html_template <- gsub("node\\.count / 212", paste0("node.count / ", active_flows), html_template, fixed = TRUE)
 
 # 写入新 HTML
-output_file <- "D:/Tai_LVCC_2026/Tai_60_ProjectManagement/01.LVCC_ECS_试运行/流程量数据/流程监控数据看板_20260807.html"
+output_file <- "D:/Tai_LVCC_2026/Tai_60_ProjectManagement/01.LVCC_ECS_试运行/流程量数据/流程实例数据看板_20260807.html"
 writeLines(html_template, output_file)
 cat("\n=== HTML written to:", output_file, "===\n")
 cat("File size:", file.info(output_file)$size, "bytes\n")

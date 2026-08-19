@@ -331,12 +331,12 @@ MODULE_INVENTORY <- list(
     )
   ),
   list(
-    module = "流程监控数据", icon = "database", parent = "流程",
-    frontend = "流程 → 流程监控（子标签页）→ flow_monitor_ui()",
+    module = "流程实例数据", icon = "database", parent = "流程",
+    frontend = "流程 → 流程实例（子标签页）→ flow_monitor_ui()",
     source = c("Script/flow_visualization.r", "Script/flow_monitor_ui.r", "Script/flow_monitor_server.r"),
     tables = "flow_monitor_batches, flow_monitor_records",
     perms = list(
-      list(code="flowmon_view", name="查看流程监控数据")
+      list(code="flowmon_view", name="查看流程实例数据")
     ),
     key_funcs = c(
       "flow_monitor_import_excel() — 导入Excel明细到SQLite(批次+明细)",
@@ -455,7 +455,7 @@ MODULE_INVENTORY <- list(
     key_funcs = c(
       "viz_generate() — 生成plotly交互式图表(支持折线/柱状/散点/饼图/热力图)",
       "renderPlotly({ viz_generate(...) }) — Shiny渲染层",
-      "server.R: output$viz_mtr_complete_rate/timeout_rate/avg_duration — 流程监控指标卡片"
+      "server.R: output$viz_mtr_complete_rate/timeout_rate/avg_duration — 流程实例指标卡片"
     )
   ),
   list(

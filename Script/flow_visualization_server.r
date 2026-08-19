@@ -76,10 +76,26 @@ flow_viz_server <- function(input, output, session, rv) {
       r <- hist[i, ]
       out_name <- r$out_name
       href <- paste0("www/flow_viz/", out_name)
+      is_log <- !is.na(r$kind) && r$kind == "log"
+      # 类型标签
+      kind_badge <- if (is_log) {
+        tags$span(style = "font-size:11px; background:#8e44ad; color:#fff; padding:1px 8px; border-radius:10px;",
+          "流程日志")
+      } else {
+        tags$span(style = "font-size:11px; background:#337ab7; color:#fff; padding:1px 8px; border-radius:10px;",
+          "数据看板")
+      }
+      # 统计信息（根据类型区分字段语义）
+      stat_text <- if (is_log) {
+        sprintf("节点%d 完成%d 未完成%d", r$total_flows, r$completed_flows, r$active_flows)
+      } else {
+        sprintf("总%d 完成%d 进行中%d 完成率%s%%",
+          r$total_flows, r$completed_flows, r$active_flows, r$completion_rate)
+      }
       tags$div(class = "fvz-hist-row",
+        kind_badge,
         tags$span(style = "font-weight:600; color:#333;", r$src_name),
-        tags$span(style = "font-size:11px; color:#999;", sprintf("总%d 完成%d 进行中%d 完成率%s%%",
-          r$total_flows, r$completed_flows, r$active_flows, r$completion_rate)),
+        tags$span(style = "font-size:11px; color:#999;", stat_text),
         tags$span(style = "font-size:11px; color:#999;", r$created_at),
         tags$a(href = href, target = "_blank", class = "btn btn-xs btn-primary",
           icon("external-link-alt"), " 打开"),
@@ -108,5 +124,57 @@ flow_viz_server <- function(input, output, session, rv) {
     } else {
       showNotification("该记录无 HTML 备份，无法重新导出", type = "warning", duration = 5)
     }
+  })
+
+  # 流程日志生成效率图看板
+  observeEvent(input$fvz_log_generate, {
+    req(rv$logged_in)
+    f <- input$fvz_log_file
+    if (is.null(f)) {
+      showNotification("请先选择要上传的流程日志 Excel 文件", type = "warning")
+      return()
+    }
+
+    operator <- "系统"
+    if (!is.null(rv$current_user) && nrow(rv$current_user) > 0) {
+      op_name <- rv$current_user$display_name[1]
+      if (is.null(op_name) || nchar(trimws(op_name)) == 0) op_name <- rv$current_user$username[1]
+      operator <- op_name
+    }
+
+    showNotification("正在解析流程日志并生成效率图...", type = "message", duration = NULL, id = "fvz_log_working")
+    res <- flow_log_generate(f$datapath, f$name, operator)
+    removeNotification(id = "fvz_log_working")
+
+    if (!isTRUE(res$success)) {
+      showNotification(res$message, type = "error", duration = 8)
+      return()
+    }
+
+    s <- res$stats
+    # 保存历史记录（kind='log'），并刷新历史列表
+    record_no <- flow_viz_generate_no()
+    flow_log_add_record(record_no, f$name, res$out_name, s, operator,
+                        html_content = res$html_content)
+    fvz_hist_trigger(fvz_hist_trigger() + 1)
+
+    showNotification(
+      sprintf("效率图生成成功：%d 个节点，未完成 %s 个", s$node_count, s$undone_nodes),
+      type = "message", duration = 5)
+
+    output$fvz_log_result <- renderUI({
+      tagList(
+        h5("生成结果", style = "margin-top:10px;"),
+        div(class = "fvz-path-box",
+          icon("folder-open"), " ", res$html_path),
+        br(),
+        tags$a(href = paste0("www/flow_viz/", res$out_name), target = "_blank",
+               class = "fvz-link", icon("external-link-alt"), " 在浏览器新窗口打开效率图"),
+        br(), br(),
+        tags$small(style = "color:#999;",
+          sprintf("%s | 节点 %d | 已完成 %d | 未完成 %s | 总人次 %s",
+                  s$title, s$node_count, s$done_nodes, s$undone_nodes, s$total_person))
+      )
+    })
   })
 }

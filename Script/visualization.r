@@ -256,7 +256,7 @@ viz_generate <- function(viz_type, data_source) {
       value = cumsum(rnorm(30, 5, 2)),
       category = sample(c("服务器", "网络", "应用"), 30, replace = TRUE)
     )
-  } else if (data_source == "流程监控") {
+  } else if (data_source == "流程实例") {
     return(viz_generate_process_charts(viz_type))
   } else {
     data <- data.frame(
@@ -340,7 +340,7 @@ viz_generate <- function(viz_type, data_source) {
 }
 
 ##################
-# 流程监控图表
+# 流程实例图表
 ##################
 viz_generate_process_charts <- function(viz_type) {
   stats <- tryCatch(appr_stats(), error = function(e) list(total = 0, pending = 0, approved = 0, rejected = 0, tpls = 0))

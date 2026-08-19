@@ -20,7 +20,7 @@ source("Script/integration_server.r")     # 集成模块服务端
 source("Script/tools_server.r")         # 工具模块
 source("Script/flow_visualization.r")    # 流程数据可视化（数据层）
 source("Script/flow_visualization_server.r")  # 流程数据可视化（服务端）
-source("Script/flow_monitor_server.r")    # 流程监控数据（服务端）
+source("Script/flow_monitor_server.r")    # 流程实例数据（服务端）
 source("Script/ai_management.r")       # AI 模块数据层
 source("Script/ai_server.r")           # AI 模块
 source("Script/process_engine.r")       # 流程引擎核心（定义 %||% 等工具函数，network_test.r 依赖）
@@ -1679,7 +1679,7 @@ server <- function(input, output, session) {
   # 初始渲染可视化图表
   output$viz_plot <- viz_render("词云图", "记事数据")
 
-  # 可视化页 - 流程监控指标
+  # 可视化页 - 流程实例指标
   output$viz_mtr_complete_rate <- renderText({ "0%" })
   output$viz_mtr_timeout_rate <- renderText({ "0%" })
   output$viz_mtr_avg_duration <- renderText({ "0 分钟" })
@@ -3780,7 +3780,7 @@ server <- function(input, output, session) {
   # 流程数据可视化逻辑
   flow_viz_server(input, output, session, rv)
 
-  # 流程监控数据逻辑
+  # 流程实例数据逻辑
   flow_monitor_server(input, output, session, rv)
 
   # AI 模块逻辑

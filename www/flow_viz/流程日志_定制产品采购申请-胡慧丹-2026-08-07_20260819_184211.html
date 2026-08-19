@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>流程效率图 - 定制产品采购申请-胡慧丹-2026-08-07 - 安排采购 </title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%); min-height:100vh; color:#fff; padding:20px; }
+.header { text-align:center; padding:30px 0; margin-bottom:20px; }
+.header h1 { font-size:30px; font-weight:700; background:linear-gradient(90deg,#00d4ff,#7b2cbf); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-bottom:10px; }
+.header .subtitle { color:#8892b0; font-size:15px; }
+.kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:16px; margin-bottom:30px; }
+.kpi-card { background:rgba(255,255,255,0.05); border-radius:14px; padding:20px; border:1px solid rgba(255,255,255,0.1); }
+.kpi-label { color:#8892b0; font-size:13px; margin-bottom:6px; }
+.kpi-value { font-size:26px; font-weight:700; color:#fff; }
+.kpi-value.warn { color:#ffd700; } .kpi-value.success { color:#00e676; }
+.kpi-change { font-size:12px; margin-top:4px; color:#8892b0; }
+.chart-card { background:rgba(255,255,255,0.05); border-radius:16px; padding:24px; border:1px solid rgba(255,255,255,0.1); margin-bottom:24px; }
+.chart-title { font-size:18px; font-weight:600; margin-bottom:20px; color:#fff; }
+.chart-container { width:100%; height:420px; }
+.detail-table { width:100%; border-collapse:collapse; margin-top:10px; }
+.detail-table th, .detail-table td { padding:8px 10px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.1); font-size:13px; }
+.detail-table th { color:#8892b0; font-weight:500; font-size:12px; }
+.status-badge { display:inline-block; padding:2px 10px; border-radius:10px; font-size:12px; font-weight:600; }
+.status-done { background:rgba(0,230,118,0.15); color:#00e676; }
+.status-active { background:rgba(255,215,0,0.15); color:#ffd700; }
+.status-view { background:rgba(0,212,255,0.15); color:#00d4ff; }
+.node-name { color:#00d4ff; font-weight:600; }
+.footer { text-align:center; padding:30px; color:#8892b0; font-size:13px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>流程效率图</h1>
+  <div class="subtitle">定制产品采购申请-胡慧丹-2026-08-07 - 安排采购 </div>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi-card"><div class="kpi-label">预计总耗时</div><div class="kpi-value warn">8天9小时20分钟</div><div class="kpi-change">预计完成 2026-08-17 02:12:00</div></div>
+  <div class="kpi-card"><div class="kpi-label">未完成节点</div><div class="kpi-value warn">1</div><div class="kpi-change">共 13 个节点</div></div>
+  <div class="kpi-card"><div class="kpi-label">总人次</div><div class="kpi-value">36</div><div class="kpi-change">已操作 27 · 未操作 8</div></div>
+  <div class="kpi-card"><div class="kpi-label">已查看 / 未查看</div><div class="kpi-value">4 / 5</div><div class="kpi-change">查看进度</div></div>
+  <div class="kpi-card"><div class="kpi-label">流程周期</div><div class="kpi-value" style="font-size:20px;">2026-08-07 22:33:07</div><div class="kpi-change">至 2026-08-15 01:09:42</div></div>
+</div>
+
+<div class="chart-card">
+  <div class="chart-title">流程时间线（各节点处理时段）</div>
+  <div id="ganttChart" class="chart-container"></div>
+</div>
+
+<div class="chart-card">
+  <div class="chart-title">节点耗时排行（瓶颈分析）</div>
+  <div id="barChart" class="chart-container"></div>
+</div>
+
+<div class="chart-card">
+  <div class="chart-title">节点操作明细</div>
+  <div id="detailTable"></div>
+</div>
+
+<div class="footer">数据来源：流程状态日志 | 报表生成：LVCC ITOM | 更新日期：2026年08月19日</div>
+
+<script>
+const ganttData = [{"name":"发起节点","seq":1,"start":"2026-08-07 22:33:07","end":"2026-08-08 16:52:37","start_ms":1786113187000,"end_ms":1786179157000,"dur":"18小时19分钟30秒","dur_hours":18.32,"is_done":true},{"name":"直接上级审批","seq":2,"start":"2026-08-08 16:52:37","end":"2026-08-09 00:20:49","start_ms":1786179157000,"end_ms":1786206049000,"dur":"7小时28分钟12秒","dur_hours":7.47,"is_done":true},{"name":"财务确认是否收款","seq":3,"start":"2026-08-09 00:20:49","end":"2026-08-09 00:22:50","start_ms":1786206049000,"end_ms":1786206170000,"dur":"2分钟1秒","dur_hours":0.03,"is_done":true},{"name":"PMC主管审批","seq":4,"start":"2026-08-09 00:22:50","end":"2026-08-10 22:10:49","start_ms":1786206170000,"end_ms":1786371049000,"dur":"1天21小时47分钟59秒","dur_hours":45.8,"is_done":true},{"name":"产品项目部/技术支持部主管审批","seq":5,"start":"2026-08-10 22:10:49","end":"2026-08-12 16:44:00","start_ms":1786371049000,"end_ms":1786524240000,"dur":"18小时55分钟56秒","dur_hours":18.93,"is_done":true},{"name":"出BOM","seq":6,"start":"2026-08-12 16:44:00","end":"2026-08-12 19:08:16","start_ms":1786524240000,"end_ms":1786532896000,"dur":"2小时24分钟16秒","dur_hours":2.4,"is_done":true},{"name":"审核BOM（交流）","seq":7,"start":"2026-08-12 19:08:16","end":"2026-08-14 03:11:35","start_ms":1786532896000,"end_ms":1786648295000,"dur":"1天8小时3分钟19秒","dur_hours":32.06,"is_done":true},{"name":"出图纸","seq":8,"start":"2026-08-14 03:11:35","end":"2026-08-14 17:02:27","start_ms":1786648295000,"end_ms":1786698147000,"dur":"13小时50分钟52秒","dur_hours":13.85,"is_done":true},{"name":"审核图纸（交流)","seq":9,"start":"2026-08-14 17:02:27","end":"2026-08-14 23:22:46","start_ms":1786698147000,"end_ms":1786720966000,"dur":"6小时20分钟19秒","dur_hours":6.34,"is_done":true},{"name":"安排生产计划（交流）","seq":10,"start":"2026-08-14 23:22:46","end":"2026-08-14 23:31:41","start_ms":1786720966000,"end_ms":1786721501000,"dur":"8分钟55秒","dur_hours":0.15,"is_done":true},{"name":"贴牌商备案 、云快充绑码备案","seq":11,"start":"2026-08-14 23:31:41","end":"2026-08-14 23:49:21","start_ms":1786721501000,"end_ms":1786722561000,"dur":"17分钟40秒","dur_hours":0.29,"is_done":true},{"name":"数字运营中心审批","seq":12,"start":"2026-08-14 23:49:21","end":"2026-08-15 01:09:42","start_ms":1786722561000,"end_ms":1786727382000,"dur":"1小时20分钟21秒","dur_hours":1.34,"is_done":true},{"name":"安排采购","seq":13,"start":"2026-08-15 01:09:42","end":"2026-08-19 09:45:00","start_ms":1786727382000,"end_ms":1787103900000,"dur":"","dur_hours":0,"is_done":false}];
+const barData = [{"name":"发起节点","value":18.32,"dur":"18小时19分钟30秒"},{"name":"直接上级审批","value":7.47,"dur":"7小时28分钟12秒"},{"name":"财务确认是否收款","value":0.03,"dur":"2分钟1秒"},{"name":"PMC主管审批","value":45.8,"dur":"1天21小时47分钟59秒"},{"name":"产品项目部/技术支持部主管审批","value":18.93,"dur":"18小时55分钟56秒"},{"name":"出BOM","value":2.4,"dur":"2小时24分钟16秒"},{"name":"审核BOM（交流）","value":32.06,"dur":"1天8小时3分钟19秒"},{"name":"出图纸","value":13.85,"dur":"13小时50分钟52秒"},{"name":"审核图纸（交流)","value":6.34,"dur":"6小时20分钟19秒"},{"name":"安排生产计划（交流）","value":0.15,"dur":"8分钟55秒"},{"name":"贴牌商备案 、云快充绑码备案","value":0.29,"dur":"17分钟40秒"},{"name":"数字运营中心审批","value":1.34,"dur":"1小时20分钟21秒"}];
+const detailData = [[{"node":"发起节点","name":"胡慧丹","status":"提交","recv":"2026-08-07 22:33:07","view":"2026-08-07 22:33:07","op_time":"2026-08-08 16:52:37","dur":"18小时19分钟30秒","src":"胡慧丹"}],[{"node":"直接上级审批","name":"廖玮","status":"批准","recv":"2026-08-08 16:52:37","view":"2026-08-08 17:01:20","op_time":"2026-08-09 00:20:49","dur":"7小时28分钟12秒","src":"胡慧丹"},{"node":"直接上级审批","name":"彭祖奕","status":"抄送批注（抄送不需批注）","recv":"2026-08-08 16:52:37","view":"2026-08-08 17:29:49","op_time":"2026-08-08 17:29:49","dur":"37分钟12秒","src":"胡慧丹"},{"node":"直接上级审批","name":"刘秋霞","status":"抄送批注（抄送不需批注）","recv":"2026-08-08 16:52:37","view":"2026-08-08 17:01:51","op_time":"2026-08-08 17:01:51","dur":"9分钟14秒","src":"胡慧丹"},{"node":"直接上级审批","name":"魏日彬","status":"抄送批注（抄送不需批注）","recv":"2026-08-08 16:52:37","view":"2026-08-09 01:07:10","op_time":"2026-08-09 01:07:10","dur":"8小时14分钟33秒","src":"胡慧丹"},{"node":"直接上级审批","name":"彭斌","status":"未查看（抄送不需批注）","recv":"2026-08-08 16:52:37","view":"","op_time":"","dur":"","src":"胡慧丹"},{"node":"直接上级审批","name":"谢信锋","status":"抄送批注（抄送不需批注）","recv":"2026-08-08 16:52:37","view":"2026-08-18 03:33:04","op_time":"2026-08-18 03:33:04","dur":"9天10小时40分钟27秒","src":"胡慧丹"},{"node":"直接上级审批","name":"孙文辉","status":"抄送批注（抄送不需批注）","recv":"2026-08-08 16:52:37","view":"2026-08-14 03:11:30","op_time":"2026-08-14 03:11:30","dur":"5天10小时18分钟54秒","src":"胡慧丹"},{"node":"直接上级审批","name":"周文金","status":"抄送批注（抄送不需批注）","recv":"2026-08-08 16:52:37","view":"2026-08-11 17:07:15","op_time":"2026-08-11 17:07:15","dur":"3天0小时14分钟38秒","src":"胡慧丹"},{"node":"直接上级审批","name":"廖振成","status":"抄送批注（抄送不需批注）","recv":"2026-08-08 16:52:37","view":"2026-08-12 00:55:43","op_time":"2026-08-12 00:55:43","dur":"3天8小时3分钟6秒","src":"胡慧丹"},{"node":"直接上级审批","name":"林芳兵","status":"抄送批注（抄送不需批注）","recv":"2026-08-08 16:52:37","view":"2026-08-08 17:53:32","op_time":"2026-08-08 17:53:32","dur":"1小时0分钟55秒","src":"胡慧丹"},{"node":"直接上级审批","name":"黄恒椿","status":"未查看（抄送不需批注）","recv":"2026-08-08 16:52:37","view":"","op_time":"","dur":"","src":"胡慧丹"},{"node":"直接上级审批","name":"邱祖荣","status":"抄送批注（抄送不需批注）","recv":"2026-08-08 16:52:37","view":"2026-08-08 16:55:25","op_time":"2026-08-08 16:55:25","dur":"2分钟48秒","src":"胡慧丹"},{"node":"直接上级审批","name":"邱小凤","status":"抄送批注（抄送不需批注）","recv":"2026-08-08 16:52:37","view":"2026-08-08 16:54:52","op_time":"2026-08-08 16:54:52","dur":"2分钟15秒","src":"胡慧丹"},{"node":"直接上级审批","name":"陈玉星","status":"抄送批注（抄送不需批注）","recv":"2026-08-08 16:52:37","view":"2026-08-12 16:33:34","op_time":"2026-08-12 16:33:34","dur":"3天23小时40分钟58秒","src":"胡慧丹"},{"node":"直接上级审批","name":"丁捡香","status":"抄送批注（抄送不需批注）","recv":"2026-08-08 16:52:37","view":"2026-08-13 16:33:17","op_time":"2026-08-13 16:33:17","dur":"4天23小时40分钟40秒","src":"胡慧丹"},{"node":"直接上级审批","name":"谢芳材","status":"未查看（抄送不需批注）","recv":"2026-08-08 16:52:37","view":"","op_time":"","dur":"","src":"胡慧丹"}],[{"node":"财务确认是否收款","name":"钟灵","status":"已查看","recv":"2026-08-09 00:20:49","view":"2026-08-09 00:22:50","op_time":"","dur":"","src":"廖玮"},{"node":"财务确认是否收款","name":"陈小芳","status":"批准","recv":"2026-08-09 00:20:49","view":"2026-08-09 00:21:57","op_time":"2026-08-09 00:22:50","dur":"2分钟1秒","src":"廖玮"}],[{"node":"PMC主管审批","name":"张大锌","status":"批准","recv":"2026-08-09 00:22:50","view":"2026-08-10 22:10:39","op_time":"2026-08-10 22:10:49","dur":"1天21小时47分钟59秒","src":"陈小芳"}],[{"node":"产品项目部/技术支持部主管审批","name":"朱德龙1","status":"转办","recv":"2026-08-10 22:10:49","view":"2026-08-10 22:12:45","op_time":"2026-08-11 17:06:44","dur":"18小时55分钟56秒","src":"张大锌"},{"node":"产品项目部/技术支持部主管审批","name":"周文金 (转办)","status":"转办","recv":"2026-08-11 17:06:44","view":"2026-08-11 17:07:15","op_time":"2026-08-11 17:11:47","dur":"5分钟2秒","src":"朱德龙1"},{"node":"产品项目部/技术支持部主管审批","name":"陈玉星 (转办)","status":"批准","recv":"2026-08-11 17:11:47","view":"2026-08-12 16:33:34","op_time":"2026-08-12 16:44:00","dur":"23小时32分钟13秒","src":"周文金"}],[{"node":"出BOM","name":"廖灵珠","status":"批准","recv":"2026-08-12 16:44:00","view":"2026-08-12 17:22:50","op_time":"2026-08-12 19:08:16","dur":"2小时24分钟16秒","src":"陈玉星"}],[{"node":"审核BOM（交流）","name":"孙文辉","status":"批准","recv":"2026-08-12 19:08:16","view":"2026-08-14 03:11:30","op_time":"2026-08-14 03:11:35","dur":"1天8小时3分钟19秒","src":"廖灵珠"}],[{"node":"出图纸","name":"许建英","status":"批准","recv":"2026-08-14 03:11:35","view":"2026-08-14 16:42:28","op_time":"2026-08-14 17:02:27","dur":"13小时50分钟52秒","src":"孙文辉"},{"node":"出图纸","name":"董文清","status":"抄送批注（抄送不需批注）","recv":"2026-08-14 03:11:35","view":"2026-08-15 19:58:28","op_time":"2026-08-15 19:58:28","dur":"1天16小时46分钟53秒","src":"孙文辉"}],[{"node":"审核图纸（交流)","name":"孙文辉","status":"批准","recv":"2026-08-14 17:02:27","view":"2026-08-14 23:22:16","op_time":"2026-08-14 23:22:46","dur":"6小时20分钟19秒","src":"许建英"}],[{"node":"安排生产计划（交流）","name":"廖振成","status":"批准","recv":"2026-08-14 23:22:46","view":"2026-08-14 23:30:08","op_time":"2026-08-14 23:31:41","dur":"8分钟55秒","src":"孙文辉"}],[{"node":"贴牌商备案 、云快充绑码备案","name":"钟定晟","status":"批准","recv":"2026-08-14 23:31:41","view":"2026-08-14 23:49:16","op_time":"2026-08-14 23:49:21","dur":"17分钟40秒","src":"廖振成"}],[{"node":"数字运营中心审批","name":"黄敏","status":"批准","recv":"2026-08-14 23:49:21","view":"2026-08-14 23:51:15","op_time":"2026-08-15 01:09:42","dur":"1小时20分钟21秒","src":"钟定晟"}],[{"node":"安排采购","name":"李雪梅","status":"已查看","recv":"2026-08-15 01:09:42","view":"2026-08-15 23:51:00","op_time":"","dur":"","src":"黄敏"},{"node":"安排采购","name":"廖伟林","status":"未查看","recv":"2026-08-15 01:09:42","view":"","op_time":"","dur":"","src":"黄敏"},{"node":"安排采购","name":"陈湘君","status":"已查看","recv":"2026-08-15 01:09:42","view":"2026-08-19 16:22:27","op_time":"","dur":"","src":"黄敏"},{"node":"安排采购","name":"李悦欣","status":"已查看","recv":"2026-08-15 01:09:42","view":"2026-08-15 01:38:56","op_time":"","dur":"","src":"黄敏"},{"node":"安排采购","name":"王腾笑","status":"未查看","recv":"2026-08-15 01:09:42","view":"","op_time":"","dur":"","src":"黄敏"}]];
+
+const ganttChart = echarts.init(document.getElementById("ganttChart"));
+const ganttSeries = ganttData.map((g, i) => ({
+  name: g.name,
+  value: [i, g.start_ms, g.end_ms, g.dur_hours],
+  itemStyle: { color: g.is_done ? "#00d4ff" : "#ffd700" }
+}));
+ganttChart.setOption({
+  tooltip: { backgroundColor:"rgba(0,0,0,0.8)", borderColor:"#00d4ff", textStyle:{color:"#fff"},
+    formatter: function(p) { const g = ganttData[p.dataIndex]; return "<b>" + g.name + "</b><br/>开始: " + g.start + "<br/>结束: " + (g.is_done ? g.end : "进行中") + "<br/>耗时: " + (g.dur || "—"); } },
+  grid: { left: "3%", right: "5%", bottom: "5%", top: "5%", containLabel: true },
+  xAxis: { type: "time", axisLine:{lineStyle:{color:"#2d3748"}}, axisLabel:{color:"#8892b0"}, splitLine:{lineStyle:{color:"rgba(255,255,255,0.05)"}} },
+  yAxis: { type: "category", data: ganttData.map(g => g.seq + ". " + g.name), axisLine:{lineStyle:{color:"#2d3748"}}, axisLabel:{color:"#c0c8dd", fontSize:11} },
+  series: [{ type: "custom", renderItem: function(params, api) {
+    const catIndex = api.value(0);
+    const start = api.coord([api.value(1), catIndex]);
+    const end = api.coord([api.value(2), catIndex]);
+    const height = api.size([0, 1])[1] * 0.5;
+    return { type: "rect", shape: { x: start[0], y: start[1] - height/2, width: Math.max(end[0] - start[0], 2), height: height },
+      style: api.style() };
+  }, encode: { x: [1, 2], y: 0 }, data: ganttSeries }]
+});
+
+const barChart = echarts.init(document.getElementById("barChart"));
+barChart.setOption({
+  tooltip: { backgroundColor:"rgba(0,0,0,0.8)", borderColor:"#00d4ff", textStyle:{color:"#fff"},
+    formatter: function(p) { const b = barData[p.dataIndex]; return "<b>" + b.name + "</b><br/>耗时: " + b.dur; } },
+  grid: { left: "3%", right: "8%", bottom: "3%", containLabel: true },
+  xAxis: { type: "value", name: "耗时(小时)", axisLine:{lineStyle:{color:"#2d3748"}}, axisLabel:{color:"#8892b0"}, splitLine:{lineStyle:{color:"rgba(255,255,255,0.05)"}} },
+  yAxis: { type: "category", data: barData.map(b => b.name).reverse(), axisLine:{lineStyle:{color:"#2d3748"}}, axisLabel:{color:"#c0c8dd", fontSize:11} },
+  series: [{ type: "bar", data: barData.map(b => b.value).reverse(), barWidth: "55%",
+    itemStyle: { color: function(p){ return new echarts.graphic.LinearGradient(0,0,1,0,[{offset:0,color:"#7b2cbf"},{offset:1,color:"#00d4ff"}]); } },
+    label: { show:true, position:"right", color:"#8892b0", formatter: function(p){ return barData[barData.length-1-p.dataIndex].dur; } } }]
+});
+
+const detailHtml = detailData.map(nodeOps => {
+  const nodeName = nodeOps[0].node;
+  const rows = nodeOps.map(o => {
+    const badge = o.status.indexOf("批准") >= 0 || o.status === "提交" ? "status-done" :
+                  o.status.indexOf("查看") >= 0 ? "status-view" : "status-active";
+    return "<tr><td>" + o.name + "</td><td><span class=\"status-badge " + badge + "\">" + o.status + "</span></td><td>" + o.recv + "</td><td>" + o.view + "</td><td>" + o.op_time + "</td><td>" + o.dur + "</td><td>" + o.src + "</td></tr>";
+  }).join("");
+  return "<div style=\"margin-bottom:18px;\"><div class=\"node-name\">◆ " + nodeName + "</div><table class=\"detail-table\"><thead><tr><th>操作人</th><th>状态</th><th>接收时间</th><th>查看时间</th><th>操作时间</th><th>操作耗时</th><th>来源</th></tr></thead><tbody>" + rows + "</tbody></table></div>";
+}).join("");
+document.getElementById("detailTable").innerHTML = detailHtml;
+
+window.addEventListener("resize", function() { ganttChart.resize(); barChart.resize(); });
+</script>
+</body>
+</html>

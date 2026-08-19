@@ -4,7 +4,7 @@ library(jsonlite)
 load(file.path("Test", "dashboard_data.RData"))
 
 data_dir <- "D:/Tai_LVCC_2026/Tai_60_ProjectManagement/01.LVCC_ECS_试运行/流程量数据"
-out_file <- file.path(data_dir, "流程监控数据看板_20260814.html")
+out_file <- file.path(data_dir, "流程实例数据看板_20260814.html")
 
 # 日期显示格式化
 fmt_date <- function(s) {
@@ -20,7 +20,7 @@ html <- paste0('<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>流程监控数据看板</title>
+    <title>流程实例数据看板</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -85,7 +85,7 @@ html <- paste0('<!DOCTYPE html>
 </head>
 <body>
     <div class="header">
-        <h1>流程监控数据看板</h1>
+        <h1>流程实例数据看板</h1>
         <div class="subtitle">数据周期：', date_min_fmt, ' - ', date_max_fmt, ' | 总流程数：', total_flows, '</div>
     </div>
 
@@ -192,7 +192,7 @@ html <- paste0('<!DOCTYPE html>
     </div>
 
     <div class="footer">
-        数据来源：流程监控导出数据 | 报表生成：Tai_WorkBuddy | 更新日期：', format(Sys.Date(), "%Y年%m月%d日"), '
+        数据来源：流程实例导出数据 | 报表生成：Tai_WorkBuddy | 更新日期：', format(Sys.Date(), "%Y年%m月%d日"), '
     </div>
 
     <script>

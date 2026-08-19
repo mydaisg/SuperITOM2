@@ -1030,7 +1030,7 @@ migrate_database <- function() {
     # 补充权限（幂等）：工具子模块等后续新增的权限码
     supplement_perms <- rbind(
       data.frame(module="流程数据可视化", component="面板", code="flowviz_view", name="查看", description="查看流程数据可视化"),
-      data.frame(module="流程监控数据", component="面板", code="flowmon_view", name="查看", description="查看流程监控数据")
+      data.frame(module="流程实例数据", component="面板", code="flowmon_view", name="查看", description="查看流程实例数据")
     )
     for (i in seq_len(nrow(supplement_perms))) {
       dbExecute(con, sprintf("INSERT OR IGNORE INTO rbac_permissions (module, component, code, name, description) VALUES ('%s','%s','%s','%s','%s')",
@@ -1501,9 +1501,15 @@ migrate_database <- function() {
       dbExecute(con, "ALTER TABLE flow_visualizations ADD COLUMN html_content TEXT")
       cat("数据库迁移完成：flow_visualizations 表已添加 html_content 列\n")
     }
+    # 迁移：flow_visualizations 添加 kind 列（区分 流程数据看板/流程日志效率图）
+    fvz_cols <- dbGetQuery(con, "PRAGMA table_info(flow_visualizations)")
+    if (!("kind" %in% fvz_cols$name)) {
+      dbExecute(con, "ALTER TABLE flow_visualizations ADD COLUMN kind TEXT DEFAULT 'viz'")
+      cat("数据库迁移完成：flow_visualizations 表已添加 kind 列\n")
+    }
 
     # ===============================================
-    # 流程监控数据表（Excel 明细存 SQLite）
+    # 流程实例数据表（Excel 明细存 SQLite）
     # ===============================================
     if (!"flow_monitor_batches" %in% tables) {
       dbExecute(con, "CREATE TABLE flow_monitor_batches (

@@ -1,4 +1,4 @@
-# 流程监控数据模块 — UI（作为「流程」标签页下的子标签）
+# 流程实例数据模块 — UI（作为「流程」标签页下的子标签）
 
 flow_monitor_ui <- function() {
   tagList(
@@ -18,9 +18,9 @@ flow_monitor_ui <- function() {
     ")),
     fluidRow(
       column(12,
-        h4(icon("database"), " 流程监控数据"),
+        h4(icon("database"), " 流程实例数据"),
         p(style = "color:#666; font-size:12px;",
-          "将流程监控 Excel 明细数据导入 SQLite，可随时从数据库重新生成可视化看板。")
+          "将流程实例 Excel 明细数据导入 SQLite，可随时从数据库重新生成可视化看板。")
       )
     ),
     fluidRow(

@@ -1445,7 +1445,7 @@ server <- function(input, output, session) {
     viz_generate(input$viz_type, input$viz_data)
   })
 
-  # 可视化页 - 流程监控指标
+  # 可视化页 - 流程实例指标
   output$viz_mtr_complete_rate <- renderText({ "0%" })
   output$viz_mtr_timeout_rate <- renderText({ "0%" })
   output$viz_mtr_avg_duration <- renderText({ "0 分钟" })
@@ -2622,12 +2622,12 @@ main_ui <- function() {
       )
     ),
     
-    # 数据可视化标签页（含流程监控）
+    # 数据可视化标签页（含流程实例）
     tabPanel(
       "可视化",
       icon = icon("chart-line"),
       fluidPage(
-        # 流程监控指标卡片
+        # 流程实例指标卡片
         fluidRow(
           column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#e8f5e9;",
             h3(textOutput("viz_mtr_complete_rate"),style="margin:0;color:#2e7d32;font-size:24px;"),
@@ -2655,7 +2655,7 @@ main_ui <- function() {
         sidebarLayout(
           sidebarPanel(
             selectInput("viz_type", "图表类型", choices = c("折线图", "柱状图", "散点图", "饼图", "热力图")),
-            selectInput("viz_data", "数据源", choices = c("ITOM数据", "模型数据", "流程监控")),
+            selectInput("viz_data", "数据源", choices = c("ITOM数据", "模型数据", "流程实例")),
             actionButton("generate_viz", "生成图表", class = "btn-primary")
           ),
           mainPanel(
