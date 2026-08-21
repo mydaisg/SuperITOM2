@@ -1,7 +1,18 @@
 # 工具模块 UI
 tools_ui <- function() {
   tagList(
-    tags$script(src = "https://unpkg.com/pinyin-pro@3"),
+    # 拼音库改为按需异步加载（避免外网 CDN 阻塞整个工具页渲染）
+    tags$script(HTML("
+      window.__loadPinyinPro = function(cb) {
+        if (window.pinyinPro) { if (cb) cb(); return; }
+        var s = document.createElement('script');
+        s.src = 'https://unpkg.com/pinyin-pro@3';
+        s.async = true;
+        s.onload = function() { if (cb) cb(); };
+        s.onerror = function() { if (cb) cb(); };
+        document.head.appendChild(s);
+      };
+    ")),
     fluidPage(
       titlePanel(""),
       tabsetPanel(id = "tools_tabs",
@@ -48,7 +59,7 @@ tools_ui <- function() {
             #tool_py_out pre { margin: 0 !important; padding: 0 !important; background: transparent !important; border: none !important; }
           ")),
           tags$script(HTML("
-            Shiny.addCustomMessageHandler('doPinyin', function(mode) {
+            function doPinyinCore(mode) {
               var inp = document.getElementById('tool_py_in');
               if (!inp || typeof pinyinPro === 'undefined') return;
               var txt = inp.value;
@@ -98,6 +109,10 @@ tools_ui <- function() {
                 }).join('\\n');
               }
               Shiny.setInputValue('tool_py_result', {mode: mode, html: result}, {priority: 'event'});
+            }
+            Shiny.addCustomMessageHandler('doPinyin', function(mode) {
+              // 按需异步加载拼音库，不阻塞页面；加载完成后再执行
+              window.__loadPinyinPro(function() { doPinyinCore(mode); });
             });
           ")),
           fluidRow(

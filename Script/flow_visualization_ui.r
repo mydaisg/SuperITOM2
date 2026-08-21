@@ -88,7 +88,7 @@ flow_viz_ui <- function() {
                          class = "btn-xs btn-info")
           ),
           div(id = "fvz_hist_box",
-            uiOutput("fvz_history")
+            DT::dataTableOutput("fvz_history")
           )
         )
       )

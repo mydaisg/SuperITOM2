@@ -127,46 +127,41 @@ flow_viz_server <- function(input, output, session, rv) {
     )
   })
 
-  # 历史列表
-  output$fvz_history <- renderUI({
+  # 历史数据（reactive 缓存，避免 renderUI 反复查库）
+  fvz_hist_data <- reactive({
     req(rv$logged_in)
     fvz_hist_trigger()
-    hist <- flow_viz_get_history()
-    if (nrow(hist) == 0) {
-      return(tags$p(style = "color:#999; text-align:center; padding:20px 0;", "暂无转换记录"))
-    }
-    do.call(tagList, lapply(seq_len(nrow(hist)), function(i) {
-      r <- hist[i, ]
-      out_name <- r$out_name
-      href <- paste0("www/flow_viz/", out_name)
-      is_log <- !is.na(r$kind) && r$kind == "log"
-      # 类型标签
-      kind_badge <- if (is_log) {
-        tags$span(style = "font-size:11px; background:#8e44ad; color:#fff; padding:1px 8px; border-radius:10px;",
-          "流程日志")
-      } else {
-        tags$span(style = "font-size:11px; background:#337ab7; color:#fff; padding:1px 8px; border-radius:10px;",
-          "数据看板")
-      }
-      # 统计信息（根据类型区分字段语义）
-      stat_text <- if (is_log) {
-        sprintf("节点%d 完成%d 未完成%d", r$total_flows, r$completed_flows, r$active_flows)
-      } else {
-        sprintf("总%d 完成%d 进行中%d 完成率%s%%",
-          r$total_flows, r$completed_flows, r$active_flows, r$completion_rate)
-      }
-      tags$div(class = "fvz-hist-row",
-        kind_badge,
-        tags$span(style = "font-weight:600; color:#333;", r$src_name),
-        tags$span(style = "font-size:11px; color:#999;", stat_text),
-        tags$span(style = "font-size:11px; color:#999;", r$created_at),
-        tags$a(href = href, target = "_blank", class = "btn btn-xs btn-primary",
-          icon("external-link-alt"), " 打开"),
-        tags$button(type = "button", class = "btn btn-xs btn-warning fvz-export-btn",
-          `data-id` = r$id, icon("download"), " 重新导出")
-      )
-    }))
+    flow_viz_get_history()
   })
+
+  # 历史列表（DT 服务端渲染，快 + 分页）
+  output$fvz_history <- DT::renderDataTable({
+    hist <- fvz_hist_data()
+    if (is.null(hist) || nrow(hist) == 0) return(data.frame())
+    # 构建展示列：类型、源文件、统计、时间、操作
+    df <- data.frame(
+      "类型" = ifelse(!is.na(hist$kind) & hist$kind == "log", "流程日志", "数据看板"),
+      "源文件" = hist$src_name,
+      "统计" = ifelse(!is.na(hist$kind) & hist$kind == "log",
+        sprintf("节点%d 完成%d 未完成%d", hist$total_flows, hist$completed_flows, hist$active_flows),
+        sprintf("总%d 完成%d 进行中%d 完成率%s%%", hist$total_flows, hist$completed_flows, hist$active_flows, hist$completion_rate)),
+      "时间" = hist$created_at,
+      "操作" = sprintf(
+        '<a href="www/flow_viz/%s" target="_blank" class="btn btn-xs btn-primary">打开</a> <button type="button" class="btn btn-xs btn-warning fvz-export-btn" data-id="%d">重新导出</button>',
+        hist$out_name, hist$id),
+      stringsAsFactors = FALSE, check.names = FALSE
+    )
+    DT::datatable(df, escape = FALSE, rownames = FALSE, selection = "none",
+      options = list(pageLength = 10, autoWidth = FALSE,
+                     columnDefs = list(list(orderable = FALSE, targets = 4)),
+                     language = list(
+                       search = "搜索:", lengthMenu = "显示 _MENU_ 条",
+                       info = "第 _START_ - _END_ 条，共 _TOTAL_ 条",
+                       paginate = list(previous = "上一页", `next` = "下一页"),
+                       emptyTable = "暂无数据", zeroRecords = "无匹配记录")))
+  })
+  # 避免 tab 切换时（display:none 容器）挂起导致首次显示延迟
+  outputOptions(output, "fvz_history", suspendWhenHidden = FALSE)
 
   # 手动刷新
   observeEvent(input$fvz_refresh, {

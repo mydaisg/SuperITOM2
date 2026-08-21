@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>研发中心采访人物专栏</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-2: #1c2330;
+    --border: #242d3a;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #3b82f6;
+    --accent-2: #60a5fa;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+  }
+
+  /* ===== 顶部导航 ===== */
+  .topbar {
+    height: 56px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+  .topbar .logo {
+    width: 34px; height: 34px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: #fff;
+  }
+  .topbar .brand { font-size: 17px; font-weight: 700; letter-spacing: 1px; }
+  .topbar .brand .sub { font-size: 12px; color: var(--text-dim); font-weight: 400; margin-left: 10px; }
+  .topbar .count { margin-left: auto; font-size: 13px; color: var(--text-dim); }
+
+  /* ===== 主体布局 ===== */
+  .layout { display: flex; height: calc(100% - 56px); }
+
+  /* ===== 左侧播放区 ===== */
+  .player-wrap {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    gap: 16px;
+    overflow-y: auto;
+  }
+  .video-box {
+    background: #000;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0,0,0,.5);
+    border: 1px solid var(--border);
+    aspect-ratio: 16 / 9;
+    width: 100%;
+    position: relative;
+  }
+  .video-box video { width: 100%; height: 100%; display: block; outline: none; }
+  .video-placeholder {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: var(--text-dim); gap: 12px;
+    pointer-events: none;
+  }
+  .video-placeholder .play-icon {
+    width: 80px; height: 80px; border-radius: 50%;
+    background: rgba(59,130,246,.2);
+    border: 2px solid rgba(59,130,246,.5);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 34px; color: var(--accent-2);
+  }
+
+  .now-info h1 { font-size: 22px; font-weight: 700; line-height: 1.4; }
+  .now-meta {
+    display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px;
+  }
+  .tag {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 12px; border-radius: 20px;
+    font-size: 12px; background: var(--panel-2);
+    border: 1px solid var(--border); color: var(--text-dim);
+  }
+  .tag.accent { background: rgba(59,130,246,.15); border-color: rgba(59,130,246,.4); color: var(--accent-2); }
+  .now-desc { margin-top: 12px; font-size: 14px; color: var(--text-dim); line-height: 1.7; }
+
+  /* ===== 右侧列表 ===== */
+  .list-wrap {
+    width: 380px;
+    flex-shrink: 0;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+  }
+  .list-head {
+    padding: 18px 20px 12px;
+    font-size: 15px; font-weight: 700;
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .list-head .badge {
+    background: rgba(59,130,246,.2); color: var(--accent-2);
+    font-size: 11px; padding: 1px 8px; border-radius: 10px; font-weight: 600;
+  }
+  .list-body { flex: 1; overflow-y: auto; padding: 10px; }
+
+  .ep-item {
+    display: flex; gap: 12px;
+    padding: 10px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background .15s;
+    border: 1px solid transparent;
+  }
+  .ep-item:hover { background: var(--panel-2); }
+  .ep-item.active { background: rgba(59,130,246,.1); border-color: rgba(59,130,246,.35); }
+  .ep-thumb {
+    width: 108px; height: 62px; flex-shrink: 0;
+    border-radius: 6px; overflow: hidden;
+    background: linear-gradient(135deg, #1e293b, #334155);
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ep-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .ep-thumb .thumb-ph {
+    font-size: 24px; color: var(--text-dim);
+  }
+  .ep-thumb .dur {
+    position: absolute; right: 4px; bottom: 4px;
+    background: rgba(0,0,0,.75); color: #fff;
+    font-size: 10px; padding: 1px 5px; border-radius: 4px;
+  }
+  .ep-info { min-width: 0; flex: 1; }
+  .ep-title {
+    font-size: 13px; font-weight: 600; line-height: 1.45;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .ep-item.active .ep-title { color: var(--accent-2); }
+  .ep-sub { font-size: 11px; color: var(--text-dim); margin-top: 5px; }
+
+  .empty {
+    text-align: center; color: var(--text-dim);
+    padding: 40px 20px; font-size: 13px;
+  }
+
+  @media (max-width: 900px) {
+    .layout { flex-direction: column; overflow-y: auto; }
+    .list-wrap { width: 100%; border-left: none; border-top: 1px solid var(--border); }
+    .list-body { max-height: 40vh; }
+    body { overflow: auto; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">🎤</div>
+  <div class="brand">研发中心采访人物专栏<span class="sub">RD Interview Column</span></div>
+  <div class="count" id="count">共 0 期</div>
+</div>
+
+<div class="layout">
+  <!-- 左侧播放区 -->
+  <div class="player-wrap">
+    <div class="video-box">
+      <video id="player" controls preload="auto" playsinline></video>
+      <div class="video-placeholder" id="placeholder">
+        <div class="play-icon">▶</div>
+        <div>请从右侧列表选择一期采访</div>
+      </div>
+    </div>
+    <div class="now-info" id="nowInfo" style="display:none;">
+      <h1 id="nowTitle"></h1>
+      <div class="now-meta" id="nowMeta"></div>
+      <div class="now-desc" id="nowDesc"></div>
+    </div>
+  </div>
+
+  <!-- 右侧列表 -->
+  <div class="list-wrap">
+    <div class="list-head">🎬 采访列表 <span class="badge" id="headBadge">0</span></div>
+    <div class="list-body" id="listBody"></div>
+  </div>
+</div>
+
+<script src="interview_column.js"></script>
+<script>
+(function () {
+  var list = window.INTERVIEW_LIST || [];
+  var player = document.getElementById('player');
+  var placeholder = document.getElementById('placeholder');
+  var nowInfo = document.getElementById('nowInfo');
+  var listBody = document.getElementById('listBody');
+  var count = document.getElementById('count');
+  var headBadge = document.getElementById('headBadge');
+
+  count.textContent = '共 ' + list.length + ' 期';
+  headBadge.textContent = list.length;
+
+  if (!list.length) {
+    listBody.innerHTML = '<div class="empty">暂无采访视频</div>';
+    return;
+  }
+
+  /* ================= 访问统计 ================= */
+  var statStartTime = Date.now();          // 进入页面时间
+  var statActiveTime = 0;                  // 实际播放累计时长（秒）
+  var statPlaying = false;
+  var statLastTick = null;
+  var statReported = false;
+  var currentVideo = list[0] ? list[0].video : '';
+
+  // 累计实际播放时长（仅播放中计时，暂停不计）
+  function tickStat() {
+    if (statPlaying && statLastTick !== null) {
+      statActiveTime += (Date.now() - statLastTick) / 1000;
+    }
+    statLastTick = Date.now();
+  }
+
+  // 上报访问记录（尽力而为，失败不阻塞）
+  function reportVisit(final) {
+    if (statReported) return;
+    statReported = true;
+    tickStat();
+    var duration = Math.round(statActiveTime);
+    var payload = { video: currentVideo, duration_seconds: duration };
+    try {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/visit', true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(JSON.stringify(payload));
+    } catch (e) {}
+    if (final) {
+      // 使用 navigator.sendBeacon 保证页面关闭时也能发出（更可靠）
+      try {
+        var fd = new FormData();
+        fd.append('data', JSON.stringify(payload));
+        navigator.sendBeacon('/api/visit', fd);
+      } catch (e) {}
+    }
+  }
+
+  /* ================= 禁止回拉播放 ================= */
+  var maxTime = 0;              // 已观看到的最大进度
+  var seekLock = false;         // 防止 seek 循环
+
+  player.addEventListener('timeupdate', function () {
+    if (player.currentTime > maxTime + 0.5) {
+      maxTime = player.currentTime;
+    }
+  });
+
+  player.addEventListener('seeking', function () {
+    // 禁止回拉到已看位置之前（允许向前快进，允许暂停）
+    if (!seekLock && player.currentTime < maxTime - 1.5) {
+      seekLock = true;
+      player.currentTime = maxTime;   // 拉回最大进度
+      setTimeout(function () { seekLock = false; }, 200);
+    }
+  });
+
+  // 播放/暂停时切换计时
+  player.addEventListener('play', function () {
+    statPlaying = true;
+    statLastTick = Date.now();
+    placeholder.style.display = 'none';
+  });
+  player.addEventListener('pause', function () {
+    tickStat();
+    statPlaying = false;
+    if (player.currentTime === 0 && !player.src) placeholder.style.display = 'flex';
+  });
+
+  // 页面关闭/刷新时上报
+  window.addEventListener('beforeunload', function () { reportVisit(true); });
+  window.addEventListener('pagehide', function () { reportVisit(true); });
+
+  // 默认封面（SVG 占位）
+  function defaultCover(item) {
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="108" height="62">' +
+      '<rect width="108" height="62" fill="#1e293b"/>' +
+      '<text x="54" y="38" font-size="26" text-anchor="middle" fill="#64748b">🎤</text>' +
+      '</svg>';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+
+  function renderList(activeId) {
+    listBody.innerHTML = '';
+    list.forEach(function (item) {
+      var el = document.createElement('div');
+      el.className = 'ep-item' + (item.id === activeId ? ' active' : '');
+
+      var thumb = document.createElement('div');
+      thumb.className = 'ep-thumb';
+      if (item.cover) {
+        var img = document.createElement('img');
+        img.src = item.cover;
+        img.onerror = function () { this.style.display = 'none'; thumb.innerHTML = '<span class="thumb-ph">🎤</span>'; };
+        thumb.appendChild(img);
+      } else {
+        thumb.innerHTML = '<span class="thumb-ph">🎤</span>';
+      }
+      if (item.duration) {
+        var d = document.createElement('span');
+        d.className = 'dur';
+        d.textContent = item.duration;
+        thumb.appendChild(d);
+      }
+
+      var info = document.createElement('div');
+      info.className = 'ep-info';
+      var t = document.createElement('div');
+      t.className = 'ep-title';
+      t.textContent = item.title;
+      var s = document.createElement('div');
+      s.className = 'ep-sub';
+      s.textContent = (item.issue ? item.issue + ' · ' : '') + (item.dept || '');
+      info.appendChild(t);
+      info.appendChild(s);
+
+      el.appendChild(thumb);
+      el.appendChild(info);
+
+      el.addEventListener('click', function () { play(item); });
+      listBody.appendChild(el);
+    });
+  }
+
+  function play(item) {
+    // 切换视频：重置进度锁 + 更新当前视频标识
+    maxTime = 0;
+    currentVideo = item.video;
+
+    player.src = item.video;
+    player.load();
+    player.play().catch(function () {});
+    placeholder.style.display = 'none';
+
+    nowInfo.style.display = 'block';
+    document.getElementById('nowTitle').textContent = item.title;
+
+    var meta = document.getElementById('nowMeta');
+    meta.innerHTML = '';
+    var tags = [];
+    if (item.dept) tags.push('<span class="tag accent">🏢 ' + item.dept + '</span>');
+    if (item.issue) tags.push('<span class="tag">📺 ' + item.issue + '</span>');
+    if (item.date) tags.push('<span class="tag">📅 ' + item.date + '</span>');
+    meta.innerHTML = tags.join('');
+
+    document.getElementById('nowDesc').textContent = item.desc || '';
+    renderList(item.id);
+  }
+
+  renderList(null);
+
+  // 默认打开第 1 个视频：加载源并自动播放（muted 以满足浏览器自动播放策略）
+  if (list.length > 0) {
+    player.muted = true;
+    play(list[0]);
+  }
+})();
+</script>
+</body>
+</html>

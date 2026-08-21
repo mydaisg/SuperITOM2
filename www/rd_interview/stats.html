@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>采访专栏 - 访问统计</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel-2: #1c2330;
+    --border: #242d3a; --text: #e6edf3; --text-dim: #8b949e;
+    --accent: #3b82f6; --accent-2: #60a5fa;
+    --green: #2ea043; --orange: #d29922; --red: #f85149;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); padding: 24px; min-height: 100vh;
+  }
+  .topbar {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 20px;
+  }
+  .topbar .logo {
+    width: 36px; height: 36px; border-radius: 9px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    display: flex; align-items: center; justify-content: center; font-size: 18px;
+  }
+  .topbar h1 { font-size: 20px; font-weight: 700; }
+  .topbar .sub { font-size: 12px; color: var(--text-dim); }
+  .topbar .actions { margin-left: auto; display: flex; gap: 8px; }
+  .btn {
+    padding: 8px 16px; border: 1px solid var(--border); background: var(--panel-2);
+    color: var(--text); border-radius: 6px; cursor: pointer; font-size: 13px;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn:hover { border-color: var(--accent); }
+
+  /* 概览卡片 */
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px;
+  }
+  .card .label { font-size: 12px; color: var(--text-dim); margin-bottom: 8px; }
+  .card .value { font-size: 32px; font-weight: 800; line-height: 1; }
+  .card .value.accent { color: var(--accent-2); }
+  .card .value.green { color: var(--green); }
+  .card .value.orange { color: var(--orange); }
+  .card .unit { font-size: 14px; font-weight: 400; color: var(--text-dim); margin-left: 4px; }
+
+  /* 图表区 */
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .chart-box {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px;
+  }
+  .chart-box h3 { font-size: 15px; font-weight: 700; margin-bottom: 16px; color: var(--text); }
+  .chart-box canvas { width: 100%; height: 260px; }
+
+  /* 明细表 */
+  .table-box {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px;
+  }
+  .table-box h3 { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-dim); font-weight: 600; font-size: 12px; }
+  td .mono { font-family: Consolas, monospace; }
+  .empty { text-align: center; color: var(--text-dim); padding: 40px 0; }
+
+  @media (max-width: 900px) {
+    .cards { grid-template-columns: repeat(2, 1fr); }
+    .charts { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">📊</div>
+  <div>
+    <h1>采访专栏 · 访问统计</h1>
+    <div class="sub">数据来源：access_log.csv（实时）</div>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/RD_Interview.html">← 返回播放页</a>
+    <button class="btn" id="refreshBtn">🔄 刷新</button>
+  </div>
+</div>
+
+<!-- 概览卡片 -->
+<div class="cards">
+  <div class="card">
+    <div class="label">总访问次数</div>
+    <div class="value accent" id="cTotal">0</div>
+  </div>
+  <div class="card">
+    <div class="label">独立访客（IP）</div>
+    <div class="value green" id="cIp">0</div>
+  </div>
+  <div class="card">
+    <div class="label">累计观看时长</div>
+    <div class="value orange" id="cDur">0<span class="unit"></span></div>
+  </div>
+  <div class="card">
+    <div class="label">人均观看时长</div>
+    <div class="value" id="cAvg">0<span class="unit"></span></div>
+  </div>
+</div>
+
+<!-- 图表 -->
+<div class="charts">
+  <div class="chart-box">
+    <h3>📅 每日访问趋势</h3>
+    <canvas id="dayChart"></canvas>
+  </div>
+  <div class="chart-box">
+    <h3>🎬 各视频访问量</h3>
+    <canvas id="videoChart"></canvas>
+  </div>
+</div>
+
+<!-- 明细表 -->
+<div class="table-box">
+  <h3>📋 最近访问明细（最近 20 条）</h3>
+  <div id="recentTable"></div>
+</div>
+
+<script>
+(function () {
+  function fmtDuration(sec) {
+    sec = Math.round(sec);
+    if (sec < 60) return sec + ' 秒';
+    var m = Math.floor(sec / 60);
+    var s = sec % 60;
+    if (m < 60) return m + ' 分 ' + s + ' 秒';
+    var h = Math.floor(m / 60);
+    return h + ' 小时 ' + (m % 60) + ' 分';
+  }
+
+  function fmtShort(sec) {
+    sec = Math.round(sec);
+    if (sec < 60) return sec + '秒';
+    var m = Math.floor(sec / 60);
+    if (m < 60) return m + '分';
+    return (m / 60).toFixed(1) + '时';
+  }
+
+  function load() {
+    fetch('/api/stats')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) { showError(res.error); return; }
+        render(res.data);
+      })
+      .catch(function (e) { showError(e.message); });
+  }
+
+  function showError(msg) {
+    document.getElementById('recentTable').innerHTML =
+      '<div class="empty">加载失败：' + msg + '</div>';
+  }
+
+  function render(d) {
+    document.getElementById('cTotal').textContent = d.total;
+    document.getElementById('cIp').textContent = d.uniqueIps;
+
+    var durEl = document.getElementById('cDur');
+    durEl.innerHTML = fmtDuration(d.totalDuration).replace(/(\d+)\s*(秒|分|小时)/g, '$1<span class="unit">$2</span>');
+
+    var avg = d.uniqueIps > 0 ? Math.round(d.totalDuration / d.uniqueIps) : 0;
+    document.getElementById('cAvg').innerHTML =
+      fmtDuration(avg).replace(/(\d+)\s*(秒|分|小时)/g, '$1<span class="unit">$2</span>');
+
+    drawDayChart(d.byDay);
+    drawVideoChart(d.byVideo);
+    renderTable(d.recent);
+  }
+
+  function drawDayChart(byDay) {
+    var canvas = document.getElementById('dayChart');
+    var labels = byDay.map(function (x) { return x.date.slice(5); });
+    var values = byDay.map(function (x) { return x.count; });
+    drawBar(canvas, labels, values, '次', '#3b82f6');
+  }
+
+  function drawVideoChart(byVideo) {
+    var canvas = document.getElementById('videoChart');
+    var labels = byVideo.map(function (x) {
+      var n = x.video.split('/').pop();
+      return n.length > 12 ? n.slice(0, 12) + '…' : n;
+    });
+    var values = byVideo.map(function (x) { return x.count; });
+    drawBar(canvas, labels, values, '次', '#8b5cf6');
+  }
+
+  function drawBar(canvas, labels, values, unit, color) {
+    var dpr = window.devicePixelRatio || 1;
+    var w = canvas.clientWidth || canvas.parentNode.clientWidth - 40;
+    var h = 260;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    var ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, w, h);
+
+    if (!labels.length) {
+      ctx.fillStyle = '#8b949e';
+      ctx.font = '13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('暂无数据', w / 2, h / 2);
+      return;
+    }
+
+    var padL = 40, padB = 30, padT = 20, padR = 10;
+    var chartW = w - padL - padR;
+    var chartH = h - padT - padB;
+    var maxVal = Math.max.apply(null, values.concat([1]));
+
+    // 网格线 + Y 轴
+    ctx.strokeStyle = '#242d3a';
+    ctx.fillStyle = '#8b949e';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'right';
+    var gridLines = 5;
+    for (var i = 0; i <= gridLines; i++) {
+      var y = padT + chartH - (chartH * i / gridLines);
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(w - padR, y);
+      ctx.stroke();
+      var val = Math.round(maxVal * i / gridLines);
+      ctx.fillText(val, padL - 6, y + 4);
+    }
+
+    // 柱子
+    var n = values.length;
+    var barW = chartW / n * 0.6;
+    var gap = chartW / n;
+    ctx.textAlign = 'center';
+    for (var j = 0; j < n; j++) {
+      var x = padL + gap * j + (gap - barW) / 2;
+      var bh = values[j] / maxVal * chartH;
+      var y2 = padT + chartH - bh;
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y2, barW, bh);
+      // 数值
+      ctx.fillStyle = '#e6edf3';
+      ctx.font = '11px sans-serif';
+      ctx.fillText(values[j], x + barW / 2, y2 - 6);
+      // 标签
+      ctx.fillStyle = '#8b949e';
+      ctx.fillText(labels[j], x + barW / 2, h - padB + 16);
+    }
+  }
+
+  function renderTable(recent) {
+    var box = document.getElementById('recentTable');
+    if (!recent.length) {
+      box.innerHTML = '<div class="empty">暂无访问记录</div>';
+      return;
+    }
+    var html = '<table><thead><tr>' +
+      '<th>IP 地址</th><th>观看视频</th><th>观看时长</th><th>访问时间</th><th>User-Agent</th>' +
+      '</tr></thead><tbody>';
+    recent.forEach(function (r) {
+      var videoName = r.video.split('/').pop();
+      html += '<tr>' +
+        '<td class="mono">' + esc(r.ip) + '</td>' +
+        '<td>' + esc(videoName) + '</td>' +
+        '<td>' + fmtDuration(r.duration_seconds) + '</td>' +
+        '<td class="mono">' + esc(r.start_time) + '</td>' +
+        '<td style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + esc(r.user_agent) + '">' + esc(r.user_agent) + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+    box.innerHTML = html;
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  document.getElementById('refreshBtn').addEventListener('click', load);
+  load();
+  // 每 30 秒自动刷新
+  setInterval(load, 30000);
+})();
+</script>
+</body>
+</html>
