@@ -6,10 +6,10 @@ $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://localhost:3839/")
 $listener.Start()
 Write-Host "SuperITOM2 管理 API 已启动: http://localhost:3839" -ForegroundColor Green
-Write-Host "管理控制台: http://localhost:3838/index.html" -ForegroundColor Cyan
+Write-Host "管理控制台: http://localhost:8899/index.html" -ForegroundColor Cyan
 
 $ROOT = "D:\GitHub\SuperITOM2"
-$SHINY_PORT = 3838
+$SHINY_PORT = 8899
 $RScript = "C:\Program Files\R\R-4.6.0\bin\Rscript.exe"
 
 # 查找 Rscript

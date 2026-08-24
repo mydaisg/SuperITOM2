@@ -1,6 +1,98 @@
 # 流程数据可视化模块 — 数据层
 # 功能：上传流程实例 Excel → 自动生成 ECharts HTML 看板 → 保存历史记录
 # 表：flow_visualizations（每次转化的历史）
+#      flow_catalog（企微流程基础资料：分类 + 流程名称，作为看板补全基准）
+
+##################
+# 企微流程基础资料（flow_catalog）
+##################
+
+# 获取流程分类列表（去重，按 category_no 排序）
+flow_catalog_get_categories <- function() {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, "SELECT DISTINCT category_no, category FROM flow_catalog ORDER BY category_no")
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+# 获取全部流程基础资料（含分类，按分类序号+流程序号排序）
+flow_catalog_get_all <- function() {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, "SELECT id, category_no, seq_no, category, flow_no, flow_name, is_active FROM flow_catalog WHERE is_active=1 ORDER BY category_no, flow_no")
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+# 获取某分类下的流程名称
+flow_catalog_get_by_category <- function(category) {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, sprintf("SELECT flow_no, flow_name FROM flow_catalog WHERE category='%s' AND is_active=1 ORDER BY flow_no",
+      gsub("'","''",category)))
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+# 新增流程基础资料项
+flow_catalog_add <- function(category, flow_name, category_no = NULL, flow_no = NULL) {
+  con <- db_connect()
+  tryCatch({
+    if (is.null(category_no) || is.na(category_no)) {
+      r <- dbGetQuery(con, sprintf("SELECT category_no FROM flow_catalog WHERE category='%s' LIMIT 1", gsub("'","''",category)))
+      category_no <- if (nrow(r) > 0) r$category_no[1] else {
+        mx <- dbGetQuery(con, "SELECT COALESCE(MAX(category_no),0) AS m FROM flow_catalog")$m[1]; mx + 1
+      }
+    }
+    if (is.null(flow_no) || is.na(flow_no)) {
+      r <- dbGetQuery(con, sprintf("SELECT COALESCE(MAX(flow_no),0) AS m FROM flow_catalog WHERE category='%s'", gsub("'","''",category)))
+      flow_no <- r$m[1] + 1
+    }
+    dbExecute(con, sprintf(
+      "INSERT INTO flow_catalog (category_no, category, flow_no, flow_name) VALUES (%d,'%s',%d,'%s')",
+      as.integer(category_no), gsub("'","''",category), as.integer(flow_no), gsub("'","''",flow_name)))
+    list(success = TRUE, message = "已添加")
+  }, error = function(e) list(success = FALSE, message = paste("添加失败:", e$message)),
+  finally = { db_disconnect(con) })
+}
+
+# 删除流程基础资料项
+flow_catalog_delete <- function(id) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("DELETE FROM flow_catalog WHERE id=%d", as.integer(id)))
+    list(success = TRUE, message = "已删除")
+  }, error = function(e) list(success = FALSE, message = paste("删除失败:", e$message)),
+  finally = { db_disconnect(con) })
+}
+
+##################
+# 钉钉流程基础资料（dingtalk_flow_catalog）
+# 去钉钉化背景：钉钉流程 → 企微流程迁移匹配的源侧基准
+##################
+
+# 获取钉钉流程分类列表（去重，按 category_no 排序）
+dingtalk_flow_catalog_get_categories <- function() {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, "SELECT DISTINCT category_no, category FROM dingtalk_flow_catalog ORDER BY category_no")
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+# 获取全部钉钉流程基础资料（含分类，按分类序号+流程序号排序）
+dingtalk_flow_catalog_get_all <- function() {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, "SELECT id, category_no, seq_no, category, flow_no, flow_name, is_active FROM dingtalk_flow_catalog WHERE is_active=1 ORDER BY category_no, flow_no")
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+# 获取某分类下的钉钉流程名称
+dingtalk_flow_catalog_get_by_category <- function(category) {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, sprintf("SELECT flow_no, flow_name FROM dingtalk_flow_catalog WHERE category='%s' AND is_active=1 ORDER BY flow_no",
+      gsub("'","''",category)))
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
 
 ##################
 # 依赖说明
@@ -119,6 +211,18 @@ flow_viz_aggregate <- function(df) {
                        sub("^.*【([^】]*)】$", "\\1", raw_type),
                        "")                            # 版本名（无版本为空）
   df$date    <- substr(df$发起时间, 1, 10)           # 发起日期
+  df$month   <- substr(df$发起时间, 1, 7)            # 发起月份 YYYY-MM
+
+  # 流程名（精确到具体流程，用于与 flow_catalog 基础资料对齐补 0）
+  # 优先用「所属工作流」去版本后缀；缺失时从「流程名称」取第一个 "-" 前部分
+  if ("所属工作流" %in% names(df)) {
+    flow_name_raw <- sub("【[^】]*】$", "", as.character(df$所属工作流))
+  } else {
+    flow_name_raw <- sub("-.*$", "", as.character(df$流程名称))
+  }
+  flow_name_raw <- trimws(flow_name_raw)
+  flow_name_raw[is.na(flow_name_raw) | flow_name_raw == ""] <- "未分类"
+  df$flow_name <- flow_name_raw
 
   total_flows     <- nrow(df)
   completed_flows <- sum(df$is_done)
@@ -158,6 +262,85 @@ flow_viz_aggregate <- function(df) {
   rownames(type_tbl) <- NULL
 
   top5_pct <- round(sum(head(type_tbl$total, 5)) / total_flows * 100, 1)
+
+  # ---- 按月统计（按月份汇总发起量/完成量）----
+  months <- sort(unique(df$month))
+  monthly <- as.data.frame(months, stringsAsFactors = FALSE)
+  names(monthly) <- "month"
+  monthly$total     <- sapply(monthly$month, function(m) sum(df$month == m))
+  monthly$completed <- sapply(monthly$month, function(m) sum(df$is_done[df$month == m]))
+  monthly$active    <- sapply(monthly$month, function(m) sum(!df$is_done[df$month == m]))
+  monthlyData <- list(
+    months    = as.character(monthly$month),
+    total     = as.integer(monthly$total),
+    completed = as.integer(monthly$completed),
+    active    = as.integer(monthly$active))
+
+  # ---- 流程全量清单（以 flow_catalog 基础资料为基准，缺数据补 0，含每月列）----
+  # 需求：企微流程基础资料中的流程名称要全量列出，没有实例数据的显示为 0；
+  #       分类独立一行可伸缩；显示双序号（全局 seq_no + 分类内 flow_no）；增加月份列。
+  catalog_full <- flow_catalog_get_all()
+  # 数据侧按流程名聚合
+  flow_name_tbl <- as.data.frame(table(df$flow_name), stringsAsFactors = FALSE)
+  names(flow_name_tbl) <- c("name", "total")
+  flow_name_tbl$completed <- sapply(flow_name_tbl$name, function(nm) sum(df$is_done[df$flow_name == nm]))
+  flow_name_tbl$active    <- sapply(flow_name_tbl$name, function(nm) sum(!df$is_done[df$flow_name == nm]))
+
+  # 每流程 × 月份 的发起量（用于月份列）
+  flow_month_tbl <- as.data.frame(table(df$flow_name, df$month), stringsAsFactors = FALSE)
+  names(flow_month_tbl) <- c("name", "month", "cnt")
+
+  if (nrow(catalog_full) > 0) {
+    # 基础资料 → 全量清单骨架（含分类、全局序号、分类内序号）
+    base <- catalog_full[, c("category_no", "seq_no", "category", "flow_no", "flow_name")]
+    names(base)[names(base) == "flow_name"] <- "name"
+    # 左连接数据统计（缺失补 0）
+    merged <- merge(base, flow_name_tbl, by = "name", all.x = TRUE)
+    merged$total[is.na(merged$total)]         <- 0
+    merged$completed[is.na(merged$completed)] <- 0
+    merged$active[is.na(merged$active)]       <- 0
+    # 每月列：每个流程在每个月的发起量
+    for (m in months) {
+      mcnt <- flow_month_tbl[flow_month_tbl$month == m, c("name", "cnt")]
+      names(mcnt) <- c("name", m)
+      merged <- merge(merged, mcnt, by = "name", all.x = TRUE)
+      merged[[m]][is.na(merged[[m]])] <- 0
+    }
+    # Excel 中出现的、但基础资料里没有的流程（额外流程，标记 category=其他）
+    extra_names <- setdiff(flow_name_tbl$name, base$name)
+    if (length(extra_names) > 0) {
+      extra <- flow_name_tbl[flow_name_tbl$name %in% extra_names, ]
+      extra$category_no <- 999
+      extra$seq_no      <- NA_integer_
+      extra$category    <- "其他（未在基础资料）"
+      extra$flow_no     <- seq_len(nrow(extra))
+      for (m in months) {
+        mcnt <- flow_month_tbl[flow_month_tbl$month == m, c("name", "cnt")]
+        names(mcnt) <- c("name", m)
+        extra <- merge(extra, mcnt, by = "name", all.x = TRUE)
+        extra[[m]][is.na(extra[[m]])] <- 0
+      }
+      keep <- c("category_no", "seq_no", "category", "flow_no", "name", "total", "completed", "active", months)
+      extra <- extra[, keep]
+      merged <- rbind(merged, extra)
+    }
+    # 排序：分类序号 + 流程序号
+    merged <- merged[order(merged$category_no, merged$flow_no), ]
+    rownames(merged) <- NULL
+    catalog_list <- merged
+  } else {
+    # 无基础资料时，仅用数据侧流程名
+    flow_name_tbl$category_no <- 0
+    flow_name_tbl$seq_no      <- NA_integer_
+    flow_name_tbl$category    <- ""
+    flow_name_tbl$flow_no     <- seq_len(nrow(flow_name_tbl))
+    flow_name_tbl <- flow_name_tbl[order(-flow_name_tbl$total), ]
+    catalog_list <- flow_name_tbl
+  }
+  catalog_stats <- list(
+    catalog_total = nrow(catalog_list),
+    catalog_zero  = sum(catalog_list$total == 0),
+    catalog_active = sum(catalog_list$total > 0))
 
   # ---- 版本分项（同一流程本体下的各版本下级数据） ----
   # 仅统计存在多版本的本体；单版本本体无下级分项
@@ -233,6 +416,8 @@ flow_viz_aggregate <- function(df) {
 
   # ---- 序列化 JSON ----
   to_json <- function(x) jsonlite::toJSON(x, auto_unbox = TRUE)
+  # 数组序列化：禁止 unbox，保证单元素时仍输出 [..]（前端 forEach/图表依赖数组）
+  to_json_arr <- function(x) jsonlite::toJSON(x, auto_unbox = FALSE)
   dailyData_json       <- to_json(dailyData)
   flowTypeData_json    <- to_json(type_tbl[, c("name", "total", "completed", "active")])
   blockingNodes_json   <- to_json(blocking[, c("name", "count", "types")])
@@ -246,12 +431,17 @@ flow_viz_aggregate <- function(df) {
     versionData_json <- "[]"
   }
   instanceData_json  <- to_json(instance_data[, c("name", "version", "initiator", "time", "node", "status")])
+  catalogData_json   <- to_json(catalog_list[, c("category_no", "seq_no", "category", "flow_no", "name", "total", "completed", "active", months)])
+  # monthlyData 的 months/total/completed/active 与 catalogMonths 都必须保持数组，
+  # 否则单月份时会被 auto_unbox 压成标量，前端 catalogMonths.forEach 报错导致图表空白
+  monthlyData_json   <- to_json_arr(monthlyData)
+  catalogMonths_json <- to_json_arr(as.character(months))
 
   # ---- 生成 HTML ----
   html <- flow_viz_build_html(
     dailyData_json, flowTypeData_json, blockingNodes_json, initiatorData_json,
     dailyTypeData_json, typeNames_json, typeCompletionData_json, versionData_json,
-    instanceData_json,
+    instanceData_json, catalogData_json, monthlyData_json, catalogMonths_json,
     total_flows, completed_flows, active_flows, completion_rate,
     date_min, date_max, n_days, daily_avg_total, daily_avg_done,
     type_count, initiator_count, top5_pct)
@@ -259,7 +449,8 @@ flow_viz_aggregate <- function(df) {
   stats <- list(
     total = total_flows, completed = completed_flows, active = active_flows,
     completion_rate = completion_rate, date_min = date_min, date_max = date_max,
-    n_days = n_days, type_count = type_count, initiator_count = initiator_count)
+    n_days = n_days, type_count = type_count, initiator_count = initiator_count,
+    catalog_total = catalog_stats$catalog_total, catalog_zero = catalog_stats$catalog_zero)
 
   list(stats = stats, html = html)
 }
@@ -268,7 +459,7 @@ flow_viz_aggregate <- function(df) {
 flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes_json,
                                 initiatorData_json, dailyTypeData_json, typeNames_json,
                                 typeCompletionData_json, versionData_json,
-                                instanceData_json,
+                                instanceData_json, catalogData_json, monthlyData_json, catalogMonths_json,
                                 total_flows, completed_flows,
                                 active_flows, completion_rate, date_min, date_max, n_days,
                                 daily_avg_total, daily_avg_done, type_count,
@@ -348,6 +539,8 @@ flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes
     </div>
     <div class="chart-grid"><div class="chart-card full-width"><div class="chart-title">每日流程发起与完成趋势</div><div id="dailyTrend" class="chart-container-tall"></div></div></div>
     <div class="chart-grid"><div class="chart-card full-width"><div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;"><div class="chart-title" style="margin-bottom:0;">流程类型分布清单 (共', type_count, '种)</div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><select id="flowTypeShowCount" style="background:#1e2a44;color:#fff;border:1px solid #2d3748;border-radius:6px;padding:4px 8px;font-size:12px;"><option value="20">显示 20 行</option><option value="50">显示 50 行</option><option value="all">全部显示</option></select><button type="button" id="ftExpandAll" style="background:#1e2a44;color:#00d4ff;border:1px solid #2d3748;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;">全部展开</button><button type="button" id="ftCollapseAll" style="background:#1e2a44;color:#8892b0;border:1px solid #2d3748;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;">全部收缩</button></div></div><div><table class="ranking-table" id="flowTypeTable"><thead><tr><th style="width:50px;">排名</th><th>流程类型</th><th style="width:70px;">总数</th><th style="width:70px;">已完成</th><th style="width:70px;">进行中</th><th style="width:80px;">完成率</th><th>完成进度</th></tr></thead><tbody></tbody></table></div></div></div>
+    <div class="chart-grid"><div class="chart-card full-width"><div class="chart-title">按月统计 (各月发起量/完成量)</div><div id="monthlyStat" class="chart-container"></div></div></div>
+    <div class="chart-grid"><div class="chart-card full-width"><div class="chart-title">流程全量清单 (以基础资料为基准，缺数据补 0，按月统计)</div><div id="catalogList"></div></div></div>
     <div class="chart-grid">
         <div class="chart-card"><div class="chart-title">流程状态仪表盘</div><div id="statusGauge" class="chart-container"></div></div>
         <div class="chart-card"><div class="chart-title">流程类型分布饼图 (Top 12 + 其他)</div><div id="flowTypePie" class="chart-container"></div></div>
@@ -371,9 +564,94 @@ flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes
         const typeCompletionData = ', typeCompletionData_json, ';
         const versionData = ', versionData_json, ';
         const instanceData = ', instanceData_json, ';
+        const catalogData = ', catalogData_json, ';
+        const catalogMonths = ', catalogMonths_json, ';
+        const monthlyData = ', monthlyData_json, ';
         const totalFlows = ', total_flows, ';
         const activeFlows = ', active_flows, ';
         const completionRate = ', completion_rate, ';
+
+        // ---- 按月统计图 ----
+        const monthlyStatChart = echarts.init(document.getElementById("monthlyStat"));
+        monthlyStatChart.setOption({
+            tooltip: { trigger: "axis", backgroundColor: "rgba(0,0,0,0.8)", borderColor: "#00d4ff", textStyle: { color: "#fff" } },
+            legend: { data: ["发起量", "完成量", "进行中"], textStyle: { color: "#8892b0" }, top: 0 },
+            grid: { left: "3%", right: "4%", bottom: "3%", containLabel: true },
+            xAxis: { type: "category", data: monthlyData.months, axisLine: { lineStyle: { color: "#2d3748" } }, axisLabel: { color: "#8892b0" } },
+            yAxis: { type: "value", name: "流程数", axisLine: { lineStyle: { color: "#2d3748" } }, axisLabel: { color: "#8892b0" }, splitLine: { lineStyle: { color: "rgba(255,255,255,0.05)" } } },
+            series: [
+                { name: "发起量", type: "bar", data: monthlyData.total, itemStyle: { color: "#00d4ff" }, barWidth: "35%" },
+                { name: "完成量", type: "bar", data: monthlyData.completed, itemStyle: { color: "rgba(0,230,118,0.7)" }, barWidth: "35%" },
+                { name: "进行中", type: "bar", data: monthlyData.active, itemStyle: { color: "rgba(255,215,0,0.7)" }, barWidth: "35%" }
+            ]
+        });
+
+        // ---- 流程全量清单（基础资料为基准，缺数据补 0，分类可伸缩，双序号，按月列）----
+        (function renderCatalogList() {
+            const box = document.getElementById("catalogList");
+            // 表头：全局# + 分类# + 流程名称 + 总数/完成/进行中/完成率 + 各月份列
+            let head = "<table class=\\"ranking-table\\" id=\\"catalogTable\\"><thead><tr>" +
+                "<th style=\\"width:40px;\\">#</th><th style=\\"width:40px;\\">序</th><th>流程名称</th>" +
+                "<th style=\\"width:64px;\\">总数</th><th style=\\"width:64px;\\">已完成</th>" +
+                "<th style=\\"width:64px;\\">进行中</th><th style=\\"width:64px;\\">完成率</th>";
+            catalogMonths.forEach(function(m) {
+                head += "<th style=\\"width:56px;\\">" + m + "</th>";
+            });
+            head += "</tr></thead><tbody id=\\"catalogTbody\\"></tbody></table>";
+            box.innerHTML = head;
+
+            const tbody = document.getElementById("catalogTbody");
+            const catRows = {};   // category -> 该分类下的行 HTML
+            const catCount = {};  // category -> 行数
+
+            catalogData.forEach(function(c) {
+                const rate = c.total > 0 ? (c.completed / c.total * 100).toFixed(1) : "0.0";
+                const color = c.total === 0 ? "#8892b0" : (rate >= 80 ? "#00e676" : rate >= 50 ? "#ffd700" : "#ff5252");
+                const zeroStyle = c.total === 0 ? "color:#8892b0;font-style:italic;" : "";
+                let row = "<tr data-cat=\\"" + c.category + "\\" style=\\"" + (c.category_no === 999 ? "background:rgba(255,107,107,0.08);" : "") + "\\">" +
+                    "<td style=\\"color:#8892b0;font-size:12px;\\">" + (c.seq_no == null ? "" : c.seq_no) + "</td>" +
+                    "<td style=\\"color:#8892b0;font-size:12px;\\">" + (c.flow_no == null ? "" : c.flow_no) + "</td>" +
+                    "<td style=\\"" + zeroStyle + "\\">" + c.name + "</td>" +
+                    "<td style=\\"font-weight:600;" + (c.total === 0 ? "color:#8892b0;" : "") + "\\">" + c.total + "</td>" +
+                    "<td style=\\"color:#00e676;\\">" + c.completed + "</td>" +
+                    "<td style=\\"color:#ffd700;\\">" + c.active + "</td>" +
+                    "<td style=\\"color:" + color + ";font-weight:600;\\">" + rate + "%</td>";
+                catalogMonths.forEach(function(m) {
+                    const v = c[m] || 0;
+                    row += "<td style=\\"color:#8892b0;\\">" + v + "</td>";
+                });
+                row += "</tr>";
+                if (!catRows[c.category]) { catRows[c.category] = ""; catCount[c.category] = 0; }
+                catRows[c.category] += row;
+                catCount[c.category] += 1;
+            });
+
+            // 分类标题行（可点击折叠/展开）+ 该分类内容行（同 tbody，用 data-cat 标记归属）
+            let bodyHtml = "";
+            Object.keys(catRows).forEach(function(cat) {
+                bodyHtml += "<tr class=\\"catalog-cat-row\\" data-cat-head=\\"" + cat + "\\" style=\\"cursor:pointer;background:rgba(0,212,255,0.08);\\">" +
+                    "<td colspan=\\"" + (7 + catalogMonths.length) + "\\" style=\\"font-weight:600;color:#00d4ff;\\">" +
+                    "<span class=\\"catalog-toggle\\" style=\\"display:inline-block;width:14px;text-align:center;\\">&#9660;</span> " +
+                    cat + "（" + catCount[cat] + "项）</td></tr>";
+                bodyHtml += catRows[cat];
+            });
+            tbody.innerHTML = bodyHtml;
+
+            // 绑定分类标题行点击折叠/展开（隐藏同分类内容行）
+            document.querySelectorAll(".catalog-cat-row").forEach(function(tr) {
+                tr.addEventListener("click", function() {
+                    const cat = this.getAttribute("data-cat-head");
+                    const toggle = this.querySelector(".catalog-toggle");
+                    const items = tbody.querySelectorAll("tr[data-cat=\\"" + cat + "\\"]");
+                    const collapsed = this.getAttribute("data-collapsed") === "1";
+                    items.forEach(function(r) {
+                        r.style.display = collapsed ? "" : "none";
+                    });
+                    this.setAttribute("data-collapsed", collapsed ? "0" : "1");
+                    if (toggle) toggle.innerHTML = collapsed ? "&#9660;" : "&#9654;";
+                });
+            });
+        })();
 
         const dailyTrendChart = echarts.init(document.getElementById("dailyTrend"));
         dailyTrendChart.setOption({
@@ -570,7 +848,7 @@ flow_viz_build_html <- function(dailyData_json, flowTypeData_json, blockingNodes
         });
 
         window.addEventListener("resize", function() {
-            dailyTrendChart.resize(); flowTypePieChart.resize(); statusGaugeChart.resize();
+            dailyTrendChart.resize(); monthlyStatChart.resize(); flowTypePieChart.resize(); statusGaugeChart.resize();
             blockingNodesChart.resize(); initiatorRankChart.resize();
             typeCompletionRateChart.resize(); dailyTypeStackChart.resize();
         });

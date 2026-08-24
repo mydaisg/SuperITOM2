@@ -314,20 +314,28 @@ MODULE_INVENTORY <- list(
     module = "流程数据可视化", icon = "chart-area", parent = "工具",
     frontend = "工具 → 流程数据可视化（子标签页，位于记算之后）→ flow_viz_ui()",
     source = c("Script/flow_visualization.r", "Script/flow_visualization_ui.r", "Script/flow_visualization_server.r"),
-    tables = "flow_visualizations",
+    tables = "flow_visualizations, flow_catalog",
     perms = list(
       list(code="flowviz_view", name="查看流程数据可视化")
     ),
     key_funcs = c(
       "flow_viz_generate() — 读取Excel→聚合→生成ECharts HTML看板",
-      "flow_viz_aggregate() — 聚合统计(Excel与DB共用)",
-      "flow_viz_build_html() — HTML模板（每日趋势/类型分布/阻塞节点/发起人排名/堆叠图）",
+      "flow_viz_aggregate() — 聚合统计(Excel与DB共用，含按月统计+基础资料补0)",
+      "flow_viz_build_html() — HTML模板（每日趋势/按月统计/流程全量清单/类型分布/阻塞节点/发起人排名/堆叠图）",
       "flow_viz_add_record() — 保存转换历史记录(含html_content备份)",
       "flow_viz_get_history() — 获取历史记录",
       "flow_viz_get_html() — 从DB读取某条记录的HTML内容",
       "flow_viz_export_html() — 从DB重新导出HTML文件(移植重建)",
       "flow_viz_generate_no() → FLV+YYYYMMDD+3位流水",
-      "flow_viz_output_dir() — HTML输出目录(www/flow_viz/)"
+      "flow_viz_output_dir() — HTML输出目录(www/flow_viz/)",
+      "flow_catalog_get_all() — 获取企微流程基础资料全量清单",
+      "flow_catalog_get_categories() — 获取流程分类列表",
+      "flow_catalog_add() / flow_catalog_delete() — 基础资料维护",
+      "seed_flow_catalog() — 初始化企微流程基础资料(19大类111项, global.R)",
+      "seed_dingtalk_flow_catalog() — 初始化钉钉流程基础资料(9大类89项, global.R)",
+      "dingtalk_flow_catalog_get_all() — 获取钉钉流程基础资料全量清单",
+      "dingtalk_flow_catalog_get_categories() — 获取钉钉流程分类列表",
+      "dingtalk_flow_catalog_get_by_category() — 获取某分类下钉钉流程名称"
     )
   ),
   list(

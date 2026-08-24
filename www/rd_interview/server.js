@@ -7,7 +7,7 @@
  *   3. 完全独立于 SuperITOM2，拷贝本目录到任意装了 Node.js 的主机即可运行
  *
  * 用法：
- *   node server.js            # 默认端口 8899
+ *   node server.js            # 默认端口 3838
  *   node server.js 8080       # 指定端口
  *
  * 访问：http://<主机IP>:<端口>/RD_Interview.html
@@ -21,7 +21,7 @@ const path = require('path');
 const { URL } = require('url');
 
 const ROOT = __dirname;                       // 网站根目录（本文件所在目录）
-const PORT = parseInt(process.argv[2], 10) || 8899;
+const PORT = parseInt(process.argv[2], 10) || 3838;
 const CSV_PATH = path.join(ROOT, 'access_log.csv');
 
 // ---------- MIME ----------
@@ -279,7 +279,13 @@ function handleApi(req, res, pathname, body) {
 // ---------- 主服务器 ----------
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const pathname = u.pathname;
+  let pathname = u.pathname;
+
+  // 兼容已发布的旧链接：/www/xxx → /xxx
+  // 例如 http://10.3.3.131:3838/www/RD_Interview.html → /RD_Interview.html
+  if (pathname.startsWith('/www/')) {
+    pathname = pathname.slice('/www'.length) || '/';
+  }
 
   if (pathname.startsWith('/api/')) {
     // 收集 body（POST）

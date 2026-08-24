@@ -112,7 +112,7 @@ textarea.quick:focus{outline:none;border-color:#337ab7;box-shadow:0 0 0 2px rgba
       <div class="flex" style="margin-bottom:12px">
         <span class="status-dot" id="shinyDot"></span>
         <strong id="shinyStatus">检测中...</strong>
-        <span style="color:#999;font-size:12px" id="shinyUrl">http://localhost:3838</span>
+        <span style="color:#999;font-size:12px" id="shinyUrl">http://localhost:8899</span>
       </div>
       <div class="flex" style="gap:8px">
         <button class="btn btn-success" onclick="startShiny()">▶ 启动 Shiny</button>
@@ -175,7 +175,7 @@ textarea.quick:focus{outline:none;border-color:#337ab7;box-shadow:0 0 0 2px rgba
 
 <script>
 // ============ 配置 ============
-const SHINY_PORT = 3838;
+const SHINY_PORT = 8899;
 const API_PORT = 3839;
 const SHINY_URL = `http://localhost:${SHINY_PORT}`;
 const API_URL = `http://localhost:${API_PORT}`;

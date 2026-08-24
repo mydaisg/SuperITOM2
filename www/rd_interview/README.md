@@ -17,7 +17,7 @@ rd_interview/
 
 ## 运行（仅需 Node.js，无需安装任何包）
 ```bash
-node server.js            # 默认端口 8899
+node server.js            # 默认端口 3838
 node server.js 8080       # 指定端口
 ```
 Windows 也可双击 `start.bat`。

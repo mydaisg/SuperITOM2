@@ -1545,6 +1545,47 @@ migrate_database <- function() {
       }
     }
 
+    # ===============================================
+    # 企微流程基础资料表（流程分类 + 流程名称，作为看板补全基准）
+    # ===============================================
+    if (!"flow_catalog" %in% tables) {
+      dbExecute(con, "CREATE TABLE flow_catalog (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category TEXT NOT NULL,
+        category_no INTEGER DEFAULT 0,
+        seq_no INTEGER DEFAULT 0,
+        flow_no INTEGER DEFAULT 0,
+        flow_name TEXT NOT NULL,
+        is_active INTEGER DEFAULT 1
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_flow_catalog_cat ON flow_catalog(category)")
+      cat("数据库迁移完成：已创建 flow_catalog 表\n")
+    } else {
+      # 旧表补充 seq_no（全局序号）列
+      fc_cols <- dbGetQuery(con, "PRAGMA table_info(flow_catalog)")
+      if (!("seq_no" %in% fc_cols$name)) {
+        dbExecute(con, "ALTER TABLE flow_catalog ADD COLUMN seq_no INTEGER DEFAULT 0")
+        cat("数据库迁移完成：flow_catalog 表新增 seq_no 列\n")
+      }
+    }
+
+    # ===============================================
+    # 钉钉流程基础资料表（去钉钉化背景：钉钉流程 → 企微流程迁移匹配的源侧基准）
+    # ===============================================
+    if (!"dingtalk_flow_catalog" %in% tables) {
+      dbExecute(con, "CREATE TABLE dingtalk_flow_catalog (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category TEXT NOT NULL,
+        category_no INTEGER DEFAULT 0,
+        seq_no INTEGER DEFAULT 0,
+        flow_no INTEGER DEFAULT 0,
+        flow_name TEXT NOT NULL,
+        is_active INTEGER DEFAULT 1
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_dingtalk_flow_catalog_cat ON dingtalk_flow_catalog(category)")
+      cat("数据库迁移完成：已创建 dingtalk_flow_catalog 表\n")
+    }
+
   }, error = function(e) {
     cat("数据库迁移失败:", e$message, "\n")
   }, finally = {
@@ -1552,5 +1593,122 @@ migrate_database <- function() {
   })
 }
 
+# ===============================================
+# 企微流程基础资料种子数据（19 大类 111 项）
+# 幂等：仅当 flow_catalog 表为空时写入
+# 说明：企微流程基础资料是「流程全量清单」看板的补全基准，
+#       按企微真实分类与顺序维护，全局序号 seq_no 1~111 连续。
+# ===============================================
+seed_flow_catalog <- function() {
+  con <- db_connect()
+  tryCatch({
+    if (!"flow_catalog" %in% dbListTables(con)) return(invisible(NULL))
+    cnt <- dbGetQuery(con, "SELECT COUNT(*) AS n FROM flow_catalog")$n[1]
+    if (cnt > 0) {
+      # 已有数据时，回填缺失的全局序号 seq_no（按 category_no, flow_no 顺序编号）
+      zero_seq <- dbGetQuery(con, "SELECT COUNT(*) AS n FROM flow_catalog WHERE seq_no IS NULL OR seq_no = 0")$n[1]
+      if (zero_seq > 0) {
+        ord <- dbGetQuery(con, "SELECT id FROM flow_catalog ORDER BY category_no, flow_no")
+        for (i in seq_len(nrow(ord))) {
+          dbExecute(con, sprintf("UPDATE flow_catalog SET seq_no=%d WHERE id=%d", i, ord$id[i]))
+        }
+        cat("数据库迁移完成：已回填 flow_catalog 全局序号", nrow(ord), "条\n")
+      }
+      return(invisible(NULL))
+    }
+
+    # 分类序号 → 分类名；流程项按分类展开（企微真实分类，19 类 111 项）
+    cat_data <- list(
+      `研发中心` = c("批量试产单","信息系统数据库变更申请单","MRB评审单","数字运营中心服务工单","物料、样机流转审批申请","云资源开通申请","数智技术工厂服务工单","系统权限审批","系统账户开通审批","软件OTA升级","设备出厂标准","数据调取","质检报告信息收集","信息系统升级申请单","设备切换平台","流程及表单修改申请"),
+      `新媒体运营中心` = c("新媒体运营中心设备领取审批"),
+      `员工宿舍管理` = c("宿舍入住申请单","宿舍退住申请单","宿舍维修申请单","宿舍调整流程"),
+      `人力资源管理-出勤` = c("加班申请","补卡流程","出差申请","门禁权限申请表","迟到原因说明"),
+      `访客管理类` = c("访客申请","接待客户审批"),
+      `营销中心` = c("技术对接申请","售后出差需求申请","样机延期申请","特殊设备服务费修改申请","数智技术工厂供货方资金迁移","服务费优惠报备流程","虚拟充值功能开通申请","其他品牌设备切入驴充充技术评估","账号临时解锁申请","免费赠送申请流程","产品3C试验报告申请","标书、图纸制作及勘探业务申请"),
+      `采购生产类` = c("定制产品采购申请","SIM卡备案","样机定制开机语音审批","计划投放申请表","排产计划","采购申请流程"),
+      `资产管理类` = c("资产入库申请流程","资产申领流程","资产借用流程","资产退库流程","资产维修流程","资产延期归还流程","资产批量修改流程","资产关联流程","资产转交流程","资产变更使用人流程"),
+      `人事行政类` = c("文件领用申请","监控查看权限申请","工作机、工作手机卡交接申请","工作手机卡套餐调整申请","手机或手机卡申请流程","维修服务申请","外部平台注册账号申请"),
+      `食堂管理类` = c("包厢预定","包厢退订"),
+      `售后服务类` = c("线下订单退货退款申请","广告与安心充电业务流程","服务费和手续费开票申请表","补开发票申请","设备免费延长质保","大客户建服务群申请流程","电子充电卡特殊收费","小区欠款处理表申请","售后服务工单","营销推广费退费申请","余额退款申请表"),
+      `市场运营部专用审批` = c("维修服务反馈审批","公司运营充电桩设备验收申请","运营充电桩设备报废流程","运营充电桩设备变更SIM码","运营充电桩设备拆机流程"),
+      `低值易耗品管理类` = c("耗材申领流程","耗材退库流程","耗材库存调整流程","耗材采购退货流程"),
+      `人力资源管理-人事` = c("招聘需求申请","人员入职流程","试用期员工自评","试用期员工工作情况跟踪","员工转正申请","员工调岗申请","离职申请","离职交接"),
+      `合同管理类` = c("相对方信息新增或变更申请","合同拟定流程","合同审批单","通用用印流程","合同纸质回收流程"),
+      `平台结算类` = c("服务费更改申请表","平台结算打款申请表"),
+      `财务费用管理类` = c("团建活动申请表","设备停用、暂停打款申请流程","扣款审批","通用费用报销","差旅费报销","业务招待费用报销","对公付款申请流程","还款单","借款申请"),
+      `IT场景管理类` = c("IT服务工单"),
+      `车辆管理` = c("用车申请及还车审批流程")
+    )
+
+    rows <- list()
+    seq <- 0L
+    for (ci in seq_along(cat_data)) {
+      cat_name <- names(cat_data)[ci]
+      flows <- cat_data[[ci]]
+      for (fi in seq_along(flows)) {
+        seq <- seq + 1L
+        rows[[length(rows) + 1]] <- sprintf("(%d,%d,'%s',%d,'%s',1)",
+          ci, seq, gsub("'","''",cat_name), fi, gsub("'","''",flows[fi]))
+      }
+    }
+    query <- paste0("INSERT INTO flow_catalog (category_no, seq_no, category, flow_no, flow_name, is_active) VALUES ",
+                    paste(rows, collapse = ","))
+    dbExecute(con, query)
+    cat("数据库迁移完成：已写入 flow_catalog 基础资料", length(rows), "条\n")
+  }, error = function(e) {
+    cat("flow_catalog 种子数据写入失败:", e$message, "\n")
+  }, finally = {
+    db_disconnect(con)
+  })
+}
+
+# ===============================================
+# 钉钉流程基础资料种子数据（9 大类 89 项）
+# 幂等：仅当 dingtalk_flow_catalog 表为空时写入
+# 说明：去钉钉化背景下的钉钉流程清单，作为「流程迁移匹配」的源侧基准。
+# ===============================================
+seed_dingtalk_flow_catalog <- function() {
+  con <- db_connect()
+  tryCatch({
+    if (!"dingtalk_flow_catalog" %in% dbListTables(con)) return(invisible(NULL))
+    cnt <- dbGetQuery(con, "SELECT COUNT(*) AS n FROM dingtalk_flow_catalog")$n[1]
+    if (cnt > 0) return(invisible(NULL))
+
+    cat_data <- list(
+      `行政/人事类` = c("请假","迟到原因说明","加班","出差","接待客户审批","入职申请审批","文件领用申请","用印申请","合同审核","手机或手机卡申请流程","外部平台注册账号申请","维修服务申请","离职","监控查看权限申请","IT服务工单","调岗","工作机、工作手机卡交接申请","工作手机卡套餐调整申请","外出","补卡申请"),
+      `财务报销类` = c("借款申请","报销单","付款申请","扣款审批"),
+      `营销中心` = c("技术对接申请","出差需求申请","样机延期申请","特殊设备服务费修改申请","标书、图纸制作及勘探业务申请","服务费优惠报备流程","虚拟充值功能开通申请","免费赠送申请流程"),
+      `研发中心` = c("软件OTA升级","设备出厂标准","批量试产单","数据调取","质检报告信息收集","设备切换平台","设备停用、暂停打款申请流程","信息系统升级申请单","信息系统数据库变更申请单","物料、样机流转审批申请","云资源开通申请","系统账户开通审批","系统权限开通审批","数智技术工厂服务工单"),
+      `采购生产类` = c("定制产品采购申请","采购申请","排产计划","样机定制开机语音审批"),
+      `售后服务类` = c("售后服务工单","小区欠款处理表申请","设备免费延长质保","营销推广费退费申请","大客户建服务群申请流程"),
+      `平台结算类` = c("服务费更改申请表"),
+      `圆资产` = c("资产派发","资产入库","资产申领","资产退库","资产借用","资产调拨","耗材新增入库","耗材采购入库","耗材退库","变更使用人","耗材派发","耗材申领","资产维修","耗材库存调整","资产批量修改","资产关联","耗材退库-管理员","无形资产借用","无形资产归还","无形资产延期归还","资产延期归还","资产回收","耗材调拨","资产处置","耗材申购","资产采购","资产转交","员工资产采购","耗材采购退货"),
+      `其他` = c("魔点访客自主登记审批","TripWise出差单","耗材采购（圆资产）","资产申请（圆资产）")
+    )
+
+    rows <- list()
+    seq <- 0L
+    for (ci in seq_along(cat_data)) {
+      cat_name <- names(cat_data)[ci]
+      flows <- cat_data[[ci]]
+      for (fi in seq_along(flows)) {
+        seq <- seq + 1L
+        rows[[length(rows) + 1]] <- sprintf("(%d,%d,'%s',%d,'%s',1)",
+          ci, seq, gsub("'","''",cat_name), fi, gsub("'","''",flows[fi]))
+      }
+    }
+    query <- paste0("INSERT INTO dingtalk_flow_catalog (category_no, seq_no, category, flow_no, flow_name, is_active) VALUES ",
+                    paste(rows, collapse = ","))
+    dbExecute(con, query)
+    cat("数据库迁移完成：已写入 dingtalk_flow_catalog 基础资料", length(rows), "条\n")
+  }, error = function(e) {
+    cat("dingtalk_flow_catalog 种子数据写入失败:", e$message, "\n")
+  }, finally = {
+    db_disconnect(con)
+  })
+}
+
 check_database()
 migrate_database()
+seed_flow_catalog()
+seed_dingtalk_flow_catalog()
