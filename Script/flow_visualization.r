@@ -144,6 +144,42 @@ flow_viz_extract_type <- function(name) {
   }, character(1), USE.NAMES = FALSE)
 }
 
+# 从流程名称提取「流程号」：末尾 token 形如「2-6位字母 + 5位以上数字」（如 ITS202608214）
+# 无流程号时返回空字符串 ""
+flow_instance_extract_no <- function(name) {
+  name <- as.character(name)
+  vapply(name, function(s) {
+    s <- trimws(s)
+    if (is.na(s) || nchar(s) == 0) return("")
+    parts <- strsplit(s, "\\s+")[[1]]
+    last <- parts[length(parts)]
+    if (grepl("^[A-Za-z]{2,6}[0-9]{5,}$", last)) last else ""
+  }, character(1), USE.NAMES = FALSE)
+}
+
+# 计算流程实例固定记录的唯一键 uniq_key：
+#   1) 有流程号 → 用流程号（如 ITS202608214）
+#   2) 无流程号 → 用完整「流程名称」
+#   3) 流程号重复（同一号对应多个不同流程名）→ 用「流程名称|流程号」联合唯一
+# 输入：flow_names（完整流程名称向量）；返回与输入等长的 uniq_key 向量
+flow_instance_uniq_key <- function(flow_names) {
+  flow_names <- as.character(flow_names)
+  nos <- flow_instance_extract_no(flow_names)
+  # 检测流程号重复：同一流程号对应多个不同流程名
+  has_no <- nos != ""
+  if (any(has_no)) {
+    no_flow_map <- split(flow_names[has_no], nos[has_no])
+    dup_nos <- names(no_flow_map)[sapply(no_flow_map, function(x) length(unique(x)) > 1)]
+  } else {
+    dup_nos <- character(0)
+  }
+  key <- ifelse(has_no, nos, flow_names)
+  # 重复流程号用 流程名称|流程号 联合唯一
+  dup_idx <- has_no & (nos %in% dup_nos)
+  key[dup_idx] <- paste0(flow_names[dup_idx], "|", nos[dup_idx])
+  key
+}
+
 # 核心生成函数：读取 Excel → 聚合 → 生成 HTML
 # 参数：
 #   src_path  : 上传的 Excel 临时文件路径
@@ -1035,6 +1071,235 @@ flow_monitor_generate_html <- function(batch_id, out_name = NULL) {
   close(con)
 
   list(success = TRUE, html_path = out_path, out_name = out_name, stats = res$stats)
+}
+
+##################
+# 流程实例清单（从 HTML 看板提取 instanceData → 写入 flow_monitor_records）
+##################
+
+# 从看板 HTML 文件提取 instanceData（流程实例清单）JSON
+# 返回：data.frame(name, version, initiator, time, node, status)
+flow_instance_extract_html <- function(html_path) {
+  if (!requireNamespace("jsonlite", quietly = TRUE))
+    stop("缺少 jsonlite 包")
+  c <- readChar(html_path, file.info(html_path)$size, useBytes = TRUE)
+  start <- regexpr("const instanceData = ", c, fixed = TRUE)[1]
+  if (start < 0) stop("HTML 中未找到 instanceData")
+  start <- start + attr(regexpr("const instanceData = ", c, fixed = TRUE), "match.length")
+  end <- regexpr(";\\s*const catalogData", substr(c, start, nchar(c)))
+  if (end[1] < 0) stop("HTML 中未找到 catalogData 边界")
+  json_str <- substr(c, start, start + end[1] - 2)
+  jsonlite::fromJSON(json_str, simplifyDataFrame = TRUE)
+}
+
+# 从看板 HTML 提取实例清单并写入 flow_monitor_records（新建批次，幂等可追溯）
+# 返回：list(success, batch_no, batch_id, count)
+flow_instance_import_html <- function(html_path, src_name, operator = "系统") {
+  tryCatch({
+    inst <- flow_instance_extract_html(html_path)
+    if (nrow(inst) == 0) return(list(success = FALSE, message = "HTML 中无实例数据"))
+
+    con <- db_connect()
+    tryCatch({
+      batch_no <- sprintf("FM%s%03d", format(Sys.Date(), "%Y%m%d"),
+        dbGetQuery(con, "SELECT COUNT(*) AS n FROM flow_monitor_batches")$n[1] + 1)
+
+      dbExecute(con, sprintf(
+        "INSERT INTO flow_monitor_batches (batch_no, src_name, total, created_by, created_at)
+         VALUES ('%s','%s',%d,'%s',datetime('now','localtime'))",
+        batch_no, gsub("'","''", src_name), nrow(inst), gsub("'","''", operator)))
+      batch_id <- dbGetQuery(con, "SELECT last_insert_rowid() AS id")$id[1]
+
+      is_done <- as.integer(inst$status == "已完成")
+      n <- nrow(inst)
+      for (i in seq_len(n)) {
+        dbExecute(con, sprintf(
+          "INSERT INTO flow_monitor_records (batch_id, flow_name, current_node, initiator, start_time, is_done, flow_type, workflow)
+           VALUES (%d,'%s','%s','%s','%s',%d,'%s','%s')",
+          batch_id,
+          gsub("'","''", inst$name[i]),
+          gsub("'","''", inst$node[i]),
+          gsub("'","''", inst$initiator[i]),
+          gsub("'","''", inst$time[i]),
+          is_done[i],
+          gsub("'","''", flow_viz_extract_type(inst$name)[i]),
+          gsub("'","''", inst$version[i])))
+      }
+      list(success = TRUE, batch_no = batch_no, batch_id = batch_id, count = n)
+    }, finally = { db_disconnect(con) })
+
+  }, error = function(e) list(success = FALSE, message = paste("导入失败:", e$message)))
+}
+
+# 获取最新批次 id
+flow_instance_latest_batch <- function() {
+  con <- db_connect()
+  tryCatch({
+    r <- dbGetQuery(con, "SELECT MAX(id) AS id FROM flow_monitor_batches")
+    if (nrow(r) == 0 || is.na(r$id[1])) NULL else r$id[1]
+  }, error = function(e) NULL, finally = { db_disconnect(con) })
+}
+
+# 获取实例清单（指定批次，含流程本体 flow_name_body 用于对齐 flow_catalog 分类）
+flow_instance_get_records <- function(batch_id) {
+  con <- db_connect()
+  tryCatch({
+    r <- dbGetQuery(con, sprintf(
+      "SELECT id, flow_name, current_node, initiator, start_time, is_done, flow_type, workflow
+       FROM flow_monitor_records WHERE batch_id=%d ORDER BY start_time DESC", as.integer(batch_id)))
+    if (nrow(r) > 0) {
+      # 流程本体：取 flow_name 第一个 "-" 前部分（与 flow_viz_aggregate 对齐逻辑一致）
+      r$flow_body <- trimws(sub("-.*$", "", r$flow_name))
+      r$flow_body[r$flow_body == "" | is.na(r$flow_body)] <- "未分类"
+    }
+    r
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+##################
+# 流程实例固定表（upsert：按 uniq_key 去重覆盖，流程号唯一）
+##################
+
+# 固定批次号（当前流程实例固定表所在的批次）
+flow_instance_fixed_batch_no <- "FLOW-CURRENT"
+
+# 获取或创建固定批次（返回 batch_id）
+flow_instance_get_fixed_batch <- function(operator = "系统") {
+  con <- db_connect()
+  tryCatch({
+    r <- dbGetQuery(con, sprintf("SELECT id FROM flow_monitor_batches WHERE batch_no='%s' LIMIT 1",
+      flow_instance_fixed_batch_no))
+    if (nrow(r) > 0) return(r$id[1])
+    dbExecute(con, sprintf(
+      "INSERT INTO flow_monitor_batches (batch_no, src_name, total, created_by, created_at)
+       VALUES ('%s','流程实例固定表',0,'%s',datetime('now','localtime'))",
+      flow_instance_fixed_batch_no, gsub("'","''", operator)))
+    dbGetQuery(con, "SELECT last_insert_rowid() AS id")$id[1]
+  }, error = function(e) NULL, finally = { db_disconnect(con) })
+}
+
+# 从 Excel 读取流程实例并 upsert 到 flow_monitor_records（按 uniq_key 去重覆盖）
+# Excel 列：流程名称 / 当前节点 / 发起人 / 发起时间 / 所属工作流
+# 返回：list(success, message, inserted, updated, unchanged, total)
+flow_instance_upsert_excel <- function(src_path, src_name = NULL, operator = "系统") {
+  if (!requireNamespace("readxl", quietly = TRUE))
+    return(list(success = FALSE, message = "缺少 readxl 包，请先 install.packages('readxl')"))
+
+  tryCatch({
+    df <- readxl::read_excel(src_path)
+    need <- c("流程名称", "当前节点", "发起人", "发起时间")
+    miss <- setdiff(need, names(df))
+    if (length(miss) > 0)
+      return(list(success = FALSE, message = paste("Excel 缺少必需列:", paste(miss, collapse = ", "))))
+
+    n <- nrow(df)
+    if (n == 0) return(list(success = FALSE, message = "Excel 无数据"))
+
+    # 预处理
+    flow_name  <- as.character(df$流程名称)
+    cur_node   <- as.character(df$当前节点)
+    initiator  <- as.character(df$发起人)
+    start_time <- as.character(df$发起时间)
+    workflow   <- if ("所属工作流" %in% names(df)) as.character(df$所属工作流) else rep("", n)
+
+    nos <- flow_instance_extract_no(flow_name)
+    uniq <- flow_instance_uniq_key(flow_name)
+    is_done <- as.integer(grepl("结束", cur_node))
+    flow_type <- flow_viz_extract_type(flow_name)
+
+    batch_id <- flow_instance_get_fixed_batch(operator)
+    if (is.null(batch_id)) return(list(success = FALSE, message = "无法创建固定批次"))
+
+    con <- db_connect()
+    res <- tryCatch({
+      dbBegin(con)
+      # 一次性读取固定批次中所有已存在的 uniq_key（避免逐条 SELECT，缩短事务持锁时间）
+      existing <- dbGetQuery(con, sprintf(
+        "SELECT id, uniq_key, current_node, initiator, is_done, workflow FROM flow_monitor_records WHERE batch_id=%d",
+        batch_id))
+      existing_key <- setNames(existing$id, existing$uniq_key)
+
+      # 处理 Excel 中重复的 uniq_key（同一 key 出现多次，取最后一次）
+      seen <- new.env(hash = TRUE, parent = emptyenv())
+      row_map <- list()
+      valid <- logical(n)
+      for (i in seq_len(n)) {
+        uk <- uniq[i]
+        if (is.na(uk) || nchar(uk) == 0) { valid[i] <- FALSE; next }
+        valid[i] <- TRUE
+        row_map[[uk]] <- i   # 后出现的覆盖前面的，保留最后一次
+      }
+
+      inserted <- 0L; updated <- 0L; unchanged <- 0L
+      insert_sql <- character(0)
+      for (uk in names(row_map)) {
+        i <- row_map[[uk]]
+        if (uk %in% names(existing_key)) {
+          # 已存在：比较字段，有变化才 UPDATE
+          rid <- existing_key[[uk]]
+          old <- existing[existing$id == rid, ]
+          changed <- !isTRUE(all.equal(as.character(old$current_node), cur_node[i])) ||
+                     !isTRUE(all.equal(as.character(old$is_done), as.character(is_done[i]))) ||
+                     !isTRUE(all.equal(as.character(old$initiator), initiator[i])) ||
+                     !isTRUE(all.equal(as.character(old$workflow), workflow[i]))
+          if (changed) {
+            dbExecute(con, sprintf(
+              "UPDATE flow_monitor_records SET current_node='%s', is_done=%d, initiator='%s', start_time='%s', flow_type='%s', workflow='%s', flow_name='%s' WHERE id=%d",
+              gsub("'","''", cur_node[i]), is_done[i],
+              gsub("'","''", initiator[i]), gsub("'","''", start_time[i]),
+              gsub("'","''", flow_type[i]), gsub("'","''", workflow[i]),
+              gsub("'","''", flow_name[i]), rid))
+            updated <- updated + 1L
+          } else {
+            unchanged <- unchanged + 1L
+          }
+        } else {
+          # 新记录：累积 INSERT
+          insert_sql <- c(insert_sql, sprintf(
+            "(%d,'%s','%s','%s','%s',%d,'%s','%s','%s')",
+            batch_id,
+            gsub("'","''", flow_name[i]), gsub("'","''", cur_node[i]),
+            gsub("'","''", initiator[i]), gsub("'","''", start_time[i]),
+            is_done[i], gsub("'","''", flow_type[i]), gsub("'","''", workflow[i]),
+            gsub("'","''", uk)))
+          inserted <- inserted + 1L
+        }
+      }
+      # 批量 INSERT（分批避免单条 SQL 过长）
+      if (length(insert_sql) > 0) {
+        chunk <- 500
+        for (s in seq(1, length(insert_sql), by = chunk)) {
+          part <- insert_sql[s:min(s + chunk - 1, length(insert_sql))]
+          dbExecute(con, paste0(
+            "INSERT INTO flow_monitor_records (batch_id, flow_name, current_node, initiator, start_time, is_done, flow_type, workflow, uniq_key) VALUES ",
+            paste(part, collapse = ",")))
+        }
+      }
+      # 更新批次 total
+      dbExecute(con, sprintf(
+        "UPDATE flow_monitor_batches SET total=(SELECT COUNT(*) FROM flow_monitor_records WHERE batch_id=%d), src_name='%s', created_at=datetime('now','localtime') WHERE id=%d",
+        batch_id, gsub("'","''", ifelse(is.null(src_name), "流程实例", src_name)), batch_id))
+      dbCommit(con)
+      list(success = TRUE, message = sprintf("同步完成：新增 %d、更新 %d、未变 %d（共 %d）",
+        inserted, updated, unchanged, n),
+        inserted = inserted, updated = updated, unchanged = unchanged, total = n)
+    }, error = function(e) {
+      dbRollback(con)
+      list(success = FALSE, message = paste("同步失败:", e$message))
+    }, finally = { db_disconnect(con) })
+    res
+  }, error = function(e) list(success = FALSE, message = paste("读取失败:", e$message)))
+}
+
+# 获取固定表的实例记录数
+flow_instance_get_count <- function() {
+  con <- db_connect()
+  tryCatch({
+    r <- dbGetQuery(con, sprintf(
+      "SELECT COUNT(*) AS n, SUM(is_done) AS done FROM flow_monitor_records WHERE batch_id IN (SELECT id FROM flow_monitor_batches WHERE batch_no='%s')",
+      flow_instance_fixed_batch_no))
+    r
+  }, error = function(e) data.frame(n = 0, done = 0), finally = { db_disconnect(con) })
 }
 
 ##################

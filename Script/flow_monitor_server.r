@@ -18,7 +18,7 @@ flow_monitor_server <- function(input, output, session, rv) {
     } else "系统"
   }
 
-  # 导入 Excel 明细
+  # 导入 Excel 明细（按流程号 upsert：去重覆盖，固定表模式）
   observeEvent(input$fmo_import, {
     req(rv$logged_in)
     f <- input$fmo_file
@@ -26,20 +26,22 @@ flow_monitor_server <- function(input, output, session, rv) {
       showNotification("请先选择要导入的 Excel 文件", type = "warning")
       return()
     }
-    showNotification("正在导入数据...", type = "message", duration = NULL, id = "fmo_working")
-    res <- flow_monitor_import_excel(f$datapath, f$name, fmo_operator())
+    showNotification("正在同步数据（按流程号去重覆盖）...", type = "message", duration = NULL, id = "fmo_working")
+    res <- flow_instance_upsert_excel(f$datapath, f$name, fmo_operator())
     removeNotification(id = "fmo_working")
 
     output$fmo_import_result <- renderUI({
       if (isTRUE(res$success)) {
         tags$div(style = "color:#2e7d32;",
-          icon("check-circle"), sprintf(" 导入成功：批次 %s，共 %d 条记录", res$batch_no, res$count))
+          icon("check-circle"),
+          sprintf(" 同步完成：新增 %d、更新 %d、未变 %d（共 %d 条）",
+            res$inserted, res$updated, res$unchanged, res$total))
       } else {
         tags$div(style = "color:#c62828;", icon("times-circle"), " ", res$message)
       }
     })
     if (isTRUE(res$success)) {
-      showNotification("导入成功", type = "message", duration = 3)
+      showNotification("同步完成", type = "message", duration = 3)
       fmo_trigger(fmo_trigger() + 1)
     }
   })

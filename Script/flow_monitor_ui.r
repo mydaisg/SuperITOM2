@@ -26,11 +26,13 @@ flow_monitor_ui <- function() {
     fluidRow(
       column(5,
         wellPanel(
-          h5("导入 Excel 明细"),
+          h5("同步 Excel 明细（按流程号去重覆盖）"),
+          p(style = "color:#666; font-size:12px;",
+            "每个流程实例一条固定记录，流程号唯一；相同保留、字段更新覆盖。"),
           fileInput("fmo_file", NULL, width = "100%",
                     accept = c(".xlsx", ".xls", ".csv"),
                     buttonLabel = "选择文件", placeholder = "未选择文件"),
-          actionButton("fmo_import", "导入到数据库", icon = icon("upload"),
+          actionButton("fmo_import", "同步到数据库", icon = icon("sync"),
                        class = "btn-primary", style = "width:100%;"),
           br(), br(),
           uiOutput("fmo_import_result")

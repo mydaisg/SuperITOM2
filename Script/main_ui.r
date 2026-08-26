@@ -44,6 +44,7 @@ source("Script/process_v2_detail_ui.r")
 
 # 加载流程实例数据模块 UI
 source("Script/flow_monitor_ui.r")
+source("Script/flow_instance_list_ui.r")
 
 # 加载绩效模块
 source("Script/performance_ui.r")
@@ -778,7 +779,8 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       tabsetPanel(
         tabPanel("旧版（企业微信风格）", process_ui()),
         tabPanel(tags$span("新版", tags$sup(style = "color:#1890ff; font-size:10px;", "V2")), process_v2_ui()),
-        tabPanel("流程实例", icon = icon("chart-area"), flow_monitor_ui())
+        tabPanel("流程实例", icon = icon("chart-area"), flow_monitor_ui()),
+        tabPanel("流程实例清单", icon = icon("list-alt"), flow_instance_list_ui())
       )
     ),
 

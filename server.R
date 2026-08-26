@@ -21,6 +21,7 @@ source("Script/tools_server.r")         # 工具模块
 source("Script/flow_visualization.r")    # 流程数据可视化（数据层）
 source("Script/flow_visualization_server.r")  # 流程数据可视化（服务端）
 source("Script/flow_monitor_server.r")    # 流程实例数据（服务端）
+source("Script/flow_instance_list_server.r") # 流程实例清单（服务端）
 source("Script/ai_management.r")       # AI 模块数据层
 source("Script/ai_server.r")           # AI 模块
 source("Script/process_engine.r")       # 流程引擎核心（定义 %||% 等工具函数，network_test.r 依赖）
@@ -3782,6 +3783,9 @@ server <- function(input, output, session) {
 
   # 流程实例数据逻辑
   flow_monitor_server(input, output, session, rv)
+
+  # 流程实例清单逻辑
+  flow_instance_list_server(input, output, session, rv)
 
   # AI 模块逻辑
   ai_server(input, output, session, rv)

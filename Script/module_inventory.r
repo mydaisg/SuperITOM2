@@ -350,7 +350,27 @@ MODULE_INVENTORY <- list(
       "flow_monitor_import_excel() — 导入Excel明细到SQLite(批次+明细)",
       "flow_monitor_get_batches() — 获取所有数据批次",
       "flow_monitor_get_data() — 获取某批次明细(还原4列data.frame)",
-      "flow_monitor_generate_html() — 从DB明细重新生成看板HTML"
+      "flow_monitor_generate_html() — 从DB明细重新生成看板HTML",
+      "flow_instance_extract_no() — 从流程名称提取流程号(末尾字母+数字token)",
+      "flow_instance_uniq_key() — 计算固定记录唯一键(流程号优先/无则流程名/重复号联合)",
+      "flow_instance_upsert_excel() — Excel按流程号upsert去重覆盖(固定表FLOW-CURRENT)",
+      "flow_instance_get_fixed_batch() / flow_instance_get_count() — 固定批次管理/统计"
+    )
+  ),
+  list(
+    module = "流程实例清单", icon = "list-alt", parent = "流程",
+    frontend = "流程 → 流程实例清单（子标签页）→ flow_instance_list_ui()",
+    source = c("Script/flow_visualization.r", "Script/flow_instance_list_ui.r", "Script/flow_instance_list_server.r"),
+    tables = "flow_monitor_batches, flow_monitor_records, flow_catalog",
+    perms = list(
+      list(code="flowinst_view", name="查看流程实例清单")
+    ),
+    key_funcs = c(
+      "flow_instance_extract_html() — 从看板HTML提取instanceData(流程实例清单JSON)",
+      "flow_instance_import_html() — 提取实例清单并写入flow_monitor_records(新建批次)",
+      "flow_instance_latest_batch() — 获取最新批次id",
+      "flow_instance_get_records() — 获取某批次实例清单(含flow_body流程本体)",
+      "flow_instance_list_server() — 按flow_catalog分类分组渲染可折叠表格(暗色主题)"
     )
   ),
   list(

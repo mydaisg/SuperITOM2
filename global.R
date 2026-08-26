@@ -1030,7 +1030,8 @@ migrate_database <- function() {
     # 补充权限（幂等）：工具子模块等后续新增的权限码
     supplement_perms <- rbind(
       data.frame(module="流程数据可视化", component="面板", code="flowviz_view", name="查看", description="查看流程数据可视化"),
-      data.frame(module="流程实例数据", component="面板", code="flowmon_view", name="查看", description="查看流程实例数据")
+      data.frame(module="流程实例数据", component="面板", code="flowmon_view", name="查看", description="查看流程实例数据"),
+      data.frame(module="流程实例清单", component="面板", code="flowinst_view", name="查看", description="查看流程实例清单")
     )
     for (i in seq_len(nrow(supplement_perms))) {
       dbExecute(con, sprintf("INSERT OR IGNORE INTO rbac_permissions (module, component, code, name, description) VALUES ('%s','%s','%s','%s','%s')",
@@ -1542,6 +1543,12 @@ migrate_database <- function() {
       if (!"workflow" %in% cols) {
         dbExecute(con, "ALTER TABLE flow_monitor_records ADD COLUMN workflow TEXT")
         cat("数据库迁移完成：flow_monitor_records 表新增 workflow 列\n")
+      }
+      # 补充 uniq_key（流程实例固定记录唯一键）列
+      if (!"uniq_key" %in% cols) {
+        dbExecute(con, "ALTER TABLE flow_monitor_records ADD COLUMN uniq_key TEXT")
+        dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_fmr_uniq ON flow_monitor_records(uniq_key)")
+        cat("数据库迁移完成：flow_monitor_records 表新增 uniq_key 列及索引\n")
       }
     }
 
