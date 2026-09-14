@@ -6,6 +6,11 @@ library(DBI)
 library(ggplot2)
 library(plotly)
 
+# ★ 限制 devmode 热重载只监视 .r 文件
+# 默认 shiny.autoreload 监视 .(r|html|js|css|png|jpg|gif)，运行中写图片文件会触发页面刷新回首页
+# 改为只监视 R 源码文件，避免图片/静态资源文件变化导致热重载
+options(shiny.autoreload.pattern = ".*\\.(r|R)$")
+
 # 加载配置管理器（必须在其他 source 之前，因为后续模块可能依赖配置）
 source("config/config_loader.r")
 load_config()
@@ -1031,7 +1036,9 @@ migrate_database <- function() {
     supplement_perms <- rbind(
       data.frame(module="流程数据可视化", component="面板", code="flowviz_view", name="查看", description="查看流程数据可视化"),
       data.frame(module="流程实例数据", component="面板", code="flowmon_view", name="查看", description="查看流程实例数据"),
-      data.frame(module="流程实例清单", component="面板", code="flowinst_view", name="查看", description="查看流程实例清单")
+      data.frame(module="流程实例清单", component="面板", code="flowinst_view", name="查看", description="查看流程实例清单"),
+      data.frame(module="钉钉旧流程数据", component="面板", code="dinginst_view", name="查看", description="查看钉钉旧流程数据"),
+      data.frame(module="图片合并PDF", component="面板", code="img2pdf_view", name="查看", description="查看图片合并PDF工具")
     )
     for (i in seq_len(nrow(supplement_perms))) {
       dbExecute(con, sprintf("INSERT OR IGNORE INTO rbac_permissions (module, component, code, name, description) VALUES ('%s','%s','%s','%s','%s')",
@@ -1591,6 +1598,61 @@ migrate_database <- function() {
       )")
       dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_dingtalk_flow_catalog_cat ON dingtalk_flow_catalog(category)")
       cat("数据库迁移完成：已创建 dingtalk_flow_catalog 表\n")
+    }
+
+    # ===============================================
+    # 钉钉流程历史记录实例表（去钉钉化背景：原始钉钉流程记录的存档与可视化）
+    # 关联：seq_no + category_no + flow_no → dingtalk_flow_catalog
+    # ===============================================
+    if (!"dingtalk_instance_records" %in% tables) {
+      dbExecute(con, "CREATE TABLE dingtalk_instance_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        seq_no INTEGER DEFAULT 0,
+        category_no INTEGER DEFAULT 0,
+        category TEXT,
+        flow_no INTEGER DEFAULT 0,
+        flow_name TEXT,
+        file_year INTEGER DEFAULT 0,
+        file_name TEXT,
+        sheet_name TEXT,
+        data_id TEXT,
+        approval_no TEXT,
+        title TEXT,
+        status TEXT,
+        result TEXT,
+        start_time TEXT,
+        end_time TEXT,
+        duration TEXT,
+        initiator TEXT,
+        department TEXT,
+        applicant TEXT,
+        amount TEXT,
+        amount_cn TEXT,
+        reason TEXT,
+        approval_log TEXT,
+        uniq_key TEXT
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_dir_uniq ON dingtalk_instance_records(uniq_key)")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_dir_cat_flow ON dingtalk_instance_records(seq_no, flow_no)")
+      cat("数据库迁移完成：已创建 dingtalk_instance_records 表\n")
+    }
+
+    # ===============================================
+    # 图片合并 PDF 工具记录表（工具模块：多图合并 PDF + 水印）
+    # ===============================================
+    if (!"img2pdf_records" %in% tables) {
+      dbExecute(con, "CREATE TABLE img2pdf_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        record_no TEXT,
+        source_paths TEXT,
+        output_path TEXT,
+        watermark_text TEXT,
+        watermark_color TEXT,
+        page_count INTEGER DEFAULT 0,
+        created_by TEXT,
+        created_at TEXT
+      )")
+      cat("数据库迁移完成：已创建 img2pdf_records 表\n")
     }
 
   }, error = function(e) {

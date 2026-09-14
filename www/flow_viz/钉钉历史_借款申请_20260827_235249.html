@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>钉钉流程历史看板 - 借款申请</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+*{margin*margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);min-height:100vh;color:#fff;padding:20px}
+.header{text-align:center;padding:30px 0;margin-bottom:20px}
+.header h1{font-size:30px;font-weight:700;background:linear-gradient(90deg,#00d4ff,#7b2cbf);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:10px}
+.header .subtitle{color:#8892b0;font-size:15px}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:30px}
+.kpi-card{background:rgba(255,255,255,0.05);border-radius:14px;padding:20px;border:1px solid rgba(255,255,255,0.1)}
+.kpi-label{color:#8892b0;font-size:13px;margin-bottom:6px}
+.kpi-value{font-size:26px;font-weight:700;color:#fff}
+.kpi-value.warn{color:#ffd700}.kpi-value.success{color:#00e676}.kpi-value.money{color:#ff9f43}
+.kpi-change{font-size:12px;margin-top:4px;color:#8892b0}
+.chart-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin-bottom:30px}
+.chart-card{background:rgba(255,255,255,0.05);border-radius:16px;padding:24px;border:1px solid rgba(255,255,255,0.1)}
+.chart-card.full-width{grid-column:1 / -1}
+.chart-title{font-size:18px;font-weight:600;margin-bottom:20px;color:#fff}
+.chart-container{width:100%;height:350px}
+.chart-container-tall{width:100%;height:420px}
+.footer{text-align:center;padding:30px;color:#8892b0;font-size:13px}
+@media (max-width:1200px){.chart-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>钉钉流程历史看板</h1>
+  <div class="subtitle">借款申请 | 数据周期：2018 - 2026（9 年）| 总记录数：2510</div>
+</div>
+<div class="kpi-grid">
+  <div class="kpi-card"><div class="kpi-label">总记录数</div><div class="kpi-value">2510</div><div class="kpi-change">已审批 2304 · 待审批 206</div></div>
+  <div class="kpi-card"><div class="kpi-label">同意</div><div class="kpi-value success">2247</div><div class="kpi-change">占比 89.5%</div></div>
+  <div class="kpi-card"><div class="kpi-label">拒绝</div><div class="kpi-value warn">57</div><div class="kpi-change">占比 2.3%</div></div>
+  <div class="kpi-card"><div class="kpi-label">借款总额（元）</div><div class="kpi-value money">155,598,538</div><div class="kpi-change">平均 61,991</div></div>
+  <div class="kpi-card"><div class="kpi-label">单笔最高</div><div class="kpi-value money">5,000,000</div><div class="kpi-change">元</div></div>
+  <div class="kpi-card"><div class="kpi-label">发起人数</div><div class="kpi-value">15+</div><div class="kpi-change">活跃用户</div></div>
+</div>
+<div class="chart-grid"><div class="chart-card full-width"><div class="chart-title">按年趋势（发起量 + 借款金额）</div><div id="yearlyTrend" class="chart-container-tall"></div></div></div>
+<div class="chart-grid">
+  <div class="chart-card"><div class="chart-title">审批结果分布</div><div id="resultPie" class="chart-container"></div></div>
+  <div class="chart-card"><div class="chart-title">审批状态分布</div><div id="statusPie" class="chart-container"></div></div>
+</div>
+<div class="chart-grid">
+  <div class="chart-card"><div class="chart-title">发起人排名 Top 15</div><div id="initiatorRank" class="chart-container-tall"></div></div>
+  <div class="chart-card"><div class="chart-title">部门分布 Top 12</div><div id="deptPie" class="chart-container-tall"></div></div>
+</div>
+<div class="footer">数据来源：钉钉流程历史导出 | 报表生成：LVCC ITOM | 更新日期：2026年08月27日</div>
+<script>
+const yearlyData=[{"year":"2018","total":4},{"year":"2019","total":35},{"year":"2020","total":160},{"year":"2021","total":791},{"year":"2022","total":518},{"year":"2023","total":340},{"year":"2024","total":292},{"year":"2025","total":247},{"year":"2026","total":123}];
+const resultData=[{"name":"同意","total":2247},{"name":"NA","total":206},{"name":"拒绝","total":57}];
+const statusData=[{"name":"完成","total":2304},{"name":"已撤销","total":195},{"name":"审批中","total":11}];
+const initiatorData=[{"name":"赖瑛(已离职)","total":264},{"name":"陈星(已离职)","total":245},{"name":"赵云瑞","total":150},{"name":"王琴(已离职)","total":129},{"name":"黄仁花(已离职)","total":86},{"name":"邹婵华(已离职)","total":86},{"name":"曾小燕","total":75},{"name":"刘红梅(已离职)","total":71},{"name":"李忠梅","total":70},{"name":"刘洁(已离职)","total":60},{"name":"李甜甜","total":53},{"name":"肖枫(已离职)","total":52},{"name":"张万兰","total":51},{"name":"郑凡(已离职)","total":50},{"name":"曾庆梅(已离职)","total":49}];
+const departmentData=[{"name":"品牌运营中心","total":863},{"name":"职能中心-行政人事部","total":299},{"name":"职能中心-采购部","total":120},{"name":"营销中心","total":118},{"name":"运营中心-品牌运营部","total":110},{"name":"职能中心-财务部","total":91},{"name":"新媒体运营中心-综合部（新媒体）-业务支持组","total":48},{"name":"研发中心","total":43},{"name":"客户服务中心-售后客服部","total":37},{"name":"研发中心-综合部（研发）","total":33},{"name":"营销中心-综合部（营销）","total":33},{"name":"职能中心-人事部-支持组","total":29}];
+const yearlyAmount=[{"year":2018,"amount":14400},{"year":2019,"amount":594600},{"year":2020,"amount":3991645},{"year":2021,"amount":52574751.63},{"year":2022,"amount":74403462.67},{"year":2023,"amount":15275958.71},{"year":2024,"amount":3552544.11},{"year":2025,"amount":2829665.21},{"year":2026,"amount":2361510.74}];
+
+const yearlyTrend=echarts.init(document.getElementById("yearlyTrend"));
+yearlyTrend.setOption({
+  tooltip:{trigger:"axis",backgroundColor:"rgba(0,0,0,0.8)",borderColor:"#00d4ff",textStyle:{color:"#fff"}},
+  legend:{data:["发起量","借款金额"],textStyle:{color:"#8892b0"},top:0},
+  grid:{left:"3%",right:"4%",bottom:"3%",containLabel:true},
+  xAxis:{type:"category",data:yearlyData.year,axisLine:{lineStyle:{color:"#2d3748"}},axisLabel:{color:"#8892b0"}},
+  yAxis:[
+    {type:"value",name:"发起量",axisLine:{lineStyle:{color:"#2d3748"}},axisLabel:{color:"#8892b0"},splitLine:{lineStyle:{color:"rgba(255,255,255,0.05)"}}},
+    {type:"value",name:"金额(元)",axisLine:{lineStyle:{color:"#2d3748"}},axisLabel:{color:"#8892b0",formatter:function(v){return (v/10000).toFixed(0)+"万"}}}
+  ],
+  series:[
+    {name:"发起量",type:"bar",data:yearlyData.total,itemStyle:{color:"#00d4ff"},barWidth:"40%"},
+    {name:"借款金额",type:"line",yAxisIndex:1,data:yearlyAmount.amount,smooth:true,itemStyle:{color:"#ff9f43"},lineStyle:{width:3}}
+  ]
+});
+
+const resultPie=echarts.init(document.getElementById("resultPie"));
+resultPie.setOption({
+  tooltip:{trigger:"item",backgroundColor:"rgba(0,0,0,0.8)",borderColor:"#00d4ff",textStyle:{color:"#fff"},formatter:function(p){return p.name+": "+p.value+" ("+p.percent.toFixed(1)+"%)"}},
+  legend:{orient:"vertical",right:"3%",top:"center",textStyle:{color:"#8892b0",fontSize:11}},
+  series:[{type:"pie",radius:["35%","65%"],center:["38%","50%"],data:resultData.map(function(d,i){return {name:d.name,value:d.total,itemStyle:{color:["#00e676","#ff5252","#ffd700","#8892b0"][i%4]}}}),label:{color:"#fff"}}]
+});
+
+const statusPie=echarts.init(document.getElementById("statusPie"));
+statusPie.setOption({
+  tooltip:{trigger:"item",backgroundColor:"rgba(0,0,0,0.8)",borderColor:"#00d4ff",textStyle:{color:"#fff"},formatter:function(p){return p.name+": "+p.value+" ("+p.percent.toFixed(1)+"%)"}},
+  legend:{orient:"vertical",right:"3%",top:"center",textStyle:{color:"#8892b0",fontSize:11}},
+  series:[{type:"pie",radius:["35%","65%"],center:["38%","50%"],data:statusData.map(function(d,i){return {name:d.name,value:d.total,itemStyle:{color:["#5bc0de","#00e676","#ffd700","#ff9800","#8892b0"][i%5]}}}),label:{color:"#fff"}}]
+});
+
+const initRank=echarts.init(document.getElementById("initiatorRank"));
+initRank.setOption({
+  tooltip:{trigger:"axis",axisPointer:{type:"shadow"},backgroundColor:"rgba(0,0,0,0.8)",borderColor:"#00d4ff",textStyle:{color:"#fff"}},
+  grid:{left:"3%",right:"8%",bottom:"3%",containLabel:true},
+  xAxis:{type:"value",axisLine:{lineStyle:{color:"#2d3748"}},axisLabel:{color:"#8892b0"},splitLine:{lineStyle:{color:"rgba(255,255,255,0.05)"}}},
+  yAxis:{type:"category",data:initiatorData.slice().reverse().map(function(d){return d.name}),axisLine:{lineStyle:{color:"#2d3748"}},axisLabel:{color:"#8892b0",fontSize:11}},
+  series:[{type:"bar",data:initiatorData.slice().reverse().map(function(d){return d.total}),itemStyle:{color:function(p){return new echarts.graphic.LinearGradient(0,0,1,0,[{offset:0,color:"#7b2cbf"},{offset:1,color:"#00d4ff"}])}},barWidth:"60%",label:{show:true,position:"right",color:"#8892b0",formatter:"{c}"}}]
+});
+
+const deptPie=echarts.init(document.getElementById("deptPie"));
+deptPie.setOption({
+  tooltip:{trigger:"item",backgroundColor:"rgba(0,0,0,0.8)",borderColor:"#00d4ff",textStyle:{color:"#fff"},formatter:function(p){return p.name+": "+p.value+" ("+p.percent.toFixed(1)+"%)"}},
+  legend:{orient:"vertical",right:"3%",top:"center",textStyle:{color:"#8892b0",fontSize:10},formatter:function(n){return n.length>8?n.substring(0,8)+"...":n}},
+  series:[{type:"pie",radius:["35%","65%"],center:["38%","50%"],data:departmentData.map(function(d,i){return {name:d.name,value:d.total,itemStyle:{color:["#00d4ff","#7b2cbf","#00e676","#ffd700","#ff6b6b","#ff9f43","#a55eea","#54a0ff","#5f27cd","#01a3a4","#f368e0","#ff6348"][i%12]}}}),label:{color:"#fff"}}]
+});
+
+window.addEventListener("resize",function(){yearlyTrend.resize();resultPie.resize();statusPie.resize();initRank.resize();deptPie.resize();});
+</script>
+</body>
+</html>

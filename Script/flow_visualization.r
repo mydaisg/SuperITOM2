@@ -95,6 +95,219 @@ dingtalk_flow_catalog_get_by_category <- function(category) {
 }
 
 ##################
+# 钉钉流程历史记录实例（去钉钉化背景：原始钉钉流程数据存档 + 可视化）
+# 关联：dingtalk_instance_records.seq_no → dingtalk_flow_catalog.seq_no
+# 目录命名规则：全局序号-分类内序号-流程名（如 21-1-借款申请）
+##################
+
+# 安全获取字段值（不存在的列返回空字符串）
+.safe_col <- function(df, col_name, default = "") {
+  if (col_name %in% names(df)) as.character(df[[col_name]]) else rep(default, nrow(df))
+}
+
+# 解析目录名："21-1-借款申请" → list(seq_no=21, flow_no=1, flow_name="借款申请")
+parse_dingtalk_dir_name <- function(dir_name) {
+  # 去掉可能的尾随斜杠
+  bn <- basename(dir_name)
+  parts <- strsplit(bn, "-", fixed = FALSE)[[1]]
+  if (length(parts) < 3) return(NULL)
+  seq_no <- suppressWarnings(as.integer(parts[1]))
+  flow_no <- suppressWarnings(as.integer(parts[2]))
+  if (is.na(seq_no) || is.na(flow_no)) return(NULL)
+  flow_name <- paste(parts[-(1:2)], collapse = "-")
+  list(seq_no = seq_no, flow_no = flow_no, flow_name = flow_name)
+}
+
+# 从文件名提取年份："借款申请2020-20260827155504.xlsx" → 2020
+extract_file_year <- function(file_name) {
+  bn <- tools::file_path_sans_ext(basename(file_name))
+  m <- regmatches(bn, regexpr("^借款申请([0-9]{4})", bn))
+  if (length(m) == 1) {
+    yr <- regmatches(m, regexpr("[0-9]{4}", m))
+    if (length(yr) == 1) as.integer(yr) else 0
+  } else 0
+}
+
+# 批量导入某流程目录下所有 Excel（多 Sheet）到 dingtalk_instance_records
+# dir_path: 流程目录路径（如 "D:/.../21-1-借款申请"）
+# 返回：list(success, inserted, updated, unchanged, total, files, dir_info)
+dingtalk_instance_import_dir <- function(dir_path, operator = "系统") {
+  if (!requireNamespace("readxl", quietly = TRUE))
+    return(list(success = FALSE, message = "缺少 readxl 包"))
+
+  if (!dir.exists(dir_path))
+    return(list(success = FALSE, message = sprintf("目录不存在: %s", dir_path)))
+
+  info <- parse_dingtalk_dir_name(dir_path)
+  if (is.null(info))
+    return(list(success = FALSE, message = sprintf("无法解析目录名: %s", basename(dir_path))))
+
+  # 查 dingtalk_flow_catalog 取分类信息
+  con <- db_connect()
+  tryCatch({
+    catalog <- dbGetQuery(con, sprintf(
+      "SELECT category_no, category FROM dingtalk_flow_catalog WHERE seq_no=%d LIMIT 1",
+      info$seq_no))
+    if (nrow(catalog) > 0) {
+      category_no <- catalog$category_no[1]
+      category <- catalog$category[1]
+    } else {
+      category_no <- info$seq_no
+      category <- ""
+    }
+  }, error = function(e) NULL, finally = { db_disconnect(con) })
+
+  files <- list.files(dir_path, pattern = "\\.xlsx$", full.names = TRUE)
+  if (length(files) == 0)
+    return(list(success = FALSE, message = "目录下无 xlsx 文件"))
+
+  con <- db_connect()
+  tryCatch({
+    dbBegin(con)
+    # 一次性读取现有 uniq_key 用于去重
+    existing <- dbGetQuery(con, sprintf(
+      "SELECT uniq_key FROM dingtalk_instance_records WHERE seq_no=%d AND flow_no=%d",
+      info$seq_no, info$flow_no))
+    existing_keys <- setdiff(existing$uniq_key, c("", NA))
+
+    inserted <- 0L; updated <- 0L; unchanged <- 0L; skipped <- 0L
+    rows_pending <- list()
+    file_count <- 0L
+
+    flush <- function(rows_list) {
+      if (length(rows_list) == 0) return(invisible(NULL))
+      chunk <- 200
+      for (s in seq(1, length(rows_list), by = chunk)) {
+        part <- rows_list[s:min(s + chunk - 1, length(rows_list))]
+        dbExecute(con, paste0(
+          "INSERT INTO dingtalk_instance_records
+           (seq_no, category_no, category, flow_no, flow_name, file_year, file_name, sheet_name,
+            data_id, approval_no, title, status, result, start_time, end_time, duration,
+            initiator, department, applicant, amount, amount_cn, reason, approval_log, uniq_key)
+           VALUES ", paste(part, collapse = ",")))
+      }
+    }
+
+    # 已存在的 uniq_key 缓存（避免重复插入；重复数据通常意味着同一记录跨年重复）
+    seen_keys <- new.env(hash = TRUE, parent = emptyenv())
+
+    for (f in files) {
+      file_count <- file_count + 1L
+      file_year <- extract_file_year(f)
+      file_name <- basename(f)
+      sheets <- tryCatch(readxl::excel_sheets(f), error = function(e) character(0))
+      for (sh in sheets) {
+        df <- tryCatch(readxl::read_excel(f, sheet = sh), error = function(e) NULL)
+        if (is.null(df) || nrow(df) == 0) next
+
+        n <- nrow(df)
+        data_id  <- .safe_col(df, "数据id")
+        appr_no  <- .safe_col(df, "审批编号")
+        title    <- .safe_col(df, "标题")
+        status   <- .safe_col(df, "审批状态")
+        result   <- .safe_col(df, "审批结果")
+        st_time  <- .safe_col(df, "发起时间")
+        ed_time  <- .safe_col(df, "完成时间")
+        duration <- .safe_col(df, "耗时(时:分:秒)")
+        initiator<- .safe_col(df, "发起人姓名")
+        dept     <- .safe_col(df, "发起人部门")
+        applicant<- .safe_col(df, "申请人")
+        amount   <- .safe_col(df, "借款金额（元）")
+        amount_cn<- .safe_col(df, "借款金额（元）（大写）")
+        reason   <- .safe_col(df, "借款理由")
+        appr_log <- .safe_col(df, "审批记录")
+
+        for (i in seq_len(n)) {
+          # 唯一键：优先审批编号，其次数据id
+          uk <- appr_no[i]
+          if (is.na(uk) || nchar(uk) == 0) uk <- data_id[i]
+          if (is.na(uk) || nchar(uk) == 0) { skipped <- skipped + 1L; next }
+
+          if (exists("key", envir = seen_keys, inherits = FALSE) ||
+              !is.null(seen_keys[[uk]])) {
+            skipped <- skipped + 1L; next
+          }
+          seen_keys[[uk]] <- TRUE
+
+          if (uk %in% existing_keys) { unchanged <- unchanged + 1L; next }
+
+          row <- sprintf(
+            "(%d,%d,'%s',%d,'%s',%d,'%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s')",
+            info$seq_no, category_no, gsub("'","''", category), info$flow_no,
+            gsub("'","''", info$flow_name), file_year,
+            gsub("'","''", file_name), gsub("'","''", sh),
+            gsub("'","''", data_id[i]), gsub("'","''", appr_no[i]),
+            gsub("'","''", title[i]), gsub("'","''", status[i]),
+            gsub("'","''", result[i]), gsub("'","''", st_time[i]),
+            gsub("'","''", ed_time[i]), gsub("'","''", duration[i]),
+            gsub("'","''", initiator[i]), gsub("'","''", dept[i]),
+            gsub("'","''", applicant[i]), gsub("'","''", amount[i]),
+            gsub("'","''", amount_cn[i]), gsub("'","''", reason[i]),
+            gsub("'","''", appr_log[i]), gsub("'","''", uk))
+          rows_pending[[length(rows_pending) + 1]] <- row
+          inserted <- inserted + 1L
+        }
+      }
+    }
+    flush(rows_pending)
+    dbCommit(con)
+    list(success = TRUE, message = sprintf("导入完成：新增 %d、未变 %d、跳过 %d（共 %d 个文件）",
+      inserted, unchanged, skipped, file_count),
+      inserted = inserted, updated = updated, unchanged = unchanged,
+      skipped = skipped, files = file_count,
+      dir_info = list(seq_no = info$seq_no, flow_no = info$flow_no,
+                       flow_name = info$flow_name, category = category))
+  }, error = function(e) {
+    if (exists("con") && !is.null(con)) {
+      tryCatch(dbRollback(con), error = function(e2) NULL)
+    }
+    list(success = FALSE, message = paste("导入失败:", e$message))
+  }, finally = { db_disconnect(con) })
+}
+
+# 获取钉钉流程分类列表（含每个分类下的流程数量和记录数）
+dingtalk_instance_get_categories <- function() {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, "SELECT seq_no, category_no, category, COUNT(DISTINCT flow_no) AS flows, COUNT(*) AS records FROM dingtalk_instance_records GROUP BY seq_no, category_no, category ORDER BY seq_no")
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+# 获取某分类（seq_no）下的所有流程
+dingtalk_instance_get_flows <- function(seq_no) {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, sprintf(
+      "SELECT seq_no, flow_no, flow_name, category, COUNT(*) AS records FROM dingtalk_instance_records WHERE seq_no=%d GROUP BY seq_no, flow_no, flow_name, category ORDER BY flow_no",
+      as.integer(seq_no)))
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+# 获取某流程（seq_no+flow_no）的所有记录（支持筛选）
+dingtalk_instance_get_records <- function(seq_no, flow_no = NULL, status_filter = NULL,
+                                          result_filter = NULL, year_filter = NULL,
+                                          keyword = NULL, limit = 5000) {
+  con <- db_connect()
+  tryCatch({
+    where <- sprintf("seq_no=%d", as.integer(seq_no))
+    if (!is.null(flow_no) && !is.na(flow_no)) where <- paste0(where, sprintf(" AND flow_no=%d", as.integer(flow_no)))
+    if (!is.null(status_filter) && status_filter != "" && status_filter != "all") where <- paste0(where, sprintf(" AND status='%s'", gsub("'","''", status_filter)))
+    if (!is.null(result_filter) && result_filter != "" && result_filter != "all") where <- paste0(where, sprintf(" AND result='%s'", gsub("'","''", result_filter)))
+    if (!is.null(year_filter) && year_filter != "" && year_filter != "all") where <- paste0(where, sprintf(" AND file_year=%d", as.integer(year_filter)))
+    if (!is.null(keyword) && nchar(trimws(keyword)) > 0) {
+      kw <- gsub("'","''", trimws(keyword))
+      where <- paste0(where, sprintf(" AND (title LIKE '%%%s%%' OR initiator LIKE '%%%s%%' OR applicant LIKE '%%%s%%')", kw, kw, kw))
+    }
+    dbGetQuery(con, sprintf(
+      "SELECT id, seq_no, flow_no, flow_name, file_year, sheet_name, data_id, approval_no, title,
+              status, result, start_time, end_time, duration, initiator, department,
+              applicant, amount, reason
+       FROM dingtalk_instance_records WHERE %s ORDER BY start_time DESC LIMIT %d",
+      where, as.integer(limit)))
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+##################
 # 依赖说明
 ##################
 # - readxl / dplyr / jsonlite 已在 global.R 加载（dplyr 需在函数内显式 library 以确保可用）
@@ -972,6 +1185,252 @@ flow_viz_export_html <- function(record_id) {
   writeBin(charToRaw(html), con)
   close(con)
   list(success = TRUE, out_path = out_path)
+}
+
+##################
+# 钉钉流程实例 HTML 看板（参照工具→流程数据可视化风格）
+##################
+
+# 钉钉流程实例聚合统计（按 seq_no+flow_no）
+dingtalk_instance_aggregate <- function(seq_no, flow_no = NULL) {
+  con <- db_connect()
+  tryCatch({
+    where <- sprintf("seq_no=%d", as.integer(seq_no))
+    if (!is.null(flow_no) && !is.na(flow_no)) where <- paste0(where, sprintf(" AND flow_no=%d", as.integer(flow_no)))
+    df <- dbGetQuery(con, sprintf(
+      "SELECT seq_no, flow_no, flow_name, file_year, status, result, initiator, department, applicant,
+              amount, start_time, end_time, duration
+       FROM dingtalk_instance_records WHERE %s", where))
+    if (nrow(df) == 0) return(list(stats = list(total = 0), data = df))
+
+    # KPI 统计
+    total <- nrow(df)
+    completed <- sum(grepl("完成", df$status) & !is.na(df$status))
+    pending <- total - completed
+    approved <- sum(grepl("同意", df$result) & !is.na(df$result))
+    rejected <- sum(grepl("拒绝|不同意", df$result) & !is.na(df$result))
+
+    # 年度趋势：2026 年按月拆分，其它年份按整年聚合
+    df$start_ym <- substr(df$start_time, 1, 7)  # YYYY-MM
+    # 时间轴标签：非 2026 年用年份，2026 年用 YYYY-MM
+    df$trend_key <- ifelse(
+      !is.na(df$file_year) & as.integer(df$file_year) < 2026,
+      as.character(df$file_year),
+      ifelse(!is.na(df$start_ym), df$start_ym, as.character(df$file_year)))
+    yr_tbl <- as.data.frame(table(df$trend_key), stringsAsFactors = FALSE)
+    names(yr_tbl) <- c("year", "total")
+    # 排序：先按年份数值（YYYY 或 YYYY-MM 取前 4 位），再按月份
+    yr_tbl$sort_year <- as.integer(substr(as.character(yr_tbl$year), 1, 4))
+    yr_tbl$sort_month <- as.integer(substr(as.character(yr_tbl$year), 6, 7))
+    yr_tbl$sort_month[is.na(yr_tbl$sort_month)] <- 0
+    yr_tbl <- yr_tbl[order(yr_tbl$sort_year, yr_tbl$sort_month), ]
+    yr_tbl$sort_year <- NULL
+    yr_tbl$sort_month <- NULL
+
+    # 审批结果分布
+    res_tbl <- as.data.frame(table(df$result), stringsAsFactors = FALSE)
+    names(res_tbl) <- c("name", "total")
+    res_tbl <- res_tbl[order(-res_tbl$total), ]
+    rownames(res_tbl) <- NULL
+
+    # 状态分布
+    st_tbl <- as.data.frame(table(df$status), stringsAsFactors = FALSE)
+    names(st_tbl) <- c("name", "total")
+    st_tbl <- st_tbl[order(-st_tbl$total), ]
+    rownames(st_tbl) <- NULL
+
+    # 发起人排名 Top 15
+    init_tbl <- as.data.frame(table(df$initiator), stringsAsFactors = FALSE)
+    names(init_tbl) <- c("name", "total")
+    init_tbl <- init_tbl[order(-init_tbl$total), ]
+    init_tbl <- head(init_tbl, 15)
+    rownames(init_tbl) <- NULL
+
+    # 部门分布 Top 12
+    dept_tbl <- as.data.frame(table(df$department), stringsAsFactors = FALSE)
+    names(dept_tbl) <- c("name", "total")
+    dept_tbl <- dept_tbl[order(-dept_tbl$total), ]
+    dept_tbl <- head(dept_tbl, 12)
+    rownames(dept_tbl) <- NULL
+
+    # 借款金额汇总（仅对借款申请类有效）
+    amount_num <- suppressWarnings(as.numeric(gsub(",", "", df$amount)))
+    total_amount <- sum(amount_num, na.rm = TRUE)
+    avg_amount <- mean(amount_num, na.rm = TRUE)
+    max_amount <- max(amount_num, na.rm = TRUE)
+
+    # 年度金额（按 trend_key 拆分：2026 年按月，其它按年）
+    yr_amount <- aggregate(amount_num, by = list(year = df$trend_key), FUN = sum, na.rm = TRUE)
+    names(yr_amount) <- c("year", "amount")
+    # 与 yearly 排序对齐（避免 JS 侧金额与年份错位）
+    yr_amount <- yr_amount[match(yr_tbl$year, yr_amount$year), ]
+
+    flow_name <- df$flow_name[1]
+
+    list(
+      stats = list(
+        total = total, completed = completed, pending = pending,
+        approved = approved, rejected = rejected,
+        total_amount = total_amount, avg_amount = avg_amount, max_amount = max_amount,
+        flow_name = flow_name,
+        year_min = min(as.integer(unique(df$file_year))), year_max = max(as.integer(unique(df$file_year))),
+        year_count = length(unique(df$file_year))
+      ),
+      data = df,
+      yearly = yr_tbl,
+      result_dist = res_tbl,
+      status_dist = st_tbl,
+      initiator_rank = init_tbl,
+      department_dist = dept_tbl,
+      yearly_amount = yr_amount
+    )
+  }, error = function(e) list(stats = list(total = 0), data = data.frame()), finally = { db_disconnect(con) })
+}
+
+# 生成钉钉流程 HTML 看板（参照 flow_viz 暗色主题）
+dingtalk_instance_build_html <- function(seq_no, flow_no = NULL, out_name = NULL) {
+  agg <- dingtalk_instance_aggregate(seq_no, flow_no)
+  if (agg$stats$total == 0) return(NULL)
+
+  s <- agg$stats
+  to_json <- function(x) jsonlite::toJSON(x, auto_unbox = TRUE)
+  yearly_json   <- to_json(agg$yearly)
+  result_json   <- to_json(agg$result_dist)
+  status_json   <- to_json(agg$status_dist)
+  init_json     <- to_json(agg$initiator_rank)
+  dept_json     <- to_json(agg$department_dist)
+  yr_amt_json   <- to_json(agg$yearly_amount)
+  flow_name <- s$flow_name
+
+  paste0('<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>钉钉流程历史看板 - ', flow_name, '</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+*{margin*margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);min-height:100vh;color:#fff;padding:20px}
+.header{text-align:center;padding:30px 0;margin-bottom:20px}
+.header h1{font-size:30px;font-weight:700;background:linear-gradient(90deg,#00d4ff,#7b2cbf);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:10px}
+.header .subtitle{color:#8892b0;font-size:15px}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:30px}
+.kpi-card{background:rgba(255,255,255,0.05);border-radius:14px;padding:20px;border:1px solid rgba(255,255,255,0.1)}
+.kpi-label{color:#8892b0;font-size:13px;margin-bottom:6px}
+.kpi-value{font-size:26px;font-weight:700;color:#fff}
+.kpi-value.warn{color:#ffd700}.kpi-value.success{color:#00e676}.kpi-value.money{color:#ff9f43}
+.kpi-change{font-size:12px;margin-top:4px;color:#8892b0}
+.chart-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin-bottom:30px}
+.chart-card{background:rgba(255,255,255,0.05);border-radius:16px;padding:24px;border:1px solid rgba(255,255,255,0.1)}
+.chart-card.full-width{grid-column:1 / -1}
+.chart-title{font-size:18px;font-weight:600;margin-bottom:20px;color:#fff}
+.chart-container{width:100%;height:350px}
+.chart-container-tall{width:100%;height:420px}
+.footer{text-align:center;padding:30px;color:#8892b0;font-size:13px}
+@media (max-width:1200px){.chart-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>钉钉流程历史看板</h1>
+  <div class="subtitle">', flow_name, ' | 数据周期：', s$year_min, ' - ', s$year_max, '（', s$year_count, ' 年）| 总记录数：', s$total, '</div>
+</div>
+<div class="kpi-grid">
+  <div class="kpi-card"><div class="kpi-label">总记录数</div><div class="kpi-value">', s$total, '</div><div class="kpi-change">已审批 ', s$completed, ' · 待审批 ', s$pending, '</div></div>
+  <div class="kpi-card"><div class="kpi-label">同意</div><div class="kpi-value success">', s$approved, '</div><div class="kpi-change">占比 ', round(s$approved/s$total*100,1), '%</div></div>
+  <div class="kpi-card"><div class="kpi-label">拒绝</div><div class="kpi-value warn">', s$rejected, '</div><div class="kpi-change">占比 ', round(s$rejected/s$total*100,1), '%</div></div>
+  <div class="kpi-card"><div class="kpi-label">借款总额（元）</div><div class="kpi-value money">', formatC(s$total_amount, big.mark=",", format="d"), '</div><div class="kpi-change">平均 ', formatC(round(s$avg_amount,0), big.mark=",", format="d"), '</div></div>
+  <div class="kpi-card"><div class="kpi-label">单笔最高</div><div class="kpi-value money">', formatC(s$max_amount, big.mark=",", format="d"), '</div><div class="kpi-change">元</div></div>
+  <div class="kpi-card"><div class="kpi-label">发起人数</div><div class="kpi-value">', nrow(agg$initiator_rank), '+</div><div class="kpi-change">活跃用户</div></div>
+</div>
+<div class="chart-grid"><div class="chart-card full-width"><div class="chart-title">趋势（发起量 + 借款金额，2026 年按月）</div><div id="yearlyTrend" class="chart-container-tall"></div></div></div>
+<div class="chart-grid">
+  <div class="chart-card"><div class="chart-title">审批结果分布</div><div id="resultPie" class="chart-container"></div></div>
+  <div class="chart-card"><div class="chart-title">审批状态分布</div><div id="statusPie" class="chart-container"></div></div>
+</div>
+<div class="chart-grid">
+  <div class="chart-card"><div class="chart-title">发起人排名 Top 15</div><div id="initiatorRank" class="chart-container-tall"></div></div>
+  <div class="chart-card"><div class="chart-title">部门分布 Top 12</div><div id="deptPie" class="chart-container-tall"></div></div>
+</div>
+<div class="footer">数据来源：钉钉流程历史导出 | 报表生成：LVCC ITOM | 更新日期：', format(Sys.Date(), "%Y年%m月%d日"), '</div>
+<script>
+const yearlyData=', yearly_json, ';
+const resultData=', result_json, ';
+const statusData=', status_json, ';
+const initiatorData=', init_json, ';
+const departmentData=', dept_json, ';
+const yearlyAmount=', yr_amt_json, ';
+
+const yearlyTrend=echarts.init(document.getElementById("yearlyTrend"));
+yearlyTrend.setOption({
+  tooltip:{trigger:"axis",backgroundColor:"rgba(0,0,0,0.8)",borderColor:"#00d4ff",textStyle:{color:"#fff"}},
+  legend:{data:["发起量","借款金额"],textStyle:{color:"#8892b0"},top:0},
+  grid:{left:"3%",right:"4%",bottom:"3%",containLabel:true},
+  xAxis:{type:"category",data:yearlyData.year,axisLine:{lineStyle:{color:"#2d3748"}},axisLabel:{color:"#8892b0"}},
+  yAxis:[
+    {type:"value",name:"发起量",axisLine:{lineStyle:{color:"#2d3748"}},axisLabel:{color:"#8892b0"},splitLine:{lineStyle:{color:"rgba(255,255,255,0.05)"}}},
+    {type:"value",name:"金额(元)",axisLine:{lineStyle:{color:"#2d3748"}},axisLabel:{color:"#8892b0",formatter:function(v){return (v/10000).toFixed(0)+"万"}}}
+  ],
+  series:[
+    {name:"发起量",type:"bar",data:yearlyData.total,itemStyle:{color:"#00d4ff"},barWidth:"40%"},
+    {name:"借款金额",type:"line",yAxisIndex:1,data:yearlyAmount.amount,smooth:true,itemStyle:{color:"#ff9f43"},lineStyle:{width:3}}
+  ]
+});
+
+const resultPie=echarts.init(document.getElementById("resultPie"));
+resultPie.setOption({
+  tooltip:{trigger:"item",backgroundColor:"rgba(0,0,0,0.8)",borderColor:"#00d4ff",textStyle:{color:"#fff"},formatter:function(p){return p.name+": "+p.value+" ("+p.percent.toFixed(1)+"%)"}},
+  legend:{orient:"vertical",right:"3%",top:"center",textStyle:{color:"#8892b0",fontSize:11}},
+  series:[{type:"pie",radius:["35%","65%"],center:["38%","50%"],data:resultData.map(function(d,i){return {name:d.name,value:d.total,itemStyle:{color:["#00e676","#ff5252","#ffd700","#8892b0"][i%4]}}}),label:{color:"#fff"}}]
+});
+
+const statusPie=echarts.init(document.getElementById("statusPie"));
+statusPie.setOption({
+  tooltip:{trigger:"item",backgroundColor:"rgba(0,0,0,0.8)",borderColor:"#00d4ff",textStyle:{color:"#fff"},formatter:function(p){return p.name+": "+p.value+" ("+p.percent.toFixed(1)+"%)"}},
+  legend:{orient:"vertical",right:"3%",top:"center",textStyle:{color:"#8892b0",fontSize:11}},
+  series:[{type:"pie",radius:["35%","65%"],center:["38%","50%"],data:statusData.map(function(d,i){return {name:d.name,value:d.total,itemStyle:{color:["#5bc0de","#00e676","#ffd700","#ff9800","#8892b0"][i%5]}}}),label:{color:"#fff"}}]
+});
+
+const initRank=echarts.init(document.getElementById("initiatorRank"));
+initRank.setOption({
+  tooltip:{trigger:"axis",axisPointer:{type:"shadow"},backgroundColor:"rgba(0,0,0,0.8)",borderColor:"#00d4ff",textStyle:{color:"#fff"}},
+  grid:{left:"3%",right:"8%",bottom:"3%",containLabel:true},
+  xAxis:{type:"value",axisLine:{lineStyle:{color:"#2d3748"}},axisLabel:{color:"#8892b0"},splitLine:{lineStyle:{color:"rgba(255,255,255,0.05)"}}},
+  yAxis:{type:"category",data:initiatorData.slice().reverse().map(function(d){return d.name}),axisLine:{lineStyle:{color:"#2d3748"}},axisLabel:{color:"#8892b0",fontSize:11}},
+  series:[{type:"bar",data:initiatorData.slice().reverse().map(function(d){return d.total}),itemStyle:{color:function(p){return new echarts.graphic.LinearGradient(0,0,1,0,[{offset:0,color:"#7b2cbf"},{offset:1,color:"#00d4ff"}])}},barWidth:"60%",label:{show:true,position:"right",color:"#8892b0",formatter:"{c}"}}]
+});
+
+const deptPie=echarts.init(document.getElementById("deptPie"));
+deptPie.setOption({
+  tooltip:{trigger:"item",backgroundColor:"rgba(0,0,0,0.8)",borderColor:"#00d4ff",textStyle:{color:"#fff"},formatter:function(p){return p.name+": "+p.value+" ("+p.percent.toFixed(1)+"%)"}},
+  legend:{orient:"vertical",right:"3%",top:"center",textStyle:{color:"#8892b0",fontSize:10},formatter:function(n){return n.length>8?n.substring(0,8)+"...":n}},
+  series:[{type:"pie",radius:["35%","65%"],center:["38%","50%"],data:departmentData.map(function(d,i){return {name:d.name,value:d.total,itemStyle:{color:["#00d4ff","#7b2cbf","#00e676","#ffd700","#ff6b6b","#ff9f43","#a55eea","#54a0ff","#5f27cd","#01a3a4","#f368e0","#ff6348"][i%12]}}}),label:{color:"#fff"}}]
+});
+
+window.addEventListener("resize",function(){yearlyTrend.resize();resultPie.resize();statusPie.resize();initRank.resize();deptPie.resize();});
+</script>
+</body>
+</html>')
+}
+
+# 生成 HTML 并写入 www/flow_viz/，返回文件路径
+dingtalk_instance_generate_html <- function(seq_no, flow_no = NULL, out_name = NULL) {
+  html <- dingtalk_instance_build_html(seq_no, flow_no)
+  if (is.null(html)) return(list(success = FALSE, message = "无数据可生成"))
+
+  if (is.null(out_name)) {
+    s <- dingtalk_instance_aggregate(seq_no, flow_no)$stats
+    fn <- s$flow_name %||% sprintf("seq%d_flow%d", seq_no, flow_no)
+    out_name <- sprintf("钉钉历史_%s_%s.html",
+            fn, format(Sys.time(), "%Y%m%d_%H%M%S"))
+  }
+  out_dir <- flow_viz_ensure_dir()
+  out_path <- file.path(out_dir, out_name)
+  con <- file(out_path, "wb")
+  writeBin(charToRaw(html), con)
+  close(con)
+  list(success = TRUE, html_path = out_path, out_name = out_name)
 }
 
 ##################

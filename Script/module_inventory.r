@@ -197,6 +197,23 @@ MODULE_INVENTORY <- list(
     )
   ),
   list(
+    module = "图片合并PDF", icon = "file-pdf", parent = "工具",
+    frontend = "工具 → 图片合并PDF（子标签页）→ img2pdf_ui()",
+    source = c("Script/img2pdf_management.r", "Script/img2pdf_server.r", "Script/img2pdf_ui.r"),
+    tables = "img2pdf_records",
+    perms = list(
+      list(code="img2pdf_view", name="查看图片合并PDF")
+    ),
+    key_funcs = c(
+      "img2pdf_merge() — 多图合并PDF(每图一页)+水印(内容/颜色/字号/位置)",
+      "img2pdf_add_record() — 保存记录(生成前图片地址+生成后PDF路径)",
+      "img2pdf_get_records() — 历史记录查询",
+      "img2pdf_generate_no() → I2P+YYYYMMDD+3位流水",
+      "img2pdf_output_dir() / img2pdf_upload_dir() — www/img2pdf/ 存储目录",
+      "magick::image_read/image_annotate/image_join/image_write — 图像处理"
+    )
+  ),
+  list(
     module = "标准化", icon = "cogs", parent = "工具",
     frontend = "工具 → 标准化（子标签页）→ std_ui()",
     source = c("Script/std_computer.r"),
@@ -336,6 +353,25 @@ MODULE_INVENTORY <- list(
       "dingtalk_flow_catalog_get_all() — 获取钉钉流程基础资料全量清单",
       "dingtalk_flow_catalog_get_categories() — 获取钉钉流程分类列表",
       "dingtalk_flow_catalog_get_by_category() — 获取某分类下钉钉流程名称"
+    )
+  ),
+  list(
+    module = "钉钉旧流程数据", icon = "archive", parent = "流程",
+    frontend = "流程 → 钉钉旧流程数据（子标签页）→ dingtalk_instance_ui()",
+    source = c("Script/flow_visualization.r", "Script/dingtalk_instance_ui.r", "Script/dingtalk_instance_server.r"),
+    tables = "dingtalk_instance_records, dingtalk_flow_catalog",
+    perms = list(
+      list(code="dinginst_view", name="查看钉钉旧流程数据")
+    ),
+    key_funcs = c(
+      "parse_dingtalk_dir_name() — 解析'全局序号-分类内序号-流程名'目录名",
+      "dingtalk_instance_import_dir() — 遍历目录下所有Excel(多Sheet)导入到dingtalk_instance_records",
+      "dingtalk_instance_get_categories() — 获取有数据的钉分类及记录数",
+      "dingtalk_instance_get_flows() — 获取某分类下的钉流程",
+      "dingtalk_instance_get_records() — 获取某流程的记录(支持状态/结果筛选)",
+      "dingtalk_instance_aggregate() — 聚合统计(年度趋势/审批结果/Top发起人/部门/金额)",
+      "dingtalk_instance_build_html() — 暗色主题HTML看板模板",
+      "dingtalk_instance_generate_html() — 生成HTML写入www/flow_viz/"
     )
   ),
   list(

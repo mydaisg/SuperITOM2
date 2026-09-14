@@ -205,6 +205,10 @@ tools_ui <- function() {
         tabPanel("流程数据可视化",
           icon = icon("chart-area"),
           flow_viz_ui()
+        ),
+        tabPanel("图片合并PDF",
+          icon = icon("file-pdf"),
+          img2pdf_ui()
         )
       )
     )
