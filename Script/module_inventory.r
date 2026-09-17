@@ -362,6 +362,7 @@ MODULE_INVENTORY <- list(
     ),
     key_funcs = c(
       "flow_viz_generate() — 读取Excel→聚合→生成ECharts HTML看板",
+      "flow_viz_generate_from_df() — 接收data.frame(引用数据集)→聚合→生成看板",
       "flow_viz_aggregate() — 聚合统计(Excel与DB共用，含按月统计+基础资料补0)",
       "flow_viz_build_html() — HTML模板（每日趋势/按月统计/流程全量清单/类型分布/阻塞节点/发起人排名/堆叠图）",
       "flow_viz_add_record() — 保存转换历史记录(含html_content备份)",

@@ -9,6 +9,19 @@ flow_viz_server <- function(input, output, session, rv) {
   fvz_result <- reactiveVal(NULL)       # 流程数据看板结果
   fvz_log_result <- reactiveVal(NULL)   # 流程日志效率图结果
 
+  # 引用数据集下拉框：列出「通用数据导入」的所有数据集
+  observe({
+    req(rv$logged_in)
+    ds <- data_import_get_datasets()
+    if (nrow(ds) == 0) {
+      updateSelectInput(session, "fvz_dataset", choices = NULL)
+    } else {
+      choices <- setNames(as.character(ds$id),
+        sprintf("%s · %s", ds$dataset_no, ds$name))
+      updateSelectInput(session, "fvz_dataset", choices = choices)
+    }
+  })
+
   # 操作人
   fvz_operator <- function() {
     op <- "系统"
@@ -44,6 +57,64 @@ flow_viz_server <- function(input, output, session, rv) {
     flow_viz_add_record(record_no, f$name, res$out_name, res$stats, operator, html_content = NULL)
 
     # 更新结果 + 刷新历史
+    fvz_result(res)
+    fvz_hist_trigger(fvz_hist_trigger() + 1)
+
+    s <- res$stats
+    showNotification(
+      sprintf("看板生成成功：%d 条流程，完成率 %s%%", s$total, s$completion_rate),
+      type = "message", duration = 5)
+  })
+
+  # 引用数据集生成流程数据看板
+  observeEvent(input$fvz_generate_from_dataset, {
+    req(rv$logged_in)
+    did <- input$fvz_dataset
+    if (is.null(did) || !nzchar(did %||% "")) {
+      showNotification("请先选择要引用的数据集", type = "warning")
+      return()
+    }
+    did <- as.integer(did)
+    if (is.na(did) || did <= 0) {
+      showNotification("无效的数据集", type = "warning")
+      return()
+    }
+
+    operator <- fvz_operator()
+
+    # 取数据集记录还原为 data.frame
+    df <- data_import_get_records(did)
+    if (nrow(df) == 0) {
+      showNotification("该数据集无数据", type = "warning")
+      return()
+    }
+    # 校验必需列
+    need <- c("流程名称", "当前节点", "发起人", "发起时间")
+    miss <- setdiff(need, names(df))
+    if (length(miss) > 0) {
+      showNotification(paste("数据集缺少必需列:", paste(miss, collapse = ", ")),
+                       type = "error", duration = 8)
+      return()
+    }
+
+    # 来源名：数据集编号 + 名称
+    ds <- data_import_get_dataset(did)
+    src_name <- if (!is.null(ds))
+      paste0(ds$dataset_no[1], "_", ds$name[1]) else paste0("数据集", did)
+
+    showNotification("正在引用数据集生成看板...", type = "message", duration = NULL, id = "fvz_ds_working")
+    res <- flow_viz_generate_from_df(df, src_name, operator)
+    removeNotification(id = "fvz_ds_working")
+
+    if (!isTRUE(res$success)) {
+      showNotification(res$message, type = "error", duration = 8)
+      return()
+    }
+
+    # 保存历史
+    record_no <- flow_viz_generate_no()
+    flow_viz_add_record(record_no, src_name, res$out_name, res$stats, operator, html_content = NULL)
+
     fvz_result(res)
     fvz_hist_trigger(fvz_hist_trigger() + 1)
 

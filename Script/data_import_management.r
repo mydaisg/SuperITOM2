@@ -262,7 +262,16 @@ data_import_get_records <- function(dataset_id) {
     for (i in seq_along(parsed)) {
       p <- parsed[[i]]
       if (length(p) > 0) {
-        mat[i, names(p)] <- as.character(unlist(p))
+        # 每个字段值强制转标量字符串：
+        # 标量/字符串 → 直接转；空对象{} / 空数组[] → ""；嵌套对象/数组 → JSON 文本
+        vals <- vapply(names(p), function(k) {
+          v <- p[[k]]
+          if (is.null(v) || length(v) == 0) return("")
+          if (length(v) == 1 && !is.list(v)) return(as.character(v))
+          # 嵌套结构（list/对象/数组）→ 序列化为 JSON 文本
+          tryCatch(jsonlite::toJSON(v, auto_unbox = TRUE), error = function(e) "")
+        }, character(1), USE.NAMES = FALSE)
+        mat[i, names(p)] <- vals
       }
     }
     df <- as.data.frame(mat, stringsAsFactors = FALSE)

@@ -53,7 +53,13 @@ flow_viz_ui <- function() {
                       accept = c(".xlsx", ".xls", ".csv"),
                       buttonLabel = "选择文件", placeholder = "未选择文件"),
             actionButton("fvz_generate", "生成看板", icon = icon("play-circle"),
-                         class = "btn-primary", style = "width:100%;")
+                         class = "btn-primary", style = "width:100%;"),
+            tags$hr(style = "margin:10px 0;"),
+            tags$p(style = "font-size:12px; color:#666; margin-bottom:6px;",
+              "或引用「通用数据导入」中的数据集（需含 流程名称/当前节点/发起人/发起时间 列）直接生成看板："),
+            selectInput("fvz_dataset", "引用数据集", choices = NULL, width = "100%"),
+            actionButton("fvz_generate_from_dataset", "引用数据集生成看板", icon = icon("database"),
+                         class = "btn-success", style = "width:100%;")
           ),
           # ── 功能2：流程日志效率图 ──
           tags$details(class = "fvz-details",

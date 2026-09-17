@@ -428,6 +428,40 @@ flow_viz_generate <- function(src_path, src_name, operator = "系统") {
   })
 }
 
+# 核心生成函数（数据帧版）：直接接收 data.frame → 聚合 → 生成 HTML
+# 供「引用数据集」路径使用（数据已从数据集还原为 data.frame）
+# 参数：
+#   df        : 含 流程名称/当前节点/发起人/发起时间（可选 所属工作流）的 data.frame
+#   src_name  : 来源名称（数据集名/编号，用于命名输出 HTML）
+#   operator  : 操作人
+# 返回：list(success, message, html_path, out_name, stats, html_content)
+flow_viz_generate_from_df <- function(df, src_name, operator = "系统") {
+  if (is.null(df) || nrow(df) == 0)
+    return(list(success = FALSE, message = "数据集无数据"))
+
+  tryCatch({
+    res <- flow_viz_aggregate(df)
+
+    # ---- 输出文件命名 ----
+    base <- tools::file_path_sans_ext(src_name)
+    safe_base <- gsub("[^0-9A-Za-z\u4e00-\u9fa5_-]+", "_", base)
+    out_name <- paste0(safe_base, "_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".html")
+    out_dir <- flow_viz_ensure_dir()
+    out_path <- file.path(out_dir, out_name)
+
+    con <- file(out_path, "wb")
+    writeBin(charToRaw(res$html), con)
+    close(con)
+
+    list(success = TRUE, message = "生成成功",
+         html_path = out_path, out_name = out_name,
+         stats = res$stats, html_content = res$html)
+
+  }, error = function(e) {
+    list(success = FALSE, message = paste("生成失败:", e$message))
+  })
+}
+
 # 聚合统计 + 生成 HTML（Excel 与 DB 两条路径共用）
 # 输入：df（含 流程名称/当前节点/发起人/发起时间 四列）
 # 输出：list(stats, html, dailyData_json, flowTypeData_json, ...)
