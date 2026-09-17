@@ -209,6 +209,10 @@ tools_ui <- function() {
         tabPanel("图片合并PDF",
           icon = icon("file-pdf"),
           img2pdf_ui()
+        ),
+        tabPanel("通用数据导入",
+          icon = icon("file-import"),
+          data_import_ui()
         )
       )
     )

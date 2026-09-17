@@ -214,6 +214,31 @@ MODULE_INVENTORY <- list(
     )
   ),
   list(
+    module = "通用数据导入", icon = "file-import", parent = "工具",
+    frontend = "工具 → 通用数据导入（子标签页）→ data_import_ui()",
+    source = c("Script/data_import_management.r", "Script/data_import_server.r", "Script/data_import_ui.r"),
+    tables = "import_datasets, import_records",
+    perms = list(
+      list(code="dataimp_view",   name="查看通用数据导入"),
+      list(code="dataimp_manage", name="管理通用数据导入")
+    ),
+    key_funcs = c(
+      "data_import_list_sheets() — 读取Excel所有Sheet名",
+      "data_import_preview() — 读取指定Sheet前N行预览",
+      "data_import_read_full() — 读取完整Sheet数据",
+      "data_import_create() — 创建数据集并批量导入记录(JSON存储)",
+      "data_import_get_datasets() / get_dataset() — 数据集查询",
+      "data_import_get_dataset_by_name() — 按名称查数据集(返回最新一条)",
+      "data_import_search_datasets() — 按名称/编号模糊搜索",
+      "data_import_get_records() — 还原某数据集记录为data.frame(供其它模块引用)",
+      "data_import_get_records_by_name() — 按名称直接取记录(推荐引用入口)",
+      "data_import_get_id_by_name() — 按名称取dataset_id",
+      "data_import_get_field_map() — 获取字段映射",
+      "data_import_delete() — 删除数据集(级联删除记录)",
+      "data_import_generate_no() → IMP+YYYYMMDD+3位流水"
+    )
+  ),
+  list(
     module = "标准化", icon = "cogs", parent = "工具",
     frontend = "工具 → 标准化（子标签页）→ std_ui()",
     source = c("Script/std_computer.r"),

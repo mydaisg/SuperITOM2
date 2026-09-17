@@ -60,6 +60,8 @@ source("Script/meta_task_management.r")  # 元任务数据层
 source("Script/meta_task_ui.r")          # 元任务UI
 source("Script/meta_task_server.r")      # 元任务模块
 source("Script/kingdee_k3cloud.r")       # 金蝶云星空 WebAPI 集成（SOL20260731001）
+source("Script/data_import_management.r") # 通用数据导入（数据层）
+source("Script/data_import_server.r")     # 通用数据导入（服务端）
 
 
 # 注册静态资源路径（www 目录下的文件可通过 /www/ 访问）
@@ -108,7 +110,8 @@ server <- function(input, output, session) {
     logged_in = FALSE,  # 登录状态，默认为未登录
     current_user = NULL, # 当前用户信息，默认为空
     daily_report_refresh = 0,  # 日报刷新触发器
-    home_dev_refresh = 0L  # 首页开发日志刷新
+    home_dev_refresh = 0L,  # 首页开发日志刷新
+    di_refresh = 0  # 通用数据导入刷新触发器
   )
   
   # 通用按钮状态控制
@@ -3837,6 +3840,9 @@ server <- function(input, output, session) {
 
   # 元任务模块
   meta_task_server(input, output, session, rv)
+
+  # 通用数据导入模块
+  data_import_server(input, output, session, rv)
 
   # 流程超时检测已移除（新审批模块为同步流转）
 

@@ -938,6 +938,33 @@ migrate_database <- function() {
     }
 
     # ===============================================
+    # 通用数据导入（数据集 + 数据记录）
+    # ===============================================
+    if (!"import_datasets" %in% tables) {
+      dbExecute(con, "CREATE TABLE import_datasets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dataset_no TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        source TEXT DEFAULT '',
+        sheet TEXT DEFAULT '',
+        field_map TEXT,
+        created_by TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 import_datasets 表\n")
+    }
+    if (!"import_records" %in% tables) {
+      dbExecute(con, "CREATE TABLE import_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dataset_id INTEGER NOT NULL,
+        data_json TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_imp_rec_ds ON import_records(dataset_id)")
+      cat("数据库迁移完成：已创建 import_records 表及索引\n")
+    }
+
+    # ===============================================
     # RBAC 授权管理（角色-权限-用户）
     # ===============================================
     if (!"rbac_permissions" %in% tables) {
@@ -1038,7 +1065,9 @@ migrate_database <- function() {
       data.frame(module="流程实例数据", component="面板", code="flowmon_view", name="查看", description="查看流程实例数据"),
       data.frame(module="流程实例清单", component="面板", code="flowinst_view", name="查看", description="查看流程实例清单"),
       data.frame(module="钉钉旧流程数据", component="面板", code="dinginst_view", name="查看", description="查看钉钉旧流程数据"),
-      data.frame(module="图片合并PDF", component="面板", code="img2pdf_view", name="查看", description="查看图片合并PDF工具")
+      data.frame(module="图片合并PDF", component="面板", code="img2pdf_view", name="查看", description="查看图片合并PDF工具"),
+      data.frame(module="通用数据导入", component="面板", code="dataimp_view", name="查看", description="查看通用数据导入"),
+      data.frame(module="通用数据导入", component="操作", code="dataimp_manage", name="管理", description="导入和管理通用数据集")
     )
     for (i in seq_len(nrow(supplement_perms))) {
       dbExecute(con, sprintf("INSERT OR IGNORE INTO rbac_permissions (module, component, code, name, description) VALUES ('%s','%s','%s','%s','%s')",
