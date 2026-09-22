@@ -1067,7 +1067,15 @@ migrate_database <- function() {
       data.frame(module="钉钉旧流程数据", component="面板", code="dinginst_view", name="查看", description="查看钉钉旧流程数据"),
       data.frame(module="图片合并PDF", component="面板", code="img2pdf_view", name="查看", description="查看图片合并PDF工具"),
       data.frame(module="通用数据导入", component="面板", code="dataimp_view", name="查看", description="查看通用数据导入"),
-      data.frame(module="通用数据导入", component="操作", code="dataimp_manage", name="管理", description="导入和管理通用数据集")
+      data.frame(module="通用数据导入", component="操作", code="dataimp_manage", name="管理", description="导入和管理通用数据集"),
+      data.frame(module="行业", component="面板", code="industry_view", name="查看", description="查看行业情报中心"),
+      data.frame(module="行业", component="操作", code="industry_create", name="新增", description="新增行业情报"),
+      data.frame(module="治理", component="面板", code="governance_view", name="查看", description="查看企业治理与风险管理"),
+      data.frame(module="治理", component="操作", code="governance_create", name="新增", description="新增治理条目"),
+      data.frame(module="合规", component="面板", code="compliance_view", name="查看", description="查看合规管理"),
+      data.frame(module="合规", component="操作", code="compliance_create", name="新增", description="新增合规规则"),
+      data.frame(module="组件", component="面板", code="component_view", name="查看", description="查看标准组件库"),
+      data.frame(module="组件", component="操作", code="component_create", name="登记", description="登记组件")
     )
     for (i in seq_len(nrow(supplement_perms))) {
       dbExecute(con, sprintf("INSERT OR IGNORE INTO rbac_permissions (module, component, code, name, description) VALUES ('%s','%s','%s','%s','%s')",
@@ -1684,6 +1692,97 @@ migrate_database <- function() {
       cat("数据库迁移完成：已创建 img2pdf_records 表\n")
     }
 
+    # ===============================================
+    # 行业模块表（行业情报中心：情报搜集/爬虫/库/可还原原文HTML）
+    # ===============================================
+    if (!"industry_intelligence" %in% tables) {
+      dbExecute(con, "CREATE TABLE industry_intelligence (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        intel_no TEXT NOT NULL DEFAULT '',
+        title TEXT NOT NULL,
+        content TEXT,
+        category TEXT,
+        source TEXT,
+        url TEXT,
+        created_by INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 industry_intelligence 表\n")
+    }
+
+    # ===============================================
+    # 治理模块表（企业治理和风险管理：波特五力/生命周期/PESTEL）
+    # ===============================================
+    if (!"governance_items" %in% tables) {
+      dbExecute(con, "CREATE TABLE governance_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        gov_no TEXT NOT NULL DEFAULT '',
+        title TEXT NOT NULL,
+        framework TEXT,
+        analysis TEXT,
+        action TEXT,
+        review TEXT,
+        created_by INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 governance_items 表\n")
+    }
+
+    # ===============================================
+    # 合规模块表（合规管理：规则库/解决/计划/行动/持续改善）
+    # ===============================================
+    if (!"compliance_rules" %in% tables) {
+      dbExecute(con, "CREATE TABLE compliance_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        comp_no TEXT NOT NULL DEFAULT '',
+        title TEXT NOT NULL,
+        category TEXT,
+        rule_content TEXT,
+        law_basis TEXT,
+        solution TEXT,
+        plan TEXT,
+        action TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_by INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 compliance_rules 表\n")
+    } else {
+      # 旧表补充 law_basis / sort_order 列
+      cr_cols <- dbGetQuery(con, "PRAGMA table_info(compliance_rules)")
+      if (!("law_basis" %in% cr_cols$name)) {
+        dbExecute(con, "ALTER TABLE compliance_rules ADD COLUMN law_basis TEXT")
+        cat("数据库迁移完成：compliance_rules 表新增 law_basis 列\n")
+      }
+      if (!("sort_order" %in% cr_cols$name)) {
+        dbExecute(con, "ALTER TABLE compliance_rules ADD COLUMN sort_order INTEGER DEFAULT 0")
+        cat("数据库迁移完成：compliance_rules 表新增 sort_order 列\n")
+      }
+    }
+
+    # ===============================================
+    # 组件库模块表（标准组件库：HungFo 思想，前后端分离）
+    # ===============================================
+    if (!"component_library" %in% tables) {
+      dbExecute(con, "CREATE TABLE component_library (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        comp_no TEXT NOT NULL DEFAULT '',
+        name TEXT NOT NULL,
+        category TEXT,
+        description TEXT,
+        usage TEXT,
+        config_schema TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_by INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 component_library 表\n")
+    }
+
   }, error = function(e) {
     cat("数据库迁移失败:", e$message, "\n")
   }, finally = {
@@ -1806,7 +1905,91 @@ seed_dingtalk_flow_catalog <- function() {
   })
 }
 
+# ===============================================
+# IPO 企业信息化合规规则种子数据
+# 幂等：仅当 compliance_rules 表为空时写入
+# 说明：按合规领域分类，覆盖 IPO 企业在信息化方面需遵从的主要合规规则
+# ===============================================
+seed_compliance_rules <- function() {
+  con <- db_connect()
+  tryCatch({
+    if (!"compliance_rules" %in% dbListTables(con)) return(invisible(NULL))
+    cnt <- dbGetQuery(con, "SELECT COUNT(*) AS n FROM compliance_rules")$n[1]
+    if (cnt > 0) return(invisible(NULL))
+
+    # 分类 -> 规则列表；每条规则 list(title, basis, content)
+    rules <- list(
+      `网络安全与数据安全` = list(
+        list("网络安全等级保护（等保2.0）", "《网络安全法》第二十一条、《网络安全等级保护条例》", "信息系统按安全等级保护要求，开展定级、备案、测评、整改；二级及以上系统需定期测评"),
+        list("关键信息基础设施保护", "《关键信息基础设施安全保护条例》", "识别关键信息基础设施，落实专门安全管理机构、安全检测评估、网络安全事件应急等义务"),
+        list("网络安全应急预案与演练", "《网络安全法》第二十五条、《网络安全事件应急预案》", "制定网络安全事件应急预案，及时处置安全风险与事件，按规定报告")
+      ),
+      `数据安全与数据出境` = list(
+        list("数据分类分级", "《数据安全法》第二十一条", "建立数据分类分级保护制度，对重要数据实施重点保护，制定重要数据目录"),
+        list("数据出境安全评估", "《数据安全法》第三十六条、《数据出境安全评估办法》", "向境外提供数据前，按情形申报安全评估、订立标准合同或通过认证"),
+        list("重要数据与核心数据保护", "《数据安全法》第二十七条、第三十条", "落实重要数据处理者风险评估、定期报告、安全负责人等义务")
+      ),
+      `个人信息保护` = list(
+        list("个人信息处理合规", "《个人信息保护法》第十三条", "处理个人信息需具备合法性基础（同意/合同/法定义务等），遵循最小必要原则"),
+        list("个人信息告知同意", "《个人信息保护法》第十七条、第十三条", "以显著方式、清晰易懂语言告知处理规则，取得单独同意或书面同意（敏感信息）"),
+        list("敏感个人信息保护", "《个人信息保护法》第二十八条、第二十九条", "处理敏感个人信息需取得单独同意，并采取加密、去标识化等更严格保护措施"),
+        list("个人信息跨境提供", "《个人信息保护法》第三十八条", "向境外提供个人信息，需通过安全评估、认证或标准合同等途径，并取得单独同意")
+      ),
+      `内部控制与审计` = list(
+        list("IT 一般控制（ITGC）", "《企业内部控制基本规范》及配套指引（财会〔2008〕7号）、《萨班斯-奥克斯利法案》SOX 404", "建立并运行 IT 一般控制，覆盖访问控制、变更管理、系统开发、运维管理等，确保财务报告相关系统可靠"),
+        list("应用控制（ITAC）", "《企业内部控制应用指引》", "在关键业务流程（如采购、销售、库存）中配置应用控制，保证交易处理的完整性、准确性、授权性"),
+        list("内控评价与缺陷整改", "《企业内部控制评价指引》", "定期开展内部控制评价，识别 IT 相关缺陷并整改，形成内控评价报告")
+      ),
+      `财务信息化与电子凭证` = list(
+        list("会计信息化规范", "《会计法》、《企业会计信息化工作规范》（财会〔2013〕20号）", "会计软件符合国家标准，数据真实完整，系统操作留痕、可追溯"),
+        list("电子发票与电子会计凭证", "《关于规范电子会计凭证报销入账归档的通知》（财会〔2020〕6号）", "电子会计凭证报销入账归档需满足真实、合法、可查、防篡改要求"),
+        list("电子档案管理", "《会计档案管理办法》、《电子文件归档与电子档案管理规范》", "电子会计档案按规范归档、存储、备份、可长期读取")
+      ),
+      `业务连续性与系统可靠性` = list(
+        list("业务连续性管理", "《信息系统灾难恢复规范》（GB/T 20988）、《商业银行信息科技风险管理指引》（如适用）", "建立容灾备份与业务连续性计划，定期演练，保障核心系统可用性"),
+        list("数据备份与恢复", "《网络安全法》第二十一条", "采取数据分类、重要数据备份和加密等措施，定期验证备份可恢复")
+      ),
+      `软件正版化与知识产权` = list(
+        list("软件正版化", "《计算机软件保护条例》、《关于推进软件正版化工作的意见》", "使用正版软件，建立软件资产管理台账，杜绝盗版与超授权使用"),
+        list("开源软件合规", "开源许可证（GPL/Apache/MIT 等）", "规范开源软件使用，遵守开源许可证义务，避免知识产权与合规风险")
+      ),
+      `电子签名与电子合同` = list(
+        list("电子签名法律效力", "《电子签名法》", "可靠的电子签名与手写签名具有同等法律效力；建立电子签名认证与使用规范"),
+        list("电子合同管理", "《民法典》第四百六十九条、第四百九十一条", "以电子数据交换、电子邮件等订立合同，确保合同订立、存储、举证的可信")
+      ),
+      `招股书披露与监管科技` = list(
+        list("信息系统与业务数据披露", "《首次公开发行股票注册管理办法》、交易所上市规则", "招股书中涉及信息系统、数据、技术的披露需真实、准确、完整，避免误导"),
+        list("审计取证与电子数据", "《中国注册会计师审计准则》第 1301 号、第 2401 号", "财务与业务数据需保留完整电子证据链，支持审计取证与 IT 审计")
+      )
+    )
+
+    now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+    seq_no <- 0L
+    for (cat_name in names(rules)) {
+      cat_items <- rules[[cat_name]]
+      for (item in cat_items) {
+        seq_no <- seq_no + 1L
+        no <- sprintf("CMP%03d", seq_no)
+        dbExecute(con, sprintf(
+          "INSERT INTO compliance_rules (comp_no, title, category, rule_content, law_basis, sort_order, created_at, updated_at) VALUES ('%s','%s','%s','%s','%s',%d,'%s','%s')",
+          no,
+          gsub("'","''", item[[1]]),
+          gsub("'","''", cat_name),
+          gsub("'","''", item[[3]]),
+          gsub("'","''", item[[2]]),
+          seq_no, now, now))
+      }
+    }
+    cat("数据库迁移完成：已写入 compliance_rules 合规规则种子数据", seq_no, "条\n")
+  }, error = function(e) {
+    cat("compliance_rules 种子数据写入失败:", e$message, "\n")
+  }, finally = {
+    db_disconnect(con)
+  })
+}
+
 check_database()
 migrate_database()
 seed_flow_catalog()
 seed_dingtalk_flow_catalog()
+seed_compliance_rules()

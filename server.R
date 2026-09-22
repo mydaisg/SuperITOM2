@@ -62,6 +62,14 @@ source("Script/meta_task_server.r")      # 元任务模块
 source("Script/kingdee_k3cloud.r")       # 金蝶云星空 WebAPI 集成（SOL20260731001）
 source("Script/data_import_management.r") # 通用数据导入（数据层）
 source("Script/data_import_server.r")     # 通用数据导入（服务端）
+source("Script/industry_management.r")    # 行业模块数据层
+source("Script/industry_server.r")        # 行业模块服务端
+source("Script/governance_management.r")  # 治理模块数据层
+source("Script/governance_server.r")      # 治理模块服务端
+source("Script/compliance_management.r")  # 合规模块数据层
+source("Script/compliance_server.r")      # 合规模块服务端
+source("Script/component_library_management.r") # 组件库模块数据层
+source("Script/component_library_server.r")     # 组件库模块服务端
 
 
 # 注册静态资源路径（www 目录下的文件可通过 /www/ 访问）
@@ -3840,6 +3848,12 @@ server <- function(input, output, session) {
 
   # 元任务模块
   meta_task_server(input, output, session, rv)
+
+  # 行业/治理/合规/组件库模块（框架）
+  industry_server(input, output, session, rv)
+  governance_server(input, output, session, rv)
+  compliance_server(input, output, session, rv)
+  component_library_server(input, output, session, rv)
 
   # 通用数据导入模块
   data_import_server(input, output, session, rv)

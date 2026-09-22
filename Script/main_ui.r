@@ -33,6 +33,7 @@ source("Script/daily_report.r")
 source("Script/data_center_ui.r")
 source("Script/integration_ui.r")
 source("Script/tools_ui.r")
+source("Script/tools_menu_ui.r")
 source("Script/img2pdf_ui.r")
 source("Script/data_import_ui.r")
 source("Script/flow_visualization_ui.r")
@@ -64,6 +65,12 @@ source("Script/duty_matrix_ui.r")
 
 # 加载工作模型
 source("Script/work_model.r")
+
+# 加载行业/治理/合规/组件库模块 UI（框架）
+source("Script/industry_ui.r")
+source("Script/governance_ui.r")
+source("Script/compliance_ui.r")
+source("Script/component_library_ui.r")
 
 # RBAC 管理函数（权限检查需要）
 source("Script/rbac_management.r")
@@ -299,7 +306,28 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
         tags$div(style = "height:120px;")
       )
     ),
-    
+
+    # 行业标签页（首页之后，导航第2位）
+    if (can_access("行业")) tabPanel(
+      "行业",
+      icon = icon("industry"),
+      industry_ui()
+    ),
+
+    # 治理标签页（导航第3位）
+    if (can_access("治理")) tabPanel(
+      "治理",
+      icon = icon("landmark"),
+      governance_ui(is_admin = is_admin)
+    ),
+
+    # 合规标签页（导航第4位）
+    if (can_access("合规")) tabPanel(
+      "合规",
+      icon = icon("balance-scale"),
+      compliance_ui()
+    ),
+
     # 项目管理标签页（放在工单前面）
     if (can_access("项目")) tabPanel(
       "项目",
@@ -312,140 +340,6 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       "方案",
       icon = icon("lightbulb"),
       solution_ui()
-    ),
-
-    # 巡检标签页
-    if (can_access("巡检")) tabPanel(
-      "巡检",
-      icon = icon("clipboard-check"),
-      fluidPage(
-        # 巡检统计数据
-        fluidRow(
-          column(12,
-            div(style = "margin-bottom: 10px;",
-              fluidRow(
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0;",
-                  div(style = "font-size: 11px; color: #666; font-weight: 500;", "巡检计划"),
-                  div(style = "font-size: 18px; font-weight: bold; color: #333;", textOutput("insp_stat_plans"))
-                )),
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #5cb85c; color: white;",
-                  div(style = "font-size: 11px; font-weight: 500;", "进行中"),
-                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_active_plans"))
-                )),
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #f0ad4e; color: white;",
-                  div(style = "font-size: 11px; font-weight: 500;", "待执行"),
-                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_pending_tasks"))
-                )),
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #5bc0de; color: white;",
-                  div(style = "font-size: 11px; font-weight: 500;", "已完成"),
-                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_completed_tasks"))
-                )),
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #d9534f; color: white;",
-                  div(style = "font-size: 11px; font-weight: 500;", "异常"),
-                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_abnormal_tasks"))
-                )),
-                column(2, div(class = "well well-sm", style = "text-align: center; padding: 6px 4px; margin-bottom: 0; background: #9370db; color: white;",
-                  div(style = "font-size: 11px; font-weight: 500;", "待整改"),
-                  div(style = "font-size: 18px; font-weight: bold;", textOutput("insp_stat_issues"))
-                ))
-              )
-            )
-          )
-        ),
-        # 巡检标签页内容
-        tabsetPanel(
-          # 我的任务
-          tabPanel("我的任务",
-            br(),
-            fluidRow(
-              column(3, selectInput("insp_my_status_filter", "任务状态", choices = NULL)),
-              column(2, div(style = "margin-top: 20px;", actionButton("insp_my_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
-            ),
-            DTOutput("insp_my_task_table")
-          ),
-          # 巡检计划
-          tabPanel("巡检计划",
-            br(),
-            fluidRow(
-              column(2, selectInput("insp_plan_status_filter", "计划状态", choices = NULL)),
-              column(3, div(style = "margin-top: 20px;", actionButton("insp_create_plan", "创建计划", class = "btn-primary", style = "padding: 4px 10px; font-size: 12px;"))),
-              column(2, div(style = "margin-top: 20px;", actionButton("insp_plan_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
-            ),
-            DTOutput("inspection_plan_table"),
-            br(),
-            wellPanel(
-              h4("生成巡检任务"),
-              fluidRow(
-                column(3, selectInput("insp_task_inspector", "检查人", choices = NULL)),
-                column(3, dateInput("insp_task_date", "计划日期", value = Sys.Date(), format = "yyyy-mm-dd")),
-                column(3, div(style = "margin-top: 20px;", actionButton("insp_generate_tasks", "生成任务", class = "btn-success", style = "padding: 4px 10px; font-size: 12px;")))
-              )
-            ),
-            br(),
-            fluidRow(
-              column(12,
-                h4("该计划下的巡检任务"),
-                selectInput("insp_task_status_filter", "任务状态筛选", choices = NULL),
-                DTOutput("inspection_task_table")
-              )
-            )
-          ),
-          # 巡检记录
-          tabPanel("巡检记录",
-            br(),
-            fluidRow(
-              column(3, selectInput("insp_record_status_filter", "任务状态", choices = NULL)),
-              column(2, div(style = "margin-top: 20px;", actionButton("insp_record_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
-            ),
-            DTOutput("insp_record_table")
-          ),
-          # 巡检异常
-          tabPanel("巡检异常",
-            br(),
-            fluidRow(
-              column(3, selectInput("insp_issue_status_filter", "异常状态", choices = NULL)),
-              column(2, div(style = "margin-top: 20px;", actionButton("insp_issue_refresh", "刷新", class = "btn-info", style = "padding: 4px 10px; font-size: 12px;")))
-            ),
-            DTOutput("insp_issue_table")
-          ),
-          # 已删除记录（Admin专属）
-          tabPanel("已删除记录",
-            br(),
-            # Admin 可见内容
-            conditionalPanel(
-              condition = "input.isAdminInspectionUser == true",
-              fluidRow(
-                column(12,
-                  div(style = "background: #fff3cd; padding: 10px; border-radius: 4px; margin-bottom: 15px;",
-                    strong("提示："), "此页面仅Admin可见，显示已删除的巡检计划和记录，可用于审计追溯。"
-                  )
-                )
-              ),
-              fluidRow(
-                column(6,
-                  wellPanel(
-                    h4("已删除的巡检计划", style = "color: #d9534f;"),
-                    DTOutput("insp_deleted_plans_table")
-                  )
-                ),
-                column(6,
-                  wellPanel(
-                    h4("已删除的巡检记录", style = "color: #d9534f;"),
-                    DTOutput("insp_deleted_records_table")
-                  )
-                )
-              )
-            ),
-            # 非Admin提示
-            conditionalPanel(
-              condition = "input.isAdminInspectionUser != true",
-              div(class = "alert alert-warning",
-                icon("exclamation-triangle"), " 您没有权限查看已删除记录"
-              )
-            )
-          )
-        )
-      )
     ),
 
     # 工单标签页
@@ -740,32 +634,11 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       note_ui()
     ),
 
-    # 测试标签页（网络巡检）
-    if (can_access("测试")) tabPanel(
-      "测试",
-      icon = icon("network-wired"),
-      network_test_ui()
-    ),
-
-    # 性能监控标签页
-    if (can_access("性能")) tabPanel(
-      "性能",
-      icon = icon("heartbeat"),
-      sysmon_ui()
-    ),
-
     # 总结标签页
     if (can_access("总结")) tabPanel(
       "总结",
       icon = icon("calendar-day"),
       daily_report_ui()
-    ),
-
-    # 工具标签页（含：文本格式化/拼音/收集器/集成/标准化/AI）
-    tabPanel(
-      "工具",
-      icon = icon("wrench"),
-      tools_ui()
     ),
 
     # 数据中心标签页（数据归集）
@@ -881,74 +754,21 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       )
     ),
     
+    # 工具下拉菜单（巡检/测试/性能 + 原工具10个tab，共13个子页）
+    tools_menu_ui(can_access),
+
+    # 组件库标签页（标准组件库，放在工具模块下面）
+    if (can_access("组件")) tabPanel(
+      "组件",
+      icon = icon("puzzle-piece"),
+      component_library_ui()
+    ),
+
     # 管理菜单（admin全功能 / user仅个人信息，始终可见）
     navbarMenu(
       "管理",
       icon = icon("tools"),
       # --- admin 专属 ---
-      if (can_admin("admin_users")) tabPanel(
-        "组织架构",
-        icon = icon("sitemap"),
-        fluidPage(
-          titlePanel("组织架构"),
-          tags$style(HTML("
-            /* ── Xmind 风格思维导图容器 ── */
-            .org-mindmap-wrap { width:100%; height:68vh; overflow:auto; border:1px solid #e0e0e0; border-radius:8px; background:#fafbfc; padding:16px; }
-            .org-mindmap-wrap svg { max-width:none; }
-            /* ── 搜索栏 ── */
-            .org-search-bar { display:flex; align-items:center; max-width:360px; border:1px solid #cfd8dc; border-radius:20px; padding:0 4px 0 14px; background:#fff; transition:border-color 0.2s; margin-bottom:10px; }
-            .org-search-bar:focus-within { border-color:#4f8ef7; box-shadow:0 0 0 2px rgba(79,142,247,0.15); }
-            .org-search-input { border:none; outline:none; flex:1; padding:7px 4px; font-size:13px; background:transparent; min-width:0; }
-            .org-search-icon, .org-search-clear { display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:50%; cursor:pointer; color:#90a4ae; transition:all 0.2s; font-size:13px; flex-shrink:0; }
-            .org-search-icon:hover { color:#4f8ef7; background:#e3f2fd; }
-            .org-search-clear:hover { color:#d9534f; background:#fde8e8; }
-            /* ── 选中节点高亮 ── */
-            .org-mindmap-wrap .node-highlight rect,
-            .org-mindmap-wrap .node-highlight circle,
-            .org-mindmap-wrap .node-highlight ellipse,
-            .org-mindmap-wrap .node-highlight polygon { stroke:#4f8ef7 !important; stroke-width:3px !important; }
-            /* ── 搜索高亮 ── */
-            .org-mindmap-wrap .node-search-match rect,
-            .org-mindmap-wrap .node-search-match circle,
-            .org-mindmap-wrap .node-search-match ellipse { fill:#fff9c4 !important; stroke:#ffc107 !important; stroke-width:2px !important; }
-          ")),
-          div(style = "display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;",
-            # 搜索框（带放大镜和X）
-            tags$div(class="org-search-bar",
-              tags$input(id="org_search_input", type="text", class="org-search-input",
-                placeholder="搜索部门或人员...", autocomplete="off"),
-              tags$span(id="org_search_btn", class="org-search-icon", title="搜索",
-                tags$i(class="fa fa-search")),
-              tags$span(id="org_search_clear", class="org-search-clear", style="display:none;", title="清除",
-                tags$i(class="fa fa-times"))
-            ),
-            actionButton("org_add_dept","",icon=icon("plus"),class="btn-sm btn-success",title="添加部门"),
-            actionButton("org_edit_dept","",icon=icon("building"),class="btn-sm btn-warning",title="编辑部门"),
-            actionButton("org_del_dept","",icon=icon("trash"),class="btn-sm btn-danger",title="删除部门"),
-            actionButton("org_add_user","",icon=icon("user-plus"),class="btn-sm btn-primary",title="添加人员"),
-            actionButton("org_edit_user","",icon=icon("id-badge"),class="btn-sm btn-info",title="编辑人员"),
-            actionButton("org_expand_all","",icon=icon("expand-arrows-alt"),class="btn-sm btn-default",title="全部展开"),
-            actionButton("org_collapse_all","",icon=icon("compress-arrows-alt"),class="btn-sm btn-default",title="全部折叠"),
-            actionButton("org_refresh","",icon=icon("sync"),class="btn-sm btn-default",title="刷新"),
-            tags$span(style="margin-left:6px; font-size:13px; color:#555;", uiOutput("org_selected_info"))
-          ),
-          div(class="org-mindmap-wrap", id="org_mindmap_container",
-            uiOutput("org_mindmap")
-          )
-        )
-      ),
-      # 工作模型（组织架构下方，系统设置上方）
-      if (can_admin("admin_system")) tabPanel(
-        "工作模型",
-        icon = icon("cubes"),
-        fluidPage(
-          div(style = "width:100%; min-height:80vh; background:#fff; border-radius:12px; padding:16px;",
-            h3("研发中心-IT部 工作模型", style = "text-align:center; color:#1e293b; margin-bottom:4px;"),
-            p("IT运维全生命周期管理体系 · 关系架构图", style = "text-align:center; color:#94a3b8; font-size:13px; margin-bottom:16px;"),
-            uiOutput("work_model_chart")
-          )
-        )
-      ),
       if (can_admin("admin_system")) tabPanel(
         "系统设置",
         icon = icon("cogs"),

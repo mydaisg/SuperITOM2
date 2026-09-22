@@ -2,6 +2,58 @@
 
 MODULE_INVENTORY <- list(
   list(
+    module = "行业", icon = "industry",
+    frontend = "行业标签页（首页之后第2位）→ industry_ui()",
+    source = c("Script/industry_management.r", "Script/industry_server.r", "Script/industry_ui.r"),
+    tables = "industry_intelligence",
+    perms = list(
+      list(code="industry_view",   name="查看行业"),
+      list(code="industry_create", name="新增行业情报")
+    ),
+    key_funcs = c(
+      "industry_get_categories() — 行业情报分类列表",
+      "industry_get_all() — 行业情报列表(分类/关键词筛选)",
+      "industry_add() — 新增行业情报",
+      "industry_generate_no() → IND+YYYYMMDD+3位流水",
+      "industry_get_stats() — 行业情报统计"
+    )
+  ),
+  list(
+    module = "治理", icon = "landmark",
+    frontend = "治理标签页（首页之后第3位）→ governance_ui()（行业周期/治理模型/风险模型/分析/行动/复盘/组织架构/工作模型）",
+    source = c("Script/governance_management.r", "Script/governance_server.r", "Script/governance_ui.r",
+               "Script/work_model.r", "Script/user_management.r", "server.R"),
+    tables = "governance_items, departments, users",
+    perms = list(
+      list(code="governance_view",   name="查看治理"),
+      list(code="governance_create", name="新增治理条目")
+    ),
+    key_funcs = c(
+      "governance_get_frameworks() — 治理分析框架(行业周期/治理模型/风险模型/PESTEL/PEST-SWOT)",
+      "governance_get_all() — 治理条目列表(框架筛选)",
+      "governance_add() — 新增治理条目(分析/行动/复盘)",
+      "governance_generate_no() → GOV+YYYYMMDD+3位流水",
+      "org_mindmap / org_selected_info — 组织架构思维导图(仅admin，原管理→治理迁移)",
+      "work_model_mermaid() — 工作模型关系架构图(仅admin，原管理→治理迁移)"
+    )
+  ),
+  list(
+    module = "合规", icon = "balance-scale",
+    frontend = "合规标签页（首页之后第4位）→ compliance_ui()",
+    source = c("Script/compliance_management.r", "Script/compliance_server.r", "Script/compliance_ui.r"),
+    tables = "compliance_rules",
+    perms = list(
+      list(code="compliance_view",   name="查看合规"),
+      list(code="compliance_create", name="新增合规规则")
+    ),
+    key_funcs = c(
+      "compliance_get_categories() — 合规规则库分类",
+      "compliance_get_all() — 合规规则列表(分类筛选)",
+      "compliance_add() — 新增合规规则(规则/解决/计划/行动)",
+      "compliance_generate_no() → CMP+YYYYMMDD+3位流水"
+    )
+  ),
+  list(
     module = "首页", icon = "home",
     frontend = "首页标签页 (navbarPage tabPanel)",
     source = c("server.R"),
@@ -549,6 +601,22 @@ MODULE_INVENTORY <- list(
     )
   ),
   list(
+    module = "组件", icon = "puzzle-piece",
+    frontend = "组件标签页（工具模块下面）→ component_library_ui()",
+    source = c("Script/component_library_management.r", "Script/component_library_server.r", "Script/component_library_ui.r"),
+    tables = "component_library",
+    perms = list(
+      list(code="component_view",   name="查看组件库"),
+      list(code="component_create", name="登记组件")
+    ),
+    key_funcs = c(
+      "component_get_categories() — 组件分类列表",
+      "component_get_all() — 组件列表(分类筛选)",
+      "component_add() — 登记组件(描述/调用方式/配置Schema)",
+      "component_generate_no() → CPT+YYYYMMDD+3位流水"
+    )
+  ),
+  list(
     module = "管理", icon = "tools",
     frontend = "管理 dropdown菜单 (navbarMenu: 用户/系统/选项/授权/GitHub/模块清单/个人信息)",
     source = c("Script/user_management.r", "Script/system_settings.r", "Script/rbac_management.r", "Script/github_autosubmit.r", "Script/module_inventory.r", "server.R"),
@@ -591,12 +659,14 @@ MODULE_INVENTORY <- list(
 
 # 导航栏图标映射
 NAV_ICONS <- list(
+  "行业" = "industry", "治理" = "landmark", "合规" = "balance-scale",
   "首页" = "home", "项目" = "project-diagram", "巡检" = "clipboard-check",
   "工单" = "clipboard-list", "资产" = "laptop", "记事" = "sticky-note",
   "工具" = "wrench", "测试" = "network-wired", "性能" = "heartbeat",
   "总结" = "calendar-day", "流程" = "project-diagram", "AI" = "robot",
   "数据" = "database", "岗职" = "sitemap", "绩效" = "chart-bar",
-  "模型" = "cogs", "可视化" = "chart-line", "管理" = "tools"
+  "模型" = "cogs", "可视化" = "chart-line", "组件" = "puzzle-piece",
+  "管理" = "tools"
 )
 
 # 读取文件时间戳

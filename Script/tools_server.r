@@ -322,4 +322,73 @@ tools_server <- function(input, output, session, rv) {
       )
     }))
   })
+
+  # ═══════════════════ 日期计算 ═══════════════════
+  # 计算模式：到今天 / 两日期差 / 日期加减
+  observeEvent(input$tool_date_calc, {
+    req(rv$logged_in)
+    mode <- input$tool_date_mode %||% "to_today"
+    out <- ""
+    if (mode == "to_today") {
+      d <- input$tool_date_single
+      if (is.null(d)) { output$tool_date_out <- renderText("请选择日期"); return() }
+      d <- as.Date(d)
+      today <- Sys.Date()
+      days <- as.integer(today - d)
+      out <- paste0(
+        "日期：", format(d, "%Y-%m-%d"), "\n",
+        "今天：", format(today, "%Y-%m-%d"), "\n",
+        "距今天：", days, " 天",
+        if (days > 0) "（过去）" else if (days < 0) "（未来）" else "（今天）"
+      )
+    } else if (mode == "diff") {
+      d1 <- as.Date(input$tool_date_start)
+      d2 <- as.Date(input$tool_date_end)
+      if (is.null(d1) || is.null(d2)) { output$tool_date_out <- renderText("请选择日期"); return() }
+      incl <- isTRUE(input$tool_date_inclusive)
+      days <- as.integer(d2 - d1)
+      days_abs <- abs(days)
+      out <- paste0(
+        "开始：", format(d1, "%Y-%m-%d"), "\n",
+        "结束：", format(d2, "%Y-%m-%d"), "\n",
+        "相差：", days, " 天（", days_abs, " 天）",
+        if (incl) paste0("\n含首尾：", days_abs + 1, " 天") else ""
+      )
+    } else {  # addsub
+      d <- as.Date(input$tool_date_base)
+      n <- input$tool_date_days %||% 0
+      if (is.null(d)) { output$tool_date_out <- renderText("请选择日期"); return() }
+      res <- d + n
+      out <- paste0(
+        "基准：", format(d, "%Y-%m-%d"), "\n",
+        if (n >= 0) sprintf("加 %d 天", n) else sprintf("减 %d 天", abs(n)), "\n",
+        "结果：", format(res, "%Y-%m-%d")
+      )
+    }
+    output$tool_date_out <- renderText(out)
+  })
+
+  # 日期信息：星期几 / 该年第几天 / 是否闰年 / 天数
+  observeEvent(input$tool_date_info, {
+    req(rv$logged_in)
+    mode <- input$tool_date_mode %||% "to_today"
+    d <- switch(mode,
+      to_today = input$tool_date_single,
+      diff     = input$tool_date_end,
+      addsub   = input$tool_date_base,
+      Sys.Date())
+    if (is.null(d)) { output$tool_date_out <- renderText("请选择日期"); return() }
+    d <- as.Date(d)
+    weekday_cn <- c("星期一","星期二","星期三","星期四","星期五","星期六","星期日")[as.integer(format(d, "%u"))]
+    doy <- as.integer(format(d, "%j"))
+    yr <- as.integer(format(d, "%Y"))
+    leap <- if ((yr %% 4 == 0 && yr %% 100 != 0) || yr %% 400 == 0) "是" else "否"
+    out <- paste0(
+      "日期：", format(d, "%Y-%m-%d"), "\n",
+      "星期：", weekday_cn, "\n",
+      "该年第 ", doy, " 天\n",
+      "年份：", format(d, "%Y"), " 年（闰年：", leap, "）"
+    )
+    output$tool_date_out <- renderText(out)
+  })
 }
