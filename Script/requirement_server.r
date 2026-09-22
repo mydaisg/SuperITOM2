@@ -252,23 +252,25 @@ requirement_server <- function(input, output, session, rv) {
       }
 
       # 严格顺序：序号、人员、记事、时间、状态（单行排列）
+      # 全部字段微软雅黑，内容字体放大一号（13px）
+      today_mark <- if (is_today) '<span style="color:#2e7d32;font-size:10px;font-weight:bold;margin-right:2px;">●今日</span>' else ""
       seq_html <- sprintf('<span style="font-weight:bold;color:%s;font-family:Consolas,monospace;font-size:12px;">%s</span>', color, num_label)
-      person_html <- if (person != "") sprintf('<span style="font-weight:bold;color:#333;font-size:13px;">%s</span>', person) else ""
-      content_html <- if (content != "") sprintf('<span style="font-size:12px;color:#555;">%s</span>', content) else ""
-      # 时间：当天（或最后一天）加绿色"今日"标记
+      person_html <- if (person != "") sprintf('<span style="font-weight:bold;color:#333;font-size:13px;font-family:\'Microsoft YaHei\',\'PingFang SC\',sans-serif;">%s</span>', person) else ""
+      # 记事：支持输入换行（pre-wrap），字体放大一号
+      content_html <- if (content != "") sprintf('<span style="font-size:13px;color:#555;white-space:pre-wrap;font-family:\'Microsoft YaHei\',\'PingFang SC\',sans-serif;">%s</span>', content) else ""
+      # 时间
       date_html <- if (date_str != "") {
-        mark <- if (is_today) '<span style="color:#2e7d32;font-size:10px;margin-right:2px;">●今日</span>' else ""
-        sprintf('<span style="color:#999;font-size:11px;white-space:nowrap;">%s%s</span>', mark, date_str)
+        sprintf('<span style="color:#999;font-size:11px;white-space:nowrap;font-family:\'Microsoft YaHei\',\'PingFang SC\',sans-serif;">%s</span>', date_str)
       } else ""
       status_html <- if (st != "") {
-        sprintf('<span style="display:inline-block;background:%s;color:#fff;font-size:10px;padding:1px 8px;border-radius:10px;white-space:nowrap;">%s</span>', st_col, st)
+        sprintf('<span style="display:inline-block;background:%s;color:#fff;font-size:11px;padding:1px 8px;border-radius:10px;white-space:nowrap;font-family:\'Microsoft YaHei\',\'PingFang SC\',sans-serif;">%s</span>', st_col, st)
       } else ""
 
       sprintf(
         '<div style="background:%s;padding:6px 10px;margin-bottom:4px;border-radius:6px;border-left:4px solid %s;%s">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
             <div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;">
-              %s%s%s%s%s
+              %s%s%s%s%s%s
             </div>
             <div style="white-space:nowrap;flex-shrink:0;">
               %s
@@ -280,7 +282,7 @@ requirement_server <- function(input, output, session, rv) {
           %s
         </div>',
         bg_color, color, indent,
-        seq_html, person_html, content_html, date_html, status_html,
+        today_mark, seq_html, person_html, content_html, date_html, status_html,
         done_btn, p$id, p$id, p$id, subs_html)
     }
 
@@ -305,11 +307,23 @@ requirement_server <- function(input, output, session, rv) {
         rows <- c(rows, render_item(p, as.character(j), col, 0))
       }
       dept_cn <- requirement_num_to_cn(dept_idx)
+      # 一级行（部门标题）+ 右侧功能按键
+      dept_header <- sprintf(
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-weight:700;font-size:14px;color:#0f2b5c;font-family:\'Microsoft YaHei\',\'PingFang SC\',sans-serif;">%s、%s <span style="font-size:11px;color:#999;font-weight:400;">(%d条)</span></div>
+          <div style="white-space:nowrap;flex-shrink:0;">
+            <button class="btn btn-xs btn-default" title="在本部门下添加记录" onclick="Shiny.setInputValue(\'req_prog_dept_add_click\',\'%s\',{priority:\'event\'});">➕</button>
+            <button class="btn btn-xs btn-info" title="编辑部门名" onclick="Shiny.setInputValue(\'req_prog_dept_edit_click\',\'%s\',{priority:\'event\'});">✏</button>
+            <button class="btn btn-xs btn-danger" title="删除本部门及所有记录" onclick="if(confirm(\'删除部门「%s」及其所有记录？\'))Shiny.setInputValue(\'req_prog_dept_del_click\',\'%s\',{priority:\'event\'});">🗑</button>
+          </div>
+        </div>',
+        dept_cn, d, nrow(sub), d, d, d, d)
+      # 二级记录：整体缩进 2 个字符宽度（约 2em），体现一级层级
       parts <- c(parts, sprintf(
         '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:14px;margin-bottom:12px;">
-          <div style="font-weight:700;font-size:14px;color:#0f2b5c;margin-bottom:8px;">%s、%s <span style="font-size:11px;color:#999;font-weight:400;">(%d条)</span></div>
           %s
-        </div>', dept_cn, d, nrow(sub), paste(rows, collapse = "")))
+          <div style="margin-left:2em;">%s</div>
+        </div>', dept_header, paste(rows, collapse = "")))
     }
     tagList(top, HTML(paste(parts, collapse = "")))
   })
@@ -446,6 +460,69 @@ requirement_server <- function(input, output, session, rv) {
       dbDisconnect(con)
       showNotification(e$message, type = "error")
     })
+  })
+
+  # 一级行（部门）功能：本部门下添加记录
+  observeEvent(input$req_prog_dept_add_click, {
+    req(rv$logged_in, input$req_prog_dept_add_click)
+    dept <- input$req_prog_dept_add_click
+    rv$req_prog_parent_id <- 0L
+    rv$req_prog_prefill_dept <- dept
+    showModal(modalDialog(
+      title = sprintf("在「%s」下添加记录", dept),
+      textInput("req_prog_edit_dept", "部门", value = dept, width = "100%"),
+      textInput("req_prog_edit_person", "人员", width = "100%", placeholder = "如：李红"),
+      textInput("req_prog_edit_status", "状态", value = "进行中", width = "100%",
+        placeholder = "如：已完成 / 未回复 / 进行中"),
+      dateInput("req_prog_edit_date", "日期", value = Sys.Date()),
+      textAreaInput("req_prog_edit_content", "内容", rows = 3, width = "100%"),
+      footer = tagList(
+        actionButton("req_prog_save_btn", "保存", class = "btn-primary"),
+        modalButton("取消")
+      ), size = "l", easyClose = TRUE
+    ))
+  })
+
+  # 一级行（部门）功能：编辑部门名
+  observeEvent(input$req_prog_dept_edit_click, {
+    req(rv$logged_in, input$req_prog_dept_edit_click)
+    dept <- input$req_prog_dept_edit_click
+    rv$req_prog_edit_dept_old <- dept
+    showModal(modalDialog(
+      title = sprintf("重命名部门「%s」", dept),
+      textInput("req_prog_dept_new_name", "新部门名", value = dept, width = "100%"),
+      footer = tagList(
+        actionButton("req_prog_dept_rename_btn", "重命名", class = "btn-primary"),
+        modalButton("取消")
+      ), size = "s", easyClose = TRUE
+    ))
+  })
+
+  observeEvent(input$req_prog_dept_rename_btn, {
+    req(rv$logged_in)
+    sel_id <- req_selected()
+    old <- rv$req_prog_edit_dept_old %||% ""
+    if (is.null(sel_id) || old == "") return()
+    result <- requirement_progress_rename_dept(sel_id, old, input$req_prog_dept_new_name)
+    if (result$success) {
+      removeModal()
+      req_prog_trigger(req_prog_trigger() + 1)
+      req_gantt_trigger(req_gantt_trigger() + 1)
+      showNotification(result$message, type = "message")
+    } else showNotification(result$message, type = "error")
+  })
+
+  # 一级行（部门）功能：删除部门
+  observeEvent(input$req_prog_dept_del_click, {
+    req(rv$logged_in, input$req_prog_dept_del_click)
+    sel_id <- req_selected()
+    if (is.null(sel_id)) return()
+    result <- requirement_progress_delete_dept(sel_id, input$req_prog_dept_del_click)
+    if (result$success) {
+      req_prog_trigger(req_prog_trigger() + 1)
+      req_gantt_trigger(req_gantt_trigger() + 1)
+      showNotification(result$message, type = "message")
+    } else showNotification(result$message, type = "error")
   })
 
   # 绿勾状态更新（已完成 ↔ 进行中）

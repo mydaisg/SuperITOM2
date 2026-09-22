@@ -163,6 +163,63 @@ requirement_progress_toggle_done <- function(id) {
   finally = { db_disconnect(con) })
 }
 
+# 重命名部门（一级类）：批量更新该部门下所有进度记录（含子记录）的 dept
+requirement_progress_rename_dept <- function(requirement_id, old_dept, new_dept) {
+  con <- db_connect()
+  tryCatch({
+    if (is.null(new_dept) || trimws(new_dept) == "") {
+      return(list(success = FALSE, message = "新部门名不能为空"))
+    }
+    if (is.null(old_dept) || old_dept == "") {
+      return(list(success = FALSE, message = "原部门名不能为空"))
+    }
+    # 找出该部门下所有顶层记录 id，再包含其子记录
+    top_ids <- dbGetQuery(con, sprintf(
+      "SELECT id FROM requirement_progress WHERE requirement_id=%d AND dept='%s' AND (parent_id IS NULL OR parent_id=0)",
+      as.integer(requirement_id), gsub("'","''",old_dept)))$id
+    if (length(top_ids) == 0) {
+      return(list(success = FALSE, message = "部门不存在或无记录"))
+    }
+    all_ids <- top_ids
+    queue <- top_ids
+    while (length(queue) > 0) {
+      cur <- queue[1]; queue <- queue[-1]
+      kids <- dbGetQuery(con, sprintf("SELECT id FROM requirement_progress WHERE parent_id=%d", cur))$id
+      if (length(kids) > 0) { all_ids <- c(all_ids, kids); queue <- c(queue, kids) }
+    }
+    dbExecute(con, sprintf("UPDATE requirement_progress SET dept='%s' WHERE id IN (%s)",
+      gsub("'","''",new_dept), paste(all_ids, collapse=",")))
+    list(success = TRUE, message = sprintf("部门已重命名为「%s」（%d条）", new_dept, length(all_ids)))
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+
+# 删除部门（一级类）：级联删除该部门下所有进度记录（含子记录）
+requirement_progress_delete_dept <- function(requirement_id, dept) {
+  con <- db_connect()
+  tryCatch({
+    if (is.null(dept) || dept == "") {
+      return(list(success = FALSE, message = "部门名不能为空"))
+    }
+    top_ids <- dbGetQuery(con, sprintf(
+      "SELECT id FROM requirement_progress WHERE requirement_id=%d AND dept='%s' AND (parent_id IS NULL OR parent_id=0)",
+      as.integer(requirement_id), gsub("'","''",dept)))$id
+    if (length(top_ids) == 0) {
+      return(list(success = FALSE, message = "部门不存在或无记录"))
+    }
+    all_ids <- top_ids
+    queue <- top_ids
+    while (length(queue) > 0) {
+      cur <- queue[1]; queue <- queue[-1]
+      kids <- dbGetQuery(con, sprintf("SELECT id FROM requirement_progress WHERE parent_id=%d", cur))$id
+      if (length(kids) > 0) { all_ids <- c(all_ids, kids); queue <- c(queue, kids) }
+    }
+    dbExecute(con, sprintf("DELETE FROM requirement_progress WHERE id IN (%s)", paste(all_ids, collapse=",")))
+    list(success = TRUE, message = sprintf("已删除部门「%s」（%d条）", dept, length(all_ids)))
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+
 # 需求状态 / 优先级选项
 requirement_status_choices <- function() c("进行中", "已完成", "未开始", "暂停", "已关闭")
 requirement_priority_choices <- function() c("高", "中", "低")
