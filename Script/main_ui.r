@@ -72,6 +72,9 @@ source("Script/governance_ui.r")
 source("Script/compliance_ui.r")
 source("Script/component_library_ui.r")
 
+# 加载需求模块 UI
+source("Script/requirement_ui.r")
+
 # RBAC 管理函数（权限检查需要）
 source("Script/rbac_management.r")
 
@@ -117,8 +120,6 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
         '/data': '数据',
         '/process': '流程',
         '/duty': '岗职',
-        '/model': '模型',
-        '/visualization': '可视化',
         '/admin': '管理'
       };
       
@@ -333,6 +334,13 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       "项目",
       icon = icon("project-diagram"),
       project_ui()
+    ),
+
+    # 需求标签页（放在项目后面，方案前面）
+    if (can_access("需求")) tabPanel(
+      "需求",
+      icon = icon("clipboard-list"),
+      requirement_ui()
     ),
 
     # 方案标签页（放在项目后面，巡检前面）
@@ -641,11 +649,98 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       daily_report_ui()
     ),
 
-    # 数据中心标签页（数据归集）
+    # 数据标签页（合并：数据/模型/报表/可视化）
     if (can_access("数据")) tabPanel(
       "数据",
       icon = icon("database"),
-      data_center_ui()
+      tabsetPanel(
+        # 子菜单1：数据（数据中心/数据归集）
+        tabPanel("数据", icon = icon("database"), data_center_ui()),
+        # 子菜单2：模型
+        tabPanel("模型", icon = icon("cogs"),
+          fluidPage(
+            titlePanel("模型"),
+            sidebarLayout(
+              sidebarPanel(
+                textInput("model_name", "模型名称"),
+                selectInput("model_type", "模型类型", choices = c("线性回归", "决策树", "随机森林", "神经网络", "SVM")),
+                textAreaInput("model_params", "模型参数"),
+                tags$button(id="train_model", type="button", class="btn btn-primary action-button", disabled=NA, "训练模型"),
+                br(), br(),
+                actionButton("refresh_models", "刷新模型", class = "btn-info")
+              ),
+              mainPanel(
+                h4("模型列表"),
+                DTOutput("model_table"),
+                br(),
+                h4("训练结果"),
+                verbatimTextOutput("training_result")
+              )
+            )
+          )
+        ),
+        # 子菜单3：报表（占位页，后续填充）
+        tabPanel("报表", icon = icon("file-alt"),
+          fluidPage(
+            titlePanel("报表"),
+            div(style = "text-align:center; margin-top:80px; color:#999;",
+              icon("file-alt", style = "font-size:48px; color:#ccc;"),
+              h3("报表模块建设中", style = "color:#bbb;"),
+              p("敬请期待，后续将在此展示统计报表。")
+            )
+          )
+        ),
+        # 子菜单4：可视化
+        tabPanel("可视化", icon = icon("chart-line"),
+          fluidPage(
+            # 流程实例指标卡片
+            fluidRow(
+              column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#e8f5e9;",
+                h3(textOutput("viz_mtr_complete_rate"),style="margin:0;color:#2e7d32;font-size:24px;"),
+                p("流程完成率",style="margin:3px 0 0;font-size:12px;"))),
+              column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#fff3e0;",
+                h3(textOutput("viz_mtr_timeout_rate"),style="margin:0;color:#e65100;font-size:24px;"),
+                p("超时率",style="margin:3px 0 0;font-size:12px;"))),
+              column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#e3f2fd;",
+                h3(textOutput("viz_mtr_avg_duration"),style="margin:0;color:#1565c0;font-size:24px;"),
+                p("平均耗时",style="margin:3px 0 0;font-size:12px;"))),
+              column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#f3e5f5;",
+                h3(textOutput("viz_mtr_running"),style="margin:0;color:#7b1fa2;font-size:24px;"),
+                p("运行中流程",style="margin:3px 0 0;font-size:12px;")))
+            ),
+            fluidRow(
+              column(6, div(class="well well-sm",style="padding:8px;margin-bottom:10px;",
+                h5("今日活动",style="margin:0 0 5px;color:#555;font-size:13px;"),
+                span(textOutput("viz_mtr_today"),style="color:#337ab7;font-size:16px;font-weight:bold;"))),
+              column(6, div(class="well well-sm",style="padding:8px;margin-bottom:10px;",
+                h5("流程引擎",style="margin:0 0 5px;color:#555;font-size:13px;"),
+                span("前往 流程模块 创建和管理流程", style="font-size:13px;color:#666;")))
+            ),
+            hr(),
+            titlePanel("数据可视化"),
+            tags$style(HTML("
+              .viz-code-toggle { cursor:pointer; color:#337ab7; font-size:12px; display:inline-block; user-select:none; }
+              .viz-code-toggle:hover { text-decoration:underline; }
+            ")),
+            sidebarLayout(
+              sidebarPanel(
+                selectInput("viz_type", "图表类型", choices = c("词云图", "柱状图", "折线图", "散点图", "饼图", "热力图"), selected = "词云图"),
+                selectInput("viz_data", "数据源", choices = c("记事数据", "ITOM数据", "模型数据", "流程实例"), selected = "记事数据"),
+                actionButton("generate_viz", "生成图表", class = "btn-primary"),
+                hr(),
+                tags$a("▸ 算法 / 代码", class="viz-code-toggle",
+                  onclick="var b=document.getElementById('viz_code_block');b.style.display=b.style.display==='none'?'block':'none';this.textContent=(b.style.display==='none'?'▸':'▾')+' 算法 / 代码';"),
+                div(id="viz_code_block", style="display:none;",
+                  htmlOutput("viz_code", style = "margin-top:6px;")
+                )
+              ),
+              mainPanel(
+                uiOutput("viz_plot")
+              )
+            )
+          )
+        )
+      )
     ),
 
     # 流程引擎标签页
@@ -675,85 +770,6 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       performance_ui()
     ),
 
-    # 模型训练标签页
-    if (can_access("模型")) tabPanel(
-      "模型",
-      icon = icon("cogs"),  # 齿轮图标
-      fluidPage(
-        titlePanel("模型"),
-        sidebarLayout(
-          sidebarPanel(
-            textInput("model_name", "模型名称"),
-            selectInput("model_type", "模型类型", choices = c("线性回归", "决策树", "随机森林", "神经网络", "SVM")),
-            textAreaInput("model_params", "模型参数"),
-            tags$button(id="train_model", type="button", class="btn btn-primary action-button", disabled=NA, "训练模型"),
-            br(), br(),
-            actionButton("refresh_models", "刷新模型", class = "btn-info")
-          ),
-          mainPanel(
-            h4("模型列表"),
-            DTOutput("model_table"),  # 模型表格
-            br(),
-            h4("训练结果"),
-            verbatimTextOutput("training_result")  # 训练结果文本输出
-          )
-        )
-      )
-    ),
-    
-    # 数据可视化标签页（含流程实例）
-    if (can_access("可视化")) tabPanel(
-      "可视化",
-      icon = icon("chart-line"),
-      fluidPage(
-        # 流程实例指标卡片
-        fluidRow(
-          column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#e8f5e9;",
-            h3(textOutput("viz_mtr_complete_rate"),style="margin:0;color:#2e7d32;font-size:24px;"),
-            p("流程完成率",style="margin:3px 0 0;font-size:12px;"))),
-          column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#fff3e0;",
-            h3(textOutput("viz_mtr_timeout_rate"),style="margin:0;color:#e65100;font-size:24px;"),
-            p("超时率",style="margin:3px 0 0;font-size:12px;"))),
-          column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#e3f2fd;",
-            h3(textOutput("viz_mtr_avg_duration"),style="margin:0;color:#1565c0;font-size:24px;"),
-            p("平均耗时",style="margin:3px 0 0;font-size:12px;"))),
-          column(3, div(class="well well-sm",style="text-align:center;padding:10px;margin-bottom:10px;background:#f3e5f5;",
-            h3(textOutput("viz_mtr_running"),style="margin:0;color:#7b1fa2;font-size:24px;"),
-            p("运行中流程",style="margin:3px 0 0;font-size:12px;")))
-        ),
-        fluidRow(
-          column(6, div(class="well well-sm",style="padding:8px;margin-bottom:10px;",
-            h5("今日活动",style="margin:0 0 5px;color:#555;font-size:13px;"),
-            span(textOutput("viz_mtr_today"),style="color:#337ab7;font-size:16px;font-weight:bold;"))),
-          column(6, div(class="well well-sm",style="padding:8px;margin-bottom:10px;",
-            h5("流程引擎",style="margin:0 0 5px;color:#555;font-size:13px;"),
-            span("前往 流程模块 创建和管理流程", style="font-size:13px;color:#666;")))
-        ),
-        hr(),
-        titlePanel("数据可视化"),
-        tags$style(HTML("
-          .viz-code-toggle { cursor:pointer; color:#337ab7; font-size:12px; display:inline-block; user-select:none; }
-          .viz-code-toggle:hover { text-decoration:underline; }
-        ")),
-        sidebarLayout(
-          sidebarPanel(
-            selectInput("viz_type", "图表类型", choices = c("词云图", "柱状图", "折线图", "散点图", "饼图", "热力图"), selected = "词云图"),
-            selectInput("viz_data", "数据源", choices = c("记事数据", "ITOM数据", "模型数据", "流程实例"), selected = "记事数据"),
-            actionButton("generate_viz", "生成图表", class = "btn-primary"),
-            hr(),
-            tags$a("▸ 算法 / 代码", class="viz-code-toggle",
-              onclick="var b=document.getElementById('viz_code_block');b.style.display=b.style.display==='none'?'block':'none';this.textContent=(b.style.display==='none'?'▸':'▾')+' 算法 / 代码';"),
-            div(id="viz_code_block", style="display:none;",
-              htmlOutput("viz_code", style = "margin-top:6px;")
-            )
-          ),
-          mainPanel(
-            uiOutput("viz_plot")
-          )
-        )
-      )
-    ),
-    
     # 工具下拉菜单（巡检/测试/性能 + 原工具10个tab，共13个子页）
     tools_menu_ui(can_access),
 

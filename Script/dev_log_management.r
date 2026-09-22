@@ -15,15 +15,18 @@ dev_log_generate_number <- function() {
     if (nrow(existing) == 0 || is.na(existing$log_no[1])) {
       seq <- 1L
     } else {
-      last_seq <- as.integer(substr(existing$log_no[1], 13, 15))
+      # 取 log_no 最后 3 位作为流水号（log_no 长度可能因历史数据不一致而变化）
+      no <- existing$log_no[1]
+      last_seq <- as.integer(substr(no, nchar(no) - 2, nchar(no)))
+      if (is.na(last_seq)) last_seq <- 0L
       seq <- last_seq + 1L
-      # 防并发重试
-      for (retry in 1:5) {
-        check <- dbGetQuery(con, sprintf(
-          "SELECT id FROM dev_logs WHERE log_no = 'DL%s%03d'", today_prefix, seq))
-        if (nrow(check) == 0) break
-        seq <- seq + 1L
-      }
+    }
+    # 防并发/防重复：跳过已存在的编号，直到找到空闲号
+    repeat {
+      check <- dbGetQuery(con, sprintf(
+        "SELECT id FROM dev_logs WHERE log_no = 'DL%s%03d'", today_prefix, seq))
+      if (nrow(check) == 0) break
+      seq <- seq + 1L
     }
     sprintf("DL%s%03d", today_prefix, seq)
   }, error = function(e) "DL00000000000",
@@ -68,15 +71,15 @@ dev_log_get_all <- function(module = NULL, from_date = NULL, to_date = NULL, sea
 #     result="中文结果...",       result_en="Short commit msg, ~6 words",
 #     commit_msg="fix: short 6-word commit message",
 #     code_snippet="...", files_changed="...")
-dev_log_add <- function(module, title, requirement, solution, result, result_en = NULL, requirement_en = NULL, solution_en = NULL, commit_msg = NULL, code_snippet = NULL, files_changed = NULL, operator = NULL) {
+dev_log_add <- function(module, title, requirement, solution, result, result_en = NULL, requirement_en = NULL, solution_en = NULL, commit_msg = NULL, code_snippet = NULL, files_changed = NULL, operator = NULL, source_text = NULL) {
   log_no <- dev_log_generate_number()
   con <- db_connect()
   tryCatch({
     now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
     op <- if (is.null(operator) || length(operator) == 0) "系统" else operator$username[1] %||% "系统"
     dbExecute(con, sprintf(
-      "INSERT INTO dev_logs (log_no, module, title, requirement, requirement_en, solution, solution_en, result, result_en, commit_msg, code_snippet, files_changed, created_by, created_at)
-       VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')",
+      "INSERT INTO dev_logs (log_no, module, title, requirement, requirement_en, solution, solution_en, result, result_en, commit_msg, code_snippet, files_changed, source_text, created_by, created_at)
+       VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')",
       log_no,
       gsub("'","''", module %||% ""),
       gsub("'","''", title %||% ""),
@@ -89,6 +92,7 @@ dev_log_add <- function(module, title, requirement, solution, result, result_en 
       gsub("'","''", commit_msg %||% result_en %||% ""),
       gsub("'","''", code_snippet %||% ""),
       gsub("'","''", files_changed %||% ""),
+      gsub("'","''", source_text %||% ""),
       gsub("'","''", op),
       now))
     log_user_operation("开发日志-新增", paste(log_no, title), op)

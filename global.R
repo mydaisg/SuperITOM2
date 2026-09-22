@@ -1075,7 +1075,10 @@ migrate_database <- function() {
       data.frame(module="合规", component="面板", code="compliance_view", name="查看", description="查看合规管理"),
       data.frame(module="合规", component="操作", code="compliance_create", name="新增", description="新增合规规则"),
       data.frame(module="组件", component="面板", code="component_view", name="查看", description="查看标准组件库"),
-      data.frame(module="组件", component="操作", code="component_create", name="登记", description="登记组件")
+      data.frame(module="组件", component="操作", code="component_create", name="登记", description="登记组件"),
+      data.frame(module="需求", component="面板", code="req_view", name="查看", description="查看需求管理"),
+      data.frame(module="需求", component="操作", code="req_create", name="新建", description="新建需求"),
+      data.frame(module="需求", component="操作", code="req_manage", name="管理", description="管理需求进度与甘特图")
     )
     for (i in seq_len(nrow(supplement_perms))) {
       dbExecute(con, sprintf("INSERT OR IGNORE INTO rbac_permissions (module, component, code, name, description) VALUES ('%s','%s','%s','%s','%s')",
@@ -1356,6 +1359,10 @@ migrate_database <- function() {
     if (!"commit_msg" %in% dl_cols$name) {
       dbExecute(con, "ALTER TABLE dev_logs ADD COLUMN commit_msg TEXT")
       cat("数据库迁移完成：dev_logs 表已添加 commit_msg 列\n")
+    }
+    if (!"source_text" %in% dl_cols$name) {
+      dbExecute(con, "ALTER TABLE dev_logs ADD COLUMN source_text TEXT")
+      cat("数据库迁移完成：dev_logs 表已添加 source_text 列\n")
     }
 
     # 迁移：方案表
@@ -1781,6 +1788,51 @@ migrate_database <- function() {
         updated_at TEXT DEFAULT (datetime('now','localtime'))
       )")
       cat("数据库迁移完成：已创建 component_library 表\n")
+    }
+
+    # ===============================================
+    # 需求模块（需求主表 + 进度条目子表）
+    # ===============================================
+    if (!"requirements" %in% tables) {
+      dbExecute(con, "CREATE TABLE requirements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        req_no TEXT NOT NULL DEFAULT '',
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT DEFAULT '进行中',
+        priority TEXT DEFAULT '中',
+        owner TEXT,
+        start_date TEXT,
+        due_date TEXT,
+        created_by INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_requirements_no ON requirements(req_no)")
+      cat("数据库迁移完成：已创建 requirements 表\n")
+    }
+    if (!"requirement_progress" %in% tables) {
+      dbExecute(con, "CREATE TABLE requirement_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        requirement_id INTEGER NOT NULL,
+        dept TEXT,
+        person TEXT,
+        status TEXT,
+        progress_date TEXT,
+        content TEXT,
+        sort_order INTEGER DEFAULT 0,
+        parent_id INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (requirement_id) REFERENCES requirements(id)
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_req_progress_req ON requirement_progress(requirement_id)")
+      cat("数据库迁移完成：已创建 requirement_progress 表\n")
+    } else {
+      rp_cols <- dbGetQuery(con, "PRAGMA table_info(requirement_progress)")
+      if (!("parent_id" %in% rp_cols$name)) {
+        dbExecute(con, "ALTER TABLE requirement_progress ADD COLUMN parent_id INTEGER DEFAULT 0")
+        cat("数据库迁移完成：requirement_progress 表已添加 parent_id 列\n")
+      }
     }
 
   }, error = function(e) {

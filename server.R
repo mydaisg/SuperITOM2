@@ -70,6 +70,8 @@ source("Script/compliance_management.r")  # 合规模块数据层
 source("Script/compliance_server.r")      # 合规模块服务端
 source("Script/component_library_management.r") # 组件库模块数据层
 source("Script/component_library_server.r")     # 组件库模块服务端
+source("Script/requirement_management.r")       # 需求模块数据层
+source("Script/requirement_server.r")           # 需求模块服务端
 
 
 # 注册静态资源路径（www 目录下的文件可通过 /www/ 访问）
@@ -3854,6 +3856,9 @@ server <- function(input, output, session) {
   governance_server(input, output, session, rv)
   compliance_server(input, output, session, rv)
   component_library_server(input, output, session, rv)
+
+  # 需求模块
+  requirement_server(input, output, session, rv)
 
   # 通用数据导入模块
   data_import_server(input, output, session, rv)

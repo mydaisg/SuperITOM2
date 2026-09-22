@@ -100,6 +100,26 @@ MODULE_INVENTORY <- list(
     )
   ),
   list(
+    module = "需求", icon = "clipboard-list",
+    frontend = "需求标签页（项目之后，方案之前）→ requirement_ui()（需求列表/进度/甘特图）",
+    source = c("Script/requirement_management.r", "Script/requirement_server.r", "Script/requirement_ui.r"),
+    tables = "requirements, requirement_progress",
+    perms = list(
+      list(code="req_view",   name="查看需求"),
+      list(code="req_create", name="新建需求"),
+      list(code="req_manage", name="管理需求")
+    ),
+    key_funcs = c(
+      "requirement_get_all() / get_by_id() — 需求查询",
+      "requirement_generate_no() → REQ+YYYYMMDD+3位流水",
+      "requirement_add() / update() / delete() — 需求CRUD(级联删除进度)",
+      "requirement_progress_get_by_req() / add() / update() / delete() — 进度条目CRUD",
+      "requirement_status_color() — 需求状态→颜色",
+      "requirement_progress_status_color() — 进度状态→颜色",
+      "requirement_server() — 需求模块服务端(甘特图=简单版时长数据条)"
+    )
+  ),
+  list(
     module = "巡检", icon = "clipboard-check",
     frontend = "巡检标签页 (5个子标签: 我的任务/计划/记录/异常/已删除)",
     source = c("Script/inspection_management.r", "Script/inspection_server.r", "Script/main_ui.r"),
@@ -508,7 +528,7 @@ MODULE_INVENTORY <- list(
   ),
   list(
     module = "数据", icon = "database",
-    frontend = "数据标签页 → data_center_ui()",
+    frontend = "数据标签页 → 子标签：数据(data_center_ui)/模型/报表(占位)/可视化",
     source = c("Script/data_center_server.r", "Script/data_center_ui.r"),
     tables = "- (跨模块数据归集聚合展示)",
     perms = list(
@@ -572,7 +592,7 @@ MODULE_INVENTORY <- list(
   ),
   list(
     module = "模型", icon = "cogs",
-    frontend = "模型标签页 (sidebarLayout)",
+    frontend = "数据 → 模型（子标签页，sidebarLayout）",
     source = c("Script/model_training.r", "server.R"),
     tables = "models",
     perms = list(
@@ -588,7 +608,7 @@ MODULE_INVENTORY <- list(
   ),
   list(
     module = "可视化", icon = "chart-line",
-    frontend = "可视化标签页 (sidebarLayout + plotly图表)",
+    frontend = "数据 → 可视化（子标签页，sidebarLayout + plotly图表）",
     source = c("Script/visualization.r", "server.R"),
     tables = "- (生成图表，无持久化表)",
     perms = list(

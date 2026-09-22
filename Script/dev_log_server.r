@@ -109,16 +109,25 @@ dev_log_server <- function(input, output, session, rv) {
             )
           )
         )
-        if (!is.na(r$requirement) && nchar(r$requirement) > 0) {
+        if ((!is.na(r$requirement) && nchar(r$requirement) > 0) || (!is.null(r$source_text) && !is.na(r$source_text) && nchar(r$source_text) > 0)) {
           en_req <- if (!is.null(r$requirement_en) && !is.na(r$requirement_en) && nchar(r$requirement_en) > 0) {
             tags$div(style = "font-size:11px; color:#b45309; font-style:italic; font-family:Consolas,monospace; margin-bottom:4px; opacity:0.8;", icon("brain"), " ", r$requirement_en)
           } else NULL
-          hl_req <- if (length(search_words) > 0) HTML(.hl(r$requirement, search_words)) else r$requirement
+          req_body <- if (!is.na(r$requirement) && nchar(r$requirement) > 0) {
+            hl_req <- if (length(search_words) > 0) HTML(.hl(r$requirement, search_words)) else r$requirement
+            tags$div(style = "white-space:pre-wrap; line-height:1.5;", hl_req)
+          } else NULL
+          src_body <- if (!is.null(r$source_text) && !is.na(r$source_text) && nchar(r$source_text) > 0) {
+            tags$div(style = "margin-top:6px; padding:6px 8px; background:#fefce8; border:1px dashed #eab308; border-radius:4px;",
+              tags$div(style = "font-size:10px; color:#a16207; font-weight:bold; margin-bottom:2px;", icon("quote-left"), " 原始需求来源"),
+              tags$div(style = "white-space:pre-wrap; line-height:1.5; font-size:12px; color:#713f12;", r$source_text))
+          } else NULL
           parts <- c(parts, list(
             tags$div(style = "margin-top:6px; padding:8px 10px; background:#fff8e1; border-left:3px solid #f59e0b; border-radius:0 4px 4px 0; font-size:13px;",
               tags$div(style = "font-size:11px; color:#b45309; font-weight:bold; margin-bottom:3px;", icon("clipboard"), " 需求"),
-              tags$div(style = "white-space:pre-wrap; line-height:1.5;", hl_req),
-              en_req)
+              req_body,
+              en_req,
+              src_body)
           ))
         }
         if (!is.na(r$solution) && nchar(r$solution) > 0) {

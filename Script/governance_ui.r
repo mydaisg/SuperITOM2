@@ -50,10 +50,69 @@ governance_ui <- function(is_admin = FALSE) {
 
       # ── 治理模型 ──
       tabPanel("治理模型",
-        div(style = "text-align:center; padding:60px; color:#999;",
-          icon("sitemap", "fa-4x"), br(), br(),
-          h4("企业治理模型（框架）"),
-          p("战略委员会 · 风险委员会 · 审计/合规委员会的分工与权责。待后续实现。")
+        br(),
+        # 模型选择
+        fluidRow(
+          column(3, selectInput("gov_model_selector", "治理模型",
+            choices = c("BSC 平衡计分卡" = "BSC"),
+            width = "100%"))
+        ),
+        br(),
+
+        # 一、BSC 平衡计分卡的四个维度
+        tags$div(class = "gov-sec", icon("sitemap"), " 一、平衡计分卡的四个维度"),
+        tags$table(class = "gov-tbl",
+          tags$thead(
+            tags$tr(tags$th("维度", style = "width:16%;"), tags$th("关键指标"))
+          ),
+          tags$tbody(
+            tags$tr(
+              tags$td(tags$b("财务维度")),
+              tags$td("订单金额、销售收入、利润、现金流、回款等经营最终结果。")
+            ),
+            tags$tr(
+              tags$td(tags$b("客户维度")),
+              tags$td("市场份额、客户满意度、新增客户数、留存率、复购率、流失率、老客户转介绍、客户钱包份额。")
+            ),
+            tags$tr(
+              tags$td(tags$b("内部运营维度")),
+              tags$td("研发、生产制造、售后服务、老产品降本、一次生产合格率（直通率）、机器稼动率/OEE、销售预测准确率、DSO 应收账款周转天数、ITO 存货周转天数、超长期应收、人均效益。")
+            ),
+            tags$tr(
+              tags$td(tags$b("学习与成长维度")),
+              tags$td("招聘、核心人才到岗、继任者计划、合理化建议采纳、员工流失率、薪酬包投入占比。")
+            )
+          )
+        ),
+
+        # 二、四个维度的底层逻辑
+        tags$div(class = "gov-sec", icon("link"), " 二、四个维度的底层逻辑"),
+        tags$p(class = "gov-note",
+          "财务目标来自新老客户，赢得客户靠内部运营竞争力（成本、服务、交期、品质），而运营能力又取决于团队持续的学习与成长。"
+        ),
+
+        # 三、平衡计分卡的五大平衡
+        tags$div(class = "gov-sec", icon("balance-scale"), " 三、平衡计分卡的五大平衡"),
+        tags$table(class = "gov-tbl",
+          tags$thead(
+            tags$tr(tags$th("#"), tags$th("平衡关系"), tags$th("说明"))
+          ),
+          tags$tbody(
+            tags$tr(tags$td("1"), tags$td("财务指标与非财务指标的平衡"), tags$td("因与果")),
+            tags$tr(tags$td("2"), tags$td("内部指标与外部指标的平衡"), tags$td("内外兼顾")),
+            tags$tr(tags$td("3"), tags$td("结果与过程的平衡"), tags$td("既看结果，也管过程")),
+            tags$tr(tags$td("4"), tags$td("定量与定性的平衡"), tags$td("可量化与可判断并重")),
+            tags$tr(tags$td("5"), tags$td("长期指标与短期指标的平衡"), tags$td("增加土壤肥力与多打粮食"))
+          )
+        ),
+
+        # 四、一句话记忆
+        tags$div(class = "gov-sec", icon("lightbulb"), " 四、一句话记忆"),
+        tags$p(class = "gov-note",
+          tags$i(
+            "\u201c用一棵树来比喻：学习成长是根，内部运营是树干，客户是树叶和花朵，财务是夏天结出的果实。",
+            "想在果实上出成绩，就要在根上持续下功夫。\u201d"
+          )
         )
       ),
 
