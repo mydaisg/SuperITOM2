@@ -288,20 +288,29 @@ daily_report_ui <- function() {
       .tl-card-bd { font-size: 12px; color: #475569; line-height: 1.6; white-space: pre-wrap; }
     ")),
     fluidRow(
-      column(2, dateInput("dr_date", "选择日期", value = Sys.Date(), language = "zh-CN")),
-      column(4, div(style = "margin-top:25px;",
+      column(12, div(style = "margin-top:5px;",
         actionButton("dr_today", "今天", class = "btn-default btn-sm"),
         actionButton("dr_yesterday", "昨天", class = "btn-default btn-sm"),
         actionButton("dr_this_week", "本周", class = "btn-default btn-sm"),
         actionButton("dr_last_week", "上周", class = "btn-default btn-sm"),
         actionButton("dr_this_month", "本月", class = "btn-info btn-sm"),
-        actionButton("dr_last_month", "上月", class = "btn-info btn-sm"))),
-      column(2, selectInput("dr_user_filter", "筛选人员",
-        choices = c("全部人员" = "all"))),
-      column(2, div(style = "margin-top:25px;",
-        actionButton("dr_refresh", "刷新总结", class = "btn-primary btn-sm", icon = icon("sync")))),
-      column(3, div(style = "margin-top:25px; text-align:right;",
-        actionButton("dr_copy_text", "复制文本总结", class = "btn-default btn-sm", icon = icon("copy"))))
+        actionButton("dr_last_month", "上月", class = "btn-info btn-sm"),
+        actionButton("dr_this_quarter", "本季度", class = "btn-success btn-sm"),
+        actionButton("dr_this_year", "本年度", class = "btn-success btn-sm"),
+        actionButton("dr_pick_month", "指定月份", class = "btn-warning btn-sm"),
+        actionButton("dr_pick_year", "指定年份", class = "btn-warning btn-sm"),
+        span(style = "display:inline-block;margin-left:12px;",
+          selectInput("dr_pick_year_val", NULL,
+            choices = (as.integer(format(Sys.Date(), "%Y")) - 9):(as.integer(format(Sys.Date(), "%Y")) + 1),
+            selected = as.integer(format(Sys.Date(), "%Y")), width = "70px")),
+        span(style = "display:inline-block;",
+          selectInput("dr_pick_month_val", NULL, choices = 1:12,
+            selected = as.integer(format(Sys.Date(), "%m")), width = "60px")),
+        span(style = "display:inline-block;margin-left:12px;",
+          selectInput("dr_user_filter", NULL, choices = c("全部人员" = "all"), width = "160px")),
+        span(style = "display:inline-block;margin-left:12px;",
+          actionButton("dr_refresh", "刷新总结", class = "btn-primary btn-sm", icon = icon("sync")),
+          actionButton("dr_copy_text", "复制文本总结", class = "btn-default btn-sm", icon = icon("copy")))))
     ),
     hr(),
     tabsetPanel(
@@ -374,6 +383,56 @@ daily_report_server <- function(input, output, session, rv) {
     updateDateInput(session, "dr_date", value = d)
   })
 
+  # 计算某年某季度的起止日期（quarter = 1~4）
+  dr_quarter_range <- function(y, quarter) {
+    start_month <- (quarter - 1) * 3 + 1
+    start <- as.Date(sprintf("%d-%02d-01", y, start_month))
+    end <- seq(start, by = "month", length.out = 4)[4] - 1
+    list(start = start, end = end)
+  }
+
+  # 本季度
+  observeEvent(input$dr_this_quarter, {
+    d <- Sys.Date()
+    y <- as.integer(format(d, "%Y"))
+    quarter <- (as.integer(format(d, "%m")) - 1) %/% 3 + 1
+    rng <- dr_quarter_range(y, quarter)
+    dr_month_mode(list(start = rng$start, end = rng$end,
+                       label = sprintf("%d年Q%d", y, quarter)))
+    updateDateInput(session, "dr_date", value = rng$start)
+  })
+
+  # 本年度
+  observeEvent(input$dr_this_year, {
+    d <- Sys.Date()
+    y <- as.integer(format(d, "%Y"))
+    dr_month_mode(list(start = as.Date(sprintf("%d-01-01", y)),
+                       end = as.Date(sprintf("%d-12-31", y)),
+                       label = sprintf("%d年", y)))
+    updateDateInput(session, "dr_date", value = as.Date(sprintf("%d-01-01", y)))
+  })
+
+  # 指定月份（使用 dr_pick_year_val + dr_pick_month_val）
+  observeEvent(input$dr_pick_month, {
+    req(input$dr_pick_year_val, input$dr_pick_month_val)
+    y <- as.integer(input$dr_pick_year_val)
+    m <- as.integer(input$dr_pick_month_val)
+    d <- as.Date(sprintf("%d-%02d-01", y, m))
+    dr_month_mode(list(start = d, end = seq(d, by = "month", length.out = 2)[2] - 1,
+                       label = format(d, "%Y年%m月")))
+    updateDateInput(session, "dr_date", value = d)
+  })
+
+  # 指定年份（使用 dr_pick_year_val）
+  observeEvent(input$dr_pick_year, {
+    req(input$dr_pick_year_val)
+    y <- as.integer(input$dr_pick_year_val)
+    dr_month_mode(list(start = as.Date(sprintf("%d-01-01", y)),
+                       end = as.Date(sprintf("%d-12-31", y)),
+                       label = sprintf("%d年", y)))
+    updateDateInput(session, "dr_date", value = as.Date(sprintf("%d-01-01", y)))
+  })
+
   # 初始化用户筛选下拉
   observe({
     req(rv$logged_in)
@@ -398,7 +457,8 @@ daily_report_server <- function(input, output, session, rv) {
   dr_data <- reactiveVal(NULL)
 
   # 生成日报（支持日/月模式）
-  observeEvent(list(input$dr_refresh, input$dr_date, input$dr_user_filter, rv$daily_report_refresh), {
+  # ★ 依赖列表必须包含 dr_month_mode()，否则模式切换（如本年度）但日期恰好不变时不会刷新
+  observeEvent(list(input$dr_refresh, input$dr_date, input$dr_user_filter, rv$daily_report_refresh, dr_month_mode()), {
     req(rv$logged_in, input$dr_date)
 
     mm <- dr_month_mode()

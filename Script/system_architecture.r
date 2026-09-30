@@ -496,6 +496,9 @@ system_architecture_ui <- function() {
           tags$tr(tags$td("任务"), tags$td(tags$code("daily_report_get_tasks()")), tags$td("按日期提取任务")),
           tags$tr(tags$td("日志"), tags$td(tags$code("daily_report_get_task_logs()")), tags$td("任务反馈日志")),
           tags$tr(tags$td("记事"), tags$td(tags$code("daily_report_get_note_comments()")), tags$td("记事评论按用户聚合")),
+          tags$tr(tags$td("季度"), tags$td(tags$code("dr_quarter_range(y,q)")), tags$td("本季度起止日期计算")),
+          tags$tr(tags$td("范围模式"), tags$td(tags$code("dr_month_mode")), tags$td("list(start,end,label) 驱动日/周/月/季度/年范围查询")),
+          tags$tr(tags$td("时间维度"), tags$td(tags$code("今天/昨天/本周/上周/本月/上月/本季度/本年度/指定月份/指定年份")), tags$td("快捷按钮 + 年份/月份下拉")),
           tags$tr(tags$td("复制"), tags$td(tags$code("dr_copy_text")), tags$td("复制纯文本总结: 工作日志 日期 (N条) 姓名")),
           tags$tr(tags$td("格式"), tags$td(tags$code("dr_cn_number()")), tags$td("中文序号: 一、二、三、...")
         )),

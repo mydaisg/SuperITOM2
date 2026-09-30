@@ -55,13 +55,17 @@ MODULE_INVENTORY <- list(
   ),
   list(
     module = "首页", icon = "home",
-    frontend = "首页标签页 (navbarPage tabPanel)",
-    source = c("server.R"),
+    frontend = "首页标签页 (navbarPage tabPanel + 一键功能面板)",
+    source = c("server.R", "Script/quick_actions_ui.r"),
     tables = "projects, work_orders, project_tasks (聚合查询)",
     perms = list(list(code="home_view", name="查看首页")),
     key_funcs = c(
       "work_order_get_stats() — 工单统计卡片数据",
-      "project_get_all() — 我的项目列表(排除已完成/关闭)"
+      "project_get_all() — 我的项目列表(排除已完成/关闭)",
+      "quick_actions_ui() — 一键功能面板UI(首页标题右侧可展开/收缩)",
+      "quick_actions_body(actions) — 按模块分类渲染功能项",
+      "QUICK_ACTIONS — 一键功能清单(工单/项目/记事/巡检/测试/工具/总结/数据)",
+      "点击行为: navigate跳转(带聚焦) / trigger直接触发(切测试页后自动点击按钮)"
     )
   ),
   list(
@@ -384,12 +388,18 @@ MODULE_INVENTORY <- list(
       list(code="dr_view", name="查看总结")
     ),
     key_funcs = c(
-      "daily_report_get_by_date() — 按日期提取总结",
-      "daily_report_get_by_person() — 按人提取工作记录",
-      "daily_report_copy_text() — 复制文本格式总结",
+      "daily_report_get_work_orders() — 按日期提取工单(创建/处理/完成)",
+      "daily_report_get_tasks() — 按日期提取任务",
+      "daily_report_get_task_logs() — 任务反馈日志",
+      "daily_report_get_note_comments() — 记事评论(含跨天祖先+后代)",
+      "daily_report_get_users() — 活跃用户列表",
+      "dr_cn_number() — 中文序号(一/二/三…)",
+      "dr_quarter_range(y,q) — 季度起止日期计算",
+      "dr_month_mode — 日期范围模式(日/周/月/季度/年, list(start,end,label))",
       "daily_report_server() — 总结模块服务端",
       "daily_report_ui() — 总结模块UI",
-      "自动聚合源: 工单操作记录 + 项目任务反馈日志 + 今日记事"
+      "时间维度: 今天/昨天/本周/上周/本月/上月/本季度/本年度/指定月份/指定年份",
+      "自动聚合源: 工单操作记录 + 项目任务反馈日志 + 记事评论"
     )
   ),
   list(

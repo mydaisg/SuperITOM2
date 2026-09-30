@@ -95,7 +95,12 @@ dev_log_add <- function(module, title, requirement, solution, result, result_en 
       gsub("'","''", source_text %||% ""),
       gsub("'","''", op),
       now))
-    log_user_operation("开发日志-新增", paste(log_no, title), op)
+    # 操作日志独立 tryCatch：即使日志函数缺失/失败，也不影响开发日志已写入的结果
+    tryCatch({
+      if (exists("log_user_operation", mode = "function")) {
+        log_user_operation("开发日志-新增", paste(log_no, title), op)
+      }
+    }, error = function(e) NULL)
     list(success = TRUE, message = paste("开发日志已记录", log_no), log_no = log_no)
   }, error = function(e) list(success = FALSE, message = paste("记录失败:", e$message)),
   finally = { db_disconnect(con) })

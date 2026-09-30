@@ -56,6 +56,9 @@ source("Script/performance_ui.r")
 # 加载记事模块
 source("Script/note_ui.r")
 
+# 加载一键功能模块（首页快捷入口）
+source("Script/quick_actions_ui.r")
+
 # 加载资产模块
 source("Script/asset_ui.r")
 source("Script/seat_map_v2_ui.r")
@@ -211,7 +214,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       "首页",  # 标签页标题
       icon = icon("home"),  # 标签页图标
       fluidPage(
-        # 首页项目点击事件处理
+        # 首页项目点击事件处理 + 一键功能面板
         tags$script(HTML("
           $(document).on('click', '.proj-enter-btn', function(e) {
             e.stopPropagation(); e.preventDefault();
@@ -219,8 +222,50 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
             var name = $(this).data('name');
             Shiny.setInputValue('proj_enter_click', {id: String(id), name: name}, {priority:'event'});
           });
+
+          // ── 一键功能面板 ──
+          // 展开/收缩
+          $(document).on('click', '#qa-toggle', function(e) {
+            e.stopPropagation();
+            var p = document.getElementById('qa-panel');
+            p.style.display = (p.style.display === 'none' || p.style.display === '') ? 'block' : 'none';
+          });
+          // 功能项点击：navigate 跳转 / trigger 直接触发
+          $(document).on('click', '.qa-action', function(e) {
+            e.stopPropagation();
+            var type = $(this).attr('data-type');
+            var tab = $(this).attr('data-tab');
+            var btn = $(this).attr('data-btn');
+            var focus = $(this).attr('data-focus');
+            // 关闭面板
+            var p = document.getElementById('qa-panel');
+            if (p) p.style.display = 'none';
+            if (type === 'trigger' && btn) {
+              // 切到目标页后自动点击按钮
+              switchToTab(tab);
+              setTimeout(function() {
+                var b = document.getElementById(btn);
+                if (b) { b.click(); }
+              }, 400);
+            } else {
+              // 跳转类：切 tab，并聚焦指定输入框
+              switchToTab(tab);
+              if (focus) {
+                setTimeout(function() {
+                  var el = document.getElementById(focus);
+                  if (el) { el.focus(); el.scrollIntoView({behavior:'smooth', block:'center'}); }
+                }, 400);
+              }
+            }
+          });
         ")),
-        titlePanel("Welcome LVCC ITOM（Information Technology Operations Management）"),
+        div(style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap;",
+          h2("Welcome LVCC ITOM（Information Technology Operations Management）",
+             style = "margin:0; font-size:22px;"),
+          quick_actions_ui()
+        ),
+        # 一键功能面板主体（块级展开，保持在主页区域内）
+        quick_actions_panel(),
         br(),
         fluidRow(
           column(6,

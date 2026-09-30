@@ -3338,6 +3338,35 @@ server <- function(input, output, session) {
   })
 
   # ========== 首页模块 ==========
+  # 一键功能面板正文（按当前用户模块权限过滤）
+  output$qa_panel_body <- renderUI({
+    req(rv$logged_in, rv$current_user)
+    is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 &&
+      rv$current_user$role[1] == "admin"
+    user_modules <- if (is_admin) NULL else rbac_get_user_modules(rv$current_user)
+
+    # 判断模块是否对当前用户可见
+    mod_visible <- function(perm) {
+      if (is_admin) return(TRUE)
+      if (is.null(perm)) return(TRUE)          # 无 RBAC 管控，开放
+      if (is.null(user_modules)) return(TRUE)  # 未启用 RBAC 过滤
+      perm %in% user_modules
+    }
+
+    # 过滤清单：只保留可见模块；「测试」额外校验 ntest_run 权限
+    visible <- list()
+    for (m in QUICK_ACTIONS) {
+      if (!mod_visible(m$perm)) next
+      if (!is.null(m$perm) && m$perm == "测试") {
+        # 测试触发需 ntest_run 权限（非admin）
+        if (!is_admin && !rbac_check(rv$current_user, "ntest_run")) next
+      }
+      visible[[length(visible) + 1]] <- m
+    }
+    quick_actions_body(visible)
+  })
+  outputOptions(output, "qa_panel_body", suspendWhenHidden = FALSE)
+
   # 我的项目（排除已完成/已关闭）
   output$home_my_projects <- renderUI({
     req(rv$logged_in, rv$current_user)
