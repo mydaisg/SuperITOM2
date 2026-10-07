@@ -96,7 +96,7 @@ daily_report_get_note_comments <- function(report_date) {
     # 第一步：当天的评论
     query <- sprintf("
       SELECT nc.id, nc.content, nc.created_at, nc.created_by,
-             nc.parent_id,
+             nc.parent_id, nc.status,
              n.note_no, n.title as note_title,
              u.username, u.display_name
       FROM note_comments nc
@@ -114,7 +114,7 @@ daily_report_get_note_comments <- function(report_date) {
     while (length(parent_ids) > 0) {
       ids_str <- paste(parent_ids, collapse=",")
       a <- dbGetQuery(con, sprintf("
-        SELECT nc.id, nc.content, nc.created_at, nc.created_by, nc.parent_id,
+        SELECT nc.id, nc.content, nc.created_at, nc.created_by, nc.parent_id, nc.status,
                n.note_no, n.title as note_title,
                u.username, u.display_name
         FROM note_comments nc
@@ -136,7 +136,7 @@ daily_report_get_note_comments <- function(report_date) {
     while (length(today_ids) > 0) {
       ids_str <- paste(today_ids, collapse=",")
       ch <- dbGetQuery(con, sprintf("
-        SELECT nc.id, nc.content, nc.created_at, nc.created_by, nc.parent_id,
+        SELECT nc.id, nc.content, nc.created_at, nc.created_by, nc.parent_id, nc.status,
                n.note_no, n.title as note_title,
                u.username, u.display_name
         FROM note_comments nc
@@ -289,6 +289,7 @@ daily_report_ui <- function() {
     ")),
     fluidRow(
       column(12, div(style = "margin-top:5px;",
+        dateInput("dr_date", "日期", value = Sys.Date(), width = "140px"),
         actionButton("dr_today", "今天", class = "btn-default btn-sm"),
         actionButton("dr_yesterday", "昨天", class = "btn-default btn-sm"),
         actionButton("dr_this_week", "本周", class = "btn-default btn-sm"),
@@ -631,10 +632,17 @@ daily_report_server <- function(input, output, session, rv) {
         log_html <- sprintf('<div class="dr-section"><div class="dr-section-title">反馈记录 (%d)</div>%s</div>', log_count, log_items)
       }
 
-      # 工作日志（按记事分组，层级缩进：4空格/级）
+      # 工作日志（参照需求模块进度Tab：彩虹层级 + 时间 + 状态 + 今日标记，无编辑按钮）
       note_html <- ""
       if (note_count > 0) {
         note_by_no <- split(user_notes, user_notes$note_no)
+        rainbow <- requirement_rainbow_colors()
+        today_str <- format(Sys.Date(), "%Y-%m-%d")
+        # 评论状态 → 显示文本/颜色（completed=已完成，其余=进行中）
+        note_status_label <- function(st) {
+          if (!is.null(st) && !is.na(st) && st == "completed") return(list(txt = "已完成", col = "#059669"))
+          list(txt = "进行中", col = "#2563eb")
+        }
         note_items <- ""
         gi <- 0
         for (gn in names(note_by_no)) {
@@ -642,42 +650,67 @@ daily_report_server <- function(input, output, session, rv) {
           gn_title <- grp$note_title[1] %||% gn
           tops <- grp[is.na(grp$parent_id) | grp$parent_id == 0, , drop = FALSE]
           reps <- grp[!(is.na(grp$parent_id) | grp$parent_id == 0), , drop = FALSE]
-          # 一级标题（字体加大）
-          note_items <- paste0(note_items, sprintf(
-            '<div style="font-size:14px;font-weight:600;color:#6c3bbf;margin:6px 0 4px;">%s、 📋 %s %s · %d条</div>',
-            dr_cn_number(gi), gn, gn_title, nrow(grp)))
+          col <- rainbow[((gi - 1) %% length(rainbow)) + 1]
+
           # 清理空白行辅助函数
           .clean_lines <- function(txt) { trimws(gsub("\n\\s*\n", "\n", txt)) }
-          ni <- 0
-          # 递归子回复（每级缩进 4字符 ≈ 2em）
-          render_replies <- function(pid, prefix, indent_em) {
-            sub <- reps[reps$parent_id == pid, , drop = FALSE]
-            if (nrow(sub) == 0) return("")
-            html <- ""
-            for (si in seq_len(nrow(sub))) {
-              sc <- sub[si, ]
-              sct <- .clean_lines(sc$content)
-              num_lab <- sprintf("%s.%d", prefix, si)          # 纯数字编号: "1.1"
-              dot_cnt <- nchar(gsub("[^.]", "", num_lab))       # 1=二级, 2=三级
-              show_lab <- paste0(paste(rep("+", dot_cnt), collapse=""), num_lab)  # "+1.1" / "++1.1.1"
-              html <- paste0(html, sprintf(
-                '<div class="dr-item" style="padding-left:%dem; white-space:pre-wrap;"><span class="dr-badge" style="background:#a78bfa;">沟通%s</span>\n<div style="padding-left:2em;">%s</div></div>',
-                indent_em, show_lab, sct))
-              html <- paste0(html, render_replies(sc$id, num_lab, indent_em + 2))
-            }
-            html
-          }
-          for (ti in seq_len(nrow(tops))) {
-            ni <- ni + 1; tc <- tops[ti, ]
-            ct <- .clean_lines(tc$content)
-            note_items <- paste0(note_items, sprintf(
-              '<div class="dr-item" style="white-space:pre-wrap;"><span class="dr-badge" style="background:#6c3bbf;">工作%d</span>\n<div style="padding-left:2em;">%s</div></div>', ni, ct))
+
+          # 递归渲染单条评论（含其子回复）
+          render_item <- function(c, num_label, color, level) {
+            sct <- .clean_lines(c$content %||% "")
+            st <- note_status_label(c$status)
+            date_str <- c$created_at %||% ""
+            # 今日标记：评论日期 == 今天 → 浅绿底 + ●今日
+            is_today <- (substr(date_str, 1, 10) == today_str)
+            bg_color <- if (is_today) "#e8f5e9" else "#fafafa"
+            indent <- if (level > 0) sprintf("margin-left:%dpx;", level * 28) else ""
+            today_mark <- if (is_today) '<span style="color:#2e7d32;font-size:10px;font-weight:bold;margin-right:2px;">●今日</span>' else ""
+            seq_html <- sprintf('<span style="font-weight:bold;color:%s;font-family:Consolas,monospace;font-size:12px;">%s</span>', color, num_label)
+            content_html <- if (sct != "") sprintf('<span style="font-size:13px;color:#555;white-space:pre-wrap;font-family:\'Microsoft YaHei\',\'PingFang SC\',sans-serif;">%s</span>', sct) else ""
+            # 时间（MM-DD HH:MM）
+            time_str <- if (nchar(date_str) >= 16) substr(date_str, 6, 16) else date_str
+            time_html <- if (time_str != "") sprintf('<span style="color:#999;font-size:11px;white-space:nowrap;font-family:\'Microsoft YaHei\',\'PingFang SC\',sans-serif;">%s</span>', time_str) else ""
+            status_html <- sprintf('<span style="display:inline-block;background:%s;color:#fff;font-size:11px;padding:1px 8px;border-radius:10px;white-space:nowrap;font-family:\'Microsoft YaHei\',\'PingFang SC\',sans-serif;">%s</span>', st$col, st$txt)
+
+            # 子回复（递归）
+            subs_html <- ""
             if (nrow(reps) > 0) {
-              note_items <- paste0(note_items, render_replies(tc$id, as.character(ni), 4))
+              sub <- reps[reps$parent_id == c$id, , drop = FALSE]
+              if (nrow(sub) > 0) {
+                sub_parts <- c()
+                for (si in seq_len(nrow(sub))) {
+                  sub_parts <- c(sub_parts, render_item(sub[si, ], sprintf("%s.%d", num_label, si), color, level + 1))
+                }
+                subs_html <- sprintf('<div style="margin-top:2px;">%s</div>', paste(sub_parts, collapse = ""))
+              }
             }
+
+            sprintf(
+              '<div style="background:%s;padding:6px 10px;margin-bottom:4px;border-radius:6px;border-left:4px solid %s;%s">
+                <div style="display:flex;justify-content:flex-start;align-items:baseline;gap:8px;flex-wrap:wrap;">
+                  %s%s%s%s%s
+                </div>
+                %s
+              </div>',
+              bg_color, color, indent,
+              today_mark, seq_html, content_html, time_html, status_html,
+              subs_html)
+          }
+
+          # 一级标题（记事标题，中文序号，参照部门分组样式）
+          note_items <- paste0(note_items, sprintf(
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <div style="font-weight:700;font-size:14px;color:#0f2b5c;font-family:\'Microsoft YaHei\',\'PingFang SC\',sans-serif;">%s、 📋 %s %s <span style="font-size:11px;color:#999;font-weight:400;">(%d条)</span></div>
+            </div>',
+            requirement_num_to_cn(gi), gn, gn_title, nrow(grp)))
+
+          # 顶层评论
+          for (ti in seq_len(nrow(tops))) {
+            tc <- tops[ti, ]
+            note_items <- paste0(note_items, render_item(tc, as.character(ti), col, 0))
           }
         }
-        note_html <- sprintf('<div class="dr-section"><div class="dr-section-title note">工作日志 %s (%d条)</div>%s</div>', report_label, note_count, note_items)
+        note_html <- sprintf('<div class="dr-section"><div class="dr-section-title note">工作日志 %s (%d条)</div><div style="margin-left:2em;">%s</div></div>', report_label, note_count, note_items)
       }
 
       cards_html <- paste0(cards_html, sprintf(
