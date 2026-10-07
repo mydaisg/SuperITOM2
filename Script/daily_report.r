@@ -323,10 +323,18 @@ daily_report_ui <- function() {
     tags$script(HTML("
       $(document).on('click', '#dr_copy_text', function() {
         var text = $('#dr_text_content').val();
-        if (text) {
+        if (!text) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(text).then(function() {
             Shiny.setInputValue('dr_copy_done', Math.random(), {priority:'event'});
           });
+        } else {
+          // 降级：非安全上下文（HTTP/IP访问）用 execCommand
+          var ta = document.createElement('textarea');
+          ta.value = text; document.body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); } catch(e) {}
+          document.body.removeChild(ta);
+          Shiny.setInputValue('dr_copy_done', Math.random(), {priority:'event'});
         }
       });
       Shiny.addCustomMessageHandler('dr_update_text', function(message) {

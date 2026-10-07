@@ -436,6 +436,45 @@ note_comment_get_last <- function(note_id, current_user = NULL) {
   }, finally = { db_disconnect(con) })
 }
 
+# 批量获取多个记事的最新评论（消除看板渲染的 N+1 查询）
+# 单连接单 SQL，用 MAX(created_at) 相关子查询取每个 note 的最新一条评论
+note_comment_get_last_batch <- function(note_ids, current_user = NULL) {
+  if (length(note_ids) == 0) return(data.frame())
+  con <- db_connect()
+  tryCatch({
+    ids_str <- paste(as.integer(note_ids), collapse = ",")
+    uid <- note_visible_user_id(current_user)
+    # 派发用户只看自己的评论；创建人和 admin 看全部（与 note_comment_get_last 逻辑一致）
+    extra <- ""
+    if (!is.null(uid)) {
+      # 找出当前用户是"创建人"的 note（这些看全部评论）
+      owned <- dbGetQuery(con, sprintf("SELECT id FROM notes WHERE id IN (%s) AND created_by = %d", ids_str, uid))$id
+      # 其余 note 需要判断是否被派发给当前用户；被派发则只看自己的评论
+      if (length(owned) == 0) owned <- integer(0)
+      all_ids <- as.integer(note_ids)
+      other_ids <- setdiff(all_ids, owned)
+      if (length(other_ids) > 0) {
+        oids_str <- paste(other_ids, collapse = ",")
+        dispatched <- dbGetQuery(con, sprintf(
+          "SELECT DISTINCT note_id FROM note_dispatches WHERE note_id IN (%s) AND user_id = %d", oids_str, uid))$note_id
+        if (length(dispatched) > 0) {
+          extra <- sprintf(" AND (c.created_by = %d OR c.note_id NOT IN (%s))", uid, paste(as.integer(dispatched), collapse = ","))
+        } else {
+          extra <- sprintf(" AND c.note_id IN (%s)", paste(owned, collapse = ","))
+        }
+      }
+    }
+    r <- dbGetQuery(con, sprintf(
+      "SELECT c.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name
+       FROM note_comments c
+       LEFT JOIN users u ON c.created_by = u.id
+       WHERE c.note_id IN (%s) %s
+         AND c.created_at = (SELECT MAX(created_at) FROM note_comments WHERE note_id = c.note_id)",
+      ids_str, extra))
+    if (nrow(r) == 0) data.frame() else r
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
 note_comment_get_all <- function(note_id, current_user = NULL) {
   con <- db_connect()
   tryCatch({

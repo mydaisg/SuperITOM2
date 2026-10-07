@@ -910,6 +910,10 @@ migrate_database <- function() {
         cat("警告：添加 parent_id 列失败:", e$message, "\n")
       })
     }
+    # 记事模块索引（消除看板渲染的 N+1 全表扫描）
+    dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_note_comments_note ON note_comments(note_id)")
+    dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_notes_created ON notes(created_by)")
+    dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_note_comments_created ON note_comments(created_by)")
     # notes 表置顶
     note_cols <- dbGetQuery(con, "PRAGMA table_info(notes)")
     if (isTRUE("pinned" %in% note_cols$name == FALSE)) {

@@ -26,6 +26,8 @@ note_server <- function(input, output, session, rv) {
     req(rv$logged_in)
     kw <- note_search_term()
     items <- if (is.null(kw) || kw == "") note_get_all(rv$current_user) else note_search(kw, rv$current_user)
+    # ★ 批量预取所有记事的最新评论（消除 N+1 查询）
+    last_comments <- if (nrow(items) > 0) note_comment_get_last_batch(items$id, rv$current_user) else data.frame()
     # 搜索关键字词列表（用于高亮）
     search_words <- if (!is.null(kw) && kw != "") strsplit(trimws(kw), "\\s+")[[1]] else character(0)
     search_words <- search_words[search_words != ""]
@@ -153,8 +155,8 @@ note_server <- function(input, output, session, rv) {
                 HTML(paste(parts, collapse = ""))))
             }
           } else {
-            last_comment <- note_comment_get_last(r$id, rv$current_user)
-            if (!is.null(last_comment) && nrow(last_comment) > 0) {
+            last_comment <- last_comments[last_comments$note_id == r$id, , drop = FALSE]
+            if (nrow(last_comment) > 0) {
               ct <- last_comment$content[1]; cn <- last_comment$creator_name[1] %||% "匿名"
               if (isTRUE(nchar(ct) > 80)) ct <- paste0(substr(ct, 1, 80), "...")
               comment_html <- as.character(tags$div(style="font-size:11px; color:#5e6c84; margin-top:6px; padding:4px 6px; background:#f4f5f7; border-radius:3px;",
@@ -285,8 +287,8 @@ note_server <- function(input, output, session, rv) {
                   HTML(paste(parts, collapse = ""))))
               }
             } else {
-              last_comment <- note_comment_get_last(r$id, rv$current_user)
-              if (!is.null(last_comment) && nrow(last_comment) > 0) {
+              last_comment <- last_comments[last_comments$note_id == r$id, , drop = FALSE]
+              if (nrow(last_comment) > 0) {
                 ct <- last_comment$content[1]; cn <- last_comment$creator_name[1] %||% "匿名"
                 if (isTRUE(nchar(ct) > 80)) ct <- paste0(substr(ct, 1, 80), "...")
                 comment_html <- as.character(tags$div(style="font-size:11px; color:#5e6c84; margin-top:6px; padding:4px 6px; background:#f4f5f7; border-radius:3px;",
