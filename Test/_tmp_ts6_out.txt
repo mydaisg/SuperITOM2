@@ -1,0 +1,5 @@
+[server] input$dr_date 变化了！新值 = 2026-10-08 
+初始 dr_date = 2026-10-08 
+[server] 点击昨天，准备 updateTextInput 为 2026-10-07
+[server] updateTextInput 已调用
+点昨天后 dr_date = 2026-10-08 

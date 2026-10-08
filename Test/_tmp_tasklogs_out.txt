@@ -1,0 +1,37 @@
+
+Attaching package: 'DT'
+
+The following objects are masked from 'package:shiny':
+
+    dataTableOutput, renderDataTable
+
+
+Attaching package: 'plotly'
+
+The following object is masked from 'package:ggplot2':
+
+    last_plot
+
+The following object is masked from 'package:stats':
+
+    filter
+
+The following object is masked from 'package:graphics':
+
+    layout
+
+[config] 已加载配置文件: D:/GitHub/SuperITOM2/config/init.json
+[config] 检测到操作系统: windows
+[config] 数据库路径: D:/GitHub/SuperITOM2/DB/GH_ITOM.db
+数据库迁移完成：work_orders 表检查完毕
+单日 task_logs 行数: 0 
+列名: task_id, log_type, content, created_at, task_no, task_name, creator_name 
+
+本年度天数: 365 
+合并后 task_logs 行数: 15 
+合并后列名: task_id, log_type, content, created_at, task_no, task_name, creator_name 
+content 类型: character 
+content 是否有 NA: 0 
+行 1 content= 状态从 [待处理] 变更为 [进行中]  nchar= 19 
+行 2 content= 任务已转为工单 ITS20260427001  nchar= 22 
+行 3 content= 状态从 [待处理] 变更为 [进行中]  nchar= 19 

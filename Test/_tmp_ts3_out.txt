@@ -1,0 +1,8 @@
+初始 runs: 0 
+点昨天后: runs= 0  date=  
+点本周后: runs= 0  date=  
+最终 output$out:
+Error in .subset2(x, "impl")$getOutput(name) : 
+  The test referenced an output that hasn't been defined yet: output$out
+Calls: testServer ... <Anonymous> -> print -> $ -> $.shinyoutput -> <Anonymous>
+Execution halted

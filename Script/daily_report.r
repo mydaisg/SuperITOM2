@@ -352,44 +352,50 @@ daily_report_server <- function(input, output, session, rv) {
 
   # 月报模式（NULL=日报，list(start,end,label)或字符标签）
   dr_month_mode <- reactiveVal(NULL)
+  # 当前选中的日期（显式状态，避免仅依赖 dateInput 的隐式触发）
+  dr_selected_date <- reactiveVal(Sys.Date())
+  # 日期/模式变更刷新触发器（保证按钮点击必定重渲染）
+  dr_trigger <- reactiveVal(0)
+
+  # 统一设置日期+模式并触发刷新
+  dr_apply <- function(sel_date, mode = NULL) {
+    dr_selected_date(sel_date)
+    dr_month_mode(mode)
+    dr_trigger(dr_trigger() + 1)
+    updateDateInput(session, "dr_date", value = sel_date)
+  }
 
   # 快捷日期按钮
   observeEvent(input$dr_today, {
-    dr_month_mode(NULL)
-    updateDateInput(session, "dr_date", value = Sys.Date())
+    dr_apply(Sys.Date(), NULL)
   })
   observeEvent(input$dr_yesterday, {
-    dr_month_mode(NULL)
-    updateDateInput(session, "dr_date", value = Sys.Date() - 1)
+    dr_apply(Sys.Date() - 1, NULL)
   })
   observeEvent(input$dr_this_week, {
     d <- Sys.Date()
     monday <- d - as.integer(format(d, "%u")) + 1
     sunday <- min(monday + 6, d)
-    dr_month_mode(list(start = monday, end = sunday,
+    dr_apply(monday, list(start = monday, end = sunday,
                        label = sprintf("本周 (%s~%s)", format(monday, "%m/%d"), format(sunday, "%m/%d"))))
-    updateDateInput(session, "dr_date", value = monday)
   })
   observeEvent(input$dr_last_week, {
     d <- Sys.Date() - 7
     monday <- d - as.integer(format(d, "%u")) + 1
     sunday <- monday + 6
-    dr_month_mode(list(start = monday, end = sunday,
+    dr_apply(monday, list(start = monday, end = sunday,
                        label = sprintf("上周 (%s~%s)", format(monday, "%m/%d"), format(sunday, "%m/%d"))))
-    updateDateInput(session, "dr_date", value = monday)
   })
   observeEvent(input$dr_this_month, {
     d <- as.Date(format(Sys.Date(), "%Y-%m-01"))
-    dr_month_mode(list(start = d, end = seq(d, by = "month", length.out = 2)[2] - 1,
+    dr_apply(d, list(start = d, end = seq(d, by = "month", length.out = 2)[2] - 1,
                        label = format(d, "%Y年%m月")))
-    updateDateInput(session, "dr_date", value = d)
   })
   observeEvent(input$dr_last_month, {
     d <- as.Date(format(Sys.Date(), "%Y-%m-01")) - 1
     d <- as.Date(format(d, "%Y-%m-01"))
-    dr_month_mode(list(start = d, end = seq(d, by = "month", length.out = 2)[2] - 1,
+    dr_apply(d, list(start = d, end = seq(d, by = "month", length.out = 2)[2] - 1,
                        label = format(d, "%Y年%m月")))
-    updateDateInput(session, "dr_date", value = d)
   })
 
   # 计算某年某季度的起止日期（quarter = 1~4）
@@ -406,19 +412,18 @@ daily_report_server <- function(input, output, session, rv) {
     y <- as.integer(format(d, "%Y"))
     quarter <- (as.integer(format(d, "%m")) - 1) %/% 3 + 1
     rng <- dr_quarter_range(y, quarter)
-    dr_month_mode(list(start = rng$start, end = rng$end,
+    dr_apply(rng$start, list(start = rng$start, end = rng$end,
                        label = sprintf("%d年Q%d", y, quarter)))
-    updateDateInput(session, "dr_date", value = rng$start)
   })
 
   # 本年度
   observeEvent(input$dr_this_year, {
     d <- Sys.Date()
     y <- as.integer(format(d, "%Y"))
-    dr_month_mode(list(start = as.Date(sprintf("%d-01-01", y)),
-                       end = as.Date(sprintf("%d-12-31", y)),
-                       label = sprintf("%d年", y)))
-    updateDateInput(session, "dr_date", value = as.Date(sprintf("%d-01-01", y)))
+    dr_apply(as.Date(sprintf("%d-01-01", y)),
+      list(start = as.Date(sprintf("%d-01-01", y)),
+           end = as.Date(sprintf("%d-12-31", y)),
+           label = sprintf("%d年", y)))
   })
 
   # 指定月份（使用 dr_pick_year_val + dr_pick_month_val）
@@ -427,19 +432,18 @@ daily_report_server <- function(input, output, session, rv) {
     y <- as.integer(input$dr_pick_year_val)
     m <- as.integer(input$dr_pick_month_val)
     d <- as.Date(sprintf("%d-%02d-01", y, m))
-    dr_month_mode(list(start = d, end = seq(d, by = "month", length.out = 2)[2] - 1,
+    dr_apply(d, list(start = d, end = seq(d, by = "month", length.out = 2)[2] - 1,
                        label = format(d, "%Y年%m月")))
-    updateDateInput(session, "dr_date", value = d)
   })
 
   # 指定年份（使用 dr_pick_year_val）
   observeEvent(input$dr_pick_year, {
     req(input$dr_pick_year_val)
     y <- as.integer(input$dr_pick_year_val)
-    dr_month_mode(list(start = as.Date(sprintf("%d-01-01", y)),
-                       end = as.Date(sprintf("%d-12-31", y)),
-                       label = sprintf("%d年", y)))
-    updateDateInput(session, "dr_date", value = as.Date(sprintf("%d-01-01", y)))
+    dr_apply(as.Date(sprintf("%d-01-01", y)),
+      list(start = as.Date(sprintf("%d-01-01", y)),
+           end = as.Date(sprintf("%d-12-31", y)),
+           label = sprintf("%d年", y)))
   })
 
   # 初始化用户筛选下拉
@@ -465,13 +469,26 @@ daily_report_server <- function(input, output, session, rv) {
   # 日报数据
   dr_data <- reactiveVal(NULL)
 
+  # 用户在 dateInput 手动修改日期时，同步到显式状态并触发刷新
+  observeEvent(input$dr_date, {
+    req(rv$logged_in)
+    d <- input$dr_date
+    if (is.null(d)) return()
+    # 避免与按钮触发的 updateDateInput 形成循环：仅当值确实变化时同步
+    if (!identical(as.character(d), as.character(dr_selected_date()))) {
+      dr_selected_date(d)
+      dr_month_mode(NULL)  # 手动选日期视为单日模式
+      dr_trigger(dr_trigger() + 1)
+    }
+  })
+
   # 生成日报（支持日/月模式）
-  # ★ 依赖列表必须包含 dr_month_mode()，否则模式切换（如本年度）但日期恰好不变时不会刷新
-  observeEvent(list(input$dr_refresh, input$dr_date, input$dr_user_filter, rv$daily_report_refresh, dr_month_mode()), {
-    req(rv$logged_in, input$dr_date)
+  # ★ 依赖显式日期状态 + 刷新触发器，避免仅依赖 dateInput 隐式触发导致按钮点击不刷新
+  observeEvent(list(dr_trigger(), input$dr_refresh, input$dr_user_filter, rv$daily_report_refresh, dr_month_mode()), {
+    req(rv$logged_in, dr_selected_date())
 
     mm <- dr_month_mode()
-    report_date <- input$dr_date
+    report_date <- dr_selected_date()
     if (!is.null(mm)) {
       # 月报模式：逐日查询合并
       dates <- seq(mm$start, mm$end, by = "day")
@@ -556,7 +573,11 @@ daily_report_server <- function(input, output, session, rv) {
       # 该用户的反馈日志
       user_logs <- data.frame()
       if (nrow(task_logs) > 0) {
-        user_logs <- task_logs[!is.na(task_logs$creator_name) & (task_logs$creator_name == u$display_name | task_logs$creator_name == u$username), , drop = FALSE]
+        # 对 display_name/username 做 NA 安全化，避免 NA 比较产生 NA 索引引入脏行
+        u_dn <- if (is.na(u$display_name) || is.null(u$display_name)) "" else u$display_name
+        u_un <- if (is.na(u$username) || is.null(u$username)) "" else u$username
+        user_logs <- task_logs[!is.na(task_logs$creator_name) &
+          (task_logs$creator_name == u_dn | task_logs$creator_name == u_un), , drop = FALSE]
       }
 
       # 该用户的记事评论（排除元任务 NTE20260606002）

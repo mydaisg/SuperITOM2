@@ -1,0 +1,16 @@
+source("global.R")
+source("Script/daily_report.r")
+
+d <- Sys.Date()
+y <- as.integer(format(d, "%Y"))
+dates <- seq(as.Date(sprintf("%d-01-01", y)), as.Date(sprintf("%d-12-31", y)), by="day")
+
+tl <- do.call(rbind, lapply(dates, daily_report_get_task_logs))
+cat("task_logs 行数:", nrow(tl), "\n")
+cat("content 列:\n")
+print(tl$content)
+cat("\ncontent 是 NA 的行:\n")
+na_rows <- which(is.na(tl$content))
+print(tl[na_rows, c("task_id","log_type","content","creator_name","task_name")])
+cat("\ncreator_name 是 NA 的行:\n")
+print(which(is.na(tl$creator_name)))

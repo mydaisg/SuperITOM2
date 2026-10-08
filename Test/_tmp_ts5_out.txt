@@ -1,0 +1,4 @@
+初始(设 dr_date=今天) runs: 1  date= 2026-10-08 
+点昨天后: runs= 1  date= 2026-10-08 
+最终 output:
+[1] "runs= 1 | date= 2026-10-08"

@@ -1,0 +1,3 @@
+=== ignoreNULL=TRUE 场景 ===
+初始 runs: 0 
+点击 btn 后 runs: 1  (btn 变成 1，mm 仍是 NULL)

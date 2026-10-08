@@ -1,0 +1,50 @@
+
+Attaching package: 'DT'
+
+The following objects are masked from 'package:shiny':
+
+    dataTableOutput, renderDataTable
+
+
+Attaching package: 'plotly'
+
+The following object is masked from 'package:ggplot2':
+
+    last_plot
+
+The following object is masked from 'package:stats':
+
+    filter
+
+The following object is masked from 'package:graphics':
+
+    layout
+
+[config] 已加载配置文件: D:/GitHub/SuperITOM2/config/init.json
+[config] 检测到操作系统: windows
+[config] 数据库路径: D:/GitHub/SuperITOM2/DB/GH_ITOM.db
+数据库迁移完成：work_orders 表检查完毕
+task_logs 行数: 15 
+content 列:
+ [1] "状态从 [待处理] 变更为 [进行中]"                                                                                                                                                                                                                                                  
+ [2] "任务已转为工单 ITS20260427001"                                                                                                                                                                                                                                                    
+ [3] "状态从 [待处理] 变更为 [进行中]"                                                                                                                                                                                                                                                  
+ [4] "完成与厂家电话沟通，及确认如电话沟通，如下安排： 一、准备空白测试环境，我建企微群拉用户负责人进来。 二、在群里发体验环境（路径、账号、密码、有效期）+产品介绍+初始化手册/指南 三、单独发产品亮点（招聘网站集成、算薪算税对接） 四、我约用户部门会议。"                            
+ [5] "营业执照是变更过名字，组织机构代码证在系统还是老名字：江西驴宝宝通卡科技有限公司"                                                                                                                                                                                                 
+ [6] "专票，我们都用这个公司：\n江西驴充充物联网科技有限公司"                                                                                                                                                                                                                           
+ [7] "再次提交给邹静-电信（这个问题：现在联通的专线进驴充充园区，是从马路人行道裸露在外的光纤进来，一直存在安全隐患。这也是我们考虑风险才引入电信的原因之一。）"                                                                                                                        
+ [8] "韩工配合电信工程师进行配置"                                                                                                                                                                                                                                                       
+ [9] "电信工程师18979779701到我司机房开通和配置"                                                                                                                                                                                                                                        
+[10] "状态从 [待处理] 变更为 [进行中]"                                                                                                                                                                                                                                                  
+[11] "发布任务1：不同<类型>特征对应的<属性>字段，这个《对应表》，要开始编制了，按上次会议确定的，先拿“洗车机”来试跑。"                                                                                                                                                                  
+[12] "完成企业微信工作群的建立，并：我写了一个草稿，大家看一下，哪些描述不对的，或漏掉的，一起修改"                                                                                                                                                                                     
+[13] "场景规划与描述（草稿）：\n一、BOM增加类型字段，不同<类型或特征>带出对应的<属性字段>；\n二、数智平台（智慧工厂系统）同步BOM清单，做为产品信息的<权威源>；\n三、数智平台提供订单选择模块，销售可以逐级选择产品/配件......\n四、未来实现在线产品选配订单。\n五、暂时不考虑制造环节。"
+[14] "跟进韩工的子网梳理和优化。"                                                                                                                                                                                                                                                       
+[15] "跟进韩工测试"                                                                                                                                                                                                                                                                     
+
+content 是 NA 的行:
+[1] task_id      log_type     content      creator_name task_name   
+<0 rows> (or 0-length row.names)
+
+creator_name 是 NA 的行:
+integer(0)

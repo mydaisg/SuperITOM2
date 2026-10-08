@@ -1,0 +1,4 @@
+初始 counter: 0 
+初始 input$dr_date:  
+点击昨天后 counter: 0 
+点击昨天后 input$dr_date:  

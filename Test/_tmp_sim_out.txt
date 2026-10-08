@@ -1,0 +1,42 @@
+
+Attaching package: 'DT'
+
+The following objects are masked from 'package:shiny':
+
+    dataTableOutput, renderDataTable
+
+
+Attaching package: 'plotly'
+
+The following object is masked from 'package:ggplot2':
+
+    last_plot
+
+The following object is masked from 'package:stats':
+
+    filter
+
+The following object is masked from 'package:graphics':
+
+    layout
+
+[config] 已加载配置文件: D:/GitHub/SuperITOM2/config/init.json
+[config] 检测到操作系统: windows
+[config] 数据库路径: D:/GitHub/SuperITOM2/DB/GH_ITOM.db
+数据库迁移完成：work_orders 表检查完毕
+note_comments 行数: 108 
+过滤后 user_notes 行数: 108 
+组 1 NTE20261007001 顶层: 2 子评论: 3 
+组 2 NTE20261007002 顶层: 1 子评论: 5 
+组 3 NTE20261007003 顶层: 8 子评论: 36 
+组 4 NTE20261007004 顶层: 7 子评论: 16 
+组 5 NTE20261007005 顶层: 1 子评论: 4 
+组 6 NTE20261007006 顶层: 1 子评论: 3 
+组 7 NTE20261007007 顶层: 1 子评论: 1 
+组 8 NTE20261007008 顶层: 1 子评论: 0 
+组 9 NTE20261007009 顶层: 2 子评论: 3 
+组 10 NTE20261007011 顶层: 1 子评论: 2 
+组 11 NTE20261007012 顶层: 1 子评论: 0 
+组 12 NTE20261007013 顶层: 1 子评论: 4 
+组 13 NTE20261007014 顶层: 2 子评论: 2 
+完成，无报错

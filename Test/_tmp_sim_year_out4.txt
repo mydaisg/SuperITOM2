@@ -1,0 +1,36 @@
+
+Attaching package: 'DT'
+
+The following objects are masked from 'package:shiny':
+
+    dataTableOutput, renderDataTable
+
+
+Attaching package: 'plotly'
+
+The following object is masked from 'package:ggplot2':
+
+    last_plot
+
+The following object is masked from 'package:stats':
+
+    filter
+
+The following object is masked from 'package:graphics':
+
+    layout
+
+[config] 已加载配置文件: D:/GitHub/SuperITOM2/config/init.json
+[config] 检测到操作系统: windows
+[config] 数据库路径: D:/GitHub/SuperITOM2/DB/GH_ITOM.db
+数据库迁移完成：work_orders 表检查完毕
+work_orders: 91  tasks: 7  task_logs: 15  note_comments: 1635 
+  [user 2 ] li= 1  content class= character  nchar= 19 
+  [user 2 ] li= 2  content class= character  nchar= 22 
+  [user 2 ] li= 3  content class= character  nchar= 19 
+  [user 2 ] li= 4  content class= character  nchar= 126 
+  [user 2 ] li= 5  content class= character  nchar= 13 
+  [user 10 ] li= 1  content class= character  nchar= 40 
+  [user 10 ] li= 2  content class= character  nchar= 27 
+  [user 10 ] li= 3  content class= character  nchar= 77 
+渲染完成，无报错

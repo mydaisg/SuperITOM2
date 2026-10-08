@@ -1,0 +1,48 @@
+
+Attaching package: 'DT'
+
+The following objects are masked from 'package:shiny':
+
+    dataTableOutput, renderDataTable
+
+
+Attaching package: 'plotly'
+
+The following object is masked from 'package:ggplot2':
+
+    last_plot
+
+The following object is masked from 'package:stats':
+
+    filter
+
+The following object is masked from 'package:graphics':
+
+    layout
+
+[config] 已加载配置文件: D:/GitHub/SuperITOM2/config/init.json
+[config] 检测到操作系统: windows
+[config] 数据库路径: D:/GitHub/SuperITOM2/DB/GH_ITOM.db
+数据库迁移完成：work_orders 表检查完毕
+=== 今天 note_comments 列名 ===
+ [1] "id"           "content"      "created_at"   "created_by"   "parent_id"   
+ [6] "status"       "note_no"      "note_title"   "username"     "display_name"
+行数: 16 
+有 parent_id>0 的行: 9 
+
+=== 昨天 note_comments 列名 ===
+ [1] "id"           "content"      "created_at"   "created_by"   "parent_id"   
+ [6] "status"       "note_no"      "note_title"   "username"     "display_name"
+行数: 108 
+有 parent_id>0 的行: 79 
+
+=== 昨天 unique note_no ===
+ [1] "NTE20261007003" "NTE20261007004" "NTE20261007001" "NTE20261007002"
+ [5] "NTE20261007005" "NTE20261007006" "NTE20261007007" "NTE20261007009"
+ [9] "NTE20261007011" "NTE20261007012" "NTE20261007013" "NTE20261007008"
+[13] "NTE20261007014"
+
+=== 依赖函数是否存在 ===
+requirement_rainbow_colors: FALSE 
+requirement_num_to_cn: FALSE 
+carryover_extract_ym: FALSE 

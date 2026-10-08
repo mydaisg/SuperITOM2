@@ -1,0 +1,3 @@
+初始 date = 2026-10-08  trigger = 0 
+点昨天后 date = 2026-10-07  trigger = 1 
+[1] "date = 2026-10-07 | trigger = 1"

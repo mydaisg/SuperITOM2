@@ -1,0 +1,55 @@
+
+Attaching package: 'DT'
+
+The following objects are masked from 'package:shiny':
+
+    dataTableOutput, renderDataTable
+
+
+Attaching package: 'plotly'
+
+The following object is masked from 'package:ggplot2':
+
+    last_plot
+
+The following object is masked from 'package:stats':
+
+    filter
+
+The following object is masked from 'package:graphics':
+
+    layout
+
+[config] 已加载配置文件: D:/GitHub/SuperITOM2/config/init.json
+[config] 检测到操作系统: windows
+[config] 数据库路径: D:/GitHub/SuperITOM2/DB/GH_ITOM.db
+数据库迁移完成：work_orders 表检查完毕
+users 行数: 19 
+users 列: id, username, display_name, role 
+   id      username  display_name         role
+1   4           Dai          <NA>         user
+2   2         DaiSG        戴诗贡        admin
+3   5      DavidTai          <NA>         user
+4  16        HangRC        韩荣昌         user
+5   9  ServicesDesk  ServicesDesk      it_desk
+6   3           Tai          <NA>         user
+7  19        TianYC        田予初         user
+8  17          WuSC        吴时超         user
+9  18        YangCH        杨长湖         user
+10  1         admin administrator        admin
+11 10      it_desk2          <NA>      it_desk
+12 11  it_engineer1          <NA>  it_engineer
+13 12  it_engineer2          <NA>  it_engineer
+14 13  it_engineer3          <NA>  it_engineer
+15 14 sys_engineer1          <NA> sys_engineer
+16 15 sys_engineer2          <NA> sys_engineer
+17  6    test_user1          <NA>         user
+18  7    test_user2          <NA>         user
+19  8    test_user3          <NA>         user
+
+display_name 是 NA 的行: 1 3 6 11 12 13 14 15 16 17 18 19 
+username 是 NA 的行:  
+
+task_logs creator_name 唯一值:
+[1] "戴诗贡"        "administrator"
+creator_name 是 NA: 0 

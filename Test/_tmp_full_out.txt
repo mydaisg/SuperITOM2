@@ -1,0 +1,45 @@
+
+Attaching package: 'DT'
+
+The following objects are masked from 'package:shiny':
+
+    dataTableOutput, renderDataTable
+
+
+Attaching package: 'plotly'
+
+The following object is masked from 'package:ggplot2':
+
+    last_plot
+
+The following object is masked from 'package:stats':
+
+    filter
+
+The following object is masked from 'package:graphics':
+
+    layout
+
+[config] 已加载配置文件: D:/GitHub/SuperITOM2/config/init.json
+[config] 检测到操作系统: windows
+[config] 数据库路径: D:/GitHub/SuperITOM2/DB/GH_ITOM.db
+数据库迁移完成：work_orders 表检查完毕
+users: 19  note_comments: 108 
+user_notes: 108 
+note_items 长度: 15973 
+渲染完成，无报错
+text_report 长度: 9853 
+text_report 前300字:
+ 一、 绩效管理_IT部绩效(2026年09月)
+1、 编制《LVCC_研发中心_IT部9月绩效_工作明细.xlsx》
+  1.1 大家开始梳理和总结9月的工作事项。
+    用于9月绩效评定，10月9号（周五）中午要交。@所有人
+
+2、 关于部门员工的工作饱和度
+
+  2.1 这2天汇总9月工作时，把这个也一起处理完，要同时给到董总的。
+    “用数据体现自己一周/月的工作饱和”。
+    ++- 9月28日已安排和宣导过的工作：
+    各位整理自己一周的工作，越详细越好，数据要真实，尽量体现出工作量、难度、复杂度。
+    统一按每周工时那种格式，因为上周有个假期，有固定规律的，也可以按 
+全部完成，无报错

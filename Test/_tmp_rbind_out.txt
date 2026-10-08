@@ -1,0 +1,42 @@
+
+Attaching package: 'DT'
+
+The following objects are masked from 'package:shiny':
+
+    dataTableOutput, renderDataTable
+
+
+Attaching package: 'plotly'
+
+The following object is masked from 'package:ggplot2':
+
+    last_plot
+
+The following object is masked from 'package:stats':
+
+    filter
+
+The following object is masked from 'package:graphics':
+
+    layout
+
+[config] 已加载配置文件: D:/GitHub/SuperITOM2/config/init.json
+[config] 检测到操作系统: windows
+[config] 数据库路径: D:/GitHub/SuperITOM2/DB/GH_ITOM.db
+数据库迁移完成：work_orders 表检查完毕
+上月天数: 30 
+各日返回的列数（前几个非空的）:
+非空日期索引数: 1 
+非空日期列名:
+ [1] "id"            "order_no"      "title"         "priority"     
+ [5] "status"        "category"      "assigned_to"   "handled_by"   
+ [9] "created_by"    "created_at"    "handled_at"    "completed_at" 
+[13] "assignee_name" "handler_name"  "creator_name" 
+合并后 work_orders 行数: 50  列数: 15 
+合并后列名:
+ [1] "id"            "order_no"      "title"         "priority"     
+ [5] "status"        "category"      "assigned_to"   "handled_by"   
+ [9] "created_by"    "created_at"    "handled_at"    "completed_at" 
+[13] "assignee_name" "handler_name"  "creator_name" 
+去重后行数: 50 
+id 列前5个: 51 52 53 54 55 56 
