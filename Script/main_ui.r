@@ -145,6 +145,8 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       function getTargetFromHash() {
         var hash = window.location.hash.replace('#', '');
         if (!hash) return '首页';
+        // Shiny 原生 navbarPage tab 锚点（形如 tab-4337-1）→ 不干预，返回 null
+        if (/^tab-[0-9]+-[0-9]+$/.test(hash)) return null;
         // 精确匹配
         if (routeMap['/' + hash]) return routeMap['/' + hash];
         if (routeMap[hash]) return routeMap[hash];
@@ -187,6 +189,8 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       // 页面加载后根据URL切换标签
       $(document).on('shiny:connected', function() {
         var target = getTargetFromHash();
+        // Shiny 原生 tab 锚点 → 不干预，避免反复点击首页
+        if (!target) return;
         // 延迟等待DOM和Shiny完全加载
         var attempts = 0;
         var maxAttempts = 20;
@@ -205,6 +209,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       // 监听浏览器前进/后退
       window.addEventListener('hashchange', function() {
         var target = getTargetFromHash();
+        if (!target) return;
         switchToTab(target);
       });
     ")),

@@ -209,16 +209,19 @@ MODULE_INVENTORY <- list(
   ),
   list(
     module = "资产", icon = "laptop",
-    frontend = "资产标签页 → tabsetPanel(资产列表, 工位图, 工位图V2) → asset_ui()",
+    frontend = "资产标签页 → tabsetPanel(资产列表, 工位图, 工位图V2, 考勤设备, 配置管理) → asset_ui()",
     source = c("Script/asset_management.r", "Script/asset_server.r", "Script/asset_ui.r",
                "Script/seat_map_management.r", "Script/seat_map_server.r",
-               "Script/seat_map_v2_ui.r", "Script/seat_map_v2_server.r"),
-    tables = "assets, seat_buildings, seat_floors, seat_zones, seats",
+               "Script/seat_map_v2_ui.r", "Script/seat_map_v2_server.r",
+               "Script/config_management.r", "Script/config_management_server.r"),
+    tables = "assets, seat_buildings, seat_floors, seat_zones, seats, attendance_devices, config_items",
     perms = list(
       list(code="asset_view",      name="查看资产"),
       list(code="asset_manage",    name="管理资产"),
       list(code="seat_map_view",   name="查看工位图"),
-      list(code="seat_map_manage", name="管理工位")
+      list(code="seat_map_manage", name="管理工位"),
+      list(code="cfgitem_view",    name="查看配置管理"),
+      list(code="cfgitem_manage",  name="管理配置项")
     ),
     key_funcs = c(
       "asset_generate_number() — 资产编号生成",
@@ -229,7 +232,14 @@ MODULE_INVENTORY <- list(
       "seat_get_all/add/update/delete() — 工位CRUD",
       "seat_batch_generate() — 批量生成工位",
       "seat_floor_snapshot() — 楼层快照(工位图渲染)",
-      "seat_map_v2_ui() / seat_map_v2_server() — 工位图V2（搜索/筛选/右键菜单/详情面板）"
+      "seat_map_v2_ui() / seat_map_v2_server() — 工位图V2（搜索/筛选/右键菜单/详情面板）",
+      "config_item_get_all/add/update/delete() — 配置管理CRUD（多平台服务器/资源清单）",
+      "config_platform_get_all/add/update/delete() — 平台CRUD（多平台归属）",
+      "config_account_get_by_item/add/update/delete() — 账号密码CRUD（一条配置项多个账号）",
+      "config_password_mask() — 密码脱敏（前4位明文 + 后续*）",
+      "config_field_get_visible()/set_visible() — 展示字段可定义（勾选+拖拽排序，存system_config）",
+      "config_item_seed() — 配置管理种子数据（15条服务器/数据库/网络资源）",
+      "config_item_get_stats() — 配置管理统计（资源总数/平台数/服务器/数据库/网络）"
     )
   ),
   list(

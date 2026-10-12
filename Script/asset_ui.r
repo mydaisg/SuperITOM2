@@ -19,6 +19,60 @@ asset_ui <- function() {
         e.stopPropagation();
         Shiny.setInputValue('att_del_click',$(this).data('id'),{priority:'event'});
       });
+      $(document).on('click','.cfgitem-edit-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('cfgitem_edit_click',$(this).data('id'),{priority:'event'});
+      });
+      $(document).on('click','.cfgitem-del-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('cfgitem_del_click',$(this).data('id'),{priority:'event'});
+      });
+      // 复制密码（复制明文）
+      $(document).on('click','.cfgitem-copy-btn',function(e){
+        e.stopPropagation();
+        var pwd = $(this).data('pwd');
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(pwd).then(function(){
+            Shiny.setInputValue('cfgitem_copy_feedback', Math.random(), {priority:'event'});
+          });
+        } else {
+          var ta = document.createElement('textarea');
+          ta.value = pwd; document.body.appendChild(ta); ta.select();
+          document.execCommand('copy'); document.body.removeChild(ta);
+          Shiny.setInputValue('cfgitem_copy_feedback', Math.random(), {priority:'event'});
+        }
+      });
+      // 平台编辑/删除
+      $(document).on('click','.cfgplat-edit-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('cfgplat_edit_click',$(this).data('id'),{priority:'event'});
+      });
+      $(document).on('click','.cfgplat-del-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('cfgplat_del_click',$(this).data('id'),{priority:'event'});
+      });
+      // 账号编辑/删除
+      $(document).on('click','.cfgacc-edit-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('cfgacc_edit_click',$(this).data('id'),{priority:'event'});
+      });
+      $(document).on('click','.cfgacc-del-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('cfgacc_del_click',$(this).data('id'),{priority:'event'});
+      });
+      // 字段收集：保存时读取排序后的字段列表
+      Shiny.addCustomMessageHandler('cfgitemCollectFields', function(msg) {
+        var fields = $('#cfgitem_field_list .cfgitem-field-row').map(function(){ return $(this).data('field'); }).get();
+        Shiny.setInputValue('cfgitem_fields_order', fields, {priority:'event'});
+      });
+      // 账号增删改后重新打开编辑弹窗
+      Shiny.addCustomMessageHandler('cfgitemReopenEdit', function(msg) {
+        setTimeout(function(){ Shiny.setInputValue('cfgitem_edit_click', msg.id, {priority:'event'}); }, 200);
+      });
+      // 平台添加后重新打开平台管理弹窗
+      Shiny.addCustomMessageHandler('cfgplatReopen', function(msg) {
+        setTimeout(function(){ Shiny.setInputValue('cfgitem_platform_manage_btn', Math.random(), {priority:'event'}); }, 200);
+      });
     ")),
     tags$style(HTML("
       .asset-stat-box { text-align:center; padding:10px 6px; border-radius:6px; margin:0; }
@@ -70,6 +124,22 @@ asset_ui <- function() {
           )
         ),
         DTOutput("attendance_device_table")
+      ),
+      # ── 标签4：配置管理（多平台服务器资源清单 + 账号密码）──
+      tabPanel("配置管理", value = "config",
+        uiOutput("cfgitem_stats"),
+        wellPanel(
+          fluidRow(
+            column(3, uiOutput("cfgitem_platform_ui")),
+            column(3, textInput("cfgitem_search", NULL, placeholder = "搜索资源名称/IP/备注...")),
+            column(2, selectInput("cfgitem_cat_filter", NULL,
+              choices = c("全部","服务器","数据库","网络","其他"), selected = "全部")),
+            column(2, actionButton("cfgitem_add_btn", "添加配置项", icon = icon("plus"), class = "btn-primary")),
+            column(2, div(style = "text-align:right;",
+              actionButton("cfgitem_refresh", icon("refresh"), class = "btn-default")))
+          )
+        ),
+        DTOutput("cfgitem_table")
       )
     )
   )

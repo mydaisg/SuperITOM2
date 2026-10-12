@@ -45,6 +45,8 @@ source("Script/note_management.r")   # 记事模块数据层
 source("Script/note_server.r")       # 记事模块服务端
 source("Script/asset_management.r")  # 资产模块数据层
 source("Script/asset_server.r")      # 资产模块服务端
+source("Script/config_management.r")  # 配置管理模块数据层（托管云平台服务器资源）
+source("Script/config_management_server.r")  # 配置管理模块服务端
 source("Script/attendance_device.r")  # 考勤设备模块数据层
 source("Script/seat_map_management.r")  # 工位图模块数据层
 source("Script/seat_map_server.r")      # 工位图模块服务端（旧版）
@@ -3866,6 +3868,9 @@ server <- function(input, output, session) {
   
   # 资产模块逻辑
   asset_server(input, output, session, rv)
+
+  # 配置管理模块逻辑（资产子标签：托管云平台服务器资源清单）
+  config_management_server(input, output, session, rv)
 
   # 工位图模块逻辑
   seat_map_server(input, output, session, rv)

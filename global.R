@@ -1082,7 +1082,9 @@ migrate_database <- function() {
       data.frame(module="组件", component="操作", code="component_create", name="登记", description="登记组件"),
       data.frame(module="需求", component="面板", code="req_view", name="查看", description="查看需求管理"),
       data.frame(module="需求", component="操作", code="req_create", name="新建", description="新建需求"),
-      data.frame(module="需求", component="操作", code="req_manage", name="管理", description="管理需求进度与甘特图")
+      data.frame(module="需求", component="操作", code="req_manage", name="管理", description="管理需求进度与甘特图"),
+      data.frame(module="配置管理", component="面板", code="cfgitem_view", name="查看", description="查看托管云平台服务器资源清单"),
+      data.frame(module="配置管理", component="操作", code="cfgitem_manage", name="管理", description="增删改服务器资源配置")
     )
     for (i in seq_len(nrow(supplement_perms))) {
       dbExecute(con, sprintf("INSERT OR IGNORE INTO rbac_permissions (module, component, code, name, description) VALUES ('%s','%s','%s','%s','%s')",
@@ -1772,6 +1774,66 @@ migrate_database <- function() {
         dbExecute(con, "ALTER TABLE compliance_rules ADD COLUMN sort_order INTEGER DEFAULT 0")
         cat("数据库迁移完成：compliance_rules 表新增 sort_order 列\n")
       }
+    }
+
+    # ===============================================
+    # 配置管理模块表（资产模块子标签：多平台服务器/资源清单 + 账号密码）
+    # ===============================================
+    if (!"config_platforms" %in% tables) {
+      dbExecute(con, "CREATE TABLE config_platforms (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        platform_name TEXT NOT NULL,
+        description TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 config_platforms 表\n")
+    }
+    if (!"config_items" %in% tables) {
+      dbExecute(con, "CREATE TABLE config_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        seq_no INTEGER,
+        platform_id INTEGER,
+        category TEXT,
+        env TEXT,
+        resource_name TEXT,
+        internal_ip TEXT,
+        os_spec TEXT,
+        cpu TEXT,
+        ram TEXT,
+        sys_disk TEXT,
+        data_disk TEXT,
+        public_addr TEXT,
+        public_port TEXT,
+        internal_port TEXT,
+        remark TEXT,
+        created_by INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 config_items 表\n")
+    } else {
+      # 旧表补充 platform_id 列
+      ci_cols <- dbGetQuery(con, "PRAGMA table_info(config_items)")
+      if (!("platform_id" %in% ci_cols$name)) {
+        dbExecute(con, "ALTER TABLE config_items ADD COLUMN platform_id INTEGER")
+        cat("数据库迁移完成：config_items 表新增 platform_id 列\n")
+      }
+    }
+    if (!"config_item_accounts" %in% tables) {
+      dbExecute(con, "CREATE TABLE config_item_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER NOT NULL,
+        username TEXT,
+        password TEXT,
+        remark TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (item_id) REFERENCES config_items(id)
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_cfgitem_accounts_item ON config_item_accounts(item_id)")
+      cat("数据库迁移完成：已创建 config_item_accounts 表\n")
     }
 
     # ===============================================

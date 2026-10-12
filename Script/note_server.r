@@ -829,7 +829,7 @@ note_server <- function(input, output, session, rv) {
       tops <- comments[is.na(comments$parent_id) | comments$parent_id == 0, ]
       children <- comments[!(is.na(comments$parent_id) | comments$parent_id == 0), ]
       
-      render_one_comment <- function(c, children_df, level = 0, counter = 1) {
+      render_one_comment <- function(c, children_df, level = 0, counter = 1, num_label = NULL) {
         cn <- c$creator_name[1] %||% "匿名"
         ca <- if (!is.na(c$created_at) && nchar(c$created_at) > 10) substr(c$created_at, 1, 16) else c$created_at
         clr <- rainbow_colors[((counter - 1) %% length(rainbow_colors)) + 1]
@@ -853,25 +853,44 @@ note_server <- function(input, output, session, rv) {
         reply_btn <- sprintf('<button class="btn btn-xs %s comment-reply-btn" data-id="%d" data-name="%s">💬 回复</button>', reply_btn_cls, c$id, cn)
         indent <- if (level > 0) sprintf("margin-left:%dpx;", level * 24) else ""
 
-        # 子评论（默认展开）
+        # 是否一级评论（level=0）：默认收缩正文与子评论，仅显示头部
+        is_top <- (level == 0)
+
+        # 子评论（一级默认收缩，子级默认展开）
         sub_html <- ""
         if (!is.null(children_df) && nrow(children_df) > 0) {
           subs <- children_df[children_df$parent_id == c$id, ]
           if (nrow(subs) > 0) {
             sub_parts <- c()
             for (si in 1:nrow(subs)) {
-              sub_parts <- c(sub_parts, render_one_comment(subs[si, ], children_df, level + 1, counter + si))
+              sub_label <- if (!is.null(num_label)) sprintf("%s.%d", num_label, si) else as.character(si)
+              sub_parts <- c(sub_parts, render_one_comment(subs[si, ], children_df, level + 1, counter + si, sub_label))
             }
-            sub_html <- sprintf('<div class="comment-sub-list" style="margin-top:4px;">%s</div>', paste(sub_parts, collapse = ""))
+            sub_display <- if (is_top) "display:none;" else ""
+            sub_html <- sprintf('<div class="comment-sub-list" style="margin-top:4px;%s">%s</div>', sub_display, paste(sub_parts, collapse = ""))
           }
         }
-        
+
+        # 层级编号（与日报"工作日志"总结样式一致：粗体+彩虹色+Consolas等宽字体）
+        seq_html <- if (!is.null(num_label) && nchar(num_label) > 0) {
+          sprintf('<span style="font-weight:bold; color:%s; font-family:Consolas,monospace; font-size:12px; margin-right:2px;">%s.</span>', clr, num_label)
+        } else ""
+
+        # 有子评论或正文的一级评论：默认折叠（正文仅首行预览 + 子评论隐藏）
+        has_sub <- (nchar(sub_html) > 0)
+        has_body <- (isTRUE(nchar(c$content %||% "") > 0))
+        is_collapsed <- is_top && (has_sub || has_body)
+        item_cls <- if (is_collapsed) "comment-item collapsed" else "comment-item"
+        collapse_btn <- if (is_collapsed) {
+          sprintf('<button class="btn btn-xs btn-default comment-collapse-btn" data-id="%d">▾ 展开</button>', c$id)
+        } else ""
+
         base <- sprintf(
-          '<div class="comment-item" id="comment-%d" style="background:#fafafa; padding:6px 10px; margin-bottom:4px; border-radius:6px; border-left:4px solid %s;%s">
+          '<div class="%s" id="comment-%d" style="background:#fafafa; padding:6px 10px; margin-bottom:4px; border-radius:6px; border-left:4px solid %s;%s">
             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
               <div style="flex:1; min-width:0;">
                 <div style="font-size:11px; color:#999; margin-bottom:3px;">
-                  <span style="font-weight:bold; color:%s;">%s</span>%s
+                  %s<span style="font-weight:bold; color:%s;">%s</span>%s
                   <span style="margin-left:8px;">%s</span>
                 </div>
                 <div class="comment-text" style="font-size:13px; line-height:1.5; white-space:pre-wrap; word-break:break-word;">%s</div>
@@ -886,17 +905,18 @@ note_server <- function(input, output, session, rv) {
                 %s
               </div>
               <div class="comment-actions" style="margin-left:8px; white-space:nowrap; flex-shrink:0;">
-                %s%s
+                %s%s%s
                 <button class="btn btn-xs btn-info comment-edit-btn" data-id="%d">✏</button>
                 <button class="btn btn-xs btn-danger comment-del-btn" data-id="%d">🗑</button>
               </div>
             </div>
             %s
           </div>',
-          c$id, clr, indent, clr, cn, status_badge, ca,
+          item_cls, c$id, clr, indent,
+          seq_html, clr, cn, status_badge, ca,
           c$content, c$content, ca, c$id,
           sprintf('<div class="comment-reply-form" style="display:none; margin-top:6px;"><textarea class="form-control comment-reply-input" rows="8" placeholder="回复 %s ..." style="font-size:12px;"></textarea><button class="btn btn-xs btn-primary comment-reply-submit" data-id="%d" style="margin-top:3px;">回复</button><button class="btn btn-xs btn-default comment-reply-cancel" style="margin-top:3px;">取消</button></div>', cn, c$id),
-          mark_btn, reply_btn, c$id, c$id,
+          mark_btn, reply_btn, collapse_btn, c$id, c$id,
           sub_html
         )
         base
@@ -905,7 +925,7 @@ note_server <- function(input, output, session, rv) {
       parts <- c()
       if (nrow(tops) > 0) {
         for (ti in 1:nrow(tops)) {
-          parts <- c(parts, render_one_comment(tops[ti, ], children, 0, ti))
+          parts <- c(parts, render_one_comment(tops[ti, ], children, 0, ti, as.character(ti)))
         }
       }
       comment_html <- paste(parts, collapse = "")
@@ -941,14 +961,22 @@ note_server <- function(input, output, session, rv) {
         )
       ),
       
-      # 评论标题 + 排序
+      # 评论标题 + 全部收缩/展开 + 排序
       tags$div(style = "display:flex; justify-content:space-between; align-items:center;",
         tags$h5("💬 评论", style = "margin:0;"),
-        if (nchar(comment_html) > 0) tags$button(
-          id = "note_comment_sort_btn",
-          class = "btn btn-xs btn-default",
-          onclick = "var $list=$('.note-comment-list');var $btn=$('#note_comment_sort_btn');if($btn.text().indexOf('最早')>=0){$list.append($list.children().get().reverse());$btn.html('🔽 最新在前');}else{$list.prepend($list.children().get().reverse());$btn.html('🔼 最早在前');}",
-          "🔼 最早在前"
+        if (nchar(comment_html) > 0) tags$div(style = "display:flex; gap:4px; align-items:center;",
+          tags$button(
+            id = "note_comment_collapse_all_btn",
+            class = "btn btn-xs btn-default",
+            onclick = "var $tops=$('.note-comment-list > .comment-item');var allCollapsed=($tops.length>0)&&($tops.filter('.collapsed').length===$tops.length);if(allCollapsed){$tops.removeClass('collapsed');$tops.find('.comment-text').css('display','');$tops.find('.comment-sub-list').show();$tops.find('.comment-collapse-btn').text('▴ 收缩');$(this).text('▴ 全部收缩');}else{$tops.addClass('collapsed');$tops.find('.comment-text').css('display','');$tops.find('.comment-sub-list').hide();$tops.find('.comment-collapse-btn').text('▾ 展开');$(this).text('▾ 全部展开');}",
+            "▾ 全部展开"
+          ),
+          tags$button(
+            id = "note_comment_sort_btn",
+            class = "btn btn-xs btn-default",
+            onclick = "var $list=$('.note-comment-list');var $btn=$('#note_comment_sort_btn');if($btn.text().indexOf('最早')>=0){$list.append($list.children().get().reverse());$btn.html('🔽 最新在前');}else{$list.prepend($list.children().get().reverse());$btn.html('🔼 最早在前');}",
+            "🔼 最早在前"
+          )
         ) else ""
       ),
       if (nchar(comment_html) > 0) tags$div(

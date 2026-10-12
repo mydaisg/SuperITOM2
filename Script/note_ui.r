@@ -103,7 +103,8 @@ note_ui <- function() {
       $(document).on('click','.comment-cancel-btn',function(e){
         e.stopPropagation();
         var $item = $(this).closest('.comment-item');
-        $item.find('.comment-text').show();
+        // 清空 inline display，让 collapsed 的 CSS（单行预览）重新生效
+        $item.find('.comment-text').css('display','');
         $item.find('.comment-edit-area').hide();
       });
       // 评论保存（含时间）
@@ -113,6 +114,25 @@ note_ui <- function() {
         var text = $(this).closest('.comment-item').find('.comment-edit-input').val();
         var time = $(this).closest('.comment-item').find('.comment-edit-time').val();
         Shiny.setInputValue('note_comment_edit', id+':::'+text+':::'+time, {priority:'event'});
+      });
+      // 评论折叠/展开（一级评论：收缩=正文单行预览+隐藏子评论，展开=完整正文+子评论）
+      $(document).on('click','.comment-collapse-btn',function(e){
+        e.stopPropagation();
+        var $item = $(this).closest('.comment-item');
+        var $sub = $item.find('.comment-sub-list');
+        if ($item.hasClass('collapsed')) {
+          // 当前收缩 -> 展开
+          $item.removeClass('collapsed');
+          $item.find('.comment-text').css('display','');
+          $sub.show();
+          $(this).text('▴ 收缩');
+        } else {
+          // 当前展开 -> 收缩
+          $item.addClass('collapsed');
+          $item.find('.comment-text').css('display','');
+          $sub.hide();
+          $(this).text('▾ 展开');
+        }
       });
       // 评论删除
       $(document).on('click','.comment-del-btn',function(e){
@@ -191,6 +211,8 @@ note_ui <- function() {
       .note-importance-empty:hover { color:#e53e3e; }
       .note-due-overdue { color:#e53e3e; font-weight:bold; }
       .comment-status-badge { font-size:10px; padding:1px 6px; border-radius:10px; margin-left:6px; white-space:nowrap; }
+      /* 收缩态：评论正文只显示首行（预览），展开态显示完整正文 */
+      .comment-item.collapsed > div > div > .comment-text { display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden; }
       @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
       .note-blink { animation: blink 1.2s ease-in-out infinite; }
       .note-pin-icon { font-size:14px; cursor:pointer; margin-right:4px; opacity:0.25; transition:opacity 0.2s; }
