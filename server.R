@@ -74,6 +74,21 @@ source("Script/component_library_management.r") # 组件库模块数据层
 source("Script/component_library_server.r")     # 组件库模块服务端
 source("Script/requirement_management.r")       # 需求模块数据层
 source("Script/requirement_server.r")           # 需求模块服务端
+# HungFo 独立子项目（12 环节骨架：规则/爬取/数据/算法/展示/自动任务/回测/元任务/开发日志/自动架构/对外集成/权限体系）
+source("Script/hungfo/hf_core.r")               # 核心层：环节注册表 + 数据库（自包含）
+source("Script/hungfo/hf_mod_rules.r")          # 环节01 规则
+source("Script/hungfo/hf_mod_crawl.r")          # 环节02 爬取
+source("Script/hungfo/hf_mod_data.r")           # 环节03 数据
+source("Script/hungfo/hf_mod_algorithm.r")      # 环节04 算法
+source("Script/hungfo/hf_mod_display.r")        # 环节05 展示
+source("Script/hungfo/hf_mod_autotask.r")       # 环节06 自动任务
+source("Script/hungfo/hf_mod_backtest.r")       # 环节07 回测
+source("Script/hungfo/hf_mod_metatask.r")       # 环节08 元任务
+source("Script/hungfo/hf_mod_devlog.r")         # 环节09 开发日志
+source("Script/hungfo/hf_mod_arch.r")           # 环节10 自动架构
+source("Script/hungfo/hf_mod_integration.r")    # 环节11 对外集成
+source("Script/hungfo/hf_mod_permission.r")     # 环节12 权限体系
+source("Script/hungfo/hf_ui.r")                 # 聚合 UI + Server
 
 
 # 注册静态资源路径（www 目录下的文件可通过 /www/ 访问）
@@ -3893,6 +3908,9 @@ server <- function(input, output, session) {
 
   # 需求模块
   requirement_server(input, output, session, rv)
+
+  # HungFo 独立子项目（12 环节骨架）
+  hungfo_server(input, output, session, rv)
 
   # 通用数据导入模块
   data_import_server(input, output, session, rv)

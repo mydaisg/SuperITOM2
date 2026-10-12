@@ -694,6 +694,27 @@ MODULE_INVENTORY <- list(
       "github_pull() — 拉取最新代码",
       "module_inventory_ui() — 模块清单页面(本页)"
     )
+  ),
+  list(
+    module = "HungFo", icon = "cubes",
+    frontend = "工具下拉菜单 → HungFo（第15项，最下面）→ 总览 + 12 环节 Tab → hungfo_ui()",
+    source = c("Script/hungfo/hf_core.r", "Script/hungfo/hf_mod_rules.r", "Script/hungfo/hf_mod_crawl.r",
+               "Script/hungfo/hf_mod_data.r", "Script/hungfo/hf_mod_algorithm.r", "Script/hungfo/hf_mod_display.r",
+               "Script/hungfo/hf_mod_autotask.r", "Script/hungfo/hf_mod_backtest.r", "Script/hungfo/hf_mod_metatask.r",
+               "Script/hungfo/hf_mod_devlog.r", "Script/hungfo/hf_mod_arch.r", "Script/hungfo/hf_mod_integration.r",
+               "Script/hungfo/hf_mod_permission.r", "Script/hungfo/hf_ui.r", "server.R"),
+    tables = "hf_modules, hf_records",
+    perms = list(
+      list(code="hungfo_view", name="查看 HungFo 子项目")
+    ),
+    key_funcs = c(
+      "hf_register() / hf_modules() / hf_call() — 环节注册表与跨环节接口总线",
+      "hf_db_init() / hf_sync_registry() — 自包含建表 + 注册表落库",
+      "hf_record_add() / hf_records() — 各环节通用记录通道",
+      "12 环节：规则(rules)/爬取(crawl)/数据(data)/算法(algorithm)/展示(display)/自动任务(autotask)",
+      "12 环节：回测(backtest)/元任务(metatask)/开发日志(devlog)/自动架构(arch)/对外集成(integration)/权限体系(permission)",
+      "hungfo_ui() / hungfo_server() — 聚合 UI + Server（由注册表自动生成）"
+    )
   )
 )
 
@@ -741,7 +762,7 @@ module_inventory_ui <- function() {
       tags$h3(icon("sitemap"), " 模块清单 — 全站模块/功能/源代码/数据表映射", style="margin:0;"),
       actionButton("mi_refresh_btn", "刷新清单", icon=icon("sync"), class="btn-info btn-sm")
     ),
-    tags$p(style="color:#7f8c8d; font-size:13px;", "点模块名展开全部子项 · 按导航栏顺序排列 · 共18个模块 · 每次刷新重新读取文件时间戳"),
+    tags$p(style="color:#7f8c8d; font-size:13px;", sprintf("点模块名展开全部子项 · 按导航栏顺序排列 · 共%d个模块 · 每次刷新重新读取文件时间戳", length(MODULE_INVENTORY))),
     hr(),
     tags$div(class="mi-col",
       lapply(seq_along(MODULE_INVENTORY), function(i) {

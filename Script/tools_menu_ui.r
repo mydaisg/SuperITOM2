@@ -10,7 +10,8 @@ if (getRversion() >= "2.15.1") {
                           "textAreaInput", "wellPanel", "br", "strong", "conditionalPanel", "checkboxInput",
                           "dateInput", "radioButtons", "numericInput", "textOutput", "verbatimTextOutput", "htmlOutput", "uiOutput",
                           "DTOutput", "HTML", "network_test_ui", "sysmon_ui", "integration_ui",
-                          "std_ui", "ai_ui", "flow_viz_ui", "img2pdf_ui", "data_import_ui"))
+                          "std_ui", "ai_ui", "flow_viz_ui", "img2pdf_ui", "data_import_ui",
+                          "hungfo_ui"))
 }
 
 tools_menu_ui <- function(can_access = function(x) TRUE) {
@@ -443,6 +444,12 @@ tools_menu_ui <- function(can_access = function(x) TRUE) {
     tabPanel("通用数据导入",
       icon = icon("file-import"),
       data_import_ui()
+    ),
+
+    # ── 15. HungFo 独立子项目（12 环节骨架，放在工具模块最下面）──
+    tabPanel("HungFo",
+      icon = icon("cubes"),
+      hungfo_ui()
     )
   )
 }
