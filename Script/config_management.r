@@ -317,3 +317,164 @@ config_item_seed <- function() {
   }, error = function(e) cat("config_items 种子数据写入失败:", e$message, "\n"),
   finally = { db_disconnect(con) })
 }
+
+##################
+# 国际访问平台（LightWAN 联通国际访问）— 账号清单
+# 需求：资产→配置管理 新增平台「国际访问」，字段与服务器/数据库/网络平台不同，
+#       独立使用 config_intl_accounts 表（账号/密码/使用人/日期/备注）。
+#       支持单条「复制标签」和整单「导出」。
+##################
+
+# 平台固定信息
+CONFIG_INTL <- list(
+  platform_name = "国际访问",
+  title         = "LightWAN（联通国际访问）",
+  customer_id   = "917530003"
+)
+
+# 自包含建表（不修改 global.R）
+config_intl_table_init <- function() {
+  con <- db_connect()
+  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS config_intl_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account TEXT NOT NULL,
+    password TEXT,
+    user_name TEXT,
+    assign_date TEXT,
+    remark TEXT,
+    sort_order INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+  )")
+  invisible(TRUE)
+}
+
+# 使用人展示文本：使用人 + 日期（有日期拼日期，没日期空着）
+config_intl_user_display <- function(user_name, assign_date, remark) {
+  un <- if (is.null(user_name) || is.na(user_name)) "" else as.character(user_name)
+  ad <- if (is.null(assign_date) || is.na(assign_date)) "" else as.character(assign_date)
+  rk <- if (is.null(remark) || is.na(remark)) "" else as.character(remark)
+  if (nzchar(un)) {
+    s <- un
+    if (nzchar(rk) && rk != "未分配") s <- paste0(s, "（", rk, "）")
+    if (nzchar(ad)) s <- paste0(s, ad)
+    return(s)
+  }
+  if (nzchar(rk)) return(rk)
+  "未分配"
+}
+
+# 生成单条标签文本（复制给用户）
+config_intl_label_text <- function(account, password, user_name) {
+  un <- if (is.null(user_name) || is.na(user_name) || as.character(user_name) == "") "未分配" else as.character(user_name)
+  paste0(
+    CONFIG_INTL$title, "\n",
+    "客户ID：", CONFIG_INTL$customer_id, "\n",
+    "账号：", account, "\n",
+    "密码：", password, "\n",
+    "使用人：", un
+  )
+}
+
+# 获取全部国际访问账号
+config_intl_get_all <- function() {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, "SELECT * FROM config_intl_accounts ORDER BY sort_order, id")
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+# 删除单条账号
+config_intl_delete <- function(id) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("DELETE FROM config_intl_accounts WHERE id = %d", as.integer(id)))
+    list(success = TRUE, message = "已删除")
+  }, error = function(e) list(success = FALSE, message = paste("删除失败:", e$message)),
+  finally = { db_disconnect(con) })
+}
+
+# 幂等写入：平台 + 账号清单（独立表，仅空表时写入）
+config_intl_seed <- function() {
+  config_intl_table_init()
+  con <- db_connect()
+  tryCatch({
+    if (!"config_platforms" %in% dbListTables(con)) return(invisible(NULL))
+    plat <- dbGetQuery(con, sprintf("SELECT id FROM config_platforms WHERE platform_name='%s'", CONFIG_INTL$platform_name))
+    if (nrow(plat) == 0) {
+      dbExecute(con, sprintf(
+        "INSERT INTO config_platforms (platform_name, description, sort_order) VALUES ('%s','%s',2)",
+        CONFIG_INTL$platform_name,
+        paste0(CONFIG_INTL$title, "，客户ID：", CONFIG_INTL$customer_id)))
+    }
+    cnt <- dbGetQuery(con, "SELECT COUNT(*) AS n FROM config_intl_accounts")$n[1]
+    if (cnt > 0) return(invisible(NULL))
+
+    # 账号 / 密码 / 使用人 / 日期 / 备注
+    rows <- list(
+      c("LVCC001", "Lvcc@2026#4459", "宋春艳", "", ""),
+      c("LVCC002", "Lvcc@2026#0831", "徐花", "", "重置1次"),
+      c("LVCC003", "Lvcc@2026#9127", "", "", "未分配"),
+      c("LVCC004", "Lvcc@2026#8648", "", "", "未分配"),
+      c("LVCC005", "Lvcc@2026#9278", "", "", "未分配"),
+      c("LVCC006", "Lvcc@2026#2342", "", "", "未分配"),
+      c("LVCC007", "Lvcc@2026#7386", "", "", "未分配"),
+      c("LVCC008", "Lvcc@2026#8784", "", "", "未分配"),
+      c("LVCC009", "Lvcc@2026#4426", "", "", "未分配"),
+      c("LVCC010", "Lvcc@2026#4407", "", "", "未分配"),
+      c("LVCC011", "Lvcc@2026#9127", "邓毅林", "10月7", ""),
+      c("LVCC012", "Lvcc@2026#6085", "郭庆", "9月18", ""),
+      c("LVCC013", "Lvcc@2026#5663", "刘嘉林", "9月18", ""),
+      c("LVCC014", "Lvcc@2026#9984", "邱祖荣", "9月18", ""),
+      c("LVCC015", "Lvcc@2026#2780", "朱德龙", "9月18", ""),
+      c("LVCC016", "Lvcc@2026#3214", "谢金隆", "9月18", ""),
+      c("LVCC017", "Lvcc@2026#8705", "黄太财", "9月18", ""),
+      c("LVCC018", "Lvcc@2026#1062", "易伟海", "9月18", ""),
+      c("LVCC019", "Lvcc@2026#5548", "陈思宇", "9月24", ""),
+      c("LVCC020", "Lvcc@2026#3944", "肖橦", "", "9-23重置1次"),
+      c("LVCC101", "Lvcc@2026#3359", "郭庆", "10月14", ""),
+      c("LVCC102", "Lvcc@2026#6267", "邱祖荣", "10月14", ""),
+      c("LVCC103", "Lvcc@2026#3657", "吴隆生", "10月14", ""),
+      c("LVCC104", "Lvcc@2026#5369", "易伟海", "10月14", ""),
+      c("LVCC105", "Lvcc@2026#9389", "谢金隆", "10月14", ""),
+      c("LVCC106", "Lvcc@2026#6689", "陈坤", "10月14", ""),
+      c("LVCC107", "Lvcc@2026#2379", "陈慈鸿", "10月14", ""),
+      c("LVCC108", "Lvcc@2026#7356", "肖鹏", "10月14", ""),
+      c("LVCC109", "Lvcc@2026#3769", "李诚", "10月14", ""),
+      c("LVCC110", "Lvcc@2026#3659", "龙永鹏", "10月14", ""),
+      c("LVCC111", "Lvcc@2026#6339", "朱向东", "10月14", ""),
+      c("LVCC112", "Lvcc@2026#1357", "刘晓华", "10月14", ""),
+      c("jxlcc01", "GXlcc@2099..", "", "", "扩容前多人共用")
+    )
+    for (i in seq_along(rows)) {
+      r <- rows[[i]]
+      dbExecute(con, sprintf(
+        "INSERT INTO config_intl_accounts (account, password, user_name, assign_date, remark, sort_order)
+         VALUES ('%s','%s','%s','%s','%s',%d)",
+        gsub("'","''",r[1]), gsub("'","''",r[2]), gsub("'","''",r[3]),
+        gsub("'","''",r[4]), gsub("'","''",r[5]), i))
+    }
+    cat("数据库迁移完成：已写入「国际访问」账号清单", length(rows), "条\n")
+  }, error = function(e) cat("国际访问账号清单写入失败:", e$message, "\n"),
+  finally = { db_disconnect(con) })
+}
+
+# 导出国际访问账号清单（文本格式）
+config_intl_export_text <- function() {
+  con <- db_connect()
+  tryCatch({
+    items <- dbGetQuery(con, "SELECT * FROM config_intl_accounts ORDER BY sort_order, id")
+    if (nrow(items) == 0) return("")
+    lines <- c(
+      paste0(CONFIG_INTL$title, "分配清单："),
+      paste0("客户ID：", CONFIG_INTL$customer_id)
+    )
+    for (i in seq_len(nrow(items))) {
+      u <- config_intl_user_display(items$user_name[i], items$assign_date[i], items$remark[i])
+      lines <- c(lines, sprintf("%s，PW：%s，%s",
+        items$account[i] %||% "", items$password[i] %||% "", u))
+    }
+    paste(lines, collapse = "\n")
+  }, error = function(e) "", finally = { db_disconnect(con) })
+}

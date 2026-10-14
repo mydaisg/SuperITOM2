@@ -11,10 +11,19 @@ config_management_server <- function(input, output, session, rv) {
   observe({
     req(rv$logged_in)
     config_item_seed()
+    config_intl_seed()
   })
 
   # 当前平台筛选（-1 表示全部）
   current_platform <- reactiveVal(-1)
+
+  # 是否选中国际访问平台（字段结构不同，独立渲染）
+  is_intl_platform <- reactive({
+    pf <- as.character(current_platform())
+    if (pf == "-1") return(FALSE)
+    plats <- config_platform_get_all()
+    any(plats$id == as.integer(pf) & !is.na(plats$platform_name) & plats$platform_name == "国际访问")
+  })
 
   ##################
   # 平台列表下拉 + 平台管理按钮
@@ -32,6 +41,94 @@ config_management_server <- function(input, output, session, rv) {
     )
   })
   outputOptions(output, "cfgitem_platform_ui", suspendWhenHidden = FALSE)
+
+  ##################
+  # 动态工具栏（按平台切换：国际访问 vs 通用资源）
+  ##################
+  output$cfgitem_dynamic_toolbar <- renderUI({
+    req(rv$logged_in)
+    if (is_intl_platform()) {
+      div(style = "display:flex; gap:6px; align-items:center; flex-wrap:wrap;",
+        downloadButton("cfgitem_export_download", "导出清单", class = "btn-sm btn-success"),
+        actionButton("cfgitem_refresh", "刷新", icon = icon("refresh"), class = "btn-sm btn-default"),
+        tags$span(style = "color:#888; font-size:12px; margin-left:8px;",
+          "国际访问账号清单（账号 / 密码 / 使用人 / 日期）")
+      )
+    } else {
+      div(style = "display:flex; gap:6px; align-items:center; flex-wrap:wrap;",
+        div(style = "flex:1; min-width:200px;",
+          textInput("cfgitem_search", NULL, placeholder = "搜索资源名称/IP/备注...", width = "100%")),
+        div(style = "width:170px;",
+          selectInput("cfgitem_cat_filter", NULL,
+            choices = c("全部","服务器","数据库","网络","其他"), selected = "全部", width = "100%")),
+        actionButton("cfgitem_add_btn", "添加配置项", icon = icon("plus"), class = "btn-primary"),
+        actionButton("cfgitem_refresh", icon("refresh"), class = "btn-default")
+      )
+    }
+  })
+  outputOptions(output, "cfgitem_dynamic_toolbar", suspendWhenHidden = FALSE)
+
+  ##################
+  # 动态表格区（国际访问独立表格 / 通用配置项表格）
+  ##################
+  output$cfgitem_table_area <- renderUI({
+    req(rv$logged_in)
+    if (is_intl_platform()) DTOutput("cfgintl_table") else DTOutput("cfgitem_table")
+  })
+  outputOptions(output, "cfgitem_table_area", suspendWhenHidden = FALSE)
+
+  ##################
+  # 国际访问账号表格（账号/密码/使用人/日期/备注 + 复制标签/删除）
+  ##################
+  output$cfgintl_table <- renderDT({
+    cfgitem_trigger()
+    req(rv$logged_in)
+    items <- config_intl_get_all()
+    if (nrow(items) == 0) {
+      return(datatable(data.frame(提示 = "暂无国际访问账号"), options = list(dom = "t")))
+    }
+    display <- data.frame(
+      账号 = items$account %||% "",
+      密码 = sapply(items$password %||% "", config_password_mask),
+      使用人 = sapply(items$user_name, function(u) if (is.na(u) || as.character(u) == "") "未分配" else as.character(u)),
+      日期 = items$assign_date %||% "",
+      备注 = items$remark %||% "",
+      操作 = sapply(seq_len(nrow(items)), function(i) {
+        label <- config_intl_label_text(items$account[i] %||% "", items$password[i] %||% "", items$user_name[i] %||% "")
+        label_attr <- gsub('"', '&quot;', gsub("\n", "&#10;", label))
+        copy_btn <- sprintf('<button class="btn btn-xs btn-success cfgitem-label-copy-btn" data-label="%s" title="复制完整标签">复制</button>', label_attr)
+        del_btn <- sprintf('<button class="btn btn-xs btn-danger cfgintl-del-btn" data-id="%d">删除</button>', items$id[i])
+        paste(copy_btn, del_btn)
+      }),
+      stringsAsFactors = FALSE, check.names = FALSE
+    )
+    datatable(display, escape = FALSE, rownames = FALSE, selection = "none",
+      options = list(pageLength = 50, autoWidth = TRUE, dom = "ltip", scrollX = TRUE,
+        columnDefs = list(list(targets = 5, orderable = FALSE))),
+      class = "cell-border stripe compact")
+  })
+  outputOptions(output, "cfgintl_table", suspendWhenHidden = FALSE)
+
+  ##################
+  # 删除国际访问账号
+  ##################
+  observeEvent(input$cfgintl_del_click, {
+    req(rv$logged_in)
+    showModal(modalDialog(
+      title = "确认删除账号",
+      "确定删除此国际访问账号吗？",
+      footer = tagList(modalButton("取消"), actionButton("cfgintl_del_confirm", "确认删除", class = "btn-danger")),
+      size = "s", easyClose = TRUE
+    ))
+  })
+
+  observeEvent(input$cfgintl_del_confirm, {
+    req(rv$logged_in)
+    result <- config_intl_delete(as.integer(input$cfgintl_del_click))
+    removeModal()
+    cfgitem_trigger(cfgitem_trigger() + 1)
+    showNotification(result$message, type = "warning")
+  })
 
   ##################
   # 统计栏
@@ -153,6 +250,7 @@ config_management_server <- function(input, output, session, rv) {
   ##################
   observe({
     req(rv$logged_in)
+    req(!is_intl_platform())  # 国际访问平台无类别筛选
     cfgitem_trigger()
     items <- config_item_get_all()
     cats <- unique(c("全部", items$category[!is.na(items$category) & items$category != ""]))
@@ -180,6 +278,24 @@ config_management_server <- function(input, output, session, rv) {
   observeEvent(input$cfgitem_copy_feedback, {
     showNotification("密码已复制到剪贴板", type = "message", duration = 2)
   })
+
+  ##################
+  # 复制标签反馈（国际访问）
+  ##################
+  observeEvent(input$cfgitem_label_copy_feedback, {
+    showNotification("标签已复制到剪贴板", type = "message", duration = 2)
+  })
+
+  ##################
+  # 导出清单（国际访问，文本格式）
+  ##################
+  output$cfgitem_export_download <- downloadHandler(
+    filename = function() paste0("LightWAN国际访问清单_", format(Sys.Date(), "%Y%m%d"), ".txt"),
+    content = function(file) {
+      txt <- config_intl_export_text()
+      writeLines(txt, file, useBytes = TRUE)
+    }
+  )
 
   ##################
   # 平台管理弹窗

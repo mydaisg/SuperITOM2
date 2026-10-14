@@ -42,6 +42,26 @@ asset_ui <- function() {
           Shiny.setInputValue('cfgitem_copy_feedback', Math.random(), {priority:'event'});
         }
       });
+      // 复制标签（国际访问，复制完整标签文本）
+      $(document).on('click','.cfgitem-label-copy-btn',function(e){
+        e.stopPropagation();
+        var label = $(this).attr('data-label');
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(label).then(function(){
+            Shiny.setInputValue('cfgitem_label_copy_feedback', Math.random(), {priority:'event'});
+          });
+        } else {
+          var ta = document.createElement('textarea');
+          ta.value = label; document.body.appendChild(ta); ta.select();
+          document.execCommand('copy'); document.body.removeChild(ta);
+          Shiny.setInputValue('cfgitem_label_copy_feedback', Math.random(), {priority:'event'});
+        }
+      });
+      // 国际访问账号删除
+      $(document).on('click','.cfgintl-del-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('cfgintl_del_click',$(this).data('id'),{priority:'event'});
+      });
       // 平台编辑/删除
       $(document).on('click','.cfgplat-edit-btn',function(e){
         e.stopPropagation();
@@ -131,15 +151,10 @@ asset_ui <- function() {
         wellPanel(
           fluidRow(
             column(3, uiOutput("cfgitem_platform_ui")),
-            column(3, textInput("cfgitem_search", NULL, placeholder = "搜索资源名称/IP/备注...")),
-            column(2, selectInput("cfgitem_cat_filter", NULL,
-              choices = c("全部","服务器","数据库","网络","其他"), selected = "全部")),
-            column(2, actionButton("cfgitem_add_btn", "添加配置项", icon = icon("plus"), class = "btn-primary")),
-            column(2, div(style = "text-align:right;",
-              actionButton("cfgitem_refresh", icon("refresh"), class = "btn-default")))
+            column(9, uiOutput("cfgitem_dynamic_toolbar"))
           )
         ),
-        DTOutput("cfgitem_table")
+        uiOutput("cfgitem_table_area")
       )
     )
   )

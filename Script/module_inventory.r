@@ -697,7 +697,7 @@ MODULE_INVENTORY <- list(
   ),
   list(
     module = "HungFo", icon = "cubes",
-    frontend = "工具下拉菜单 → HungFo（第15项，最下面）→ 总览 + 12 环节 Tab → hungfo_ui()",
+    frontend = "工具下拉菜单 → HungFo（第15项，最下面）→ 点击「进入 HungFo 独立界面」→ 独立导航栏（总览 + 12 环节 Tab + 回 ITOM）→ hungfo_standalone_ui()",
     source = c("Script/hungfo/hf_core.r", "Script/hungfo/hf_mod_rules.r", "Script/hungfo/hf_mod_crawl.r",
                "Script/hungfo/hf_mod_data.r", "Script/hungfo/hf_mod_algorithm.r", "Script/hungfo/hf_mod_display.r",
                "Script/hungfo/hf_mod_autotask.r", "Script/hungfo/hf_mod_backtest.r", "Script/hungfo/hf_mod_metatask.r",
@@ -713,7 +713,7 @@ MODULE_INVENTORY <- list(
       "hf_record_add() / hf_records() — 各环节通用记录通道",
       "12 环节：规则(rules)/爬取(crawl)/数据(data)/算法(algorithm)/展示(display)/自动任务(autotask)",
       "12 环节：回测(backtest)/元任务(metatask)/开发日志(devlog)/自动架构(arch)/对外集成(integration)/权限体系(permission)",
-      "hungfo_ui() / hungfo_server() — 聚合 UI + Server（由注册表自动生成）"
+      "hungfo_ui() / hungfo_standalone_ui() / hungfo_server() — 聚合 UI + 独立界面 + Server（由注册表自动生成）"
     )
   )
 )

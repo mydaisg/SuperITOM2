@@ -136,6 +136,7 @@ server <- function(input, output, session) {
   rv <- reactiveValues(
     logged_in = FALSE,  # 登录状态，默认为未登录
     current_user = NULL, # 当前用户信息，默认为空
+    app_view = "itom",   # 视图状态：itom(主应用) / hungfo(独立子项目界面)
     daily_report_refresh = 0,  # 日报刷新触发器
     home_dev_refresh = 0L,  # 首页开发日志刷新
     di_refresh = 0  # 通用数据导入刷新触发器
@@ -163,16 +164,25 @@ server <- function(input, output, session) {
     }
   }
 
-  # OLD 架构：renderUI 直接返回 login_ui() 或 main_ui()
+  # OLD 架构：renderUI 直接返回 login_ui() / main_ui() / hungfo_standalone_ui()
   output$app_ui <- renderUI({
     if (!rv$logged_in) {
       login_ui()
+    } else if (identical(rv$app_view, "hungfo")) {
+      # HungFo 独立子项目界面（自有导航栏，含「回 ITOM」）
+      hungfo_standalone_ui()
     } else {
       # message("[RENDER] 调用 main_ui()")  # debug only
       is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
       user_modules <- rbac_get_user_modules(rv$current_user)
       main_ui(is_admin = is_admin, user_modules = user_modules, current_user = rv$current_user)
     }
+  })
+
+  # 进入 HungFo 独立界面（主应用工具菜单 → HungFo 入口按钮）
+  observeEvent(input$hungfo_enter_btn, {
+    req(rv$logged_in)
+    rv$app_view <- "hungfo"
   })
 
   # 模块数据刷新辅助函数

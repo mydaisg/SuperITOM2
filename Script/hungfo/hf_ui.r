@@ -106,9 +106,52 @@ hungfo_ui <- function() {
   )
 }
 
+# ── HungFo 独立界面（独立 navbarPage，不挂 ITOM 主导航栏，含「回 ITOM」导航）──
+# 进入方式：server.R 检测 rv$app_view == "hungfo" 时渲染本函数
+hungfo_standalone_ui <- function() {
+  mods <- hf_modules()
+  do.call(navbarPage, c(
+    list(
+      id = "hf_navbar",
+      title = "HungFo",
+      theme = shinytheme("cosmo"),
+      collapsible = TRUE,
+      # 顶部说明条（保留与嵌入式版本一致的品牌感）
+      header = div(
+        style = "background:linear-gradient(135deg,#0d47a1,#1976d2);color:#fff;border-radius:8px;padding:12px 18px;margin:8px 12px 4px;",
+        tags$span(style = "font-size:16px;font-weight:bold;", icon("cubes"), " HungFo 子项目"),
+        tags$span(style = "font-size:12px;opacity:.85;margin-left:10px;",
+          "独立子项目（R + Shiny + SQLite）· 12 个环节各自独立、互相提供接口")
+      )
+    ),
+    # 总览页（默认选中）
+    list(
+      tabPanel("总览", value = "overview", icon = icon("home"),
+        br(), uiOutput("hf_overview")
+      )
+    ),
+    # 12 个环节页
+    unname(lapply(mods, hf_module_page_ui)),
+    # 回 ITOM 导航（放在最右，作为「返回链接」）
+    list(
+      tabPanel("回 ITOM", value = "back", icon = icon("arrow-left"),
+        div(style = "padding:60px;text-align:center;color:#888;",
+          icon("spinner", class = "fa-spin"), " 正在返回 ITOM ...")
+      )
+    )
+  ))
+}
+
 # ── HungFo 主 Server ──
 hungfo_server <- function(input, output, session, rv) {
   hf_trigger <- reactiveVal(0)
+
+  # 返回 ITOM：独立导航栏点击「回 ITOM」时切回主应用
+  observeEvent(input$hf_navbar, {
+    if (identical(input$hf_navbar, "back")) {
+      rv$app_view <- "itom"
+    }
+  }, ignoreNULL = TRUE, ignoreInit = TRUE)
 
   # 初始化：建表 + 同步注册表（登录后执行一次）
   observe({
