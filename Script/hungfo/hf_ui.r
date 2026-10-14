@@ -115,7 +115,7 @@ hungfo_server <- function(input, output, session, rv) {
     req(rv$logged_in)
     hf_db_init()
     hf_sync_registry()
-    hf_trigger(hf_trigger() + 1)
+    hf_trigger(isolate(hf_trigger()) + 1)  # isolate 防止 observer 订阅自身写入的 hf_trigger 造成响应式死循环
   })
 
   output$hf_overview <- renderUI({
