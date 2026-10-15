@@ -1,7 +1,0 @@
-note_id = 6
-pending = 1
-
---- id=1707 parent_id=NA status=NA created_by=2 created_at=2026-10-15 10:18:34 ---
-将这个邮件的方案，写入方案模块，
-D:\Tai_LVCC_2027\投建方案-汽车充电桩-6~8万预算.eml
-
