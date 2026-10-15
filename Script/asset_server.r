@@ -395,4 +395,210 @@ asset_server <- function(input, output, session, rv) {
   observeEvent(input$attendance_refresh, {
     att_trigger(att_trigger() + 1)
   })
+
+  ##################
+  # 产品模块
+  ##################
+  product_trigger <- reactiveVal(0)
+
+  # 分类筛选下拉
+  observe({
+    req(rv$logged_in)
+    product_trigger()
+    items <- product_get_all()
+    cats <- unique(c("全部", items$category[!is.na(items$category) & items$category != ""]))
+    updateSelectInput(session, "product_filter_category", choices = cats, selected = "全部")
+  })
+
+  # 统计栏
+  output$product_stats <- renderUI({
+    product_trigger()
+    req(rv$logged_in)
+    items <- product_get_all()
+    eb <- sum(items$category == "电瓶车", na.rm = TRUE)
+    dc <- sum(items$category == "汽车直流桩", na.rm = TRUE)
+    tags$div(style = "display:flex; gap:10px; margin-bottom:8px;",
+      tags$div(class = "well well-sm asset-stat-box", style = "flex:1; background:#d4edda;",
+        tags$div(class = "num", style = "color:#155724;", nrow(items)),
+        tags$div(class = "lbl", style = "color:#155724;", "全部产品")
+      ),
+      tags$div(class = "well well-sm asset-stat-box", style = "flex:1; background:#e3f2fd;",
+        tags$div(class = "num", style = "color:#1565c0;", eb),
+        tags$div(class = "lbl", style = "color:#1565c0;", "电瓶车")
+      ),
+      tags$div(class = "well well-sm asset-stat-box", style = "flex:1; background:#fff3e0;",
+        tags$div(class = "num", style = "color:#e65100;", dc),
+        tags$div(class = "lbl", style = "color:#e65100;", "汽车直流桩")
+      )
+    )
+  })
+
+  # 产品表格
+  output$product_table <- DT::renderDataTable({
+    product_trigger()
+    req(rv$logged_in)
+    items <- product_get_all()
+    if (nrow(items) == 0) return(datatable(data.frame(提示="暂无产品"), options = list(dom="t")))
+    kw <- trimws(input$product_search)
+    if (length(kw) > 0 && kw != "") {
+      items <- items[grepl(kw, items$name, ignore.case = TRUE) | grepl(kw, items$model %||% "", ignore.case = TRUE), ]
+    }
+    cf <- input$product_filter_category
+    if (length(cf) > 0 && cf != "全部") items <- items[items$category == cf, ]
+
+    display <- data.frame(
+      分类 = items$category %||% "",
+      产品名称 = items$name %||% "",
+      型号 = items$model %||% "",
+      网络 = items$network %||% "",
+      零售价 = items$retail_price %||% "",
+      质保 = items$warranty %||% "",
+      服务费 = items$service_fee %||% "",
+      功能 = items$features %||% "",
+      参考重量 = items$weight %||% "",
+      来源文件 = items$source_file %||% "",
+      操作 = sprintf('<button class="btn btn-xs btn-info product-edit-btn" data-id="%d">编辑</button> <button class="btn btn-xs btn-danger product-del-btn" data-id="%d">删除</button>', items$id, items$id),
+      stringsAsFactors = FALSE, check.names = FALSE
+    )
+    DT::datatable(display, escape = FALSE, rownames = FALSE, selection = "none",
+      options = list(pageLength = 50, dom = "ltip", scrollX = TRUE,
+        columnDefs = list(list(targets = 10, orderable = FALSE))))
+  })
+
+  # 刷新
+  observeEvent(input$product_refresh, {
+    product_trigger(product_trigger() + 1)
+  })
+
+  # 从价格表导入
+  observeEvent(input$product_import_btn, {
+    req(rv$logged_in)
+    showModal(modalDialog(
+      title = "从价格表导入产品",
+      tags$p("将从价格表目录导入产品，并覆盖之前从价格表导入的数据："),
+      tags$pre("D:\\Tai_LVCC_2027\\"),
+      footer = tagList(
+        modalButton("取消"),
+        actionButton("product_import_confirm", "开始导入", class = "btn-success")
+      ),
+      size = "s", easyClose = TRUE
+    ))
+  })
+  observeEvent(input$product_import_confirm, {
+    req(rv$logged_in)
+    result <- product_import_from_price_tables()
+    removeModal()
+    product_trigger(product_trigger() + 1)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+  })
+
+  # 添加弹窗
+  observeEvent(input$product_add_btn, {
+    req(rv$logged_in)
+    showModal(modalDialog(
+      title = "添加产品",
+      size = "m", easyClose = TRUE,
+      selectInput("product_add_category", "分类", choices = c("电瓶车","汽车直流桩","其他"), selected = "电瓶车"),
+      textInput("product_add_name", "产品名称 *", placeholder = "必填"),
+      textInput("product_add_model", "型号"),
+      fluidRow(
+        column(6, textInput("product_add_network", "网络")),
+        column(6, textInput("product_add_price", "零售价"))
+      ),
+      fluidRow(
+        column(6, textInput("product_add_warranty", "质保")),
+        column(6, textInput("product_add_service_fee", "服务费"))
+      ),
+      fluidRow(
+        column(6, textInput("product_add_features", "功能")),
+        column(6, textInput("product_add_weight", "参考重量"))
+      ),
+      textInput("product_add_source_file", "来源文件"),
+      textAreaInput("product_add_notes", "备注", rows = 2),
+      footer = tagList(
+        modalButton("取消"),
+        actionButton("product_add_confirm", "确认添加", class = "btn-primary")
+      )
+    ))
+  })
+  observeEvent(input$product_add_confirm, {
+    req(rv$logged_in, input$product_add_name)
+    result <- product_add(
+      name = input$product_add_name, category = input$product_add_category,
+      model = input$product_add_model, network = input$product_add_network,
+      retail_price = input$product_add_price, warranty = input$product_add_warranty,
+      service_fee = input$product_add_service_fee, features = input$product_add_features,
+      weight = input$product_add_weight, source_file = input$product_add_source_file,
+      notes = input$product_add_notes
+    )
+    if (result$success) removeModal()
+    product_trigger(product_trigger() + 1)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+  })
+
+  # 编辑弹窗
+  observeEvent(input$product_edit_click, {
+    req(rv$logged_in)
+    item <- product_get_by_id(as.integer(input$product_edit_click))
+    if (is.null(item) || nrow(item) == 0) return()
+    rv$product_edit_id <- item$id[1]
+    showModal(modalDialog(
+      title = "编辑产品",
+      size = "m", easyClose = TRUE,
+      selectInput("product_edit_category", "分类", choices = c("电瓶车","汽车直流桩","其他"), selected = item$category[1] %||% "电瓶车"),
+      textInput("product_edit_name", "产品名称 *", value = item$name[1]),
+      textInput("product_edit_model", "型号", value = item$model[1] %||% ""),
+      fluidRow(
+        column(6, textInput("product_edit_network", "网络", value = item$network[1] %||% "")),
+        column(6, textInput("product_edit_price", "零售价", value = item$retail_price[1] %||% ""))
+      ),
+      fluidRow(
+        column(6, textInput("product_edit_warranty", "质保", value = item$warranty[1] %||% "")),
+        column(6, textInput("product_edit_service_fee", "服务费", value = item$service_fee[1] %||% ""))
+      ),
+      fluidRow(
+        column(6, textInput("product_edit_features", "功能", value = item$features[1] %||% "")),
+        column(6, textInput("product_edit_weight", "参考重量", value = item$weight[1] %||% ""))
+      ),
+      textInput("product_edit_source_file", "来源文件", value = item$source_file[1] %||% ""),
+      textAreaInput("product_edit_notes", "备注", rows = 2, value = item$notes[1] %||% ""),
+      footer = tagList(modalButton("取消"), actionButton("product_edit_confirm", "保存", class = "btn-primary"))
+    ))
+  })
+  observeEvent(input$product_edit_confirm, {
+    req(rv$logged_in, rv$product_edit_id, input$product_edit_name)
+    result <- product_update(rv$product_edit_id,
+      name = input$product_edit_name, category = input$product_edit_category,
+      model = input$product_edit_model, network = input$product_edit_network,
+      retail_price = input$product_edit_price, warranty = input$product_edit_warranty,
+      service_fee = input$product_edit_service_fee, features = input$product_edit_features,
+      weight = input$product_edit_weight, source_file = input$product_edit_source_file,
+      notes = input$product_edit_notes
+    )
+    if (result$success) removeModal()
+    product_trigger(product_trigger() + 1)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+  })
+
+  # 删除确认
+  observeEvent(input$product_del_click, {
+    req(rv$logged_in)
+    pid <- as.integer(input$product_del_click)
+    item <- product_get_by_id(pid)
+    if (is.null(item) || nrow(item) == 0) return()
+    showModal(modalDialog(
+      title = "确认删除产品",
+      tags$p(sprintf("确定要删除「%s - %s」吗？", item$name[1] %||% "", item$model[1] %||% "")),
+      footer = tagList(modalButton("取消"), actionButton("product_del_confirm", "确认删除", class = "btn-danger")),
+      size = "s", easyClose = TRUE
+    ))
+  })
+  observeEvent(input$product_del_confirm, {
+    req(rv$logged_in)
+    pid <- as.integer(input$product_del_click)
+    result <- product_delete(pid)
+    removeModal()
+    product_trigger(product_trigger() + 1)
+    showNotification(result$message, type = ifelse(result$success, "message", "warning"))
+  })
 }

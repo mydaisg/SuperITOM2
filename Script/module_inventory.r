@@ -209,12 +209,12 @@ MODULE_INVENTORY <- list(
   ),
   list(
     module = "资产", icon = "laptop",
-    frontend = "资产标签页 → tabsetPanel(资产列表, 工位图, 工位图V2, 考勤设备, 配置管理) → asset_ui()",
+    frontend = "资产标签页 → tabsetPanel(资产列表, 工位图, 工位图V2, 考勤设备, 配置管理, 产品) → asset_ui()",
     source = c("Script/asset_management.r", "Script/asset_server.r", "Script/asset_ui.r",
                "Script/seat_map_management.r", "Script/seat_map_server.r",
                "Script/seat_map_v2_ui.r", "Script/seat_map_v2_server.r",
                "Script/config_management.r", "Script/config_management_server.r"),
-    tables = "assets, seat_buildings, seat_floors, seat_zones, seats, attendance_devices, config_items",
+    tables = "assets, seat_buildings, seat_floors, seat_zones, seats, attendance_devices, config_items, products",
     perms = list(
       list(code="asset_view",      name="查看资产"),
       list(code="asset_manage",    name="管理资产"),
@@ -239,7 +239,9 @@ MODULE_INVENTORY <- list(
       "config_password_mask() — 密码脱敏（前4位明文 + 后续*）",
       "config_field_get_visible()/set_visible() — 展示字段可定义（勾选+拖拽排序，存system_config）",
       "config_item_seed() — 配置管理种子数据（15条服务器/数据库/网络资源）",
-      "config_item_get_stats() — 配置管理统计（资源总数/平台数/服务器/数据库/网络）"
+      "config_item_get_stats() — 配置管理统计（资源总数/平台数/服务器/数据库/网络）",
+      "product_get_all/add/update/delete() — 产品CRUD（价格表数据，备注来源文件名）",
+      "product_import_from_price_tables() — 从 D:/Tai_LVCC_2027 价格表导入产品（readxl）"
     )
   ),
   list(

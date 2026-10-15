@@ -1209,6 +1209,26 @@ migrate_database <- function() {
       cat("数据库迁移完成：已创建 assets 表\n")
     }
 
+    if (!"products" %in% tables) {
+      dbExecute(con, "CREATE TABLE products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category TEXT,
+        name TEXT NOT NULL,
+        model TEXT,
+        network TEXT,
+        retail_price TEXT,
+        warranty TEXT,
+        service_fee TEXT,
+        features TEXT,
+        weight TEXT,
+        source_file TEXT,
+        notes TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 products 表\n")
+    }
+
     # 绩效结果评定表
     if (!"performance_results" %in% tables) {
       dbExecute(con, "CREATE TABLE performance_results (

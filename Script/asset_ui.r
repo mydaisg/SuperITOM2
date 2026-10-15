@@ -93,6 +93,15 @@ asset_ui <- function() {
       Shiny.addCustomMessageHandler('cfgplatReopen', function(msg) {
         setTimeout(function(){ Shiny.setInputValue('cfgitem_platform_manage_btn', Math.random(), {priority:'event'}); }, 200);
       });
+      // 产品编辑/删除
+      $(document).on('click','.product-edit-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('product_edit_click',$(this).data('id'),{priority:'event'});
+      });
+      $(document).on('click','.product-del-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('product_del_click',$(this).data('id'),{priority:'event'});
+      });
     ")),
     tags$style(HTML("
       .asset-stat-box { text-align:center; padding:10px 6px; border-radius:6px; margin:0; }
@@ -155,6 +164,23 @@ asset_ui <- function() {
           )
         ),
         uiOutput("cfgitem_table_area")
+      ),
+      # ── 标签5：产品（价格表数据，备注来源文件）──
+      tabPanel("产品", value = "product",
+        uiOutput("product_stats"),
+        wellPanel(
+          fluidRow(
+            column(2, selectInput("product_filter_category", "分类筛选",
+              choices = c("全部"), selected = "全部")),
+            column(3, textInput("product_search", NULL, placeholder = "搜索产品名称/型号...")),
+            column(7, div(style = "text-align:right;",
+              actionButton("product_add_btn", "添加产品", icon = icon("plus"), class = "btn-primary"),
+              actionButton("product_import_btn", "从价格表导入", icon = icon("file-import"), class = "btn-success"),
+              actionButton("product_refresh", icon("refresh"), class = "btn-default")
+            ))
+          )
+        ),
+        DTOutput("product_table")
       )
     )
   )
