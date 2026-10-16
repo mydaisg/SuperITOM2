@@ -372,7 +372,23 @@ idea_seed_history <- function() {
     list(title = "MathsMaps", date = "2026-07-08", category = "产品",
       content = "数学图谱-基于知识点的单点攻破和关联图谱"),
     list(title = "OBAF，WeToken（one bill all full）", date = "2026-07-20", category = "产品",
-      content = "通过统一平台，把大家常用的Claw任务比如数据爬取、汇总、分析，由一个Token大任务完成，一个买单大家吃饱。")
+      content = "通过统一平台，把大家常用的Claw任务比如数据爬取、汇总、分析，由一个Token大任务完成，一个买单大家吃饱。"),
+    list(title = "AWP：AI Working Pools（AI工作池）", date = "2026-10-16", category = "产品",
+      content = paste("把输入信息扔进AI Pools，由AI来组织处理和交付。",
+        "一、AI Pools（AWP PO）",
+        "1、自动识别各种来源的信息 AP_info",
+        "2、进行分拣和编写标准需求输入 AP_Input",
+        "3、提供给人工审核和修正",
+        "4、转入 AP_Ticket",
+        "",
+        "二、AI Order（AWP OD）",
+        "1、定义AP_Position_Matrix，岗位，能力，责任，权力 矩阵，",
+        "2、定义工作流AP_WorkFlows，",
+        "3、扔给AI Agent去匹配 AP_Ticket+AP_Position_Matrix+AP_WorkFlows",
+        "",
+        "三、AI Project Planning（AWP PP）",
+        "1、采用项目制进行计划、任务、执行、反馈、交付、结案",
+        sep = "\n"))
   )
 
   for (h in hist) {
