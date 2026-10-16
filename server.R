@@ -65,6 +65,7 @@ source("Script/kingdee_k3cloud.r")       # 金蝶云星空 WebAPI 集成（SOL20
 source("Script/data_import_management.r") # 通用数据导入（数据层）
 source("Script/data_import_server.r")     # 通用数据导入（服务端）
 source("Script/industry_management.r")    # 行业模块数据层
+source("Script/idea_management.r")        # 行业模块-Idea 数据层（版本化 + 转方案）
 source("Script/industry_server.r")        # 行业模块服务端
 source("Script/governance_management.r")  # 治理模块数据层
 source("Script/governance_server.r")      # 治理模块服务端

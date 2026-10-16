@@ -16,6 +16,16 @@ industry_ui <- function() {
     ),
     tabsetPanel(
       id = "industry_tabs", type = "pills",
+      # ── Idea ──
+      tabPanel("Idea",
+        br(),
+        fluidRow(
+          column(4, actionButton("idea_add_btn", "新增 Idea", icon = icon("lightbulb"), class = "btn-success btn-sm", style = "width:100%;")),
+          column(8, div(style = "text-align:right;", htmlOutput("idea_stats")))
+        ),
+        br(),
+        uiOutput("idea_list")
+      ),
       # ── 情报搜集 ──
       tabPanel("情报搜集",
         br(),

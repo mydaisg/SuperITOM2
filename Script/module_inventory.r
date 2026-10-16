@@ -3,9 +3,9 @@
 MODULE_INVENTORY <- list(
   list(
     module = "行业", icon = "industry",
-    frontend = "行业标签页（首页之后第2位）→ industry_ui()",
-    source = c("Script/industry_management.r", "Script/industry_server.r", "Script/industry_ui.r"),
-    tables = "industry_intelligence",
+    frontend = "行业标签页（首页之后第2位）→ industry_ui()（子标签：Idea / 情报搜集 / 爬虫 / 可被调用的库 / 可推送的库 / 可还原原文HTML）",
+    source = c("Script/industry_management.r", "Script/idea_management.r", "Script/industry_server.r", "Script/industry_ui.r"),
+    tables = "industry_intelligence, ideas, idea_versions",
     perms = list(
       list(code="industry_view",   name="查看行业"),
       list(code="industry_create", name="新增行业情报")
@@ -15,7 +15,13 @@ MODULE_INVENTORY <- list(
       "industry_get_all() — 行业情报列表(分类/关键词筛选)",
       "industry_add() — 新增行业情报",
       "industry_generate_no() → IND+YYYYMMDD+3位流水",
-      "industry_get_stats() — 行业情报统计"
+      "industry_get_stats() — 行业情报统计",
+      "idea_db_init() — Idea 自包含建表(ideas/idea_versions)",
+      "idea_add() / idea_add_version() — 新增 Idea / 版本化保存(保存所有版本)",
+      "idea_get_all() / get_by_id() / get_versions() — Idea 查询(含版本历史)",
+      "idea_to_solution() — AI 分析完善后转方案(solutions 表)",
+      "idea_generate_no() → IDE+YYYYMMDD+3位流水",
+      "idea_seed() — 种子数据(补录 HungFo + SuperFilesManagement)"
     )
   ),
   list(
