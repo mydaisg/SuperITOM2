@@ -33,6 +33,18 @@ dev_log_generate_number <- function() {
   finally = { db_disconnect(con) })
 }
 
+# 自包含迁移：确保 dev_logs.status 列存在（默认 '正式'；'待开发' 表示预写入待开发）
+dev_log_ensure_status <- function() {
+  con <- db_connect()
+  tryCatch({
+    cols <- dbGetQuery(con, "PRAGMA table_info(dev_logs)")
+    if (!("status" %in% cols$name)) {
+      dbExecute(con, "ALTER TABLE dev_logs ADD COLUMN status TEXT DEFAULT '正式'")
+    }
+    invisible(TRUE)
+  }, error = function(e) invisible(FALSE), finally = { db_disconnect(con) })
+}
+
 # 获取所有开发日志（可筛选模块/日期/搜索）
 dev_log_get_all <- function(module = NULL, from_date = NULL, to_date = NULL, search = NULL) {
   con <- db_connect()
@@ -72,6 +84,7 @@ dev_log_get_all <- function(module = NULL, from_date = NULL, to_date = NULL, sea
 #     commit_msg="fix: short 6-word commit message",
 #     code_snippet="...", files_changed="...")
 dev_log_add <- function(module, title, requirement, solution, result, result_en = NULL, requirement_en = NULL, solution_en = NULL, commit_msg = NULL, code_snippet = NULL, files_changed = NULL, operator = NULL, source_text = NULL) {
+  dev_log_ensure_status()
   log_no <- dev_log_generate_number()
   con <- db_connect()
   tryCatch({
@@ -124,5 +137,75 @@ dev_log_get_stats <- function() {
     by_module <- dbGetQuery(con, "SELECT module, COUNT(*) AS n FROM dev_logs GROUP BY module ORDER BY n DESC")
     list(total = total %||% 0L, today = today_n %||% 0L, by_module = by_module)
   }, error = function(e) list(total = 0L, today = 0L, by_module = data.frame()),
+  finally = { db_disconnect(con) })
+}
+
+# 按 id 获取单条开发日志
+dev_log_get_by_id <- function(id) {
+  dev_log_ensure_status()
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, sprintf("SELECT * FROM dev_logs WHERE id=%d", as.integer(id)))
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+# 预写入一条「待开发」开发日志（快速开发元任务：尚未开发时先占位，可编辑）
+dev_log_add_pending <- function(title, requirement = "", module = "快速开发", created_by = NULL, source_text = NULL) {
+  dev_log_ensure_status()
+  log_no <- dev_log_generate_number()
+  con <- db_connect()
+  tryCatch({
+    now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+    op <- if (is.null(created_by) || length(created_by) == 0 || !nzchar(created_by)) "系统" else as.character(created_by)
+    dbExecute(con, sprintf(
+      "INSERT INTO dev_logs (log_no, module, title, requirement, source_text, status, created_by, created_at)
+       VALUES ('%s','%s','%s','%s','%s','待开发','%s','%s')",
+      log_no,
+      gsub("'","''", module %||% "快速开发"),
+      gsub("'","''", title %||% ""),
+      gsub("'","''", requirement %||% ""),
+      gsub("'","''", source_text %||% ""),
+      gsub("'","''", op),
+      now))
+    tryCatch({
+      if (exists("log_user_operation", mode = "function")) {
+        log_user_operation("开发日志-预写入", paste(log_no, title), op)
+      }
+    }, error = function(e) NULL)
+    list(success = TRUE, message = paste("已预写入开发日志", log_no, "（待开发）"), log_no = log_no)
+  }, error = function(e) list(success = FALSE, message = paste("预写入失败:", e$message)),
+  finally = { db_disconnect(con) })
+}
+
+# 编辑开发日志（待开发/正式均支持）
+dev_log_update <- function(id, module, title, requirement, solution, result,
+                           requirement_en = NULL, solution_en = NULL, result_en = NULL,
+                           commit_msg = NULL, files_changed = NULL) {
+  dev_log_ensure_status()
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf(
+      "UPDATE dev_logs SET module='%s', title='%s', requirement='%s', solution='%s', result='%s',
+        requirement_en='%s', solution_en='%s', result_en='%s', commit_msg='%s', files_changed='%s'
+       WHERE id=%d",
+      gsub("'","''", module %||% ""), gsub("'","''", title %||% ""),
+      gsub("'","''", requirement %||% ""), gsub("'","''", solution %||% ""),
+      gsub("'","''", result %||% ""), gsub("'","''", requirement_en %||% ""),
+      gsub("'","''", solution_en %||% ""), gsub("'","''", result_en %||% ""),
+      gsub("'","''", commit_msg %||% ""), gsub("'","''", files_changed %||% ""),
+      as.integer(id)))
+    list(success = TRUE, message = "已更新")
+  }, error = function(e) list(success = FALSE, message = e$message),
+  finally = { db_disconnect(con) })
+}
+
+# 待开发 → 正式开发日志
+dev_log_mark_formal <- function(id) {
+  dev_log_ensure_status()
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("UPDATE dev_logs SET status='正式' WHERE id=%d", as.integer(id)))
+    list(success = TRUE, message = "已转为正式开发日志")
+  }, error = function(e) list(success = FALSE, message = e$message),
   finally = { db_disconnect(con) })
 }

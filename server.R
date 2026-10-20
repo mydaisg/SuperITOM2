@@ -3558,6 +3558,14 @@ server <- function(input, output, session) {
     }
     result <- note_comment_add(note_id, content, rv$current_user$id[1])
     if (isTRUE(result$success)) {
+      # 预写入「待开发」开发日志（元任务 #1719）：先占位，可编辑，开发完转正式
+      title <- strsplit(content, "\n", fixed = TRUE)[[1]][1]
+      if (is.na(title) || nchar(trimws(title)) == 0) title <- content
+      op <- if (!is.null(rv$current_user$display_name) && length(rv$current_user$display_name) > 0 &&
+                !is.na(rv$current_user$display_name[1]) && nchar(rv$current_user$display_name[1]) > 0)
+        rv$current_user$display_name[1] else rv$current_user$username[1]
+      tryCatch(dev_log_add_pending(title, content, "快速开发", op, content),
+        error = function(e) NULL)
       updateTextAreaInput(session, "quick_dev_input", value = "")
       rv$home_dev_refresh <- isolate(rv$home_dev_refresh) + 1L
       showNotification("已提交到元任务", type = "message")

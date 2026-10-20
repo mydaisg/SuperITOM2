@@ -218,18 +218,20 @@ requirement_server <- function(input, output, session, rv) {
 
     # 渲染单条记录（含其子记录递归）
     # 记录格式严格顺序：序号、人员、记事、时间、状态
-    render_item <- function(p, num_label, color, level) {
+    # counter：全局彩虹色计数器（参照记事评论：跨部门/跨层级连续，每条起始色不同，子级顺延而非继承父级同色）
+    render_item <- function(p, num_label, counter, level) {
       person <- if (!is.null(p$person) && !is.na(p$person) && p$person != "") p$person else ""
       date_str <- if (!is.null(p$progress_date) && !is.na(p$progress_date) && p$progress_date != "") p$progress_date else ""
       content <- if (!is.null(p$content) && !is.na(p$content) && p$content != "") p$content else ""
       st <- if (!is.null(p$status) && !is.na(p$status)) p$status else ""
       st_col <- requirement_progress_status_color(st)
+      color <- rainbow[((counter - 1) %% length(rainbow)) + 1]
       indent <- if (level > 0) sprintf("margin-left:%dpx;", level * 28) else ""
       # 当天（或最后一天）记录：浅绿色底色高亮
       is_today <- (target_date != "" && date_str == target_date)
       bg_color <- if (is_today) "#e8f5e9" else "#fafafa"
 
-      # 子记录（递归）
+      # 子记录（递归）：子级颜色计数器顺延
       subs_html <- ""
       if (nrow(children) > 0) {
         subs <- children[children$pid == p$id, , drop = FALSE]
@@ -237,7 +239,7 @@ requirement_server <- function(input, output, session, rv) {
           sub_parts <- c()
           for (si in seq_len(nrow(subs))) {
             sub_label <- sprintf("%s.%d", num_label, si)
-            sub_parts <- c(sub_parts, render_item(subs[si, ], sub_label, color, level + 1))
+            sub_parts <- c(sub_parts, render_item(subs[si, ], sub_label, counter + si, level + 1))
           }
           subs_html <- sprintf('<div style="margin-top:2px;">%s</div>', paste(sub_parts, collapse = ""))
         }
@@ -251,13 +253,12 @@ requirement_server <- function(input, output, session, rv) {
         sprintf('<button class="btn btn-xs btn-default" title="标记完成" onclick="Shiny.setInputValue(\'req_prog_done_click\',%d,{priority:\'event\'});">✓</button>', p$id)
       }
 
-      # 严格顺序：序号、人员、记事、时间、状态（单行排列）
-      # 全部字段微软雅黑，内容字体放大一号（13px）
+      # 严格顺序：序号、人员、时间、状态（单行排列）；记事放到明细区（可折叠）
       today_mark <- if (is_today) '<span style="color:#2e7d32;font-size:10px;font-weight:bold;margin-right:2px;">●今日</span>' else ""
       seq_html <- sprintf('<span style="font-weight:bold;color:%s;font-family:Consolas,monospace;font-size:12px;">%s</span>', color, num_label)
       person_html <- if (person != "") sprintf('<span style="font-weight:bold;color:#333;font-size:13px;font-family:\'Microsoft YaHei\',\'PingFang SC\',sans-serif;">%s</span>', person) else ""
       # 记事：支持输入换行（pre-wrap），字体放大一号
-      content_html <- if (content != "") sprintf('<span style="font-size:13px;color:#555;white-space:pre-wrap;font-family:\'Microsoft YaHei\',\'PingFang SC\',sans-serif;">%s</span>', content) else ""
+      content_html <- if (content != "") sprintf('<div style="font-size:13px;color:#555;white-space:pre-wrap;font-family:\'Microsoft YaHei\',\'PingFang SC\',sans-serif;padding-left:2px;">%s</div>', content) else ""
       # 时间
       date_html <- if (date_str != "") {
         sprintf('<span style="color:#999;font-size:11px;white-space:nowrap;font-family:\'Microsoft YaHei\',\'PingFang SC\',sans-serif;">%s</span>', date_str)
@@ -266,24 +267,36 @@ requirement_server <- function(input, output, session, rv) {
         sprintf('<span style="display:inline-block;background:%s;color:#fff;font-size:11px;padding:1px 8px;border-radius:10px;white-space:nowrap;font-family:\'Microsoft YaHei\',\'PingFang SC\',sans-serif;">%s</span>', st_col, st)
       } else ""
 
+      # 一级/二级明细收缩/展开（参照记事评论）；三级及以下不折叠
+      has_body <- (content != "" || subs_html != "")
+      can_collapse <- (level %in% c(0L, 1L)) && has_body
+      collapse_cls <- if (can_collapse) " reqprog-collapsible" else ""
+      collapse_btn <- if (can_collapse) {
+        sprintf('<button class="btn btn-xs btn-default reqprog-collapse-btn" data-id="%d" title="收缩/展开">▾ 展开</button>', p$id)
+      } else ""
+      body_display <- if (can_collapse) "display:none;" else ""
+
       sprintf(
-        '<div style="background:%s;padding:6px 10px;margin-bottom:4px;border-radius:6px;border-left:4px solid %s;%s">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+        '<div class="reqprog-item%s" id="reqprog-%d" style="background:%s;padding:6px 10px;margin-bottom:4px;border-radius:6px;border-left:4px solid %s;%s">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
             <div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;">
-              %s%s%s%s%s%s
+              %s%s%s%s%s
             </div>
             <div style="white-space:nowrap;flex-shrink:0;">
-              %s
+              %s%s
               <button class="btn btn-xs btn-default" title="增加下级" onclick="Shiny.setInputValue(\'req_prog_addsub_click\',%d,{priority:\'event\'});">➕</button>
               <button class="btn btn-xs btn-info" title="编辑" onclick="Shiny.setInputValue(\'req_prog_edit_click\',%d,{priority:\'event\'});">✏</button>
               <button class="btn btn-xs btn-danger" title="删除" onclick="if(confirm(\'删除此进度条目及其下级？\'))Shiny.setInputValue(\'req_prog_delete_click\',%d,{priority:\'event\'});">🗑</button>
             </div>
           </div>
-          %s
+          <div class="reqprog-body" id="reqprog-body-%d" style="%smargin-top:4px;">
+            %s%s
+          </div>
         </div>',
-        bg_color, color, indent,
-        today_mark, seq_html, person_html, content_html, date_html, status_html,
-        done_btn, p$id, p$id, p$id, subs_html)
+        collapse_cls, p$id, bg_color, color, indent,
+        today_mark, seq_html, person_html, date_html, status_html,
+        collapse_btn, done_btn, p$id, p$id, p$id,
+        p$id, body_display, content_html, subs_html)
     }
 
     # 按部门分组渲染（一级类编号：一、二、三...）
@@ -292,6 +305,7 @@ requirement_server <- function(input, output, session, rv) {
     if (length(depts) == 0) depts <- "(未分组)"
     parts <- c()
     dept_idx <- 0L
+    gidx <- 0L  # 全局彩虹色计数器：跨部门连续（不按部门重置），与记事评论每条起始色不同一致
     for (d in depts) {
       dept_idx <- dept_idx + 1L
       if (d == "(未分组)") {
@@ -302,9 +316,9 @@ requirement_server <- function(input, output, session, rv) {
       if (nrow(sub) == 0) next
       rows <- c()
       for (j in seq_len(nrow(sub))) {
+        gidx <- gidx + 1L
         p <- sub[j, ]
-        col <- rainbow[((j - 1) %% length(rainbow)) + 1]
-        rows <- c(rows, render_item(p, as.character(j), col, 0))
+        rows <- c(rows, render_item(p, as.character(j), gidx, 0))
       }
       dept_cn <- requirement_num_to_cn(dept_idx)
       # 一级行（部门标题）+ 右侧功能按键
@@ -325,7 +339,11 @@ requirement_server <- function(input, output, session, rv) {
           <div style="margin-left:2em;">%s</div>
         </div>', dept_header, paste(rows, collapse = "")))
     }
-    tagList(top, HTML(paste(parts, collapse = "")))
+    tagList(
+      top,
+      HTML('<div style="margin:0 0 10px;"><button class="btn btn-xs btn-default" onclick="reqprogToggleAll(this)">全部展开</button></div>'),
+      HTML(paste(parts, collapse = ""))
+    )
   })
 
   # 进度需求选择器切换

@@ -1,6 +1,36 @@
 # 需求模块 UI — 3 个子标签：需求列表 / 进度 / 甘特图
 requirement_ui <- function() {
   tagList(
+    tags$script(HTML("
+      // 需求进度：明细收缩/展开（参照记事评论）
+      $(document).on('click', '.reqprog-collapse-btn', function(e){
+        e.stopPropagation();
+        var id = $(this).data('id');
+        var $body = $('#reqprog-body-' + id);
+        if ($body.is(':visible')) {
+          $body.hide();
+          $(this).text('▾ 展开');
+        } else {
+          $body.show();
+          $(this).text('▴ 收缩');
+        }
+      });
+      // 全部展开 / 全部收缩
+      window.reqprogToggleAll = function(btn){
+        var $bodies = $('.reqprog-body');
+        var anyHidden = false;
+        $bodies.each(function(){ if(!$(this).is(':visible')) anyHidden = true; });
+        if (anyHidden) {
+          $bodies.show();
+          $('.reqprog-collapse-btn').text('▴ 收缩');
+          if (btn) btn.textContent = '全部收缩';
+        } else {
+          $bodies.hide();
+          $('.reqprog-collapse-btn').text('▾ 展开');
+          if (btn) btn.textContent = '全部展开';
+        }
+      };
+    ")),
     tags$style(HTML("
       .req-cap { padding:16px 20px; border-radius:8px; color:#fff; margin-bottom:16px; }
       .req-cap h3 { margin:0; color:#fff; }

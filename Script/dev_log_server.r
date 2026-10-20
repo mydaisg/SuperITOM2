@@ -3,6 +3,7 @@
 ##################
 dev_log_server <- function(input, output, session, rv) {
 
+  dev_log_ensure_status()
   dl_trigger <- reactiveVal(0)
 
   # 搜索词（防抖）
@@ -93,12 +94,14 @@ dev_log_server <- function(input, output, session, rv) {
 
         # 高亮后的标题
         hl_title <- if (length(search_words) > 0) HTML(.hl(r$title %||% "", search_words)) else r$title %||% ""
+        is_pending <- !is.null(r$status) && !is.na(r$status) && r$status == "待开发"
 
         parts <- list(
-          # 标题行：编号 + 模块标签 + 标题 + 时间（同行）
+          # 标题行：编号 + 模块标签 + 状态 + 标题 + 时间 + 操作（同行）
           tags$div(style = "display:flex; align-items:flex-start; gap:6px; margin-bottom:6px; flex-wrap:wrap;",
             if (nchar(log_no_str) > 0) tags$span(style = "font-size:10px; color:#888; font-family:Consolas,monospace; white-space:nowrap; margin-top:3px; flex-shrink:0;", log_no_str),
             tags$span(style = "display:inline-block; padding:1px 7px; border-radius:10px; font-size:11px; background:#ede9fe; color:#5b21b6; white-space:nowrap; flex-shrink:0;", r$module %||% "全局"),
+            if (is_pending) tags$span(style = "display:inline-block; padding:1px 7px; border-radius:10px; font-size:11px; background:#fff3cd; color:#856404; white-space:nowrap; flex-shrink:0;", "⏳ 待开发"),
             if (!is.null(r$commit_msg) && !is.na(r$commit_msg) && nchar(r$commit_msg) > 0)
               tags$span(style = "display:inline-block; padding:1px 6px; border-radius:3px; font-size:10px; background:#1e1e1e; color:#7ecb7e; font-family:Consolas,monospace; white-space:nowrap; flex-shrink:0;", r$commit_msg),
             tags$div(style = "flex:1; min-width:0;",
@@ -106,6 +109,12 @@ dev_log_server <- function(input, output, session, rv) {
                 hl_title,
                 tags$span(style = "font-size:11px; color:#bbb; font-weight:normal; margin-left:6px; white-space:nowrap;", time_str)
               )
+            ),
+            tags$div(style = "white-space:nowrap; flex-shrink:0; margin-top:1px;",
+              tags$button(class = "btn btn-xs btn-default", title = "编辑",
+                onclick = sprintf("Shiny.setInputValue('dl_edit_click', %d, {priority:'event'});", r$id), "✏"),
+              if (is_pending) tags$button(class = "btn btn-xs btn-success", title = "转正式开发日志",
+                onclick = sprintf("if(confirm('转为正式开发日志？'))Shiny.setInputValue('dl_formal_click', %d, {priority:'event'});", r$id), "转正式") else NULL
             )
           )
         )
@@ -205,5 +214,63 @@ dev_log_server <- function(input, output, session, rv) {
   observe({
     req(rv$logged_in)
     if (isolate(dl_trigger()) == 0) dl_trigger(1)
+  })
+
+  # 编辑开发日志（待开发/正式均支持）
+  observeEvent(input$dl_edit_click, {
+    req(rv$logged_in, input$dl_edit_click)
+    r <- tryCatch(dev_log_get_by_id(as.integer(input$dl_edit_click)), error = function(e) data.frame())
+    if (nrow(r) == 0) return()
+    r <- r[1, ]
+    mods <- tryCatch(dev_log_get_modules(), error = function(e) character(0))
+    sel <- if (is.null(r$module) || is.na(r$module) || !nzchar(r$module)) "快速开发" else r$module
+    if (!(sel %in% mods)) mods <- unique(c(sel, mods))
+    showModal(modalDialog(
+      title = paste("编辑开发日志 -", r$log_no %||% ""),
+      selectInput("dl_edit_module", "模块", choices = setNames(mods, mods), selected = sel, width = "100%"),
+      textInput("dl_edit_title", "标题", value = r$title %||% "", width = "100%"),
+      textAreaInput("dl_edit_requirement", "需求", value = r$requirement %||% "", rows = 3, width = "100%"),
+      textAreaInput("dl_edit_solution", "方案", value = r$solution %||% "", rows = 3, width = "100%"),
+      textAreaInput("dl_edit_result", "结果", value = r$result %||% "", rows = 3, width = "100%"),
+      textInput("dl_edit_commit", "Commit 信息", value = r$commit_msg %||% "", width = "100%"),
+      textInput("dl_edit_files", "变更文件", value = r$files_changed %||% "", width = "100%"),
+      footer = tagList(
+        actionButton("dl_edit_save", "保存", class = "btn-primary"),
+        modalButton("取消")
+      ), size = "l", easyClose = TRUE
+    ))
+  })
+
+  observeEvent(input$dl_edit_save, {
+    req(rv$logged_in, input$dl_edit_click)
+    r <- tryCatch(dev_log_get_by_id(as.integer(input$dl_edit_click)), error = function(e) data.frame())
+    .guard <- function(x) {
+      if (length(x) == 0) return(NULL)
+      v <- x[1]
+      if (is.null(v) || is.na(v)) NULL else v
+    }
+    result <- dev_log_update(
+      as.integer(input$dl_edit_click),
+      input$dl_edit_module, input$dl_edit_title,
+      input$dl_edit_requirement, input$dl_edit_solution, input$dl_edit_result,
+      requirement_en = if (nrow(r) > 0) .guard(r$requirement_en) else NULL,
+      solution_en = if (nrow(r) > 0) .guard(r$solution_en) else NULL,
+      result_en = if (nrow(r) > 0) .guard(r$result_en) else NULL,
+      commit_msg = input$dl_edit_commit, files_changed = input$dl_edit_files)
+    if (result$success) {
+      removeModal()
+      dl_trigger(dl_trigger() + 1)
+      showNotification(result$message, type = "message")
+    } else showNotification(result$message, type = "error")
+  })
+
+  # 待开发 → 正式
+  observeEvent(input$dl_formal_click, {
+    req(rv$logged_in)
+    result <- dev_log_mark_formal(as.integer(input$dl_formal_click))
+    if (result$success) {
+      dl_trigger(dl_trigger() + 1)
+      showNotification(result$message, type = "message")
+    } else showNotification(result$message, type = "error")
   })
 }
