@@ -58,17 +58,12 @@ export class AutomationService {
 
       this.scriptExecutions.set(executionId, { pty: ptyProcess, output: outputSubject });
 
-      ptyProcess.on('data', (data) => {
+      ptyProcess.onData((data) => {
         outputSubject.next(data);
       });
 
-      ptyProcess.on('exit', (code) => {
+      ptyProcess.onExit(() => {
         outputSubject.complete();
-        this.scriptExecutions.delete(executionId);
-      });
-
-      ptyProcess.on('error', (error) => {
-        outputSubject.error(error);
         this.scriptExecutions.delete(executionId);
       });
 

@@ -10,6 +10,7 @@ import { ConfigModule as ItomConfigModule } from './modules/config/config.module
 import { DataModule } from './modules/data/data.module';
 import { AutomationModule } from './modules/automation/automation.module';
 import { GitHubModule } from './modules/github/github.module';
+import { WorkOrdersModule } from './modules/work-orders/work-orders.module';
 import { HealthModule } from './common/health/health.module';
 import { LoggerModule } from './common/logger/logger.module';
 
@@ -59,6 +60,7 @@ import { LoggerModule } from './common/logger/logger.module';
     DataModule,
     AutomationModule,
     GitHubModule,
+    WorkOrdersModule,
     
     // 公共模块
     HealthModule,

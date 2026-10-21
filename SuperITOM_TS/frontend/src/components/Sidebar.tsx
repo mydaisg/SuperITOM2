@@ -1,6 +1,6 @@
 import React from 'react'
 import { Layout, Menu, Typography } from 'antd'
-import { DashboardOutlined, ScriptOutlined, DatabaseOutlined, GitBranchOutlined, SettingOutlined } from '@ant-design/icons'
+import { DashboardOutlined, CodeOutlined, DatabaseOutlined, BranchesOutlined, SettingOutlined, FileTextOutlined } from '@ant-design/icons'
 import { Link, useLocation } from 'react-router-dom'
 import './Sidebar.css'
 
@@ -9,7 +9,8 @@ const { Title } = Typography
 
 const Sidebar: React.FC = () => {
   const location = useLocation()
-  const currentPath = location.pathname.replace('/', '') || 'dashboard'
+  const pathSegments = location.pathname.split('/').filter(Boolean)
+  const currentPath = pathSegments[0] || 'dashboard'
 
   const menuItems = [
     {
@@ -18,8 +19,13 @@ const Sidebar: React.FC = () => {
       label: <Link to="/dashboard">仪表板</Link>,
     },
     {
+      key: 'work-orders',
+      icon: <FileTextOutlined />,
+      label: <Link to="/work-orders">工单</Link>,
+    },
+    {
       key: 'automation',
-      icon: <ScriptOutlined />,
+      icon: <CodeOutlined />,
       label: <Link to="/automation">自动化</Link>,
     },
     {
@@ -29,7 +35,7 @@ const Sidebar: React.FC = () => {
     },
     {
       key: 'github',
-      icon: <GitBranchOutlined />,
+      icon: <BranchesOutlined />,
       label: <Link to="/github">GitHub 集成</Link>,
     },
     {

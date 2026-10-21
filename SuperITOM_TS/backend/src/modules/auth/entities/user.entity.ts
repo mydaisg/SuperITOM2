@@ -14,6 +14,9 @@ export class UserEntity {
   @Column({ default: 'user' })
   role: string;
 
+  @Column({ default: '' })
+  displayName: string;
+
   @Column({ default: true })
   isActive: boolean;
 

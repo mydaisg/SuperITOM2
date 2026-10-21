@@ -1,0 +1,60 @@
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 40rpx;
+}
+
+.login-card {
+  width: 100%;
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 60rpx 48rpx;
+  box-shadow: 0 20rpx 60rpx rgba(0, 0, 0, 0.25);
+}
+
+.logo {
+  text-align: center;
+  font-size: 56rpx;
+  font-weight: 700;
+  color: #667eea;
+  letter-spacing: 2rpx;
+}
+
+.subtitle {
+  text-align: center;
+  font-size: 26rpx;
+  color: #999;
+  margin: 16rpx 0 56rpx;
+}
+
+.input {
+  height: 96rpx;
+  border: 1rpx solid #e5e6eb;
+  border-radius: 12rpx;
+  padding: 0 28rpx;
+  margin-bottom: 28rpx;
+  font-size: 30rpx;
+  background: #fafafa;
+}
+
+.input-placeholder {
+  color: #bbb;
+}
+
+.btn {
+  margin-top: 24rpx;
+  height: 96rpx;
+  line-height: 96rpx;
+  border-radius: 12rpx;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.btn::after {
+  border: none;
+}

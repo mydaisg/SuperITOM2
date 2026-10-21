@@ -250,6 +250,11 @@ work_order_add <- function(title, description, priority = "中", category = "一
     log_user_operation("创建工单", title, operator_name, 
                       sprintf("工单号: %s, 优先级: %s, 分类: %s", order_no, priority, category))
     
+    # 事件接入：通知管理员（消息机制，静默失败不影响工单创建）
+    message_notify(sender_id = user_id, title = paste0("新工单：", title),
+      content = sprintf("工单号 %s（优先级 %s / 分类 %s）已创建。", order_no, priority, category),
+      msg_type = "事件", priority = priority)
+    
     return(list(success = TRUE, message = "工单创建成功"))
   }, error = function(e) {
     return(list(success = FALSE, message = paste("创建失败:", e$message)))

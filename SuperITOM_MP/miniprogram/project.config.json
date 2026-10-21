@@ -1,0 +1,21 @@
+{
+  "compileType": "miniprogram",
+  "appid": "touristappid",
+  "projectname": "superitom-mp",
+  "miniprogramRoot": "./",
+  "setting": {
+    "useCompilerPlugins": ["typescript"],
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "ignoreUploadUnusedFiles": true,
+    "urlCheck": false
+  },
+  "libVersion": "3.4.0",
+  "condition": {},
+  "editorSetting": {
+    "tabIndent": "insertSpaces",
+    "tabSize": 2
+  }
+}

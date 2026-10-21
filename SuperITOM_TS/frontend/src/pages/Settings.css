@@ -1,0 +1,11 @@
+.settings-container {
+  padding: 0;
+}
+
+.settings-form {
+  max-width: 720px;
+}
+
+.action-buttons {
+  margin-top: 16px;
+}

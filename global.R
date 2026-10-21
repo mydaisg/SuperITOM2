@@ -757,6 +757,79 @@ migrate_database <- function() {
     }
 
     # ===============================================
+    # OKR 模块数据库表（目标与关键结果，全球通用 OKR）
+    # ===============================================
+
+    if (!"okr_cycles" %in% tables) {
+      dbExecute(con, "CREATE TABLE okr_cycles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        year INTEGER,
+        quarter INTEGER DEFAULT 0,
+        start_date TEXT,
+        end_date TEXT,
+        status TEXT DEFAULT 'active',
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 okr_cycles 表\n")
+    }
+
+    if (!"okr_objectives" %in% tables) {
+      dbExecute(con, "CREATE TABLE okr_objectives (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cycle_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        level TEXT DEFAULT 'team',
+        owner_id INTEGER,
+        parent_id INTEGER,
+        weight REAL DEFAULT 1.0,
+        status TEXT DEFAULT 'active',
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_okr_obj_cycle ON okr_objectives(cycle_id)")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_okr_obj_owner ON okr_objectives(owner_id)")
+      cat("数据库迁移完成：已创建 okr_objectives 表及索引\n")
+    }
+
+    if (!"okr_key_results" %in% tables) {
+      dbExecute(con, "CREATE TABLE okr_key_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        objective_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        metric TEXT,
+        unit TEXT,
+        baseline REAL DEFAULT 0,
+        target REAL DEFAULT 0,
+        current_value REAL DEFAULT 0,
+        progress REAL DEFAULT 0,
+        weight REAL DEFAULT 1.0,
+        source_type TEXT DEFAULT 'manual',
+        source_id INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_okr_kr_obj ON okr_key_results(objective_id)")
+      cat("数据库迁移完成：已创建 okr_key_results 表及索引\n")
+    }
+
+    if (!"okr_updates" %in% tables) {
+      dbExecute(con, "CREATE TABLE okr_updates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kr_id INTEGER NOT NULL,
+        old_value REAL,
+        new_value REAL,
+        progress REAL,
+        note TEXT,
+        updated_by INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_okr_upd_kr ON okr_updates(kr_id)")
+      cat("数据库迁移完成：已创建 okr_updates 表及索引\n")
+    }
+
+    # ===============================================
     # 审批模块数据库表（企业微信风格）
     # ===============================================
 
@@ -1069,6 +1142,7 @@ migrate_database <- function() {
       data.frame(module="流程实例数据", component="面板", code="flowmon_view", name="查看", description="查看流程实例数据"),
       data.frame(module="流程实例清单", component="面板", code="flowinst_view", name="查看", description="查看流程实例清单"),
       data.frame(module="钉钉旧流程数据", component="面板", code="dinginst_view", name="查看", description="查看钉钉旧流程数据"),
+      data.frame(module="流程资产中心", component="面板", code="flowasset_view", name="查看", description="查看泛微OA流程资产中心"),
       data.frame(module="图片合并PDF", component="面板", code="img2pdf_view", name="查看", description="查看图片合并PDF工具"),
       data.frame(module="通用数据导入", component="面板", code="dataimp_view", name="查看", description="查看通用数据导入"),
       data.frame(module="通用数据导入", component="操作", code="dataimp_manage", name="管理", description="导入和管理通用数据集"),
@@ -1084,7 +1158,11 @@ migrate_database <- function() {
       data.frame(module="需求", component="操作", code="req_create", name="新建", description="新建需求"),
       data.frame(module="需求", component="操作", code="req_manage", name="管理", description="管理需求进度与甘特图"),
       data.frame(module="配置管理", component="面板", code="cfgitem_view", name="查看", description="查看托管云平台服务器资源清单"),
-      data.frame(module="配置管理", component="操作", code="cfgitem_manage", name="管理", description="增删改服务器资源配置")
+      data.frame(module="配置管理", component="操作", code="cfgitem_manage", name="管理", description="增删改服务器资源配置"),
+      data.frame(module="管理", component="小程序用户", code="admin_mini_users", name="用户", description="管理小程序端用户"),
+      data.frame(module="管理", component="VIP", code="admin_vip", name="VIP", description="管理小程序VIP会员"),
+      data.frame(module="绩效", component="OKR", code="okr_view", name="查看", description="查看OKR目标与关键结果"),
+      data.frame(module="绩效", component="OKR", code="okr_manage", name="管理", description="创建和管理OKR周期/目标/关键结果")
     )
     for (i in seq_len(nrow(supplement_perms))) {
       dbExecute(con, sprintf("INSERT OR IGNORE INTO rbac_permissions (module, component, code, name, description) VALUES ('%s','%s','%s','%s','%s')",
@@ -1708,6 +1786,38 @@ migrate_database <- function() {
     }
 
     # ===============================================
+    # 流程资产表（泛微 OA 流程中心：大类→流程→节点→流转分支→使用率→集成判定→问题自查）
+    # 数据来源：泛微 OA 流程梳理 + 流程集成对接调研（V2）
+    # ===============================================
+    if (!"flow_process_assets" %in% tables) {
+      dbExecute(con, "CREATE TABLE flow_process_assets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category TEXT NOT NULL,
+        flow_name TEXT NOT NULL,
+        owner_dept TEXT,
+        usage_count INTEGER DEFAULT 0,
+        usage_rate REAL DEFAULT 0,
+        initiator_count INTEGER DEFAULT 0,
+        top_initiators TEXT,
+        node_count INTEGER DEFAULT 0,
+        integration_decision TEXT,
+        priority TEXT,
+        target_system TEXT,
+        remark TEXT,
+        nodes_json TEXT,
+        branches_json TEXT,
+        issues_json TEXT,
+        source TEXT DEFAULT '泛微OA',
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime')),
+        UNIQUE(flow_name)
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_fpa_cat ON flow_process_assets(category)")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_fpa_decision ON flow_process_assets(integration_decision)")
+      cat("数据库迁移完成：已创建 flow_process_assets 表\n")
+    }
+
+    # ===============================================
     # 图片合并 PDF 工具记录表（工具模块：多图合并 PDF + 水印）
     # ===============================================
     if (!"img2pdf_records" %in% tables) {
@@ -1919,6 +2029,148 @@ migrate_database <- function() {
         dbExecute(con, "ALTER TABLE requirement_progress ADD COLUMN parent_id INTEGER DEFAULT 0")
         cat("数据库迁移完成：requirement_progress 表已添加 parent_id 列\n")
       }
+    }
+    if (!"requirement_progress_notes" %in% tables) {
+      dbExecute(con, "CREATE TABLE requirement_progress_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        progress_id INTEGER NOT NULL,
+        note_id INTEGER NOT NULL,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        UNIQUE(progress_id, note_id)
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_req_prog_notes_prog ON requirement_progress_notes(progress_id)")
+      cat("数据库迁移完成：已创建 requirement_progress_notes 表\n")
+    }
+
+    # ===============================================
+    # 消息机制（消息中心 + 动作流模板，类似泛微 ESB 动作流）
+    # ===============================================
+    if (!"messages" %in% tables) {
+      dbExecute(con, "CREATE TABLE messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        msg_no TEXT NOT NULL DEFAULT '',
+        title TEXT NOT NULL,
+        content TEXT,
+        msg_type TEXT DEFAULT '站内信',
+        priority TEXT DEFAULT '中',
+        flow_id INTEGER,
+        sender_id INTEGER,
+        status TEXT DEFAULT '已发送',
+        current_node INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id)")
+      cat("数据库迁移完成：已创建 messages 表\n")
+    }
+    if (!"message_recipients" %in% tables) {
+      dbExecute(con, "CREATE TABLE message_recipients (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        is_read INTEGER DEFAULT 0,
+        read_at TEXT,
+        UNIQUE(message_id, user_id)
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_msg_rcpt_user ON message_recipients(user_id)")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_msg_rcpt_msg ON message_recipients(message_id)")
+      cat("数据库迁移完成：已创建 message_recipients 表\n")
+    }
+    if (!"message_actions" %in% tables) {
+      dbExecute(con, "CREATE TABLE message_actions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id INTEGER NOT NULL,
+        node_index INTEGER,
+        node_name TEXT,
+        action TEXT NOT NULL,
+        actor_id INTEGER,
+        actor_name TEXT,
+        comment TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_msg_actions_msg ON message_actions(message_id)")
+      cat("数据库迁移完成：已创建 message_actions 表\n")
+    }
+    if (!"message_flows" %in% tables) {
+      dbExecute(con, "CREATE TABLE message_flows (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        nodes TEXT,
+        status TEXT DEFAULT '启用',
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      cat("数据库迁移完成：已创建 message_flows 表\n")
+    }
+
+    # ===============================================
+    # OPPM 一页纸项目管理模块表（项目模块子标签）
+    # 参照 HD-CBS-业务系统-OPPM 文档：项目基本信息 + 阶段/任务 + 周进度 + RACI 责任矩阵
+    # ===============================================
+    if (!"oppm_plans" %in% tables) {
+      dbExecute(con, "CREATE TABLE oppm_plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_no TEXT NOT NULL DEFAULT '',
+        project_id INTEGER NOT NULL,
+        version TEXT DEFAULT 'v1.0',
+        project_leader TEXT,
+        project_objective TEXT,
+        start_date TEXT,
+        week_count INTEGER DEFAULT 20,
+        status TEXT DEFAULT 'active',
+        created_by INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_oppm_plans_proj ON oppm_plans(project_id)")
+      cat("数据库迁移完成：已创建 oppm_plans 表\n")
+    }
+    if (!"oppm_roles" %in% tables) {
+      dbExecute(con, "CREATE TABLE oppm_roles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_id INTEGER NOT NULL,
+        role_name TEXT NOT NULL,
+        sort_order INTEGER DEFAULT 0
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_oppm_roles_plan ON oppm_roles(plan_id)")
+      cat("数据库迁移完成：已创建 oppm_roles 表\n")
+    }
+    if (!"oppm_tasks" %in% tables) {
+      dbExecute(con, "CREATE TABLE oppm_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_id INTEGER NOT NULL,
+        parent_id INTEGER DEFAULT 0,
+        seq_no TEXT DEFAULT '',
+        task_name TEXT NOT NULL,
+        is_phase INTEGER DEFAULT 0,
+        sort_order INTEGER DEFAULT 0
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_oppm_tasks_plan ON oppm_tasks(plan_id)")
+      cat("数据库迁移完成：已创建 oppm_tasks 表\n")
+    }
+    if (!"oppm_task_raci" %in% tables) {
+      dbExecute(con, "CREATE TABLE oppm_task_raci (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        role_id INTEGER NOT NULL,
+        raci_code TEXT DEFAULT '',
+        UNIQUE(task_id, role_id)
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_oppm_raci_task ON oppm_task_raci(task_id)")
+      cat("数据库迁移完成：已创建 oppm_task_raci 表\n")
+    }
+    if (!"oppm_progress" %in% tables) {
+      dbExecute(con, "CREATE TABLE oppm_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        week_index INTEGER NOT NULL,
+        mark TEXT DEFAULT 'none',
+        color TEXT DEFAULT 'green',
+        UNIQUE(task_id, week_index)
+      )")
+      dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_oppm_prog_task ON oppm_progress(task_id)")
+      cat("数据库迁移完成：已创建 oppm_progress 表\n")
     }
 
   }, error = function(e) {

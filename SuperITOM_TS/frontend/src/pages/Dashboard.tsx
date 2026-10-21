@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Card, Row, Col, Statistic, Typography, Table, Tag, List, Avatar } from 'antd'
-import { UserOutlined, ScriptOutlined, DatabaseOutlined, GitBranchOutlined, BarChartOutlined } from '@ant-design/icons'
-import axios from 'axios'
+import { UserOutlined, CodeOutlined, DatabaseOutlined, BranchesOutlined, BarChartOutlined } from '@ant-design/icons'
 import './Dashboard.css'
 
 const { Title, Text } = Typography
@@ -77,7 +76,7 @@ const Dashboard: React.FC = () => {
             <Statistic 
               title="脚本数量" 
               value={systemStats.scripts} 
-              prefix={<ScriptOutlined />} 
+              prefix={<CodeOutlined />} 
               suffix="个"
             />
           </Card>
@@ -97,7 +96,7 @@ const Dashboard: React.FC = () => {
             <Statistic 
               title="GitHub 仓库" 
               value={systemStats.githubRepos} 
-              prefix={<GitBranchOutlined />} 
+              prefix={<BranchesOutlined />} 
               suffix="个"
             />
           </Card>

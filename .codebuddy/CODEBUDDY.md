@@ -336,6 +336,7 @@ IT服务请求 20260512 1110：
 5. ★ 在 `rbac_permissions` 表 INSERT 新权限码
 6. 使用 reactiveVal 触发器控制刷新
 7. 保存/添加按钮使用灰化模式：`tags$button(disabled=NA)` + `observe({ toggle_btn(...) })`
+8. ★★ 所有变更（新增功能/修复/重构）都必须写开发日志：调用 `dev_log_add(module, title, requirement, solution, result, requirement_en, solution_en, result_en, commit_msg, files_changed)`；英文字段规范参照 DL20260702007（requirement_en 1-2句 / solution_en 1-2句 / result_en ~6词 / commit_msg ~50字符带 feat:/fix: 前缀）；编号自动生成 DL+YYYYMMDD+3位流水；写完后在回复中报告 log_no
 
 ## STD PowerShell脚本
 | 文件 | 说明 |

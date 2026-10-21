@@ -1,0 +1,15 @@
+[package]
+name = "superitom-rs"
+version = "0.1.0"
+edition = "2021"
+description = "SuperITOM2 本地桌面客户端（egui + rusqlite 直连 SQLite）"
+
+[dependencies]
+eframe = "0.29"
+egui = "0.29"
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# 发布版（release）体积优化
+[profile.release]
+opt-level = 2
+strip = true

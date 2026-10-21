@@ -1,0 +1,26 @@
+.dashboard-container {
+  padding: 0;
+}
+
+.stats-row {
+  margin-bottom: 16px;
+}
+
+.content-row {
+  margin-top: 16px;
+}
+
+.progress-bar {
+  position: relative;
+  height: 20px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #1890ff;
+  transition: width 0.3s;
+}

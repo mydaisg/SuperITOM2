@@ -9,6 +9,8 @@ source("Script/system_settings.r")  # 系统设置模块
 source("Script/work_order.r")       # 工单管理模块
 source("Script/project_management.r") # 项目管理模块（数据层）
 source("Script/project_server.r")     # 项目管理模块（服务端逻辑）
+source("Script/oppm_management.r")    # OPPM 一页纸项目管理（数据层）
+source("Script/oppm_server.r")        # OPPM 一页纸项目管理（服务端）
 source("Script/information_collector.r")  # 信息收集器模块
 source("Script/inspection_patrol.r")    # 巡检管理模块（旧版兼容）
 source("Script/inspection_management.r") # 巡检管理模块（数据层）
@@ -28,6 +30,8 @@ source("Script/dingtalk_instance_server.r") # 钉钉旧流程数据（服务端�
 source("Script/ai_management.r")       # AI 模块数据层
 source("Script/ai_server.r")           # AI 模块
 source("Script/process_engine.r")       # 流程引擎核心（定义 %||% 等工具函数，network_test.r 依赖）
+source("Script/process_asset_management.r") # 流程资产中心数据层（泛微OA流程梳理/集成调研）
+source("Script/process_asset_server.r")     # 流程资产中心服务端
 source("Script/github_autosubmit.r") # GitHub自动提交功能
 source("Script/std_computer.r")        # 标准化模块
 source("Script/main_ui.r")          # 主界面定义
@@ -40,7 +44,9 @@ source("Script/solution_server.r")     # 方案模块服务端
 source("Script/solution_exec.r")        # 方案执行模块数据层
 source("Script/solution_exec_server.r") # 方案执行模块服务端
 source("Script/performance_management.r") # 绩效数据层
+source("Script/okr_management.r")       # OKR 数据层
 source("Script/performance_server.r")   # 绩效模块服务端
+source("Script/okr_server.r")           # OKR 模块服务端
 source("Script/note_management.r")   # 记事模块数据层
 source("Script/note_server.r")       # 记事模块服务端
 source("Script/asset_management.r")  # 资产模块数据层
@@ -75,6 +81,10 @@ source("Script/component_library_management.r") # 组件库模块数据层
 source("Script/component_library_server.r")     # 组件库模块服务端
 source("Script/requirement_management.r")       # 需求模块数据层
 source("Script/requirement_server.r")           # 需求模块服务端
+source("Script/mini_program_management.r")      # 小程序用户 + VIP 模块数据层
+source("Script/mini_program_server.r")          # 小程序用户 + VIP 模块服务端
+source("Script/message_management.r")           # 消息机制数据层（消息中心 + 动作流模板）
+source("Script/message_server.r")               # 消息机制服务端
 # HungFo 独立子项目（12 环节骨架：规则/爬取/数据/算法/展示/自动任务/回测/元任务/开发日志/自动架构/对外集成/权限体系）
 source("Script/hungfo/hf_core.r")               # 核心层：环节注册表 + 数据库（自包含）
 source("Script/hungfo/hf_mod_rules.r")          # 环节01 规则
@@ -3519,6 +3529,9 @@ server <- function(input, output, session) {
   # 项目管理模块逻辑
   project_server(input, output, session, rv)
 
+  # OPPM 一页纸项目管理逻辑（项目模块子标签）
+  oppm_server(input, output, session, rv)
+
   # 首页项目点击监听（直接监听，保证首页项目点击能正常工作）
   observeEvent(input$proj_enter_click, {
     req(rv$logged_in)
@@ -3893,9 +3906,13 @@ server <- function(input, output, session) {
   # 流程模块逻辑
   process_server(input, output, session, rv)
   process_v2_server(input, output, session, rv)  # V2 重构版
+  process_asset_server(input, output, session, rv)  # 流程资产中心（泛微OA）
 
   # 绩效模块逻辑
   performance_server(input, output, session, rv)
+
+  # OKR 模块逻辑（绩效子页签）
+  okr_server(input, output, session, rv)
 
   # 记事模块逻辑
   note_server(input, output, session, rv)
@@ -3927,6 +3944,12 @@ server <- function(input, output, session) {
 
   # 需求模块
   requirement_server(input, output, session, rv)
+
+  # 小程序用户 + VIP 模块
+  mini_program_server(input, output, session, rv)
+
+  # 消息机制（消息中心 + 动作流模板）
+  message_server(input, output, session, rv)
 
   # HungFo 独立子项目（12 环节骨架）
   hungfo_server(input, output, session, rv)

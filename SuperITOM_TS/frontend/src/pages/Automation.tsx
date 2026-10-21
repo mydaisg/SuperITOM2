@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Typography, Table, Button, Select, Input, message, Space, Tag } from 'antd'
+import { Card, Typography, Table, Button, Select, Input, message, Space } from 'antd'
 import { PlayCircleOutlined, StopOutlined, ReloadOutlined, FileTextOutlined } from '@ant-design/icons'
 import axios from 'axios'
 import './Automation.css'
@@ -14,7 +14,7 @@ const Automation: React.FC = () => {
   const [scriptArgs, setScriptArgs] = useState<string>('')
   const [executionOutput, setExecutionOutput] = useState<string>('')
   const [isExecuting, setIsExecuting] = useState(false)
-  const [executionId, setExecutionId] = useState<string>('')
+  const [executionId] = useState<string>('')
 
   useEffect(() => {
     fetchScripts()

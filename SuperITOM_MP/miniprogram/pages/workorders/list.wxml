@@ -1,0 +1,43 @@
+<view class="page">
+  <!-- 状态 tab -->
+  <scroll-view class="tabs" scroll-x>
+    <view
+      class="tab {{activeTab === item.key ? 'active' : ''}}"
+      wx:for="{{tabs}}"
+      wx:key="key"
+      data-key="{{item.key}}"
+      bindtap="onTabTap"
+    >{{item.label}}</view>
+  </scroll-view>
+
+  <!-- 列表 -->
+  <view class="list">
+    <view wx:if="{{list.length === 0 && !loading}}" class="empty">暂无工单</view>
+
+    <view
+      class="card"
+      wx:for="{{list}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      bindtap="onItemTap"
+    >
+      <view class="card-top">
+        <text class="order-no">{{item.order_no}}</text>
+        <text class="badge" style="background:{{item.statusColor}}">{{item.statusText}}</text>
+      </view>
+      <view class="title">{{item.title}}</view>
+      <view class="meta">
+        <text class="prio" style="color:{{item.priorityColor}}">{{item.priority}}</text>
+        <text wx:if="{{item.category}}"> · {{item.category}}</text>
+        <text> · {{item.creator_name}}</text>
+      </view>
+      <view class="time">{{item.created_at}}</view>
+    </view>
+
+    <view wx:if="{{loading}}" class="loading">加载中…</view>
+    <view wx:if="{{finished && list.length > 0}}" class="loading">没有更多了</view>
+  </view>
+
+  <!-- 新建按钮 -->
+  <view class="fab" bindtap="onCreate">＋</view>
+</view>

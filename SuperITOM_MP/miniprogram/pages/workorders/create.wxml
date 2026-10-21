@@ -1,0 +1,45 @@
+<view class="page">
+  <view class="form">
+    <view class="form-item">
+      <view class="form-label">标题 <text class="required">*</text></view>
+      <input class="input" placeholder="请输入工单标题" value="{{title}}" bindinput="onTitleInput" />
+    </view>
+
+    <view class="form-item">
+      <view class="form-label">描述</view>
+      <textarea
+        class="textarea"
+        placeholder="请输入问题/需求描述"
+        value="{{description}}"
+        bindinput="onDescInput"
+        maxlength="-1"
+      />
+    </view>
+
+    <view class="form-item">
+      <view class="form-label">优先级</view>
+      <picker mode="selector" range="{{priorities}}" value="{{priorityIndex}}" bindchange="onPriorityChange">
+        <view class="picker">{{priorities[priorityIndex]}}</view>
+      </picker>
+    </view>
+
+    <view class="form-item">
+      <view class="form-label">分类</view>
+      <picker mode="selector" range="{{categories}}" value="{{categoryIndex}}" bindchange="onCategoryChange">
+        <view class="picker">{{categories[categoryIndex]}}</view>
+      </picker>
+    </view>
+
+    <view class="form-item">
+      <view class="form-label">子分类</view>
+      <input class="input" placeholder="可选" value="{{subcategory}}" bindinput="onSubcategoryInput" />
+    </view>
+
+    <view class="form-item">
+      <view class="form-label">请求用户</view>
+      <input class="input" placeholder="可选，如：谢芳材-供应链中心" value="{{request_user}}" bindinput="onRequestUserInput" />
+    </view>
+
+    <button class="submit-btn" loading="{{submitting}}" disabled="{{submitting}}" bindtap="onSubmit">提交工单</button>
+  </view>
+</view>

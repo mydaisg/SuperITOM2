@@ -24,6 +24,7 @@ source("Script/network_test.r")
 source("Script/sysmon_ui.r")
 
 # 加载项目管理模块UI
+source("Script/oppm_ui.r")    # OPPM 一页纸项目管理（项目模块子标签，需在 project_ui 之前）
 source("Script/project_ui.r")
 
 # 加载日报模块
@@ -49,9 +50,12 @@ source("Script/process_v2_detail_ui.r")
 source("Script/flow_monitor_ui.r")
 source("Script/flow_instance_list_ui.r")
 source("Script/dingtalk_instance_ui.r")
+source("Script/process_asset_ui.r")
 
 # 加载绩效模块
 source("Script/performance_ui.r")
+# 加载 OKR 模块（绩效子页签）
+source("Script/okr_ui.r")
 
 # 加载记事模块
 source("Script/note_ui.r")
@@ -77,6 +81,12 @@ source("Script/component_library_ui.r")
 
 # 加载需求模块 UI
 source("Script/requirement_ui.r")
+
+# 消息机制（消息中心 + 动作流模板）
+source("Script/message_ui.r")
+
+# 加载小程序用户 + VIP 模块 UI
+source("Script/mini_program_ui.r")
 
 # RBAC 管理函数（权限检查需要）
 source("Script/rbac_management.r")
@@ -798,6 +808,7 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       "流程",
       icon = icon("project-diagram"),
       tabsetPanel(
+        tabPanel("流程资产", icon = icon("project-diagram"), process_asset_ui()),
         tabPanel("旧版（企业微信风格）", process_ui()),
         tabPanel(tags$span("新版", tags$sup(style = "color:#1890ff; font-size:10px;", "V2")), process_v2_ui()),
         tabPanel("流程实例", icon = icon("chart-area"), flow_monitor_ui()),
@@ -835,6 +846,16 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
       "管理",
       icon = icon("tools"),
       # --- admin 专属 ---
+      if (can_admin("admin_mini_users")) tabPanel(
+        "用户",
+        icon = icon("users"),
+        fluidPage(mp_users_ui())
+      ),
+      if (can_admin("admin_vip")) tabPanel(
+        "VIP",
+        icon = icon("crown"),
+        fluidPage(vip_ui())
+      ),
       if (can_admin("admin_system")) tabPanel(
         "系统设置",
         icon = icon("cogs"),
@@ -1006,6 +1027,13 @@ main_ui <- function(is_admin = FALSE, user_modules = NULL, current_user = NULL) 
               )
             )
           )
+        )
+      ),
+      # 消息中心（消息机制 + 动作流模板，类似泛微 ESB 动作流）
+      tabPanel("消息中心",
+        icon = icon("envelope"),
+        fluidPage(
+          message_ui()
         )
       ),
       # 数据结转（月度数据结转）

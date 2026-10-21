@@ -138,6 +138,12 @@ project_ui <- function() {
         ),
         br(),
         uiOutput("gantt_chart_ui")
+      ),
+
+      # ============ 子标签5：OPPM（一页纸项目管理） ============
+      tabPanel("OPPM", icon = icon("file-alt"),
+        br(),
+        oppm_ui()
       )
     )
   )

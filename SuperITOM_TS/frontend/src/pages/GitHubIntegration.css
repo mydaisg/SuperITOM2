@@ -1,0 +1,24 @@
+.github-integration-container {
+  padding: 0;
+}
+
+.repo-add-section {
+  margin-bottom: 16px;
+}
+
+.form-group {
+  margin-bottom: 12px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.sync-button {
+  margin-bottom: 16px;
+}
+
+.webhooks-list-card {
+  margin-top: 16px;
+}

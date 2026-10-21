@@ -76,9 +76,10 @@ MODULE_INVENTORY <- list(
   ),
   list(
     module = "项目", icon = "project-diagram",
-    frontend = "项目标签页 → project_ui() (含甘特图)",
-    source = c("Script/project_management.r", "Script/project_server.r", "Script/project_ui.r"),
-    tables = "projects, project_phases, project_work_packages, project_tasks, project_task_logs",
+    frontend = "项目标签页 → project_ui() (子标签: 列表/详情/任务/甘特图/OPPM一页纸)",
+    source = c("Script/project_management.r", "Script/project_server.r", "Script/project_ui.r",
+               "Script/oppm_management.r", "Script/oppm_server.r", "Script/oppm_ui.r"),
+    tables = "projects, project_phases, project_work_packages, project_tasks, project_task_logs, oppm_plans, oppm_roles, oppm_tasks, oppm_task_raci, oppm_progress",
     perms = list(
       list(code="proj_view",   name="查看项目"),
       list(code="proj_create", name="创建项目"),
@@ -106,7 +107,15 @@ MODULE_INVENTORY <- list(
       "task_convert_to_work_order() — 任务转工单",
       "task_log_add() / task_log_get_by_task() — 任务反馈日志",
       "phase_get_all() — 全局阶段(含项目名)",
-      "task_get_all_global() — 全局任务(含项目/阶段/工作包名)"
+      "task_get_all_global() — 全局任务(含项目/阶段/工作包名)",
+      "OPPM: oppm_generate_no() → OPP+YYYYMMDD+3位流水",
+      "OPPM: oppm_plan_get_all()/get_by_id()/add()/update()/delete() — 一页纸计划CRUD",
+      "OPPM: oppm_role_get_by_plan()/add()/update()/delete() — RACI角色列CRUD",
+      "OPPM: oppm_task_get_by_plan()/add()/update()/delete() — 阶段/任务CRUD(树形parent_id)",
+      "OPPM: oppm_raci_set()/get_by_plan() — 任务×角色 RACI分配(A/R/C/I/S)",
+      "OPPM: oppm_progress_set()/get_by_plan() — 任务×周 进度标记(实心/空心×绿/黄/红)",
+      "OPPM: oppm_ui() — 一页纸UI(项目模块子标签)",
+      "OPPM: oppm_server() — 一页纸渲染+点击编辑(进度/RACI循环切换)"
     )
   ),
   list(
@@ -536,6 +545,22 @@ MODULE_INVENTORY <- list(
     )
   ),
   list(
+    module = "流程资产中心", icon = "project-diagram", parent = "流程",
+    frontend = "流程 → 流程资产（子标签页）→ process_asset_ui()",
+    source = c("Script/process_asset_management.r", "Script/process_asset_ui.r", "Script/process_asset_server.r"),
+    tables = "flow_process_assets",
+    perms = list(
+      list(code="flowasset_view", name="查看流程资产")
+    ),
+    key_funcs = c(
+      "flow_asset_seed() — 从 DB/process_assets_seed.json 导入/刷新泛微流程资产(幂等 INSERT OR REPLACE)",
+      "flow_asset_categories() — 按大类分组统计(流程数/在途量/要集成/待定)",
+      "flow_asset_list() — 列表查询(分类/关键字/集成判定过滤)",
+      "flow_asset_get() — 单条资产(含解析后的 nodes/branches/issues)",
+      "flow_asset_stats() — 统计卡(总数/要集成/待定/在途量/问题流程数)"
+    )
+  ),
+  list(
     module = "集成", icon = "plug", parent = "工具",
     frontend = "工具 → 集成（子标签页）→ integration_ui()",
     source = c("Script/integration_management.r", "Script/integration_server.r", "Script/integration_ui.r"),
@@ -600,13 +625,16 @@ MODULE_INVENTORY <- list(
   ),
   list(
     module = "绩效", icon = "chart-bar",
-    frontend = "绩效标签页 → performance_ui()",
-    source = c("Script/performance_management.r", "Script/performance_server.r", "Script/performance_ui.r"),
-    tables = "performance_records",
+    frontend = "绩效标签页 → performance_ui()（含「月度绩效」与「OKR」子页签）",
+    source = c("Script/performance_management.r", "Script/performance_server.r", "Script/performance_ui.r",
+               "Script/okr_management.r", "Script/okr_server.r", "Script/okr_ui.r"),
+    tables = "performance_sheets, performance_work_items, performance_results, okr_cycles, okr_objectives, okr_key_results, okr_updates",
     perms = list(
       list(code="perf_view",   name="查看绩效"),
       list(code="perf_create", name="添加绩效"),
-      list(code="perf_manage", name="管理绩效")
+      list(code="perf_manage", name="管理绩效"),
+      list(code="okr_view",    name="查看OKR"),
+      list(code="okr_manage",  name="管理OKR")
     ),
     key_funcs = c(
       "performance_get_all() — 绩效记录列表",
@@ -615,7 +643,13 @@ MODULE_INVENTORY <- list(
       "performance_delete() — 删除绩效记录",
       "performance_get_stats() — 绩效统计数据",
       "performance_server() — 绩效模块服务端",
-      "performance_ui() — 绩效模块UI"
+      "performance_ui() — 绩效模块UI",
+      "okr_cycle_create()/okr_cycle_list() — OKR周期CRUD",
+      "okr_objective_add()/okr_objective_list() — OKR目标CRUD（含加权进度）",
+      "okr_kr_add()/okr_kr_update()/okr_kr_checkin() — 关键结果CRUD与进度检查",
+      "okr_kr_sync_progress() — 按数据源自动同步（工单/项目任务/巡检/月度绩效）",
+      "okr_server() — OKR模块服务端",
+      "okr_ui() — OKR模块UI"
     )
   ),
   list(
@@ -666,11 +700,13 @@ MODULE_INVENTORY <- list(
   ),
   list(
     module = "管理", icon = "tools",
-    frontend = "管理 dropdown菜单 (navbarMenu: 用户/系统/选项/授权/GitHub/模块清单/个人信息)",
-    source = c("Script/user_management.r", "Script/system_settings.r", "Script/rbac_management.r", "Script/github_autosubmit.r", "Script/module_inventory.r", "server.R"),
-    tables = "users, system_config, config_options, rbac_roles, rbac_permissions, rbac_role_permissions, rbac_user_roles",
+    frontend = "管理 dropdown菜单 (navbarMenu: 用户/小程序用户/VIP/系统/选项/授权/GitHub/模块清单/个人信息)",
+    source = c("Script/user_management.r", "Script/system_settings.r", "Script/rbac_management.r", "Script/github_autosubmit.r", "Script/module_inventory.r", "Script/mini_program_management.r", "Script/mini_program_server.r", "Script/mini_program_ui.r", "server.R"),
+    tables = "users, system_config, config_options, rbac_roles, rbac_permissions, rbac_role_permissions, rbac_user_roles, mini_program_users, vip_records",
     perms = list(
       list(code="admin_users",   name="用户管理"),
+      list(code="admin_mini_users", name="小程序用户"),
+      list(code="admin_vip",     name="VIP会员"),
       list(code="admin_system",  name="系统设置"),
       list(code="admin_options", name="选项配置"),
       list(code="admin_github",  name="GitHub操作"),

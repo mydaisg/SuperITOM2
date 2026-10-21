@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
 import { Card, Typography, Table, Button, Upload, message, Space, Modal, Form, Input, Select } from 'antd'
 import { UploadOutlined, DownloadOutlined, DeleteOutlined, PlusOutlined, EditOutlined } from '@ant-design/icons'
-import axios from 'axios'
 import './DataManagement.css'
 
 const { Title } = Typography
@@ -23,7 +22,7 @@ const DataManagement: React.FC = () => {
     ])
   })
 
-  const handleUpload = async (file: any) => {
+  const handleUpload = async (_file: any) => {
     // 模拟文件上传
     message.success('文件上传成功')
     return false // 阻止自动上传
@@ -103,7 +102,7 @@ const DataManagement: React.FC = () => {
           <Table.Column
             title="操作"
             key="action"
-            render={(text, record) => (
+            render={(_text, record) => (
               <Space>
                 <Button icon={<DownloadOutlined />} onClick={() => handleDownload(record)}>
                   下载

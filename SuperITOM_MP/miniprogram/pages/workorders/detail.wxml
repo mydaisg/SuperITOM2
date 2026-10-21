@@ -1,0 +1,82 @@
+<view class="page">
+  <view wx:if="{{wo}}">
+    <!-- 头部 -->
+    <view class="card header">
+      <view class="head-top">
+        <text class="order-no">{{wo.order_no}}</text>
+        <text class="badge" style="background:{{wo.statusColor}}">{{wo.statusText}}</text>
+      </view>
+      <view class="title">{{wo.title}}</view>
+      <view class="tags">
+        <text class="prio" style="color:{{wo.priorityColor}}">{{wo.priority}}</text>
+        <text wx:if="{{wo.category}}" class="tag">{{wo.category}}</text>
+      </view>
+    </view>
+
+    <!-- 描述 -->
+    <view class="card" wx:if="{{wo.description}}">
+      <view class="section-title">描述</view>
+      <view class="desc">{{wo.description}}</view>
+    </view>
+
+    <!-- 信息 -->
+    <view class="card">
+      <view class="section-title">信息</view>
+      <view class="field"><text class="label">创建人</text><text class="value">{{wo.creator_name}}</text></view>
+      <view class="field"><text class="label">指派给</text><text class="value">{{wo.assignee_name || '未分配'}}</text></view>
+      <view class="field" wx:if="{{wo.handler_name}}"><text class="label">处理人</text><text class="value">{{wo.handler_name}}</text></view>
+      <view class="field" wx:if="{{wo.request_user}}"><text class="label">请求用户</text><text class="value">{{wo.request_user}}</text></view>
+      <view class="field"><text class="label">创建时间</text><text class="value">{{wo.created_at}}</text></view>
+      <view class="field" wx:if="{{wo.completed_at}}"><text class="label">完成时间</text><text class="value">{{wo.completed_at}}</text></view>
+      <view class="field" wx:if="{{wo.resolution}}"><text class="label">解决方案</text><text class="value">{{wo.resolution}}</text></view>
+    </view>
+
+    <!-- 操作区 -->
+    <view class="actions" wx:if="{{wo.status !== 'completed' && wo.status !== 'closed'}}">
+      <block wx:if="{{wo.status === 'pending' && canAssign}}">
+        <picker mode="selector" range="{{assignableNames}}" value="{{assignIndex}}" bindchange="onAssignPicker">
+          <view class="action-btn outline">派发给：{{assignableNames[assignIndex] || '选择用户'}}</view>
+        </picker>
+        <view class="action-btn primary" bindtap="onAssign">确认派发</view>
+      </block>
+
+      <block wx:if="{{wo.status === 'assigned' && isAssignee}}">
+        <view class="action-btn primary" bindtap="onStart">开始处理</view>
+      </block>
+
+      <block wx:if="{{wo.status === 'processing' && isHandler}}">
+        <view class="action-btn success" bindtap="onComplete">完成</view>
+      </block>
+
+      <view class="action-btn danger" bindtap="onClose">关闭</view>
+    </view>
+
+    <!-- 评论 -->
+    <view class="card">
+      <view class="section-title">评论 ({{comments.length}})</view>
+      <view wx:if="{{comments.length === 0}}" class="empty">暂无评论</view>
+      <view class="comment" wx:for="{{comments}}" wx:key="id">
+        <view class="comment-head">
+          <text class="comment-author">{{item.creator_name}}</text>
+          <text class="comment-time">{{item.created_at}}</text>
+        </view>
+        <view class="comment-body">{{item.comment}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:elif="{{loading}}" class="empty">加载中…</view>
+
+  <!-- 底部评论输入 -->
+  <view class="comment-bar" wx:if="{{wo}}">
+    <input
+      class="comment-input"
+      placeholder="输入评论…"
+      value="{{commentInput}}"
+      bindinput="onCommentInput"
+      confirm-type="send"
+      bindconfirm="onSendComment"
+    />
+    <button class="send-btn" size="mini" loading="{{sending}}" bindtap="onSendComment">发送</button>
+  </view>
+</view>

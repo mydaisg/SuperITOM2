@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { Card, Typography, Table, Button, Input, message, Space, Tag, List, Avatar } from 'antd'
-import { GitBranchOutlined, SyncOutlined, PlusOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons'
-import axios from 'axios'
+import { BranchesOutlined, SyncOutlined, PlusOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons'
 import './GitHubIntegration.css'
 
 const { Title } = Typography
@@ -111,9 +110,9 @@ const GitHubIntegration: React.FC = () => {
               title="仓库名称"
               dataIndex="name"
               key="name"
-              render={(name, record) => (
+              render={(name, _record) => (
                 <Space>
-                  <GitBranchOutlined />
+                  <BranchesOutlined />
                   <span>{name}</span>
                 </Space>
               )}
@@ -139,7 +138,7 @@ const GitHubIntegration: React.FC = () => {
             <Table.Column
               title="操作"
               key="action"
-              render={(text, record) => (
+              render={(_text, record) => (
                 <Space>
                   <Button icon={<EyeOutlined />} onClick={() => handleViewRepo(record)}>
                     查看
@@ -160,7 +159,7 @@ const GitHubIntegration: React.FC = () => {
             renderItem={(webhook) => (
               <List.Item>
                 <List.Item.Meta
-                  avatar={<Avatar icon={<GitBranchOutlined />} />}
+                  avatar={<Avatar icon={<BranchesOutlined />} />}
                   title={
                     <Space>
                       <span>{webhook.repo}</span>

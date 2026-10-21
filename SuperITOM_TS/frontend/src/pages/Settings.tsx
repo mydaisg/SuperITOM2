@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
 import { Card, Typography, Form, Input, Select, Switch, Button, message, Space } from 'antd'
 import { SaveOutlined, ReloadOutlined } from '@ant-design/icons'
-import axios from 'axios'
 import './Settings.css'
 
 const { Title } = Typography
@@ -29,7 +28,7 @@ const Settings: React.FC = () => {
     })
   })
 
-  const handleSave = async (values: any) => {
+  const handleSave = async (_values: any) => {
     setIsLoading(true)
     try {
       // 模拟保存设置

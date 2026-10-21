@@ -29,9 +29,17 @@ performance_ui <- function() {
         },{priority:'event'});
       });
     ")),
-    # ★ header 先渲染（创建 perf_month 选择器），不依赖 perf_month
-    uiOutput("perf_header"),
-    # ★ main 后渲染（依赖 perf_month），此时 perf_month 已存在
-    uiOutput("perf_main")
+    tabsetPanel(
+      id = "perf_tabs", type = "tabs",
+      tabPanel(tagList(icon("chart-bar"), " 月度绩效"),
+        # ★ header 先渲染（创建 perf_month 选择器），不依赖 perf_month
+        uiOutput("perf_header"),
+        # ★ main 后渲染（依赖 perf_month），此时 perf_month 已存在
+        uiOutput("perf_main")
+      ),
+      tabPanel(tagList(icon("bullseye"), " OKR"),
+        okr_ui()
+      )
+    )
   )
 }

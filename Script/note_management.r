@@ -373,6 +373,18 @@ note_comment_add <- function(note_id, content, created_by = NULL, parent_id = NU
     id <- dbGetQuery(con, "SELECT last_insert_rowid() as id")$id[1]
     r <- dbGetQuery(con, sprintf(
       "SELECT c.*, COALESCE(NULLIF(u.display_name,''), u.username) as creator_name FROM note_comments c LEFT JOIN users u ON c.created_by = u.id WHERE c.id = %d", id))
+    # 事件接入：通知记事创建人（消息机制，静默失败不影响评论）
+    tryCatch({
+      note <- dbGetQuery(con, sprintf("SELECT title, created_by FROM notes WHERE id = %d", as.integer(note_id)))
+      if (nrow(note) > 0 && !is.na(note$created_by[1]) && note$created_by[1] > 0) {
+        owner_id <- note$created_by[1]
+        if (is.null(created_by) || owner_id != created_by) {
+          message_notify(sender_id = created_by, recipient_ids = owner_id,
+            title = paste0("记事有新评论：", note$title[1] %||% ""),
+            content = substr(content, 1, 200), msg_type = "通知", priority = "中")
+        }
+      }
+    }, error = function(e) NULL)
     list(success = TRUE, message = "评论已添加", id = id,
       created_at = if (nrow(r) > 0) r$created_at[1] else format(Sys.time(), "%Y-%m-%d %H:%M"),
       creator_name = if (nrow(r) > 0) r$creator_name[1] %||% "匿名" else "匿名",

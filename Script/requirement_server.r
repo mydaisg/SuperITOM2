@@ -1,9 +1,145 @@
 # 需求模块 Server
+
+# 从记事选择（未完成）的下拉选项
+req_prog_note_choices <- function(current_user = NULL) {
+  notes <- requirement_get_uncompleted_notes(current_user)
+  if (is.null(notes) || nrow(notes) == 0) {
+    return(c("（无未完成记事）" = ""))
+  }
+  st_label <- ifelse(is.na(notes$status), "",
+    ifelse(notes$status == "in_progress", "进行中",
+      ifelse(notes$status == "pending", "待处理", notes$status)))
+  no_prefix <- ifelse(!is.na(notes$note_no) & notes$note_no != "",
+    sprintf("[%s] ", notes$note_no), sprintf("[#%d] ", notes$id))
+  labels <- sprintf("%s%s · %s", no_prefix, notes$title, st_label)
+  c("（不选择记事）" = "", setNames(as.character(notes$id), labels))
+}
+
+# 绑定弹窗的下拉选项：未完成且尚未绑定到该进度的记事（多选用，无空选项）
+req_prog_note_bind_choices <- function(progress_id, current_user = NULL) {
+  notes <- requirement_get_uncompleted_notes(current_user)
+  if (is.null(notes) || nrow(notes) == 0) {
+    return(character(0))
+  }
+  bound <- requirement_progress_notes_get(progress_id)
+  if (!is.null(bound) && nrow(bound) > 0) {
+    notes <- notes[!(notes$id %in% bound$note_id), , drop = FALSE]
+  }
+  if (nrow(notes) == 0) return(character(0))
+  no_prefix <- ifelse(!is.na(notes$note_no) & notes$note_no != "",
+    sprintf("[%s] ", notes$note_no), sprintf("[#%d] ", notes$id))
+  labels <- sprintf("%s%s", no_prefix, notes$title)
+  setNames(as.character(notes$id), labels)
+}
+
+# 需求进度 → 时间轴 HTML（样式参照总结模块"时间流水"）
+req_render_timeline <- function(prog) {
+  if (is.null(prog) || nrow(prog) == 0) {
+    return('<div style="text-align:center;padding:40px;color:#999;">暂无进度记录</div>')
+  }
+  prog$pd <- ifelse(is.na(prog$progress_date), "", prog$progress_date)
+  prog <- prog[prog$pd != "", , drop = FALSE]
+  if (nrow(prog) == 0) {
+    return('<div style="text-align:center;padding:40px;color:#999;">暂无带日期的进度记录</div>')
+  }
+  prog <- prog[order(prog$pd, prog$id), ]
+  total <- nrow(prog)
+  html <- ""
+  days <- unique(prog$pd)
+  for (d in days) {
+    day_items <- prog[prog$pd == d, , drop = FALSE]
+    dd <- tryCatch(as.Date(d), error = function(e) NA)
+    day_label <- if (!is.na(dd)) format(dd, "%m月%d日 %a") else d
+    html <- paste0(html, sprintf(
+      '<div class="reqtl-day-label"><span>📅 %s · %d条</span></div>', day_label, nrow(day_items)))
+    for (i in seq_len(nrow(day_items))) {
+      p <- day_items[i, ]
+      person <- if (!is.null(p$person) && !is.na(p$person) && p$person != "") p$person else "未署名"
+      dept <- if (!is.null(p$dept) && !is.na(p$dept) && p$dept != "") p$dept else ""
+      st <- if (!is.null(p$status) && !is.na(p$status) && p$status != "") p$status else ""
+      st_col <- requirement_progress_status_color(st)
+      content <- trimws(p$content %||% "")
+      if (nchar(content) > 200) content <- paste0(substr(content, 1, 200), "…")
+      dept_tag <- if (dept != "") sprintf('<span class="reqtl-tag">%s</span>', dept) else ""
+      st_tag <- if (st != "") sprintf('<span class="reqtl-status" style="background:%s;">%s</span>', st_col, st) else ""
+      html <- paste0(html, sprintf(
+        '<div class="reqtl-item">
+          <div class="reqtl-card">
+            <div class="reqtl-card-hd">
+              <div class="reqtl-card-hd-left"><b>%s</b>%s%s</div>
+              <span class="reqtl-time-badge">%s</span>
+            </div>
+            <div class="reqtl-card-bd">%s</div>
+          </div>
+        </div>',
+        person, dept_tag, st_tag, d, content))
+    }
+  }
+  sprintf('<div class="reqtl-timeline"><div class="reqtl-header">⏱ 共 %d 条进度</div>%s</div>', total, html)
+}
+
+# 需求进度 → 纯文本（用于复制）
+req_render_text_item <- function(p, num_label, level, children) {
+  indent <- paste0(rep("  ", level), collapse = "")
+  person <- if (!is.null(p$person) && !is.na(p$person) && p$person != "") p$person else ""
+  date <- if (!is.null(p$progress_date) && !is.na(p$progress_date) && p$progress_date != "") p$progress_date else ""
+  st <- if (!is.null(p$status) && !is.na(p$status) && p$status != "") p$status else ""
+  content <- if (!is.null(p$content) && !is.na(p$content) && p$content != "") p$content else ""
+  lines <- sprintf("%s%s. %s | %s | %s", indent, num_label, person, date, st)
+  if (content != "") {
+    for (cl in strsplit(content, "\n")[[1]]) {
+      lines <- c(lines, sprintf("%s   %s", indent, cl))
+    }
+  }
+  subs <- children[children$pid == p$id, , drop = FALSE]
+  if (nrow(subs) > 0) {
+    for (si in seq_len(nrow(subs))) {
+      lines <- c(lines, req_render_text_item(subs[si, ], sprintf("%s.%d", num_label, si), level + 1, children))
+    }
+  }
+  lines
+}
+
+req_render_text <- function(req_info, prog) {
+  lines <- c(sprintf("【需求进度】%s %s（%s）",
+    req_info$req_no %||% "", req_info$title %||% "", req_info$status %||% ""))
+  lines <- c(lines, "──────────────────────────")
+  if (is.null(prog) || nrow(prog) == 0) {
+    lines <- c(lines, "（暂无进度记录）")
+    return(paste(lines, collapse = "\n"))
+  }
+  prog$pid <- ifelse(is.na(prog$parent_id) | is.null(prog$parent_id), 0, prog$parent_id)
+  tops <- prog[prog$pid == 0, , drop = FALSE]
+  children <- prog[prog$pid != 0, , drop = FALSE]
+  depts <- unique(tops$dept)
+  depts <- depts[!is.na(depts) & depts != ""]
+  if (length(depts) == 0) depts <- "(未分组)"
+  dept_idx <- 0L
+  for (d in depts) {
+    dept_idx <- dept_idx + 1L
+    if (d == "(未分组)") {
+      sub <- tops[is.na(tops$dept) | tops$dept == "", , drop = FALSE]
+    } else {
+      sub <- tops[!is.na(tops$dept) & tops$dept == d, , drop = FALSE]
+    }
+    if (nrow(sub) == 0) next
+    lines <- c(lines, sprintf("%s、%s", requirement_num_to_cn(dept_idx), d))
+    for (j in seq_len(nrow(sub))) {
+      lines <- c(lines, req_render_text_item(sub[j, ], as.character(j), 1, children))
+    }
+  }
+  paste(lines, collapse = "\n")
+}
+
 requirement_server <- function(input, output, session, rv) {
   req_trigger <- reactiveVal(0)
   req_selected <- reactiveVal(NULL)          # 当前选中需求 ID（用于进度Tab）
   req_prog_trigger <- reactiveVal(0)         # 进度刷新触发器
   req_gantt_trigger <- reactiveVal(0)
+  req_prog_view <- reactiveVal("list")       # 进度视图：list / timeline
+  req_prog_range <- reactiveVal(NULL)        # 时间筛选：NULL=全部；c(from,to) Date
+  req_prog_note_trigger <- reactiveVal(0)    # 记事绑定弹窗刷新触发器
+  req_prog_note_mgr_id <- reactiveVal(NULL)  # 当前管理绑定的进度条目 id
 
   # 需求列表（Tab1）
   output$req_list <- renderUI({
@@ -165,7 +301,7 @@ requirement_server <- function(input, output, session, rv) {
   # Tab2：进度（参照记事评论：层级 + 彩虹色 + 编号）
   # ================================================================
   output$req_progress_ui <- renderUI({
-    req(rv$logged_in); req_prog_trigger()
+    req(rv$logged_in); req_prog_trigger(); req_prog_view(); req_prog_range()
     all_req <- requirement_get_all()
     if (is.null(all_req) || nrow(all_req) == 0) {
       return(div(style = "text-align:center;padding:40px;color:#999;",
@@ -177,8 +313,24 @@ requirement_server <- function(input, output, session, rv) {
 
     req_info <- all_req[all_req$id == sel_id, ][1, ]
     prog <- requirement_progress_get_by_req(sel_id)
+    total_all <- nrow(prog)
 
-    # 顶部：需求选择器 + 添加条目按钮
+    # 时间筛选（按 progress_date 范围）
+    rng <- req_prog_range()
+    rng_from <- if (!is.null(rng)) rng[1] else NULL
+    rng_to <- if (!is.null(rng)) rng[2] else NULL
+    if (!is.null(rng) && nrow(prog) > 0) {
+      from <- as.character(rng[1]); to <- as.character(rng[2])
+      keep <- !is.na(prog$progress_date) & prog$progress_date != "" &
+              prog$progress_date >= from & prog$progress_date <= to
+      prog <- prog[keep, , drop = FALSE]
+    }
+
+    # 视图切换按钮样式
+    list_btn_cls <- if (req_prog_view() == "list") "btn-primary" else "btn-default"
+    tl_btn_cls <- if (req_prog_view() == "timeline") "btn-primary" else "btn-default"
+
+    # 顶部：需求选择器 + 添加条目按钮 + 时间筛选 + 复制 + 视图切换
     top <- tagList(
       fluidRow(
         column(5, selectInput("req_prog_selector", "选择需求",
@@ -187,14 +339,44 @@ requirement_server <- function(input, output, session, rv) {
         column(3, actionButton("req_prog_add_btn", "添加进度条目", icon = icon("plus"),
           class = "btn-success btn-sm", style = "width:100%;")),
         column(4, div(style = "text-align:right;font-size:12px;color:#888;padding-top:6px;",
-          sprintf("<b>%s</b>（%s）· 共 %d 条进度", req_info$req_no, req_info$status %||% "", nrow(prog))))
+          sprintf("<b>%s</b>（%s）· 共 %d 条进度", req_info$req_no, req_info$status %||% "", total_all)))
+      ),
+      fluidRow(
+        column(2, dateInput("req_prog_date_from", "开始", value = rng_from, width = "100%")),
+        column(2, dateInput("req_prog_date_to", "结束", value = rng_to, width = "100%")),
+        column(4, div(style = "padding-top:24px;white-space:nowrap;",
+          actionButton("req_prog_range_all", "全部", class = "btn-sm btn-default"),
+          actionButton("req_prog_range_today", "今天", class = "btn-sm btn-default"),
+          actionButton("req_prog_range_week", "本周", class = "btn-sm btn-default"),
+          actionButton("req_prog_range_month", "本月", class = "btn-sm btn-default"))),
+        column(2, div(style = "padding-top:24px;",
+          actionButton("req_prog_copy_btn", "复制", icon = icon("copy"), class = "btn-sm btn-default"))),
+        column(2, div(style = "padding-top:24px;text-align:right;white-space:nowrap;",
+          actionButton("req_prog_view_list", "列表", class = paste("btn-sm", list_btn_cls)),
+          actionButton("req_prog_view_timeline", "时间轴", class = paste("btn-sm", tl_btn_cls))))
       ),
       hr()
     )
 
+    # 复制文本（写入隐藏 textarea，由 JS 复制）
+    text_report <- req_render_text(req_info, prog)
+    session$sendCustomMessage("req_update_text", text_report)
+
     if (nrow(prog) == 0) {
-      body <- div(style = "text-align:center;padding:40px;color:#999;", "暂无进度条目，点击「添加进度条目」开始")
+      body <- div(style = "text-align:center;padding:40px;color:#999;", "当前筛选范围内暂无进度条目")
       return(tagList(top, body))
+    }
+
+    # 时间轴视图
+    if (req_prog_view() == "timeline") {
+      return(tagList(top, HTML(req_render_timeline(prog))))
+    }
+
+    # 记事绑定关系（progress_id → note_id 列表，供按钮 badge 显示）
+    bound_rows <- requirement_progress_notes_get_by_req(sel_id)
+    bound_map <- list()
+    if (!is.null(bound_rows) && nrow(bound_rows) > 0) {
+      bound_map <- split(bound_rows$note_id, bound_rows$progress_id)
     }
 
     # 分离顶层（parent_id==0）与子条目（parent_id>0）
@@ -253,6 +435,11 @@ requirement_server <- function(input, output, session, rv) {
         sprintf('<button class="btn btn-xs btn-default" title="标记完成" onclick="Shiny.setInputValue(\'req_prog_done_click\',%d,{priority:\'event\'});">✓</button>', p$id)
       }
 
+      # 记事绑定按钮（🔗，点击打开绑定管理弹窗）
+      bound_cnt <- length(bound_map[[as.character(p$id)]])
+      note_label <- if (bound_cnt > 0) sprintf("🔗记事(%d)", bound_cnt) else "🔗记事"
+      note_btn <- sprintf('<button class="btn btn-xs btn-warning" title="绑定/解绑记事" onclick="Shiny.setInputValue(\'req_prog_note_mgr_click\',%d,{priority:\'event\'});">%s</button>', p$id, note_label)
+
       # 严格顺序：序号、人员、时间、状态（单行排列）；记事放到明细区（可折叠）
       today_mark <- if (is_today) '<span style="color:#2e7d32;font-size:10px;font-weight:bold;margin-right:2px;">●今日</span>' else ""
       seq_html <- sprintf('<span style="font-weight:bold;color:%s;font-family:Consolas,monospace;font-size:12px;">%s</span>', color, num_label)
@@ -283,7 +470,7 @@ requirement_server <- function(input, output, session, rv) {
               %s%s%s%s%s
             </div>
             <div style="white-space:nowrap;flex-shrink:0;">
-              %s%s
+              %s%s%s
               <button class="btn btn-xs btn-default" title="增加下级" onclick="Shiny.setInputValue(\'req_prog_addsub_click\',%d,{priority:\'event\'});">➕</button>
               <button class="btn btn-xs btn-info" title="编辑" onclick="Shiny.setInputValue(\'req_prog_edit_click\',%d,{priority:\'event\'});">✏</button>
               <button class="btn btn-xs btn-danger" title="删除" onclick="if(confirm(\'删除此进度条目及其下级？\'))Shiny.setInputValue(\'req_prog_delete_click\',%d,{priority:\'event\'});">🗑</button>
@@ -295,7 +482,7 @@ requirement_server <- function(input, output, session, rv) {
         </div>',
         collapse_cls, p$id, bg_color, color, indent,
         today_mark, seq_html, person_html, date_html, status_html,
-        collapse_btn, done_btn, p$id, p$id, p$id,
+        collapse_btn, done_btn, note_btn, p$id, p$id, p$id,
         p$id, body_display, content_html, subs_html)
     }
 
@@ -346,6 +533,153 @@ requirement_server <- function(input, output, session, rv) {
     )
   })
 
+  # ================================================================
+  # 进度：时间筛选 / 视图切换 / 复制
+  # ================================================================
+  # 时间范围快捷按钮（直接设置范围，dateInput 跟随显示）
+  observeEvent(input$req_prog_range_all, {
+    req(rv$logged_in)
+    req_prog_range(NULL)
+  })
+  observeEvent(input$req_prog_range_today, {
+    req(rv$logged_in)
+    req_prog_range(c(Sys.Date(), Sys.Date()))
+  })
+  observeEvent(input$req_prog_range_week, {
+    req(rv$logged_in)
+    d <- Sys.Date()
+    monday <- d - as.integer(format(d, "%u")) + 1
+    sunday <- monday + 6
+    req_prog_range(c(monday, sunday))
+  })
+  observeEvent(input$req_prog_range_month, {
+    req(rv$logged_in)
+    d <- Sys.Date()
+    first <- as.Date(format(d, "%Y-%m-01"))
+    last <- seq(first, by = "month", length.out = 2)[2] - 1
+    req_prog_range(c(first, last))
+  })
+
+  # dateInput 手动变化 → 更新范围状态
+  observeEvent(list(input$req_prog_date_from, input$req_prog_date_to), {
+    req(rv$logged_in)
+    from <- input$req_prog_date_from
+    to <- input$req_prog_date_to
+    if (is.null(from) || is.null(to) || length(from) == 0 || length(to) == 0 ||
+        is.na(from) || is.na(to)) {
+      req_prog_range(NULL)
+    } else {
+      req_prog_range(c(as.Date(from), as.Date(to)))
+    }
+  })
+
+  # 视图切换
+  observeEvent(input$req_prog_view_list, { req_prog_view("list") })
+  observeEvent(input$req_prog_view_timeline, { req_prog_view("timeline") })
+
+  # 复制完成通知
+  observeEvent(input$req_copy_done, {
+    showNotification("进度文本已复制到剪贴板", type = "message")
+  })
+
+  # ================================================================
+  # 进度条目 ↔ 记事 绑定/解绑管理
+  # ================================================================
+  # 打开绑定管理弹窗
+  observeEvent(input$req_prog_note_mgr_click, {
+    req(rv$logged_in, input$req_prog_note_mgr_click)
+    pid <- as.integer(input$req_prog_note_mgr_click)
+    req_prog_note_mgr_id(pid)
+    req_prog_note_trigger(req_prog_note_trigger() + 1)
+    showModal(modalDialog(
+      title = sprintf("记事绑定管理（进度 #%d）", pid),
+      tags$div(style = "font-weight:bold;margin-bottom:6px;", "已绑定记事："),
+      uiOutput("req_prog_note_bound_ui"),
+      hr(),
+      tags$div(style = "font-weight:bold;margin-bottom:6px;", "新增绑定（选择未完成记事，可多选）："),
+      selectInput("req_prog_note_bind_select", NULL,
+        choices = req_prog_note_bind_choices(pid, rv$current_user),
+        multiple = TRUE, width = "100%"),
+      footer = tagList(
+        actionButton("req_prog_note_bind_btn", "绑定并同步", class = "btn-primary"),
+        modalButton("关闭")
+      ), size = "l", easyClose = TRUE
+    ))
+  })
+
+  # 渲染已绑定记事列表
+  output$req_prog_note_bound_ui <- renderUI({
+    req_prog_note_trigger()
+    pid <- req_prog_note_mgr_id()
+    if (is.null(pid)) return(NULL)
+    bound <- requirement_progress_notes_get(pid)
+    if (is.null(bound) || nrow(bound) == 0) {
+      return(tags$div(style = "color:#999;padding:4px 0;", "暂无绑定记事"))
+    }
+    rows <- lapply(seq_len(nrow(bound)), function(i) {
+      b <- bound[i, ]
+      label <- sprintf("[%s] %s",
+        if (!is.null(b$note_no) && !is.na(b$note_no) && b$note_no != "") b$note_no else paste0("#", b$note_id),
+        b$title %||% "")
+      tags$div(style = "display:flex;justify-content:space-between;align-items:center;padding:5px 8px;margin-bottom:4px;background:#f8f9fb;border:1px solid #e8ecf1;border-radius:6px;",
+        tags$span(style = "font-size:13px;", label),
+        tags$button(class = "btn btn-xs btn-danger", type = "button",
+          onclick = sprintf("Shiny.setInputValue('req_prog_note_unbind_click', {pid:%d, nid:%d}, {priority:'event'});", pid, b$note_id),
+          "解绑"))
+    })
+    tagList(rows)
+  })
+
+  # 绑定并同步评论
+  observeEvent(input$req_prog_note_bind_btn, {
+    req(rv$logged_in)
+    pid <- req_prog_note_mgr_id()
+    sel <- input$req_prog_note_bind_select
+    if (is.null(pid) || is.null(sel) || length(sel) == 0) {
+      showNotification("请选择要绑定的记事", type = "warning"); return()
+    }
+    prog <- requirement_progress_get_by_id(pid)
+    if (is.null(prog) || nrow(prog) == 0) {
+      showNotification("进度条目不存在", type = "error"); return()
+    }
+    req_info <- requirement_get_by_id(prog$requirement_id[1])
+    req_label <- if (!is.null(req_info) && nrow(req_info) > 0) req_info$req_no[1] else ""
+    uid <- if (!is.null(rv$current_user) && nrow(rv$current_user) > 0) rv$current_user$id[1] else NULL
+    comment_text <- sprintf("【需求进度 %s】%s", req_label, prog$content[1] %||% "")
+    ok <- 0; synced <- 0
+    for (nid in sel) {
+      nid <- as.integer(nid)
+      res <- requirement_progress_note_bind(pid, nid)
+      if (isTRUE(res$success)) {
+        ok <- ok + 1
+        if (!isTRUE(res$existed)) {
+          cr <- note_comment_add(nid, comment_text, created_by = uid, current_user = rv$current_user)
+          if (isTRUE(cr$success)) synced <- synced + 1
+        }
+      }
+    }
+    req_prog_note_trigger(req_prog_note_trigger() + 1)
+    req_prog_trigger(req_prog_trigger() + 1)  # 刷新列表 badge
+    updateSelectInput(session, "req_prog_note_bind_select",
+      choices = req_prog_note_bind_choices(pid, rv$current_user))
+    showNotification(sprintf("已绑定 %d 条记事，同步评论 %d 条", ok, synced), type = "message")
+  })
+
+  # 解绑
+  observeEvent(input$req_prog_note_unbind_click, {
+    req(rv$logged_in)
+    val <- input$req_prog_note_unbind_click
+    pid <- val$pid; nid <- val$nid
+    if (is.null(pid) || is.null(nid)) return()
+    res <- requirement_progress_note_unbind(as.integer(pid), as.integer(nid))
+    req_prog_note_trigger(req_prog_note_trigger() + 1)
+    req_prog_trigger(req_prog_trigger() + 1)  # 刷新列表 badge
+    updateSelectInput(session, "req_prog_note_bind_select",
+      choices = req_prog_note_bind_choices(pid, rv$current_user))
+    showNotification(if (isTRUE(res$success)) "已解绑记事" else res$message,
+      type = if (isTRUE(res$success)) "message" else "error")
+  })
+
   # 进度需求选择器切换
   observeEvent(input$req_prog_selector, {
     req(rv$logged_in)
@@ -361,6 +695,7 @@ requirement_server <- function(input, output, session, rv) {
       showNotification("请先选择需求", type = "warning"); return()
     }
     rv$req_prog_parent_id <- 0L
+    rv$req_prog_note_id <- NULL
     showModal(modalDialog(
       title = "添加进度条目",
       textInput("req_prog_edit_dept", "部门", width = "100%", placeholder = "如：采购部"),
@@ -368,6 +703,8 @@ requirement_server <- function(input, output, session, rv) {
       textInput("req_prog_edit_status", "状态", value = "已完成", width = "100%",
         placeholder = "如：已完成 / 未回复 / 进行中"),
       dateInput("req_prog_edit_date", "日期", value = Sys.Date()),
+      selectInput("req_prog_note_select", "从记事选择（未完成）",
+        choices = req_prog_note_choices(rv$current_user), width = "100%"),
       textAreaInput("req_prog_edit_content", "内容", rows = 3, width = "100%"),
       footer = tagList(
         actionButton("req_prog_save_btn", "保存", class = "btn-primary"),
@@ -381,6 +718,7 @@ requirement_server <- function(input, output, session, rv) {
     req(rv$logged_in, input$req_prog_addsub_click)
     pid <- as.integer(input$req_prog_addsub_click)
     rv$req_prog_parent_id <- pid
+    rv$req_prog_note_id <- NULL
     # 读取父条目，用于继承部门
     con <- db_connect(); on.exit(db_disconnect(con))
     parent <- dbGetQuery(con, sprintf("SELECT dept, person FROM requirement_progress WHERE id=%d", pid))
@@ -392,12 +730,34 @@ requirement_server <- function(input, output, session, rv) {
       textInput("req_prog_edit_status", "状态", value = "进行中", width = "100%",
         placeholder = "如：已完成 / 未回复 / 进行中"),
       dateInput("req_prog_edit_date", "日期", value = Sys.Date()),
+      selectInput("req_prog_note_select", "从记事选择（未完成）",
+        choices = req_prog_note_choices(rv$current_user), width = "100%"),
       textAreaInput("req_prog_edit_content", "内容", rows = 3, width = "100%"),
       footer = tagList(
         actionButton("req_prog_save_btn", "保存", class = "btn-primary"),
         modalButton("取消")
       ), size = "l", easyClose = TRUE
     ))
+  })
+
+  # 从记事选择：回填内容并记录 note_id（保存时同步写入该记事评论）
+  observeEvent(input$req_prog_note_select, {
+    req(rv$logged_in)
+    val <- input$req_prog_note_select
+    if (is.null(val) || val == "") {
+      rv$req_prog_note_id <- NULL
+      return()
+    }
+    note_id <- as.integer(val)
+    rv$req_prog_note_id <- note_id
+    note <- requirement_get_note_by_id(note_id)
+    if (!is.null(note) && nrow(note) > 0) {
+      n <- note[1, ]
+      txt <- n$title[1] %||% ""
+      body <- n$content[1] %||% ""
+      if (!is.na(body) && nzchar(body)) txt <- paste0(txt, "\n", body)
+      updateTextAreaInput(session, "req_prog_edit_content", value = txt)
+    }
   })
 
   observeEvent(input$req_prog_save_btn, {
@@ -410,10 +770,28 @@ requirement_server <- function(input, output, session, rv) {
       input$req_prog_edit_status, as.character(input$req_prog_edit_date),
       input$req_prog_edit_content, parent_id = as.integer(pid))
     if (result$success) {
+      # 若从记事选择，则持久化绑定并同步写入该记事评论
+      note_id <- rv$req_prog_note_id
+      note_msg <- ""
+      if (!is.null(note_id) && !is.na(note_id) && as.integer(note_id) > 0) {
+        bind_res <- requirement_progress_note_bind(result$id, as.integer(note_id))
+        if (isTRUE(bind_res$success) && !isTRUE(bind_res$existed)) {
+          uid <- if (!is.null(rv$current_user) && nrow(rv$current_user) > 0) rv$current_user$id[1] else NULL
+          req_info <- requirement_get_by_id(sel_id)
+          req_label <- if (!is.null(req_info) && nrow(req_info) > 0) req_info$req_no[1] else ""
+          comment_text <- sprintf("【需求进度 %s】%s", req_label, input$req_prog_edit_content %||% "")
+          cr <- note_comment_add(as.integer(note_id), comment_text,
+            created_by = uid, current_user = rv$current_user)
+          note_msg <- if (isTRUE(cr$success)) "，已绑定并同步到记事评论" else paste0("，已绑定但同步评论失败：", cr$message)
+        } else {
+          note_msg <- "，记事已绑定"
+        }
+      }
       removeModal()
+      rv$req_prog_note_id <- NULL
       req_prog_trigger(req_prog_trigger() + 1)
       req_gantt_trigger(req_gantt_trigger() + 1)
-      showNotification(result$message, type = "message")
+      showNotification(paste0(result$message, note_msg), type = "message")
     } else showNotification(result$message, type = "error")
   })
 
@@ -486,6 +864,7 @@ requirement_server <- function(input, output, session, rv) {
     dept <- input$req_prog_dept_add_click
     rv$req_prog_parent_id <- 0L
     rv$req_prog_prefill_dept <- dept
+    rv$req_prog_note_id <- NULL
     showModal(modalDialog(
       title = sprintf("在「%s」下添加记录", dept),
       textInput("req_prog_edit_dept", "部门", value = dept, width = "100%"),
@@ -493,6 +872,8 @@ requirement_server <- function(input, output, session, rv) {
       textInput("req_prog_edit_status", "状态", value = "进行中", width = "100%",
         placeholder = "如：已完成 / 未回复 / 进行中"),
       dateInput("req_prog_edit_date", "日期", value = Sys.Date()),
+      selectInput("req_prog_note_select", "从记事选择（未完成）",
+        choices = req_prog_note_choices(rv$current_user), width = "100%"),
       textAreaInput("req_prog_edit_content", "内容", rows = 3, width = "100%"),
       footer = tagList(
         actionButton("req_prog_save_btn", "保存", class = "btn-primary"),

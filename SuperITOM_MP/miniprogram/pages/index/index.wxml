@@ -1,0 +1,61 @@
+<view class="page">
+  <!-- 顶部 -->
+  <view class="topbar">
+    <view class="greeting">你好，{{displayName}}</view>
+    <view class="topbar-actions">
+      <view class="logout-btn workorder-entry" bindtap="onGoWorkorders">工单</view>
+      <view class="logout-btn" bindtap="onLogout">退出</view>
+    </view>
+  </view>
+
+  <!-- 工单统计 -->
+  <view class="stats">
+    <view class="stat-item" wx:for="{{statCards}}" wx:key="key">
+      <view class="stat-num" style="color:{{item.color}}">{{item.value}}</view>
+      <view class="stat-label">{{item.label}}</view>
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="empty">加载中…</view>
+
+  <block wx:else>
+    <!-- 我的项目 -->
+    <view class="section">
+      <view class="section-title" style="color:#337ab7">我的项目</view>
+      <view wx:if="{{projects.length === 0}}" class="empty">暂无进行中的项目</view>
+      <view class="item" wx:for="{{projects}}" wx:key="id">
+        <text class="badge" style="background:{{item.statusColor}}">{{item.statusText}}</text>
+        <view class="item-body">
+          <view class="item-name">{{item.name}}</view>
+          <view class="item-meta">[{{item.project_no}}]</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 我的工单 -->
+    <view class="section">
+      <view class="section-title" style="color:#5bc0de">我的工单</view>
+      <view wx:if="{{workOrders.length === 0}}" class="empty">暂无待处理的工单</view>
+      <view class="item" wx:for="{{workOrders}}" wx:key="id">
+        <text class="badge" style="background:{{item.statusColor}}">{{item.statusText}}</text>
+        <view class="item-body">
+          <view class="item-name">{{item.title}}</view>
+          <view class="item-meta">{{item.order_no}}<text wx:if="{{item.category}}"> · {{item.category}}</text></view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 我的任务 -->
+    <view class="section">
+      <view class="section-title" style="color:#5cb85c">我的任务</view>
+      <view wx:if="{{tasks.length === 0}}" class="empty">暂无待处理的任务</view>
+      <view class="item" wx:for="{{tasks}}" wx:key="id">
+        <text class="badge" style="background:{{item.statusColor}}">{{item.statusText}}</text>
+        <view class="item-body">
+          <view class="item-name">{{item.importanceFlags}}<text wx:if="{{item.importanceFlags}}"> </text>{{item.name}}</view>
+          <view class="item-meta">{{item.task_no || '-'}}<text wx:if="{{item.project_name}}"> · {{item.project_name}}</text></view>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>

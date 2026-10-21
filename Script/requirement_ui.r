@@ -30,6 +30,26 @@ requirement_ui <- function() {
           if (btn) btn.textContent = '全部展开';
         }
       };
+      // 复制进度文本（参照总结模块）
+      $(document).on('click', '#req_prog_copy_btn', function() {
+        var text = $('#req_prog_text_content').val();
+        if (!text) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function() {
+            Shiny.setInputValue('req_copy_done', Math.random(), {priority:'event'});
+          });
+        } else {
+          // 降级：非安全上下文（HTTP/IP访问）用 execCommand
+          var ta = document.createElement('textarea');
+          ta.value = text; document.body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); } catch(e) {}
+          document.body.removeChild(ta);
+          Shiny.setInputValue('req_copy_done', Math.random(), {priority:'event'});
+        }
+      });
+      Shiny.addCustomMessageHandler('req_update_text', function(message) {
+        $('#req_prog_text_content').val(message);
+      });
     ")),
     tags$style(HTML("
       .req-cap { padding:16px 20px; border-radius:8px; color:#fff; margin-bottom:16px; }
@@ -64,6 +84,52 @@ requirement_ui <- function() {
       .ph-name-block{display:inline-block;padding:1px 8px;border-radius:6px;font-size:11.5px;font-weight:700;color:#fff;white-space:nowrap;}
       .sb-range-tag{display:inline-block;margin-left:6px;font-size:10px;font-weight:400;color:#9aa3af;}
       .sb-day-block{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:8px;font-size:10px;font-weight:600;color:#fff;white-space:nowrap;}
+      /* ── 进度时间轴（参照总结模块时间流水） ── */
+      .reqtl-timeline { max-width: 900px; margin: 0 auto; padding: 20px 0 40px; position: relative; }
+      .reqtl-timeline::before {
+        content: ''; position: absolute; left: 50%; top: 0; bottom: 0;
+        width: 4px; background: linear-gradient(180deg, #e0e7ff, #c7d2fe 30%, #a5b4fc 70%, #e0e7ff);
+        transform: translateX(-50%); border-radius: 2px;
+      }
+      .reqtl-header { text-align: center; font-size: 15px; font-weight: bold; color: #4f46e5; margin-bottom: 24px; }
+      .reqtl-day-label { text-align: center; margin: 16px 0 8px; position: relative; z-index: 2; }
+      .reqtl-day-label span { display: inline-block; background: #eef2ff; border: 1px solid #a5b4fc; color: #4338ca; font-size: 13px; font-weight: 600; border-radius: 12px; padding: 2px 14px; }
+      .reqtl-item {
+        position: relative; width: 50%; padding: 8px 40px 8px 0; box-sizing: border-box;
+        min-height: 60px;
+      }
+      .reqtl-item:nth-child(even) {
+        margin-left: 50%; padding: 8px 0 8px 40px;
+      }
+      .reqtl-item::before {
+        content: ''; position: absolute; right: -8px; top: 22px;
+        width: 16px; height: 16px; border-radius: 50%; background: #fff;
+        border: 4px solid #6366f1; box-shadow: 0 0 0 2px #e0e7ff; z-index: 3;
+      }
+      .reqtl-item:nth-child(even)::before { left: -8px; right: auto; }
+      .reqtl-item::after {
+        content: ''; position: absolute; right: 0; top: 28px; width: 32px; height: 2px; background: #c7d2fe; z-index: 1;
+      }
+      .reqtl-item:nth-child(even)::after { left: 0; right: auto; }
+      .reqtl-card {
+        background: #fff; border: 1px solid #e0e7ff; border-radius: 10px;
+        padding: 12px 14px; box-shadow: 0 2px 6px rgba(99,102,241,0.08);
+        position: relative; transition: all .15s;
+      }
+      .reqtl-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(99,102,241,0.15); border-color: #a5b4fc; }
+      .reqtl-card::before {
+        content: ''; position: absolute; top: 20px; width: 10px; height: 10px; background: #fff; border: 1px solid #e0e7ff;
+        transform: rotate(45deg); border-right-color: #fff; border-top-color: #fff;
+      }
+      .reqtl-item:nth-child(odd) .reqtl-card::before { right: -6px; }
+      .reqtl-item:nth-child(even) .reqtl-card::before { left: -6px; transform: rotate(45deg); border-left-color: #fff; border-bottom-color: #fff; border-right-color: #e0e7ff; border-top-color: #e0e7ff; }
+      .reqtl-card-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+      .reqtl-card-hd-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .reqtl-card-hd b { font-size: 13px; color: #4338ca; }
+      .reqtl-time-badge { font-size: 10px; background: #ede9fe; color: #5b21b6; border-radius: 6px; padding: 1px 8px; font-family: Consolas, monospace; white-space: nowrap; }
+      .reqtl-tag { font-size: 10px; background: #e0f2fe; color: #0369a1; border-radius: 10px; padding: 1px 8px; white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
+      .reqtl-status { font-size: 10px; color: #fff; border-radius: 10px; padding: 1px 8px; white-space: nowrap; display: inline-block; }
+      .reqtl-card-bd { font-size: 12px; color: #475569; line-height: 1.6; white-space: pre-wrap; }
     ")),
     fluidRow(
       column(12,
@@ -106,6 +172,8 @@ requirement_ui <- function() {
         br(),
         uiOutput("req_gantt_chart_ui")
       )
-    )
+    ),
+    # 隐藏 textarea：存放进度纯文本（复制用）
+    tags$textarea(id = "req_prog_text_content", style = "display:none;")
   )
 }

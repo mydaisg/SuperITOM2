@@ -56,6 +56,10 @@ requirement_add <- function(title, description = NULL, status = "进行中", pri
       gsub("'","''",as.character(due_date%||%"")),
       if(is.null(created_by)) "NULL" else as.character(created_by), now, now))
     id <- dbGetQuery(con, "SELECT last_insert_rowid() as id")$id[1]
+    # 事件接入：通知管理员（消息机制，静默失败不影响需求创建）
+    message_notify(sender_id = created_by, title = paste0("新需求：", title),
+      content = sprintf("需求 %s（优先级 %s / 负责人 %s）已创建。", no, priority %||% "中", owner %||% ""),
+      msg_type = "事件", priority = priority %||% "中")
     list(success = TRUE, id = id, req_no = no, message = paste("需求", no, "已创建"))
   }, error = function(e) list(success = FALSE, message = e$message),
   finally = { db_disconnect(con) })
@@ -260,4 +264,105 @@ requirement_num_to_cn <- function(n) {
 # 彩虹色（参照记事模块评论的 8 色循环）
 requirement_rainbow_colors <- function() {
   c("#e74c3c","#e67e22","#f1c40f","#2ecc71","#1abc9c","#3498db","#9b59b6","#e91e63")
+}
+
+##################
+# 从记事选择（未完成）：供需求进度"从记事选择"使用
+# 未完成 = 待处理(pending) + 进行中(in_progress)
+# 非 admin 用户仅返回自己可见（创建/被派发）的记事，与记事模块一致
+##################
+requirement_get_uncompleted_notes <- function(current_user = NULL) {
+  con <- db_connect()
+  tryCatch({
+    uid <- note_visible_user_id(current_user)
+    if (is.null(uid)) {
+      dbGetQuery(con,
+        "SELECT id, note_no, title, content, status, updated_at
+         FROM notes WHERE status IN ('pending','in_progress')
+         ORDER BY updated_at DESC, id DESC")
+    } else {
+      dbGetQuery(con, sprintf(
+        "SELECT id, note_no, title, content, status, updated_at
+         FROM notes WHERE status IN ('pending','in_progress')
+           AND (created_by = %d OR id IN (SELECT note_id FROM note_dispatches WHERE user_id = %d))
+         ORDER BY updated_at DESC, id DESC", uid, uid))
+    }
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+# 按 id 获取单条记事（无权限过滤，供需求进度选择器回填内容用）
+requirement_get_note_by_id <- function(id) {
+  con <- db_connect()
+  tryCatch({
+    r <- dbGetQuery(con, sprintf(
+      "SELECT id, note_no, title, content, status FROM notes WHERE id=%d", as.integer(id)))
+    if (nrow(r) == 0) NULL else r
+  }, error = function(e) NULL, finally = { db_disconnect(con) })
+}
+
+##################
+# 进度条目 ↔ 记事 多对多绑定
+##################
+# 获取某进度条目已绑定的记事列表
+requirement_progress_notes_get <- function(progress_id) {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, sprintf(
+      "SELECT l.id AS link_id, l.note_id, l.created_at AS bound_at,
+              n.note_no, n.title, n.status
+       FROM requirement_progress_notes l
+       LEFT JOIN notes n ON n.id = l.note_id
+       WHERE l.progress_id = %d ORDER BY l.id", as.integer(progress_id)))
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+# 绑定一条记事（多对多，一个进度可绑定多条记事）
+# 返回 existed 标识是否此前已绑定（供调用方判断是否需要重新同步评论）
+requirement_progress_note_bind <- function(progress_id, note_id) {
+  con <- db_connect()
+  tryCatch({
+    existing <- dbGetQuery(con, sprintf(
+      "SELECT 1 FROM requirement_progress_notes WHERE progress_id=%d AND note_id=%d",
+      as.integer(progress_id), as.integer(note_id)))
+    existed <- nrow(existing) > 0
+    dbExecute(con, sprintf(
+      "INSERT OR IGNORE INTO requirement_progress_notes (progress_id, note_id) VALUES (%d, %d)",
+      as.integer(progress_id), as.integer(note_id)))
+    list(success = TRUE, existed = existed, message = if (existed) "已绑定过该记事" else "已绑定记事")
+  }, error = function(e) list(success = FALSE, message = paste("绑定失败:", e$message)),
+  finally = { db_disconnect(con) })
+}
+
+# 解绑一条记事
+requirement_progress_note_unbind <- function(progress_id, note_id) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf(
+      "DELETE FROM requirement_progress_notes WHERE progress_id=%d AND note_id=%d",
+      as.integer(progress_id), as.integer(note_id)))
+    list(success = TRUE, message = "已解绑记事")
+  }, error = function(e) list(success = FALSE, message = paste("解绑失败:", e$message)),
+  finally = { db_disconnect(con) })
+}
+
+# 获取单条进度条目
+requirement_progress_get_by_id <- function(id) {
+  con <- db_connect()
+  tryCatch({
+    r <- dbGetQuery(con, sprintf("SELECT * FROM requirement_progress WHERE id=%d", as.integer(id)))
+    if (nrow(r) == 0) NULL else r
+  }, error = function(e) NULL, finally = { db_disconnect(con) })
+}
+
+# 批量获取某需求下所有进度条目的记事绑定（progress_id → note 列表，供列表渲染 badge 用）
+requirement_progress_notes_get_by_req <- function(requirement_id) {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, sprintf(
+      "SELECT l.progress_id, l.note_id, n.note_no, n.title
+       FROM requirement_progress_notes l
+       LEFT JOIN notes n ON n.id = l.note_id
+       WHERE l.progress_id IN (SELECT id FROM requirement_progress WHERE requirement_id=%d)
+       ORDER BY l.progress_id, l.id", as.integer(requirement_id)))
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
 }

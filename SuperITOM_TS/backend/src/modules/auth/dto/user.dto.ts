@@ -10,6 +10,9 @@ export class UserDto {
   @IsString()
   role: string;
 
+  @IsString()
+  displayName: string;
+
   @IsBoolean()
   isActive: boolean;
 
