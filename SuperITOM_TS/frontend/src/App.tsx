@@ -10,6 +10,9 @@ import Settings from './pages/Settings.tsx'
 import WorkOrders from './pages/WorkOrders.tsx'
 import WorkOrderDetail from './pages/WorkOrderDetail.tsx'
 import WorkOrderCreate from './pages/WorkOrderCreate.tsx'
+import Notes from './pages/Notes.tsx'
+import Requirements from './pages/Requirements.tsx'
+import DailyReport from './pages/DailyReport.tsx'
 import ProtectedRoute from './components/ProtectedRoute.tsx'
 import Header from './components/Header.tsx'
 import Sidebar from './components/Sidebar.tsx'
@@ -39,7 +42,10 @@ function App() {
                         <Route path="data" element={<DataManagement />} />
                         <Route path="github" element={<GitHubIntegration />} />
                         <Route path="settings" element={<Settings />} />
-                        <Route path="" element={<Navigate to="dashboard" replace />} />
+                        <Route path="notes" element={<Notes />} />
+                        <Route path="requirements" element={<Requirements />} />
+                        <Route path="daily-report" element={<DailyReport />} />
+                        <Route path="" element={<Navigate to="notes" replace />} />
                       </Routes>
                     </div>
                   </div>

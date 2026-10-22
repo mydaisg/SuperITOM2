@@ -1,18 +1,15 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
-import { ScheduleModule } from '@nestjs/schedule';
 import { TerminusModule } from '@nestjs/terminus';
-import { AuthModule } from './modules/auth/auth.module';
-import { ConfigModule as ItomConfigModule } from './modules/config/config.module';
-import { DataModule } from './modules/data/data.module';
-import { AutomationModule } from './modules/automation/automation.module';
-import { GitHubModule } from './modules/github/github.module';
-import { WorkOrdersModule } from './modules/work-orders/work-orders.module';
+import { DatabaseModule } from './common/database/database.module';
 import { HealthModule } from './common/health/health.module';
 import { LoggerModule } from './common/logger/logger.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { NotesModule } from './modules/notes/notes.module';
+import { RequirementsModule } from './modules/requirements/requirements.module';
+import { DailyReportModule } from './modules/daily-report/daily-report.module';
 
 @Module({
   imports: [
@@ -21,23 +18,10 @@ import { LoggerModule } from './common/logger/logger.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    
-    // 数据库模块
-    TypeOrmModule.forRootAsync({
-      useFactory: (configService: ConfigService) => ({
-        type: 'postgres',
-        host: configService.get('DATABASE_HOST') || 'localhost',
-        port: parseInt(configService.get('DATABASE_PORT') || '5432'),
-        username: configService.get('DATABASE_USERNAME') || 'admin',
-        password: configService.get('DATABASE_PASSWORD') || 'password',
-        database: configService.get('DATABASE_NAME') || 'superitom',
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: true,
-        logging: true,
-      }),
-      inject: [ConfigService],
-    }),
-    
+
+    // 数据库模块（better-sqlite3 直连现有 GH_ITOM.db，与 R 版共享数据）
+    DatabaseModule,
+
     // JWT 模块
     JwtModule.registerAsync({
       useFactory: (configService: ConfigService) => ({
@@ -48,20 +32,16 @@ import { LoggerModule } from './common/logger/logger.module';
       }),
       inject: [ConfigService],
     }),
-    
-    // 其他模块
+
     PassportModule,
-    ScheduleModule.forRoot(),
     TerminusModule,
-    
+
     // 业务模块
     AuthModule,
-    ItomConfigModule,
-    DataModule,
-    AutomationModule,
-    GitHubModule,
-    WorkOrdersModule,
-    
+    NotesModule,
+    RequirementsModule,
+    DailyReportModule,
+
     // 公共模块
     HealthModule,
     LoggerModule,

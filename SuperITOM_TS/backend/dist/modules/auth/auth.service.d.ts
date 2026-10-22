@@ -1,19 +1,23 @@
-import { Repository } from 'typeorm';
-import { UserEntity } from './entities/user.entity';
 import { JwtService } from '@nestjs/jwt';
+import { DatabaseService } from '../../common/database/database.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
-import { UserDto } from './dto/user.dto';
+export interface AuthUser {
+    id: number;
+    username: string;
+    role: string;
+    displayName: string;
+}
 export declare class AuthService {
-    private userRepository;
-    private jwtService;
-    constructor(userRepository: Repository<UserEntity>, jwtService: JwtService);
-    validateUser(userId: number): Promise<UserEntity | null>;
+    private readonly db;
+    private readonly jwtService;
+    constructor(db: DatabaseService, jwtService: JwtService);
+    private toUser;
+    validateUser(userId: number): Promise<AuthUser | null>;
     login(loginDto: LoginDto): Promise<{
         accessToken: string;
-        user: UserDto;
+        user: AuthUser;
     }>;
-    register(registerDto: RegisterDto): Promise<UserDto>;
-    getUserById(id: number): Promise<UserDto>;
-    private mapUserToDto;
+    register(registerDto: RegisterDto): Promise<AuthUser>;
+    getUserById(id: number): Promise<AuthUser>;
 }

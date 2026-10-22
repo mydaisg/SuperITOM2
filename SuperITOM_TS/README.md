@@ -1,5 +1,25 @@
 # SuperITOM_TS 项目分析与实现方案
 
+> **⚠️ 当前实际实现状态（2026-10-22）**
+>
+> 本文档为早期架构规划（PostgreSQL + Redis + RabbitMQ + K8s 微服务方向）。**实际实现已调整为「低程度」方案**，用于发布到企业微信工作台：
+>
+> - **数据源**：`better-sqlite3` 直连现有 `DB/GH_ITOM.db`（与 R 版共享数据、零迁移），不再使用 PostgreSQL/TypeORM
+> - **登录**：复用 `users` 表明文密码 + JWT（内部账号登录，企业微信 OAuth 后续再接）
+> - **已实现模块**：记事（notes）、需求（requirements）、总结（daily-report）
+> - **前端**：React + TypeScript + Ant Design（侧边栏菜单：记事 / 需求 / 总结）
+> - **后端目录**：`backend/src/modules/{auth,notes,requirements,daily-report}`，公共数据层 `backend/src/common/database`
+>
+> **启动方式**：
+> ```bash
+> # 后端（端口 3000，直连 ../../DB/GH_ITOM.db）
+> cd backend && npm install && npm run build && npm run start:prod
+> # 前端（Vite 开发服务器）
+> cd frontend && npm install && npm run dev
+> ```
+>
+> 以下为早期规划文档正文，仅供架构参考。
+
 ## 一、SuperITOM2 项目现状分析
 
 ### 1. 项目结构
