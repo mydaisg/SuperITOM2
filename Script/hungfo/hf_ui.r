@@ -20,14 +20,16 @@ hf_module_page_ui <- function(m) {
         tags$div(style = "font-size:12px;opacity:.88;margin-top:8px;", m$desc),
         tags$div(style = "font-size:11px;color:#b0bec5;margin-top:4px;", icon("plug"), " 接口：", m$api_desc)
       ),
-      fluidRow(
-        column(4, textInput(p("title"), "新增记录标题", width = "100%", placeholder = "输入标题")),
-        column(3, div(style = "margin-top:25px;",
-          actionButton(p("add_btn"), "新增记录", icon = icon("plus"), class = "btn-success btn-sm"))),
-        column(3, div(style = "margin-top:25px;",
-          actionButton(p("run_btn"), "运行接口", icon = icon("play"), class = "btn-primary btn-sm"))),
-        column(2, div(style = "margin-top:25px;",
-          actionButton(p("refresh_btn"), "刷新", icon = icon("sync"), class = "btn-info btn-sm")))
+      # 记事式快速添加：多行输入，首行自动作为标题，全文作为内容
+      div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
+        tags$div(style = "font-size:11px;font-weight:700;color:#6c3bbf;margin-bottom:4px;", "✦ 快速添加记录"),
+        textAreaInput(p("new_text"), NULL, rows = 4, width = "100%",
+          placeholder = "输入内容，第一行自动作为标题…"),
+        div(style = "display:flex;gap:8px;justify-content:flex-end;margin-top:4px;",
+          actionButton(p("add_btn"), "新增记录", icon = icon("plus"), class = "btn-success btn-sm"),
+          actionButton(p("run_btn"), "运行接口", icon = icon("play"), class = "btn-primary btn-sm"),
+          actionButton(p("refresh_btn"), "刷新", icon = icon("sync"), class = "btn-info btn-sm")
+        )
       ),
       uiOutput(p("status")),
       DTOutput(p("table"))
@@ -65,18 +67,23 @@ hf_module_page_server <- function(input, output, session, rv, m, trigger) {
 
   observeEvent(input[[p("add_btn")]], {
     req(rv$logged_in)
-    t <- trimws(hf_or(input[[p("title")]], ""))
-    if (!nzchar(t)) { showNotification("请输入标题", type = "warning"); return() }
-    r <- hf_record_add(key, t, created_by = hf_current_uid(rv))
+    t <- trimws(hf_or(input[[p("new_text")]], ""))
+    if (!nzchar(t)) { showNotification("请输入内容", type = "warning"); return() }
+    lines <- strsplit(t, "\n")[[1]]
+    title <- trimws(lines[1])
+    if (!nzchar(title)) title <- "未命名记录"
+    r <- hf_record_add(key, title, payload = t, created_by = hf_current_uid(rv))
     showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
-    updateTextInput(session, p("title"), value = "")
+    updateTextAreaInput(session, p("new_text"), value = "")
     local_refresh()
   })
 
   observeEvent(input[[p("run_btn")]], {
     req(rv$logged_in)
+    t <- trimws(hf_or(input[[p("new_text")]], ""))
+    title <- if (nzchar(t)) trimws(strsplit(t, "\n")[[1]][1]) else ""
     r <- tryCatch(
-      hf_call(key, "run", payload = list(title = hf_or(input[[p("title")]], ""))),
+      hf_call(key, "run", payload = list(title = title)),
       error = function(e) list(success = FALSE, message = e$message))
     showNotification(hf_or(r$message, "接口已执行"), type = if (isTRUE(r$success)) "message" else "error")
     local_refresh()
