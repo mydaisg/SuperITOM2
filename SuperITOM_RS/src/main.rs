@@ -4,9 +4,12 @@
 mod app;
 mod dashboard;
 mod db;
+mod devlogs;
 mod fonts;
 mod login;
 mod models;
+mod notes;
+mod solutions;
 mod workorders;
 
 use app::SuperItomApp;

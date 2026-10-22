@@ -60,12 +60,13 @@ okr_server <- function(input, output, session, rv) {
     req(rv$logged_in); okr_refresh()
     cycles <- okr_cycle_list()
     active <- okr_cycle_active()
+    has_active <- !is.null(active) && nrow(active) > 0
     choices <- if (nrow(cycles) > 0) stats::setNames(as.character(cycles$id), cycles$name) else c("（无周期）" = "")
-    sel <- if (nrow(active) > 0) as.character(active$id[1]) else (if (nrow(cycles) > 0) as.character(cycles$id[1]) else "")
+    sel <- if (has_active) as.character(active$id[1]) else (if (nrow(cycles) > 0) as.character(cycles$id[1]) else "")
 
     # 统计（基于默认周期，避免依赖 input$okr_cycle）
     obj_count <- 0; kr_count <- 0; avg_prog <- 0
-    stat_cycle <- if (nrow(active) > 0) active else NULL
+    stat_cycle <- if (has_active) active else NULL
     if (!is.null(stat_cycle)) {
       objs <- tryCatch(okr_objective_list(stat_cycle$id[1]), error = function(e) data.frame())
       krs <- tryCatch(okr_kr_list_by_cycle(stat_cycle$id[1]), error = function(e) data.frame())
