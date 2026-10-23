@@ -43,6 +43,10 @@ solution_ui <- function() {
         ),
         conditionalPanel("output.exec_has_project != '1'",
           div(style = "text-align:center; padding:60px; color:#999;", icon("folder-open", "fa-3x"), br(), br(), "选择或新建一个执行项目开始"))
+      ),
+      # ── 标签3：知识（知识库管理，后续独立成模块）──
+      tabPanel("知识",
+        knowledge_ui()
       )
     )
   )

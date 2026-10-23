@@ -478,3 +478,212 @@ config_intl_export_text <- function() {
     paste(lines, collapse = "\n")
   }, error = function(e) "", finally = { db_disconnect(con) })
 }
+
+##################
+# 数据库平台 — 数据层
+# 需求：配置管理新增「数据库」平台，记录数据库连接信息，字段充足，支持查询/复制/更新/版本回看
+# 表：config_databases（主表）+ config_database_versions（版本历史快照）
+##################
+
+CONFIG_DB_TYPES <- c("MySQL", "Oracle", "SQL Server", "PostgreSQL", "Redis", "MongoDB", "其他")
+
+# 自包含建表（不修改 global.R 迁移逻辑）
+config_db_table_init <- function() {
+  con <- db_connect()
+  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS config_databases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    db_no TEXT,
+    db_name TEXT NOT NULL,
+    db_type TEXT,
+    jdbc_url TEXT,
+    internal_addr TEXT,
+    username TEXT,
+    password TEXT,
+    remark TEXT,
+    sort_order INTEGER DEFAULT 0,
+    created_by INTEGER,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+  )")
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS config_database_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    database_id INTEGER NOT NULL,
+    version_no INTEGER DEFAULT 1,
+    db_name TEXT, db_type TEXT, jdbc_url TEXT, internal_addr TEXT,
+    username TEXT, password TEXT, remark TEXT,
+    changed_by INTEGER,
+    changed_at TEXT DEFAULT (datetime('now','localtime'))
+  )")
+  dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_cfgdb_versions_db ON config_database_versions(database_id)")
+  invisible(TRUE)
+}
+
+# 编号生成 DB+YYYYMMDD+3位流水
+config_db_generate_number <- function() {
+  con <- db_connect()
+  tryCatch({
+    today <- format(Sys.Date(), "%Y%m%d")
+    prefix <- paste0("DB", today)
+    existing <- dbGetQuery(con, sprintf("SELECT db_no FROM config_databases WHERE db_no LIKE '%s%%' ORDER BY db_no DESC LIMIT 1", prefix))
+    if (nrow(existing) > 0 && !is.na(existing$db_no[1])) {
+      last_seq <- as.integer(substr(existing$db_no[1], nchar(prefix) + 1, nchar(prefix) + 3))
+      seq <- if (is.na(last_seq)) 1 else last_seq + 1
+    } else { seq <- 1 }
+    sprintf("%s%03d", prefix, seq)
+  }, finally = { db_disconnect(con) })
+}
+
+# 字符串安全（NULL/NA/空 -> NULL 字面量）
+.cfgdb_s <- function(x) if (is.null(x) || is.na(x) || as.character(x) == "") "NULL" else sprintf("'%s'", gsub("'", "''", as.character(x)))
+
+# 获取全部数据库
+config_db_get_all <- function() {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, "SELECT * FROM config_databases ORDER BY sort_order, id")
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+# 获取单条
+config_db_get_by_id <- function(id) {
+  con <- db_connect()
+  tryCatch({
+    r <- dbGetQuery(con, sprintf("SELECT * FROM config_databases WHERE id = %d", as.integer(id)))
+    if (nrow(r) == 0) NULL else r
+  }, finally = { db_disconnect(con) })
+}
+
+# 新增数据库（写入主表 + 记录版本 v1）
+config_db_add <- function(db_name, db_type = "", jdbc_url = "", internal_addr = "",
+  username = "", password = "", remark = "", created_by = NULL, sort_order = 0) {
+  con <- db_connect()
+  tryCatch({
+    db_no <- config_db_generate_number()
+    dbExecute(con, sprintf(
+      "INSERT INTO config_databases (db_no, db_name, db_type, jdbc_url, internal_addr, username, password, remark, sort_order, created_by)
+       VALUES ('%s',%s,%s,%s,%s,%s,%s,%s,%d,%s)",
+      db_no, .cfgdb_s(db_name), .cfgdb_s(db_type), .cfgdb_s(jdbc_url), .cfgdb_s(internal_addr),
+      .cfgdb_s(username), .cfgdb_s(password), .cfgdb_s(remark), as.integer(sort_order %||% 0),
+      if (is.null(created_by)) "NULL" else as.character(as.integer(created_by))))
+    id <- dbGetQuery(con, "SELECT last_insert_rowid() AS id")$id[1]
+    # 记录初始版本 v1
+    dbExecute(con, sprintf(
+      "INSERT INTO config_database_versions (database_id, version_no, db_name, db_type, jdbc_url, internal_addr, username, password, remark, changed_by)
+       VALUES (%d, 1, %s, %s, %s, %s, %s, %s, %s, %s)",
+      id, .cfgdb_s(db_name), .cfgdb_s(db_type), .cfgdb_s(jdbc_url), .cfgdb_s(internal_addr),
+      .cfgdb_s(username), .cfgdb_s(password), .cfgdb_s(remark),
+      if (is.null(created_by)) "NULL" else as.character(as.integer(created_by))))
+    list(success = TRUE, id = id, db_no = db_no, message = paste("已添加", db_no))
+  }, error = function(e) list(success = FALSE, message = paste("添加失败:", e$message)),
+  finally = { db_disconnect(con) })
+}
+
+# 更新数据库（更新主表 + 追加新版本快照）
+config_db_update <- function(id, db_name = NULL, db_type = NULL, jdbc_url = NULL,
+  internal_addr = NULL, username = NULL, password = NULL, remark = NULL,
+  sort_order = NULL, changed_by = NULL) {
+  con <- db_connect()
+  tryCatch({
+    sets <- "updated_at = datetime('now','localtime')"
+    if (!is.null(db_name))       sets <- paste0(sets, sprintf(", db_name=%s", .cfgdb_s(db_name)))
+    if (!is.null(db_type))       sets <- paste0(sets, sprintf(", db_type=%s", .cfgdb_s(db_type)))
+    if (!is.null(jdbc_url))      sets <- paste0(sets, sprintf(", jdbc_url=%s", .cfgdb_s(jdbc_url)))
+    if (!is.null(internal_addr)) sets <- paste0(sets, sprintf(", internal_addr=%s", .cfgdb_s(internal_addr)))
+    if (!is.null(username))      sets <- paste0(sets, sprintf(", username=%s", .cfgdb_s(username)))
+    if (!is.null(password))      sets <- paste0(sets, sprintf(", password=%s", .cfgdb_s(password)))
+    if (!is.null(remark))        sets <- paste0(sets, sprintf(", remark=%s", .cfgdb_s(remark)))
+    if (!is.null(sort_order))    sets <- paste0(sets, sprintf(", sort_order=%d", as.integer(sort_order)))
+    dbExecute(con, sprintf("UPDATE config_databases SET %s WHERE id = %d", sets, as.integer(id)))
+
+    # 追加新版本快照（取更新后的完整行）
+    row <- dbGetQuery(con, sprintf("SELECT * FROM config_databases WHERE id = %d", as.integer(id)))
+    if (nrow(row) > 0) {
+      cur <- dbGetQuery(con, sprintf("SELECT COALESCE(MAX(version_no),0) AS v FROM config_database_versions WHERE database_id = %d", as.integer(id)))$v[1]
+      dbExecute(con, sprintf(
+        "INSERT INTO config_database_versions (database_id, version_no, db_name, db_type, jdbc_url, internal_addr, username, password, remark, changed_by)
+         VALUES (%d, %d, %s, %s, %s, %s, %s, %s, %s, %s)",
+        as.integer(id), cur + 1L,
+        .cfgdb_s(row$db_name[1]), .cfgdb_s(row$db_type[1]), .cfgdb_s(row$jdbc_url[1]),
+        .cfgdb_s(row$internal_addr[1]), .cfgdb_s(row$username[1]), .cfgdb_s(row$password[1]),
+        .cfgdb_s(row$remark[1]),
+        if (is.null(changed_by)) "NULL" else as.character(as.integer(changed_by))))
+    }
+    list(success = TRUE, message = "已更新")
+  }, error = function(e) list(success = FALSE, message = paste("更新失败:", e$message)),
+  finally = { db_disconnect(con) })
+}
+
+# 删除数据库（级联删除版本）
+config_db_delete <- function(id) {
+  con <- db_connect()
+  tryCatch({
+    dbExecute(con, sprintf("DELETE FROM config_database_versions WHERE database_id = %d", as.integer(id)))
+    dbExecute(con, sprintf("DELETE FROM config_databases WHERE id = %d", as.integer(id)))
+    list(success = TRUE, message = "已删除")
+  }, error = function(e) list(success = FALSE, message = paste("删除失败:", e$message)),
+  finally = { db_disconnect(con) })
+}
+
+# 获取某数据库的版本历史（倒序）
+config_db_versions <- function(database_id) {
+  con <- db_connect()
+  tryCatch({
+    dbGetQuery(con, sprintf(
+      "SELECT v.*, COALESCE(NULLIF(u.display_name,''), u.username) AS changer_name
+       FROM config_database_versions v LEFT JOIN users u ON v.changed_by = u.id
+       WHERE v.database_id = %d ORDER BY v.version_no DESC", as.integer(database_id)))
+  }, error = function(e) data.frame(), finally = { db_disconnect(con) })
+}
+
+# 复制标签文本（完整连接信息，供复制给用户）
+config_db_label_text <- function(db_name, db_type, jdbc_url, internal_addr, username, password) {
+  paste0(
+    "数据库：", db_name %||% "", "\n",
+    "类型：", db_type %||% "", "\n",
+    "JDBC：", jdbc_url %||% "", "\n",
+    "内网：", internal_addr %||% "", "\n",
+    "账号：", username %||% "", "\n",
+    "密码：", password %||% ""
+  )
+}
+
+# 统计
+config_db_get_stats <- function() {
+  con <- db_connect()
+  tryCatch({
+    total <- dbGetQuery(con, "SELECT COUNT(*) AS n FROM config_databases")$n[1]
+    by_type <- dbGetQuery(con, "SELECT db_type, COUNT(*) AS n FROM config_databases GROUP BY db_type ORDER BY n DESC")
+    list(total = total %||% 0L, by_type = by_type)
+  }, error = function(e) list(total = 0L, by_type = data.frame()),
+  finally = { db_disconnect(con) })
+}
+
+# 种子数据（幂等：平台 + 仅空表时写入 CE10PDB / VE10TDB）
+config_db_seed <- function() {
+  config_db_table_init()
+  con <- db_connect()
+  tryCatch({
+    if (!"config_platforms" %in% dbListTables(con)) return(invisible(NULL))
+    plat <- dbGetQuery(con, "SELECT id FROM config_platforms WHERE platform_name='数据库'")
+    if (nrow(plat) == 0) {
+      dbExecute(con, "INSERT INTO config_platforms (platform_name, description, sort_order) VALUES ('数据库','数据库连接信息清单',3)")
+    }
+    cnt <- dbGetQuery(con, "SELECT COUNT(*) AS n FROM config_databases")$n[1]
+    if (cnt > 0) return(invisible(NULL))
+
+    rows <- list(
+      c("CE10PDB", "MySQL", "jdbc:mysql://117.162.0.171:13306/", "10.200.0.2:3306", "root", "PMGn9Lnp325JBm1I", ""),
+      c("VE10TDB", "MySQL", "jdbc:mysql://10.10.50.76:3306/", "", "root", "Lvcce10@db..", "")
+    )
+    for (i in seq_along(rows)) {
+      r <- rows[[i]]
+      config_db_add(
+        db_name = r[1], db_type = r[2], jdbc_url = r[3], internal_addr = r[4],
+        username = r[5], password = r[6], remark = r[7], sort_order = i
+      )
+    }
+    cat("数据库迁移完成：已写入「数据库」平台连接信息", length(rows), "条\n")
+  }, error = function(e) cat("数据库平台种子数据写入失败:", e$message, "\n"),
+  finally = { db_disconnect(con) })
+}

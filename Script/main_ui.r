@@ -40,6 +40,7 @@ source("Script/data_import_ui.r")
 source("Script/flow_visualization_ui.r")
 source("Script/ai_ui.r")
 source("Script/solution_ui.r")
+source("Script/knowledge_ui.r")
 
 # 加载流程模块
 source("Script/process_ui.r")

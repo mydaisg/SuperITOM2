@@ -43,6 +43,8 @@ source("Script/solution_management.r") # 方案模块数据层
 source("Script/solution_server.r")     # 方案模块服务端
 source("Script/solution_exec.r")        # 方案执行模块数据层
 source("Script/solution_exec_server.r") # 方案执行模块服务端
+source("Script/knowledge_management.r") # 知识库数据层（方案模块「知识」Tab）
+source("Script/knowledge_server.r")     # 知识库服务端
 source("Script/performance_management.r") # 绩效数据层
 source("Script/okr_management.r")       # OKR 数据层
 source("Script/performance_server.r")   # 绩效模块服务端
@@ -3902,6 +3904,9 @@ server <- function(input, output, session) {
 
   # 方案执行模块逻辑
   solution_exec_server(input, output, session, rv)
+
+  # 知识库模块逻辑（方案模块「知识」Tab）
+  knowledge_server(input, output, session, rv)
 
   # 流程模块逻辑
   process_server(input, output, session, rv)

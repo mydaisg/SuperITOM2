@@ -12,6 +12,7 @@ config_management_server <- function(input, output, session, rv) {
     req(rv$logged_in)
     config_item_seed()
     config_intl_seed()
+    config_db_seed()
   })
 
   # 当前平台筛选（-1 表示全部）
@@ -23,6 +24,14 @@ config_management_server <- function(input, output, session, rv) {
     if (pf == "-1") return(FALSE)
     plats <- config_platform_get_all()
     any(plats$id == as.integer(pf) & !is.na(plats$platform_name) & plats$platform_name == "国际访问")
+  })
+
+  # 是否选中数据库平台（字段结构不同，独立渲染）
+  is_database_platform <- reactive({
+    pf <- as.character(current_platform())
+    if (pf == "-1") return(FALSE)
+    plats <- config_platform_get_all()
+    any(plats$id == as.integer(pf) & !is.na(plats$platform_name) & plats$platform_name == "数据库")
   })
 
   ##################
@@ -54,6 +63,14 @@ config_management_server <- function(input, output, session, rv) {
         tags$span(style = "color:#888; font-size:12px; margin-left:8px;",
           "国际访问账号清单（账号 / 密码 / 使用人 / 日期）")
       )
+    } else if (is_database_platform()) {
+      div(style = "display:flex; gap:6px; align-items:center; flex-wrap:wrap;",
+        div(style = "flex:1; min-width:220px;",
+          textInput("cfgdb_search", NULL, placeholder = "搜索数据库名/JDBC/内网地址/账号...", width = "100%")),
+        actionButton("cfgdb_add_btn", "添加数据库", icon = icon("plus"), class = "btn-primary"),
+        downloadButton("cfgdb_export_download", "导出清单", class = "btn-sm btn-success"),
+        actionButton("cfgitem_refresh", icon("refresh"), class = "btn-default")
+      )
     } else {
       div(style = "display:flex; gap:6px; align-items:center; flex-wrap:wrap;",
         div(style = "flex:1; min-width:200px;",
@@ -73,7 +90,7 @@ config_management_server <- function(input, output, session, rv) {
   ##################
   output$cfgitem_table_area <- renderUI({
     req(rv$logged_in)
-    if (is_intl_platform()) DTOutput("cfgintl_table") else DTOutput("cfgitem_table")
+    if (is_intl_platform()) DTOutput("cfgintl_table") else if (is_database_platform()) DTOutput("cfgdb_table") else DTOutput("cfgitem_table")
   })
   outputOptions(output, "cfgitem_table_area", suspendWhenHidden = FALSE)
 
@@ -733,5 +750,243 @@ config_management_server <- function(input, output, session, rv) {
     removeModal()
     cfgitem_trigger(cfgitem_trigger() + 1)
     showNotification(result$message, type = "warning")
+  })
+
+  ##################
+  # 数据库平台（独立渲染：字段充足 + 密码脱敏 + 复制标签 + 版本回看）
+  ##################
+  output$cfgdb_table <- renderDT({
+    cfgitem_trigger()
+    req(rv$logged_in)
+    items <- config_db_get_all()
+    if (nrow(items) == 0) {
+      return(datatable(data.frame(提示 = "暂无数据库记录"), options = list(dom = "t")))
+    }
+    # 搜索过滤
+    kw <- trimws(input$cfgdb_search %||% "")
+    if (length(kw) > 0 && kw != "") {
+      hay <- paste(items$db_name, items$jdbc_url, items$internal_addr, items$username, items$remark, sep = " ")
+      items <- items[grepl(kw, hay, ignore.case = TRUE), ]
+    }
+    if (nrow(items) == 0) return(datatable(data.frame(提示 = "无匹配数据"), options = list(dom = "t")))
+
+    display <- data.frame(
+      编号 = items$db_no %||% "",
+      数据库名 = items$db_name %||% "",
+      类型 = items$db_type %||% "",
+      JDBC = items$jdbc_url %||% "",
+      内网地址 = items$internal_addr %||% "",
+      账号 = items$username %||% "",
+      密码 = sapply(seq_len(nrow(items)), function(i) {
+        p <- items$password[i] %||% ""
+        masked <- config_password_mask(p)
+        if (nchar(p) > 0) {
+          sprintf('<button class="btn btn-xs btn-link cfgitem-copy-btn" data-pwd="%s" style="padding:0 2px;" title="复制密码">%s<i class="fa fa-copy"></i></button>',
+            gsub('"', '&quot;', p), masked)
+        } else masked
+      }),
+      备注 = items$remark %||% "",
+      操作 = sapply(seq_len(nrow(items)), function(i) {
+        label <- config_db_label_text(items$db_name[i], items$db_type[i], items$jdbc_url[i],
+          items$internal_addr[i], items$username[i], items$password[i])
+        label_attr <- gsub('"', '&quot;', gsub("\n", "&#10;", label))
+        paste0(
+          sprintf(
+            '<button class="btn btn-xs btn-success cfgitem-label-copy-btn" data-label="%s" title="复制完整连接信息">复制</button> ',
+            label_attr
+          ),
+          sprintf(
+            '<button class="btn btn-xs btn-default cfgdb-versions-btn" data-id="%d" title="版本回看">版本</button> ',
+            items$id[i]
+          ),
+          sprintf(
+            '<button class="btn btn-xs btn-info cfgdb-edit-btn" data-id="%d">编辑</button> ',
+            items$id[i]
+          ),
+          sprintf(
+            '<button class="btn btn-xs btn-danger cfgdb-del-btn" data-id="%d">删除</button>',
+            items$id[i]
+          )
+        )
+      }),
+      stringsAsFactors = FALSE, check.names = FALSE
+    )
+
+    op_idx <- ncol(display) - 1
+    datatable(display, escape = FALSE, rownames = FALSE, selection = "none",
+      options = list(pageLength = 50, autoWidth = TRUE, dom = "ltip", scrollX = TRUE,
+        columnDefs = list(list(targets = op_idx, orderable = FALSE))),
+      class = "cell-border stripe compact")
+  })
+  outputOptions(output, "cfgdb_table", suspendWhenHidden = FALSE)
+
+  # 导出数据库清单（文本）
+  output$cfgdb_export_download <- downloadHandler(
+    filename = function() paste0("数据库连接清单_", format(Sys.Date(), "%Y%m%d"), ".txt"),
+    content = function(file) {
+      items <- config_db_get_all()
+      lines <- "数据库连接清单："
+      if (nrow(items) > 0) {
+        for (i in seq_len(nrow(items))) {
+          lines <- c(lines, paste0("---"),
+            config_db_label_text(items$db_name[i], items$db_type[i], items$jdbc_url[i],
+              items$internal_addr[i], items$username[i], items$password[i]))
+        }
+      }
+      writeLines(lines, file, useBytes = TRUE)
+    }
+  )
+
+  # 添加数据库弹窗
+  observeEvent(input$cfgdb_add_btn, {
+    req(rv$logged_in)
+    showModal(modalDialog(
+      title = "添加数据库",
+      size = "l", easyClose = TRUE,
+      fluidRow(
+        column(4, textInput("cfgdb_add_name", "数据库名 *")),
+        column(4, selectInput("cfgdb_add_type", "类型", choices = CONFIG_DB_TYPES, selected = "MySQL")),
+        column(4, numericInput("cfgdb_add_sort", "排序", value = 0))
+      ),
+      textInput("cfgdb_add_jdbc", "JDBC 连接串", placeholder = "jdbc:mysql://host:port/"),
+      textInput("cfgdb_add_addr", "内网地址", placeholder = "10.0.0.1:3306"),
+      fluidRow(
+        column(6, textInput("cfgdb_add_user", "账号")),
+        column(6, textInput("cfgdb_add_pwd", "密码（明文）"))
+      ),
+      textInput("cfgdb_add_remark", "备注"),
+      footer = tagList(modalButton("取消"), actionButton("cfgdb_add_confirm", "确认添加", class = "btn-primary"))
+    ))
+  })
+
+  observeEvent(input$cfgdb_add_confirm, {
+    req(rv$logged_in, input$cfgdb_add_name)
+    uid <- if (!is.null(rv$current_user) && nrow(rv$current_user) > 0) rv$current_user$id[1] else NULL
+    result <- config_db_add(
+      db_name = input$cfgdb_add_name, db_type = input$cfgdb_add_type,
+      jdbc_url = input$cfgdb_add_jdbc, internal_addr = input$cfgdb_add_addr,
+      username = input$cfgdb_add_user, password = input$cfgdb_add_pwd,
+      remark = input$cfgdb_add_remark, sort_order = input$cfgdb_add_sort,
+      created_by = uid
+    )
+    if (result$success) removeModal()
+    cfgitem_trigger(cfgitem_trigger() + 1)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+  })
+
+  # 编辑数据库弹窗（含版本回看）
+  observeEvent(input$cfgdb_edit_click, {
+    req(rv$logged_in)
+    item <- config_db_get_by_id(as.integer(input$cfgdb_edit_click))
+    if (is.null(item) || nrow(item) == 0) return()
+    rv$cfgdb_edit_id <- item$id[1]
+
+    vers <- config_db_versions(item$id[1])
+    ver_html <- if (nrow(vers) == 0) {
+      tags$p(style = "color:#999;", "暂无版本记录")
+    } else {
+      tagList(lapply(seq_len(min(nrow(vers), 10)), function(i) {
+        v <- vers[i, ]
+        tags$div(style = "padding:6px 8px; border-bottom:1px dotted #eee; font-size:12px;",
+          tags$b(sprintf("v%d", v$version_no[1])),
+          tags$span(style = "color:#999; margin-left:8px;", v$changed_at[1] %||% ""),
+          tags$span(style = "color:#666; margin-left:8px;", v$changer_name[1] %||% ""),
+          tags$div(style = "color:#555; margin-top:2px; font-family:Consolas,monospace;",
+            sprintf("%s | %s | %s | %s / %s", v$db_name[1] %||% "", v$db_type[1] %||% "",
+              v$jdbc_url[1] %||% "", v$username[1] %||% "", v$internal_addr[1] %||% ""))
+        )
+      }))
+    }
+
+    showModal(modalDialog(
+      title = paste("编辑数据库 -", item$db_name[1] %||% ""),
+      size = "l", easyClose = TRUE,
+      fluidRow(
+        column(4, textInput("cfgdb_edit_name", "数据库名 *", value = item$db_name[1] %||% "")),
+        column(4, selectInput("cfgdb_edit_type", "类型", choices = CONFIG_DB_TYPES, selected = item$db_type[1] %||% "MySQL")),
+        column(4, numericInput("cfgdb_edit_sort", "排序", value = item$sort_order[1] %||% 0))
+      ),
+      textInput("cfgdb_edit_jdbc", "JDBC 连接串", value = item$jdbc_url[1] %||% ""),
+      textInput("cfgdb_edit_addr", "内网地址", value = item$internal_addr[1] %||% ""),
+      fluidRow(
+        column(6, textInput("cfgdb_edit_user", "账号", value = item$username[1] %||% "")),
+        column(6, textInput("cfgdb_edit_pwd", "密码（明文）", value = item$password[1] %||% ""))
+      ),
+      textInput("cfgdb_edit_remark", "备注", value = item$remark[1] %||% ""),
+      tags$hr(),
+      tags$h5(icon("history"), " 版本回看（最近 10 条）"),
+      tags$div(style = "max-height:220px; overflow-y:auto; border:1px solid #e0e4e8; border-radius:4px; padding:8px;", ver_html),
+      footer = tagList(modalButton("取消"), actionButton("cfgdb_edit_confirm", "保存", class = "btn-primary"))
+    ))
+  })
+
+  observeEvent(input$cfgdb_edit_confirm, {
+    req(rv$logged_in, rv$cfgdb_edit_id, input$cfgdb_edit_name)
+    uid <- if (!is.null(rv$current_user) && nrow(rv$current_user) > 0) rv$current_user$id[1] else NULL
+    result <- config_db_update(
+      rv$cfgdb_edit_id,
+      db_name = input$cfgdb_edit_name, db_type = input$cfgdb_edit_type,
+      jdbc_url = input$cfgdb_edit_jdbc, internal_addr = input$cfgdb_edit_addr,
+      username = input$cfgdb_edit_user, password = input$cfgdb_edit_pwd,
+      remark = input$cfgdb_edit_remark, sort_order = input$cfgdb_edit_sort,
+      changed_by = uid
+    )
+    if (result$success) removeModal()
+    cfgitem_trigger(cfgitem_trigger() + 1)
+    showNotification(result$message, type = ifelse(result$success, "message", "error"))
+  })
+
+  # 删除数据库
+  observeEvent(input$cfgdb_del_click, {
+    req(rv$logged_in)
+    cid <- as.integer(input$cfgdb_del_click)
+    item <- config_db_get_by_id(cid)
+    if (is.null(item) || nrow(item) == 0) return()
+    showModal(modalDialog(
+      title = "确认删除数据库",
+      tags$p(sprintf("确定要删除「%s」吗？其版本历史也会一并删除。", item$db_name[1] %||% "")),
+      footer = tagList(modalButton("取消"), actionButton("cfgdb_del_confirm", "确认删除", class = "btn-danger")),
+      size = "s", easyClose = TRUE
+    ))
+  })
+
+  observeEvent(input$cfgdb_del_confirm, {
+    req(rv$logged_in)
+    cid <- as.integer(input$cfgdb_del_click)
+    result <- config_db_delete(cid)
+    removeModal()
+    cfgitem_trigger(cfgitem_trigger() + 1)
+    showNotification(result$message, type = "warning")
+  })
+
+  # 版本回看弹窗（独立按钮，完整历史）
+  observeEvent(input$cfgdb_versions_click, {
+    req(rv$logged_in)
+    cid <- as.integer(input$cfgdb_versions_click)
+    item <- config_db_get_by_id(cid)
+    if (is.null(item) || nrow(item) == 0) return()
+    vers <- config_db_versions(cid)
+    ver_html <- if (nrow(vers) == 0) {
+      tags$p(style = "color:#999;", "暂无版本记录")
+    } else {
+      tagList(lapply(seq_len(nrow(vers)), function(i) {
+        v <- vers[i, ]
+        tags$div(style = "padding:8px 10px; border-bottom:1px dotted #eee; font-size:12px;",
+          tags$b(sprintf("v%d", v$version_no[1])),
+          tags$span(style = "color:#999; margin-left:8px;", v$changed_at[1] %||% ""),
+          tags$span(style = "color:#666; margin-left:8px;", v$changer_name[1] %||% ""),
+          tags$div(style = "color:#555; margin-top:3px; font-family:Consolas,monospace; white-space:pre-wrap;",
+            sprintf("数据库：%s\n类型：%s\nJDBC：%s\n内网：%s\n账号：%s",
+              v$db_name[1] %||% "", v$db_type[1] %||% "", v$jdbc_url[1] %||% "",
+              v$internal_addr[1] %||% "", v$username[1] %||% ""))
+        )
+      }))
+    }
+    showModal(modalDialog(
+      title = paste("版本历史 -", item$db_name[1] %||% ""),
+      size = "l", easyClose = TRUE,
+      tags$div(style = "max-height:400px; overflow-y:auto;", ver_html),
+      footer = tagList(modalButton("关闭"))
+    ))
   })
 }

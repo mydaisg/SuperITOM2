@@ -80,6 +80,19 @@ asset_ui <- function() {
         e.stopPropagation();
         Shiny.setInputValue('cfgacc_del_click',$(this).data('id'),{priority:'event'});
       });
+      // 数据库平台：编辑/删除/版本回看
+      $(document).on('click','.cfgdb-edit-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('cfgdb_edit_click',$(this).data('id'),{priority:'event'});
+      });
+      $(document).on('click','.cfgdb-del-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('cfgdb_del_click',$(this).data('id'),{priority:'event'});
+      });
+      $(document).on('click','.cfgdb-versions-btn',function(e){
+        e.stopPropagation();
+        Shiny.setInputValue('cfgdb_versions_click',$(this).data('id'),{priority:'event'});
+      });
       // 字段收集：保存时读取排序后的字段列表
       Shiny.addCustomMessageHandler('cfgitemCollectFields', function(msg) {
         var fields = $('#cfgitem_field_list .cfgitem-field-row').map(function(){ return $(this).data('field'); }).get();
