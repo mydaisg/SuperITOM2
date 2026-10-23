@@ -61,9 +61,9 @@ knowledge_server <- function(input, output, session, rv) {
   output$kb_tag_cloud <- renderUI({
     kb_trigger()
     req(rv$logged_in)
-    tags <- kb_tag_get_all()
-    if (length(tags) == 0) return(tags$p(style = "color:#999;", "暂无标签"))
-    tagList(lapply(tags, function(t) {
+    tag_list <- kb_tag_get_all()
+    if (length(tag_list) == 0) return(tags$p(style = "color:#999;", "暂无标签"))
+    tagList(lapply(tag_list, function(t) {
       tags$span(class = "kb-tag-chip", `data-tag` = t, t)
     }))
   })
