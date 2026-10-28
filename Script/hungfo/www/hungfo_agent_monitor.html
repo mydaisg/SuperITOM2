@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>HungFo · Multi-Agent Workflow Monitor</title>
+<!-- 任务数据源：由 HungFo 自动任务模块生成（示例/正式任务），监控页据此展示 -->
+<script src="hungfo_tasks.js"></script>
 <style>
   :root {
     --bg: #06070d;
@@ -159,6 +161,62 @@
   .stat-box .v.red { color: var(--neon-pink); text-shadow: 0 0 10px rgba(236,72,153,0.5); }
   .stat-box .v.blue { color: var(--neon-blue); text-shadow: 0 0 10px rgba(59,140,255,0.5); }
 
+  /* ===== 左侧：任务名称列表（固定比例、无下拉条、多则缓慢流动） ===== */
+  .task-list {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    position: relative;
+    border-top: 1px solid var(--panel-border);
+    margin: 0 16px 16px;
+    padding-top: 8px;
+  }
+  .task-list .tl-title {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .task-list .tl-viewport {
+    overflow: hidden;
+    height: 100%;
+    position: relative;
+  }
+  .task-list .tl-track {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    will-change: transform;
+  }
+  .task-list .tl-track.marquee {
+    animation: tl-scroll linear infinite;
+  }
+  @keyframes tl-scroll {
+    0%   { transform: translateY(0); }
+    100% { transform: translateY(-50%); }
+  }
+  .task-list .tl-item {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text);
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(20, 26, 46, 0.4);
+    border-left: 2px solid var(--ac, var(--neon-blue));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.9;
+    flex-shrink: 0;
+  }
+  .task-list .tl-item .tname { color: #cbd5e1; }
+  .task-list .tl-item .tstep { color: var(--text-dim); font-size: 9px; margin-left: 6px; }
+
   /* ===== 中间：连线画布 + 节点 ===== */
   .center-panel { position: relative; }
   #flow-canvas {
@@ -287,6 +345,37 @@
     box-shadow: 0 0 10px rgba(34,197,94,0.5);
   }
 
+  /* ===== 任务类型切换（示例 / 正式） ===== */
+  .task-switch {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: rgba(20, 26, 46, 0.6);
+    border: 1px solid var(--panel-border);
+    border-radius: 20px;
+    padding: 3px;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .task-switch .ts-opt {
+    padding: 4px 14px;
+    border-radius: 16px;
+    color: var(--text-dim);
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .task-switch .ts-opt.active {
+    background: var(--neon-blue);
+    color: #fff;
+    box-shadow: 0 0 12px rgba(59,140,255,0.5);
+  }
+  .task-switch .ts-opt[data-type="formal"].active {
+    background: var(--neon-purple);
+    box-shadow: 0 0 12px rgba(168,85,247,0.5);
+  }
+
   /* ===== 配置面板 ===== */
   .cfg-btn {
     margin-left: auto;
@@ -397,6 +486,10 @@
   <span class="sep">/</span>
   <span class="env">global / Tai-Night-01</span>
   <span class="status-pill"><span class="dot"></span> LIVE · HEARTBEAT <span id="hbText">2s</span></span>
+  <div class="task-switch" id="taskSwitch">
+    <span class="ts-opt active" data-type="sample">示例任务</span>
+    <span class="ts-opt" data-type="formal">正式任务</span>
+  </div>
   <button class="cfg-btn" id="cfgToggle">⚙ CONFIG</button>
 </div>
 
@@ -495,6 +588,16 @@
       <div class="stat-box"><div class="k">BLOCKED</div><div class="v red" id="stBlocked">0</div></div>
       <div class="stat-box"><div class="k">IN-FLIGHT</div><div class="v blue" id="stInflight">0</div></div>
       <div class="stat-box"><div class="k">AGENTS</div><div class="v" id="stAgents">17</div></div>
+    </div>
+    <!-- 任务名称列表：固定比例、无下拉条、少则空行、多则缓慢流动 -->
+    <div class="task-list">
+      <div class="tl-title">
+        <span>Live Tasks</span>
+        <span id="tlCount" style="color:var(--neon-cyan);">0</span>
+      </div>
+      <div class="tl-viewport" id="tlViewport">
+        <div class="tl-track" id="tlTrack"></div>
+      </div>
     </div>
   </div>
 
@@ -803,12 +906,29 @@ const cfg = {
 let completed = 0, blocked = 0, taskSeq = 0;
 let activeTasks = [];   // 正在流转的任务
 
-// 任务路径（输入 → 处理 → 输出 的节点序列）
+// 任务路径（输入 → 处理 → 输出 的节点序列）——内置兜底，正式任务来源为自动任务模块
 const TASK_PATHS = [
   { name: 'research', nodes: ['ai_bot','chief_staff','orchestr','pm','web_res','crawler','code_rev','risk_check','qa_verify','validator'] },
   { name: 'codegen',  nodes: ['ai_bot','chief_staff','orchestr','pm','codegen','code_rev','risk_check','qa_verify','validator'] },
   { name: 'data',     nodes: ['ai_bot','chief_staff','orchestr','pm','data_agent','crawler','code_rev','risk_check','qa_verify','validator'] },
 ];
+
+// ── 任务来源：优先读取自动任务模块导出的 window.HF_TASKS（示例/正式），否则回退内置 ──
+let currentTaskType = 'sample';   // sample=示例 / formal=正式
+function buildTaskPool() {
+  // HF_TASKS 由 hf_write_tasks_js() 生成，结构：[{id,name,type,nodes,enabled}]
+  if (typeof window.HF_TASKS !== 'undefined' && Array.isArray(window.HF_TASKS) && window.HF_TASKS.length > 0) {
+    return window.HF_TASKS
+      .filter(t => t.enabled !== 0 && t.type === currentTaskType)
+      .map(t => ({ name: t.name, nodes: (t.nodes && t.nodes.length ? t.nodes : TASK_PATHS[0].nodes) }));
+  }
+  // 回退：内置示例任务
+  return TASK_PATHS;
+}
+function currentPool() {
+  const pool = buildTaskPool();
+  return pool.length > 0 ? pool : TASK_PATHS;
+}
 const STEP_LOG = {
   'ai_bot':      (t) => [`task ${t} dispatched → AI Bot`, 'tag'],
   'chief_staff': (t) => [`chief-of-staff: goal decomposed`, 'tag'],
@@ -862,11 +982,18 @@ function lightNode(id, busy) {
 
 // 生成一个新任务
 function spawnTask() {
-  if (completed + blocked + activeTasks.length >= cfg.total) return;
-  const path = TASK_PATHS[rand(0, TASK_PATHS.length - 1)];
+  // 修复「长时间后任务枯竭」Bug：
+  // 原逻辑用 completed+blocked >= cfg.total 作为停止生成条件，导致累计到 total 后
+  // activeTasks 不再补充、只剩一条线；现改为「持续滚动模拟」——total 仅作累计计数上限，
+  // 到达后自动归档重置（completed/blocked 归零，任务序列继续），保证活跃任务永远流转。
+  if (completed + blocked >= cfg.total) {
+    completed = 0; blocked = 0; taskSeq = 0;   // 归档重置，重新滚动
+  }
+  const pool = currentPool();
+  const path = pool[rand(0, pool.length - 1)];
   const id = 't' + String(++taskSeq).padStart(4, '0');
   const seed = taskSeq;
-  activeTasks.push({ id, path: path.nodes, step: 0, seed, color: taskColor(seed) });
+  activeTasks.push({ id, name: path.name, path: path.nodes, step: 0, seed, color: taskColor(seed) });
 }
 
 // 推进单个任务一步（不再产日志，日志由 logPump 独立生成）
@@ -903,8 +1030,8 @@ function stepTask(task) {
 function taskPump() {
   if (cfg.paused) return;
 
-  // 维持并发路数：补足活跃任务
-  while (activeTasks.length < cfg.concurrency && completed + blocked + activeTasks.length < cfg.total) {
+  // 维持并发路数：补足活跃任务（不再用 total 作累计上限，持续滚动）
+  while (activeTasks.length < cfg.concurrency) {
     spawnTask();
   }
 
@@ -923,6 +1050,7 @@ function taskPump() {
 
   // 刷新 UI 统计（连线由独立 trafficLoop 每帧渲染）
   updateStats();
+  renderTaskList();
 }
 
 // 日志生成循环：独立于任务推进，按日志频率产日志
@@ -951,6 +1079,50 @@ function logPump() {
   logLine(now(), e[0], e[1]);
 }
 
+// 渲染任务名称列表（左侧，固定比例、无下拉条、少则空行、多则缓慢流动）
+function renderTaskList() {
+  const track = document.getElementById('tlTrack');
+  const countEl = document.getElementById('tlCount');
+  const viewport = document.getElementById('tlViewport');
+  if (!track) return;
+
+  // 复制一份用于无缝 marquee 循环（CSS translateY(-50%) 需要双份内容）
+  const tasks = activeTasks;
+  const items = tasks.map(t => {
+    const node = t.path[Math.min(t.step, t.path.length - 1)];
+    const ag = agentMap[node] || { name: node, color: '#3b8cff' };
+    return `<div class="tl-item" style="--ac:${t.color || ag.color};">
+      <span class="tname">${t.id} · ${t.name}</span>
+      <span class="tstep">@${ag.name}</span>
+    </div>`;
+  }).join('');
+
+  // 空行占位：任务少时保持固定高度，视觉上呈现"空行"
+  if (tasks.length === 0) {
+    track.innerHTML = '<div class="tl-item" style="opacity:0;">&nbsp;</div>'.repeat(12);
+    track.classList.remove('marquee');
+    countEl.textContent = '0';
+    return;
+  }
+
+  // 双份内容实现无缝滚动
+  track.innerHTML = items + items;
+  countEl.textContent = tasks.length;
+
+  // 根据内容高度决定是否启用 marquee（内容超出视口才流动）
+  requestAnimationFrame(() => {
+    const h = track.scrollHeight;
+    const vh = viewport.clientHeight;
+    if (h > vh) {
+      const sec = Math.max(8, (h / 2) / 18);   // 约 18px/s 的缓慢流速
+      track.style.animationDuration = sec + 's';
+      track.classList.add('marquee');
+    } else {
+      track.classList.remove('marquee');
+    }
+  });
+}
+
 // 更新统计面板
 function updateStats() {
   const inflight = activeTasks.length;
@@ -973,6 +1145,21 @@ const cfgPanel = document.getElementById('cfgPanel');
 cfgToggle.addEventListener('click', () => {
   cfgPanel.classList.toggle('open');
   cfgToggle.classList.toggle('active');
+});
+
+// ── 任务类型切换（示例 / 正式）──
+const taskSwitch = document.getElementById('taskSwitch');
+taskSwitch.querySelectorAll('.ts-opt').forEach(opt => {
+  opt.addEventListener('click', () => {
+    taskSwitch.querySelectorAll('.ts-opt').forEach(o => o.classList.remove('active'));
+    opt.classList.add('active');
+    currentTaskType = opt.getAttribute('data-type');
+    // 切换后清空活跃任务，按新任务池重新流转
+    activeTasks = []; ghosts = [];
+    completed = 0; blocked = 0; taskSeq = 0;
+    logLine(now(), `task source switched → ${currentTaskType === 'sample' ? '示例任务' : '正式任务'}`, 'tag');
+    updateStats();
+  });
 });
 
 // 通用滑块绑定：绑定到任意对象（cfg / VISUAL）的任意字段
@@ -1054,6 +1241,7 @@ restartLogPump();
 
 // 初始填充
 updateStats();
+renderTaskList();
 logLine(now(), 'orchestrator online · hungfo v0.1', 'tag');
 logLine(now(), '17 agents registered · heartbeat sync', 'ok');
 logLine(now(), 'validation gate armed · policy loaded', 'ok');

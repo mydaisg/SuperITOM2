@@ -1,0 +1,2 @@
+// 由 HungFo 自动任务模块生成（hf_write_tasks_js），勿手改
+window.HF_TASKS = [{"id":1,"name":"竞品行情爬取","type":"sample","nodes":["ai_bot","chief_staff","orchestr","pm","web_res","crawler","code_rev","risk_check","qa_verify","validator"],"enabled":1},{"id":2,"name":"代码生成与审查","type":"sample","nodes":["ai_bot","chief_staff","orchestr","pm","codegen","code_rev","risk_check","qa_verify","validator"],"enabled":1},{"id":3,"name":"数据管道同步","type":"sample","nodes":["ai_bot","chief_staff","orchestr","pm","data_agent","crawler","code_rev","risk_check","qa_verify","validator"],"enabled":1}];

@@ -77,6 +77,17 @@ hf_db_init <- function() {
     created_at TEXT DEFAULT (datetime('now','localtime')),
     updated_at TEXT DEFAULT (datetime('now','localtime'))
   )")
+  # Agent 任务表（自动任务模块作为任务来源，示例任务 / 正式任务共用一张表）
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_agent_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    task_type TEXT DEFAULT 'sample',          -- sample=示例任务 / formal=正式任务
+    nodes TEXT,                                -- 任务路径节点（JSON 数组字符串）
+    enabled INTEGER DEFAULT 1,
+    sort_order INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+  )")
   invisible(TRUE)
 }
 
@@ -153,4 +164,110 @@ hf_make_api <- function(key, run = NULL, fetch = NULL, ...) {
   extra <- list(...)
   if (length(extra) > 0) for (nm in names(extra)) api[[nm]] <- extra[[nm]]
   api
+}
+
+# ══════════════════════════════════════════════════════════════════
+# Agent 任务数据层（自动任务模块 = 未来任务来源）
+# 任务通过这里下达给 Agent，示例任务 / 正式任务共用一张表，用 task_type 区分。
+# ══════════════════════════════════════════════════════════════════
+
+# 默认任务路径（节点 id 需与监控页 AGENTS 一致）
+HF_DEFAULT_TASK_NODES <- list(
+  research = c("ai_bot","chief_staff","orchestr","pm","web_res","crawler","code_rev","risk_check","qa_verify","validator"),
+  codegen  = c("ai_bot","chief_staff","orchestr","pm","codegen","code_rev","risk_check","qa_verify","validator"),
+  data     = c("ai_bot","chief_staff","orchestr","pm","data_agent","crawler","code_rev","risk_check","qa_verify","validator")
+)
+
+# 读取任务列表（task_type: sample/formal/NULL=全部）
+hf_task_list <- function(task_type = NULL) {
+  con <- db_connect()
+  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    sql <- "SELECT id,name,task_type,nodes,enabled,sort_order,created_at FROM hf_agent_tasks"
+    if (!is.null(task_type)) sql <- sprintf("%s WHERE task_type='%s'", sql, hf_esc(task_type))
+    dbGetQuery(con, paste0(sql, " ORDER BY sort_order ASC, id ASC"))
+  }, error = function(e) data.frame())
+}
+
+# 新增 / 更新任务
+hf_task_save <- function(id = NULL, name = NULL, task_type = "sample", nodes = NULL, enabled = 1) {
+  con <- db_connect()
+  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  if (is.null(name) || !nzchar(trimws(name))) return(list(success = FALSE, message = "任务名称不能为空"))
+  nodes_json <- if (is.null(nodes)) "[]" else jsonlite::toJSON(as.character(nodes), auto_unbox = FALSE)
+  tryCatch({
+    if (is.null(id) || is.na(id) || id == "") {
+      dbExecute(con, sprintf(
+        "INSERT INTO hf_agent_tasks (name,task_type,nodes,enabled) VALUES ('%s','%s','%s',%d)",
+        hf_esc(name), hf_esc(task_type), hf_esc(nodes_json), as.integer(enabled)))
+      list(success = TRUE, message = paste0("已新增任务：", name))
+    } else {
+      dbExecute(con, sprintf(
+        "UPDATE hf_agent_tasks SET name='%s',task_type='%s',nodes='%s',enabled=%d,updated_at=datetime('now','localtime') WHERE id=%s",
+        hf_esc(name), hf_esc(task_type), hf_esc(nodes_json), as.integer(enabled), as.character(id)))
+      list(success = TRUE, message = paste0("已更新任务：", name))
+    }
+  }, error = function(e) list(success = FALSE, message = e$message))
+}
+
+# 删除任务
+hf_task_delete <- function(id) {
+  con <- db_connect()
+  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    dbExecute(con, sprintf("DELETE FROM hf_agent_tasks WHERE id=%s", as.character(id)))
+    list(success = TRUE, message = "已删除任务")
+  }, error = function(e) list(success = FALSE, message = e$message))
+}
+
+# 切换任务类型（示例 ↔ 正式）
+hf_task_toggle_type <- function(id) {
+  con <- db_connect()
+  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    dbExecute(con, sprintf(
+      "UPDATE hf_agent_tasks SET task_type = CASE task_type WHEN 'sample' THEN 'formal' ELSE 'sample' END, updated_at=datetime('now','localtime') WHERE id=%s",
+      as.character(id)))
+    list(success = TRUE, message = "已切换任务类型")
+  }, error = function(e) list(success = FALSE, message = e$message))
+}
+
+# 将任务导出为前端 JS（监控页通过 <script> 引入读取 window.HF_TASKS）
+# 写盘到 www/hungfo_tasks.js，供独立的 hungfo_agent_monitor.html 使用（自包含、无 R 接口依赖）
+hf_write_tasks_js <- function() {
+  tasks <- hf_task_list()
+  js_tasks <- lapply(seq_len(nrow(tasks)), function(i) {
+    nodes <- tryCatch(jsonlite::fromJSON(tasks$nodes[i]), error = function(e) character(0))
+    list(
+      id = tasks$id[i], name = tasks$name[i], type = tasks$task_type[i],
+      nodes = as.character(nodes), enabled = tasks$enabled[i]
+    )
+  })
+  body <- jsonlite::toJSON(js_tasks, auto_unbox = TRUE)
+  out <- paste0("// 由 HungFo 自动任务模块生成（hf_write_tasks_js），勿手改\nwindow.HF_TASKS = ", body, ";\n")
+  dir.create("Script/hungfo/www", showWarnings = FALSE, recursive = TRUE)
+  writeLines(out, "Script/hungfo/www/hungfo_tasks.js", useBytes = TRUE)
+  invisible(out)
+}
+
+# 初始化示例任务（首次建表后若无数据则播种，供监控页展示与编辑）
+hf_task_seed_sample <- function() {
+  con <- db_connect()
+  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    n <- dbGetQuery(con, "SELECT COUNT(*) n FROM hf_agent_tasks")$n[1]
+    if (n > 0) return(invisible(FALSE))
+    seeds <- list(
+      list(name = "竞品行情爬取", type = "sample", nodes = HF_DEFAULT_TASK_NODES$research),
+      list(name = "代码生成与审查", type = "sample", nodes = HF_DEFAULT_TASK_NODES$codegen),
+      list(name = "数据管道同步", type = "sample", nodes = HF_DEFAULT_TASK_NODES$data)
+    )
+    for (i in seq_along(seeds)) {
+      s <- seeds[[i]]
+      dbExecute(con, sprintf(
+        "INSERT INTO hf_agent_tasks (name,task_type,nodes,sort_order) VALUES ('%s','%s','%s',%d)",
+        hf_esc(s$name), hf_esc(s$type), hf_esc(jsonlite::toJSON(as.character(s$nodes), auto_unbox = FALSE)), i))
+    }
+    invisible(TRUE)
+  }, error = function(e) invisible(FALSE))
 }
