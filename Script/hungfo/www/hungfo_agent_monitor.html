@@ -6,6 +6,8 @@
 <title>HungFo · Multi-Agent Workflow Monitor</title>
 <!-- 任务数据源：由 HungFo 自动任务模块生成（示例/正式任务），监控页据此展示 -->
 <script src="hungfo_tasks.js"></script>
+<!-- 会话追踪数据源：由 HungFo 元任务执行生成（LLM/Token/耗时），监控页据此展示 -->
+<script src="hungfo_sessions.js"></script>
 <style>
   :root {
     --bg: #06070d;
@@ -217,6 +219,84 @@
   .task-list .tl-item .tname { color: #cbd5e1; }
   .task-list .tl-item .tstep { color: var(--text-dim); font-size: 9px; margin-left: 6px; }
 
+  /* ===== 左侧底部：TOKEN 指标（当天 / 总）===== */
+  .token-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 0 16px 16px;
+    width: 100%;
+    flex-shrink: 0;
+  }
+  .token-stats .tk-box {
+    background: linear-gradient(135deg, rgba(59,140,255,0.08), rgba(34,211,238,0.05));
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+  .token-stats .tk-k { font-size: 9px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
+  .token-stats .tk-v {
+    font-family: var(--mono);
+    font-size: 16px; font-weight: 800; margin-top: 3px;
+    color: var(--neon-cyan); text-shadow: 0 0 10px rgba(34,211,238,0.5);
+  }
+  .token-stats .tk-v.purple { color: var(--neon-purple); text-shadow: 0 0 10px rgba(168,85,247,0.5); }
+  .token-stats .tk-sub { font-size: 8px; color: var(--text-dim); margin-top: 2px; }
+
+  /* ===== 左侧底部：会话追踪面板（LIVE TASKS 同行右侧） ===== */
+  .session-panel {
+    flex-shrink: 0;
+    margin: 0 16px 16px;
+    border-top: 1px solid var(--panel-border);
+    padding-top: 8px;
+    max-height: 40%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .session-panel .sp-title {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .session-panel .sp-viewport {
+    overflow: hidden;
+    flex: 1;
+    min-height: 0;
+    position: relative;
+  }
+  .session-panel .sp-track {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    will-change: transform;
+  }
+  .session-panel .sp-track.marquee { animation: tl-scroll linear infinite; }
+  .sp-item {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: rgba(20, 26, 46, 0.4);
+    border-left: 2px solid var(--neon-purple);
+    flex-shrink: 0;
+  }
+  .sp-item.ok { border-left-color: var(--neon-green); }
+  .sp-item .sp-top { display: flex; justify-content: space-between; gap: 6px; }
+  .sp-item .sp-llm { color: #e2e8f0; font-weight: 700; }
+  .sp-item .sp-time { color: var(--text-dim); font-size: 8px; }
+  .sp-item .sp-title { color: #cbd5e1; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sp-item .sp-meta { color: var(--text-dim); font-size: 8px; margin-top: 2px; display: flex; gap: 8px; }
+  .sp-item .sp-meta .tk { color: var(--neon-cyan); }
+  .sp-item .sp-meta .dur { color: var(--neon-amber); }
+  .sp-empty { color: var(--text-dim); font-size: 10px; text-align: center; padding: 12px 0; font-family: var(--mono); }
+
   /* ===== 中间：连线画布 + 节点 ===== */
   .center-panel { position: relative; }
   #flow-canvas {
@@ -237,7 +317,7 @@
   }
   .node {
     position: absolute;
-    width: 118px;
+    width: 140px;
     z-index: 2;
     padding: 10px 12px;
     background: rgba(18, 24, 44, 0.85);
@@ -264,7 +344,9 @@
     background: var(--ac, var(--neon-blue));
     box-shadow: 0 0 10px var(--ac, var(--neon-blue));
   }
-  .node .node-name { font-size: 11px; font-weight: 700; color: #e2e8f0; letter-spacing: 0.3px; }
+  .node .node-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .node .node-name { font-size: 11px; font-weight: 700; color: #e2e8f0; letter-spacing: 0.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .node .node-en { font-family: var(--mono); font-size: 9px; color: var(--text-dim); letter-spacing: 0.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .node .node-meta {
     font-family: var(--mono);
     font-size: 9px; color: var(--text-dim);
@@ -282,6 +364,22 @@
     transition: width 0.6s ease;
   }
   .node.active { border-color: var(--ac); box-shadow: 0 0 22px var(--ac); }
+  .cluster-label {
+    position: absolute;
+    z-index: 2;
+    transform: translateX(-50%);
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--neon-purple);
+    text-shadow: 0 0 8px rgba(168, 85, 247, 0.5);
+    background: rgba(168, 85, 247, 0.08);
+    border: 1px dashed rgba(168, 85, 247, 0.35);
+    padding: 3px 10px;
+    border-radius: 10px;
+    white-space: nowrap;
+    pointer-events: none;
+  }
   .node .node-state {
     width: 6px; height: 6px; border-radius: 50%;
     margin-left: auto;
@@ -530,8 +628,8 @@
     <label>光点速度 <span class="cfg-val" id="vDotSpeedV">0.3</span>
       <input type="range" id="vDotSpeed" min="0.05" max="2" step="0.05" value="0.3">
     </label>
-    <label>晃动幅度 <span class="cfg-val" id="vWobbleAmpV">20</span>
-      <input type="range" id="vWobbleAmp" min="0" max="60" value="20">
+    <label>晃动幅度 <span class="cfg-val" id="vWobbleAmpV">30%</span>
+      <input type="range" id="vWobbleAmp" min="0" max="100" value="30">
     </label>
     <label>发光柔和度 <span class="cfg-val" id="vGlowBlurV">7</span>
       <input type="range" id="vGlowBlur" min="1" max="15" step="0.5" value="7">
@@ -587,7 +685,20 @@
       <div class="stat-box"><div class="k">COMPLETED</div><div class="v green" id="stCompleted">0</div></div>
       <div class="stat-box"><div class="k">BLOCKED</div><div class="v red" id="stBlocked">0</div></div>
       <div class="stat-box"><div class="k">IN-FLIGHT</div><div class="v blue" id="stInflight">0</div></div>
-      <div class="stat-box"><div class="k">AGENTS</div><div class="v" id="stAgents">17</div></div>
+      <div class="stat-box"><div class="k">AGENTS</div><div class="v" id="stAgents">8</div></div>
+    </div>
+    <!-- TOKEN 指标：当天 / 总（来自真实元任务执行的会话明细） -->
+    <div class="token-stats">
+      <div class="tk-box">
+        <div class="tk-k">TOKEN · TODAY</div>
+        <div class="tk-v" id="tkToday">0</div>
+        <div class="tk-sub" id="tkTodaySub">0 会话</div>
+      </div>
+      <div class="tk-box">
+        <div class="tk-k">TOKEN · TOTAL</div>
+        <div class="tk-v purple" id="tkTotal">0</div>
+        <div class="tk-sub" id="tkTotalSub">0 会话</div>
+      </div>
     </div>
     <!-- 任务名称列表：固定比例、无下拉条、少则空行、多则缓慢流动 -->
     <div class="task-list">
@@ -597,6 +708,16 @@
       </div>
       <div class="tl-viewport" id="tlViewport">
         <div class="tl-track" id="tlTrack"></div>
+      </div>
+    </div>
+    <!-- 会话追踪面板：真实元任务执行记录（LLM / Token / 耗时） -->
+    <div class="session-panel">
+      <div class="sp-title">
+        <span>Agent Sessions</span>
+        <span id="spCount" style="color:var(--neon-purple);">0</span>
+      </div>
+      <div class="sp-viewport" id="spViewport">
+        <div class="sp-track" id="spTrack"></div>
       </div>
     </div>
   </div>
@@ -619,7 +740,7 @@
 
 <div class="bottombar">
   <div class="metric blue"><span class="num" id="mTasks">1284</span><span class="lbl">TASKS</span></div>
-  <div class="metric purple"><span class="num" id="mAgents">17</span><span class="lbl">AGENTS</span></div>
+  <div class="metric purple"><span class="num" id="mAgents">8</span><span class="lbl">AGENTS</span></div>
   <div class="metric"><span class="num" id="mRate">98.7</span><span class="lbl">% PASS RATE</span></div>
   <div class="valid"><span class="check">✓</span> VALIDATION SUCCESSFUL</div>
 </div>
@@ -627,32 +748,26 @@
 <script>
 // ============ 节点定义（自由网状布局：大致左入→右出，纵向错落） ============
 const AGENTS = [
-  // ── 入口 / 编排（左区） ──
-  { id:'ai_bot',       name:'AI Bot',         icon:'🤖', color:'#3b8cff', x:0.06, y:0.22 },
-  { id:'chief_staff',  name:'Chief of Staff', icon:'🧭', color:'#22d3ee', x:0.08, y:0.58 },
-  { id:'orchestr',     name:'WorkBuddy',      icon:'🎛️', color:'#818cf8', x:0.15, y:0.82 },
-  // ── 处理集群（中区，错落分布） ──
-  { id:'pm',           name:'Project Manager',icon:'📋', color:'#a855f7', x:0.34, y:0.16 },
-  { id:'web_res',      name:'Web Researcher', icon:'🌐', color:'#ec4899', x:0.42, y:0.40 },
-  { id:'codegen',      name:'CodeBuddy',      icon:'💻', color:'#38bdf8', x:0.36, y:0.66 },
-  { id:'data_agent',   name:'Data Agent',     icon:'📊', color:'#60a5fa', x:0.54, y:0.14 },
-  { id:'crawler',      name:'Crawler',        icon:'🕷️', color:'#c084fc', x:0.62, y:0.36 },
-  { id:'code_rev',     name:'Code Reviewer',  icon:'🔍', color:'#22c55e', x:0.52, y:0.62 },
-  // ── 校验 / 输出（右区） ──
-  { id:'risk_check',   name:'Risk Checker',   icon:'🛡️', color:'#f59e0b', x:0.76, y:0.24 },
-  { id:'qa_verify',    name:'QA Verifier',    icon:'✅', color:'#34d399', x:0.82, y:0.52 },
-  { id:'validator',    name:'Validator',      icon:'⚖️', color:'#f472b6', x:0.78, y:0.80 },
+  // ── 入口 / 编排 ──
+  { id:'planner',   name:'元任务解析器',   en:'Planner',  icon:'🎯', color:'#3b8cff', x:0.06, y:0.50 },
+  { id:'router',    name:'分发路由器',     en:'Router',   icon:'🔀', color:'#22d3ee', x:0.24, y:0.50 },
+  // ── 打工池 Workers（三个并行执行器） ──
+  { id:'codebuddy', name:'CodeBuddy',     en:'写代码 · 改 Bug',   icon:'💻', color:'#38bdf8', x:0.48, y:0.22 },
+  { id:'workbuddy', name:'WorkBuddy',     en:'跑脚本 · 文件 · API', icon:'🎛️', color:'#818cf8', x:0.48, y:0.50 },
+  { id:'webdata',   name:'Web/Data',      en:'搜索 · 抓取 · 清洗',  icon:'🌐', color:'#ec4899', x:0.48, y:0.78 },
+  // ── 校验 / 审批 / 输出 ──
+  { id:'validator', name:'硬校验与 QA',   en:'Validator', icon:'✅', color:'#34d399', x:0.72, y:0.50 },
+  { id:'hitl',      name:'人工审批',      en:'HITL',      icon:'👤', color:'#f59e0b', x:0.88, y:0.28 },
+  { id:'deployer',  name:'部署/动作触发器', en:'Deployer', icon:'🚀', color:'#f472b6', x:0.88, y:0.72 },
 ];
 
-// ============ 连线定义（任务流转路径：网状） ============
+// ============ 连线定义（任务流转路径：入口 → 分发 → 打工池 → 校验 → 审批 → 部署） ============
 const LINKS = [
-  ['ai_bot','chief_staff'], ['chief_staff','orchestr'],
-  ['orchestr','pm'],
-  ['pm','web_res'], ['pm','codegen'], ['pm','data_agent'],
-  ['web_res','crawler'], ['data_agent','crawler'], ['crawler','code_rev'],
-  ['codegen','code_rev'], ['data_agent','code_rev'],
-  ['code_rev','risk_check'], ['code_rev','qa_verify'],
-  ['risk_check','qa_verify'], ['qa_verify','validator'],
+  ['planner','router'],
+  ['router','codebuddy'], ['router','workbuddy'], ['router','webdata'],
+  ['codebuddy','validator'], ['workbuddy','validator'], ['webdata','validator'],
+  ['validator','hitl'],
+  ['hitl','deployer'],
 ];
 
 const agentMap = Object.fromEntries(AGENTS.map(a => [a.id, a]));
@@ -666,12 +781,15 @@ AGENTS.forEach(a => {
   el.style.setProperty('--ac', a.color);
   el.style.left = (a.x * 100) + '%';
   el.style.top = (a.y * 100) + '%';
-  el.style.marginLeft = '-59px';   // 节点半宽，让坐标点为节点中心
-  el.style.marginTop = '-30px';    // 节点半高
+  el.style.marginLeft = '-70px';   // 节点半宽，让坐标点为节点中心
+  el.style.marginTop = '-38px';    // 节点半高
   el.innerHTML = `
     <div class="node-head">
       <div class="node-ico">${a.icon}</div>
-      <span class="node-name">${a.name}</span>
+      <div class="node-title">
+        <span class="node-name">${a.name}</span>
+        <span class="node-en">${a.en}</span>
+      </div>
       <span class="node-state idle"></span>
     </div>
     <div class="node-meta"><span>LOAD</span><span class="load-pct">0%</span></div>
@@ -679,6 +797,14 @@ AGENTS.forEach(a => {
   `;
   centerPanel.appendChild(el);
 });
+
+// 打工池分组标签（覆盖在三个执行器上方，作为视觉分组）
+const clusterLabel = document.createElement('div');
+clusterLabel.className = 'cluster-label';
+clusterLabel.style.left = '48%';
+clusterLabel.style.top = '5%';
+clusterLabel.textContent = '打工池 · Workers';
+centerPanel.appendChild(clusterLabel);
 
 // ============ 渲染连线（SVG 贝塞尔曲线 + 流光） ============
 const svg = document.getElementById('flow-canvas');
@@ -776,8 +902,8 @@ const VISUAL = {
   dotDashRatio: 0.012,   // 光点占线段比例：0.006=极稀，越大光点越"胖"
   dotSpeed: 0.3,         // 光点游走速度（乘数，越大越快）：0.3=很慢
 
-  // ── 晃动（风筝线在空中飘摆）──
-  wobbleAmp: 20,         // 晃动幅度(px)：越大飘得越厉害
+  // ── 晃动（弧线围绕基准弧高轻微摆动，保持对称椭圆）──
+  wobbleAmp: 30,         // 晃动幅度(弧高%)：相对基准弧高的摆动比例，越大飘得越厉害
   wobbleSpeed: 0.6,      // 晃动频率：越小晃得越慢
 
   // ── 发光（柔和度）──
@@ -795,14 +921,18 @@ let ghosts = [];      // { from, to, color, born, life, seed }
 let wobbleT = 0;      // 全局晃动相位
 
 // 生成贝塞尔曲线 path（带随时间晃动的控制点）
+// 弧高固定按弦长比例取值、摆动只是围绕基准弧高做小幅度变化，
+// 保证弧线始终朝同一侧弯曲 → 形成左右对称的椭圆弧，而非偏向一侧的扇形，并天然不越界
 function ghostPath(from, to, seed, t) {
   const a = nodeCenter(from), b = nodeCenter(to);
   const dx = b.x - a.x, dy = b.y - a.y;
   const dist = Math.hypot(dx, dy) || 1;
   const nx = -dy / dist, ny = dx / dist;
-  // 每条线有独立相位，大幅轻晃（像风筝线在空中飘）
-  const wob = Math.sin(t * VISUAL.wobbleSpeed + seed * 2.7) * VISUAL.wobbleAmp;
-  const bend = Math.min(26, dist * 0.10) + wob;
+  // 基准弧高：弦长的固定比例，弧线饱满且左右对称（椭圆弧）
+  const arcH = dist * 0.18;
+  // 摆动：弧高围绕基准值 ±(wobbleAmp%) 变化，始终同侧弯曲 → 不翻侧、不越界
+  const wobble = Math.sin(t * VISUAL.wobbleSpeed + seed * 2.7) * (arcH * VISUAL.wobbleAmp / 100);
+  const bend = arcH + wobble;
   const cx = (a.x + b.x) / 2 + nx * bend;
   const cy = (a.y + b.y) / 2 + ny * bend;
   return `M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`;
@@ -908,40 +1038,52 @@ let activeTasks = [];   // 正在流转的任务
 
 // 任务路径（输入 → 处理 → 输出 的节点序列）——内置兜底，正式任务来源为自动任务模块
 const TASK_PATHS = [
-  { name: 'research', nodes: ['ai_bot','chief_staff','orchestr','pm','web_res','crawler','code_rev','risk_check','qa_verify','validator'] },
-  { name: 'codegen',  nodes: ['ai_bot','chief_staff','orchestr','pm','codegen','code_rev','risk_check','qa_verify','validator'] },
-  { name: 'data',     nodes: ['ai_bot','chief_staff','orchestr','pm','data_agent','crawler','code_rev','risk_check','qa_verify','validator'] },
+  { name: 'research', nodes: ['planner','router','webdata','validator','hitl','deployer'] },
+  { name: 'codegen',  nodes: ['planner','router','codebuddy','validator','hitl','deployer'] },
+  { name: 'data',     nodes: ['planner','router','workbuddy','validator','hitl','deployer'] },
 ];
 
 // ── 任务来源：优先读取自动任务模块导出的 window.HF_TASKS（示例/正式），否则回退内置 ──
 let currentTaskType = 'sample';   // sample=示例 / formal=正式
+// 旧版节点 id 路径 → 新版流水线路径（兼容历史 HF_TASKS / 数据库中仍存旧节点 id 的任务）
+function mapLegacyPath(nodes) {
+  if (!nodes || !nodes.length) return null;
+  const s = nodes.join(',');
+  if (s.includes('codegen'))                         return ['planner','router','codebuddy','validator','hitl','deployer'];
+  if (s.includes('data_agent'))                      return ['planner','router','workbuddy','validator','hitl','deployer'];
+  if (s.includes('web_res') || s.includes('crawler')) return ['planner','router','webdata','validator','hitl','deployer'];
+  return null;
+}
 function buildTaskPool() {
   // HF_TASKS 由 hf_write_tasks_js() 生成，结构：[{id,name,type,nodes,enabled}]
   if (typeof window.HF_TASKS !== 'undefined' && Array.isArray(window.HF_TASKS) && window.HF_TASKS.length > 0) {
-    return window.HF_TASKS
+    const typed = window.HF_TASKS
       .filter(t => t.enabled !== 0 && t.type === currentTaskType)
-      .map(t => ({ name: t.name, nodes: (t.nodes && t.nodes.length ? t.nodes : TASK_PATHS[0].nodes) }));
+      .map(t => {
+        let nodes = (t.nodes && t.nodes.length ? t.nodes : null);
+        const legacy = mapLegacyPath(nodes);
+        if (legacy) nodes = legacy;   // 旧 id 路径翻译为新流水线路径
+        return { name: t.name, nodes: (nodes && nodes.length ? nodes : TASK_PATHS[0].nodes) };
+      });
+    // 该类型有任务则返回；为空则返回空数组（由 currentPool 决定是否提示，不再静默回退示例）
+    return typed;
   }
-  // 回退：内置示例任务
-  return TASK_PATHS;
+  // 兜底：未引入 HF_TASKS 时才用内置示例任务（仅示例类型）
+  return currentTaskType === 'sample' ? TASK_PATHS : [];
 }
+// 当前任务池：为空时返回空数组（不再回退），由调用方处理「无任务」状态
 function currentPool() {
-  const pool = buildTaskPool();
-  return pool.length > 0 ? pool : TASK_PATHS;
+  return buildTaskPool();
 }
 const STEP_LOG = {
-  'ai_bot':      (t) => [`task ${t} dispatched → AI Bot`, 'tag'],
-  'chief_staff': (t) => [`chief-of-staff: goal decomposed`, 'tag'],
-  'orchestr':    (t) => [`workbuddy: sub-task split → ${rand(2,5)}`, 'tag'],
-  'pm':          (t) => [`pm: ${t} assigned to pipeline`, 'ok'],
-  'web_res':     (t) => [`web_researcher: scraping · ${rand(2,20)} pages`, ''],
-  'codegen':     (t) => [`codebuddy: pseudo-code emitted ✓`, 'ok'],
-  'data_agent':  (t) => [`data_agent: ${rand(3,50)}k rows fetched`, ''],
-  'crawler':     (t) => [`crawler: ${rand(5,200)} reqs · 2xx`, 'ok'],
-  'code_rev':    (t) => [`code_reviewer: diff review · ${rand(0,3)} issues`, 'ok'],
-  'risk_check':  (t) => [`risk_checker: sensitive op scan → clean`, 'ok'],
-  'qa_verify':   (t) => [`qa_verifier: edge-case passed`, 'ok'],
-  'validator':   (t) => [`validator: format check PASS`, 'ok'],
+  'planner':   (t) => [`planner: task ${t} parsed → goal decomposed`, 'tag'],
+  'router':    (t) => [`router: ${t} dispatched to worker pool`, 'tag'],
+  'codebuddy': (t) => [`codebuddy: code written · bug fixed ✓`, 'ok'],
+  'workbuddy': (t) => [`workbuddy: script run · file handled`, 'ok'],
+  'webdata':   (t) => [`web/data: search · scrape · clean`, ''],
+  'validator': (t) => [`validator: hard check · QA passed`, 'ok'],
+  'hitl':      (t) => [`hitl: human approval → granted`, 'tag'],
+  'deployer':  (t) => [`deployer: action triggered ✓`, 'ok'],
 };
 
 function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
@@ -990,10 +1132,12 @@ function spawnTask() {
     completed = 0; blocked = 0; taskSeq = 0;   // 归档重置，重新滚动
   }
   const pool = currentPool();
+  if (!pool || pool.length === 0) return null;   // 该类型无任务，不生成
   const path = pool[rand(0, pool.length - 1)];
   const id = 't' + String(++taskSeq).padStart(4, '0');
   const seed = taskSeq;
   activeTasks.push({ id, name: path.name, path: path.nodes, step: 0, seed, color: taskColor(seed) });
+  return id;
 }
 
 // 推进单个任务一步（不再产日志，日志由 logPump 独立生成）
@@ -1031,8 +1175,10 @@ function taskPump() {
   if (cfg.paused) return;
 
   // 维持并发路数：补足活跃任务（不再用 total 作累计上限，持续滚动）
+  // spawnTask 在任务池为空时返回 null，必须 break 防止死循环
   while (activeTasks.length < cfg.concurrency) {
-    spawnTask();
+    const spawned = spawnTask();
+    if (spawned === null) break;
   }
 
   // 异步错峰推进：每个任务按独立概率推进，而非齐步走
@@ -1071,8 +1217,8 @@ function logPump() {
   // 兜底：通用心跳日志
   const pool = [
     ['heartbeat ok · latency ' + rand(8, 40) + 'ms', ''],
-    ['validator: format check PASS', 'ok'],
-    ['risk_checker: sensitive op scan → clean', 'ok'],
+    ['validator: hard check · QA passed', 'ok'],
+    ['router: dispatch → worker pool', 'ok'],
     ['workbuddy: sub-task split → ' + rand(2, 5), 'tag'],
   ];
   const e = pool[rand(0, pool.length - 1)];
@@ -1123,6 +1269,80 @@ function renderTaskList() {
   });
 }
 
+// ============ 会话追踪面板（真实元任务执行记录：LLM / Token / 耗时） ============
+// 数据来源：window.HF_SESSIONS（由 hf_sessions_export 生成 hungfo_sessions.js）
+function fmtDur(ms) {
+  if (!ms || ms <= 0) return '—';
+  if (ms < 1000) return ms + 'ms';
+  if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+  return (ms / 60000).toFixed(1) + 'm';
+}
+function fmtTok(n) {
+  if (!n || n <= 0) return '0';
+  if (n >= 1000000) return (n / 1000000).toFixed(2) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+  return String(n);
+}
+function renderSessionPanel() {
+  const track = document.getElementById('spTrack');
+  const countEl = document.getElementById('spCount');
+  const viewport = document.getElementById('spViewport');
+  if (!track) return;
+
+  const data = (typeof window.HF_SESSIONS !== 'undefined') ? window.HF_SESSIONS : null;
+  const sessions = (data && Array.isArray(data.sessions)) ? data.sessions : [];
+
+  // 更新 TOKEN 指标（当天 / 总）
+  const summary = (data && data.summary) ? data.summary : null;
+  const todayTok = summary ? (summary.today ? (summary.today.token_in + summary.today.token_out) : 0) : 0;
+  const totalTok = summary ? (summary.total ? (summary.total.token_in + summary.total.token_out) : 0) : 0;
+  const todaySess = summary ? (summary.today ? summary.today.sessions : 0) : 0;
+  const totalSess = summary ? (summary.total ? summary.total.sessions : 0) : 0;
+  document.getElementById('tkToday').textContent = fmtTok(todayTok);
+  document.getElementById('tkTotal').textContent = fmtTok(totalTok);
+  document.getElementById('tkTodaySub').textContent = todaySess + ' 会话';
+  document.getElementById('tkTotalSub').textContent = totalSess + ' 会话';
+
+  // 空状态
+  if (sessions.length === 0) {
+    track.innerHTML = '<div class="sp-empty">暂无执行会话</div>';
+    countEl.textContent = '0';
+    return;
+  }
+
+  countEl.textContent = sessions.length;
+  const items = sessions.map(s => {
+    const ok = s.status === 'success';
+    const tok = (s.token_in || 0) + (s.token_out || 0);
+    return `<div class="sp-item ${ok ? 'ok' : ''}">
+      <div class="sp-top">
+        <span class="sp-llm">${s.llm_name || 'LLM'}</span>
+        <span class="sp-time">${(s.finished_at || s.started_at || '').slice(11, 16) || ''}</span>
+      </div>
+      <div class="sp-title">${s.title || '任务 #' + (s.task_id || s.id)}</div>
+      <div class="sp-meta">
+        <span class="tk">${fmtTok(tok)} tok</span>
+        <span class="dur">${fmtDur(s.duration_ms)}</span>
+        <span>${s.session_id ? '#' + s.session_id.slice(-6) : ''}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  // 双份内容实现无缝 marquee
+  track.innerHTML = items + items;
+  requestAnimationFrame(() => {
+    const h = track.scrollHeight;
+    const vh = viewport.clientHeight;
+    if (h > vh) {
+      const sec = Math.max(10, (h / 2) / 16);
+      track.style.animationDuration = sec + 's';
+      track.classList.add('marquee');
+    } else {
+      track.classList.remove('marquee');
+    }
+  });
+}
+
 // 更新统计面板
 function updateStats() {
   const inflight = activeTasks.length;
@@ -1134,7 +1354,7 @@ function updateStats() {
   document.getElementById('stBlocked').textContent = blocked;
   document.getElementById('stInflight').textContent = inflight;
   document.getElementById('mTasks').textContent = cfg.total;
-  document.getElementById('mAgents').textContent = '17';
+  document.getElementById('mAgents').textContent = AGENTS.length;
   const pass = completed + blocked > 0 ? (completed / (completed + blocked) * 100).toFixed(1) : 100;
   document.getElementById('mRate').textContent = pass;
 }
@@ -1157,8 +1377,15 @@ taskSwitch.querySelectorAll('.ts-opt').forEach(opt => {
     // 切换后清空活跃任务，按新任务池重新流转
     activeTasks = []; ghosts = [];
     completed = 0; blocked = 0; taskSeq = 0;
-    logLine(now(), `task source switched → ${currentTaskType === 'sample' ? '示例任务' : '正式任务'}`, 'tag');
+    // 检查该类型是否有任务，无则明确提示（不再静默回退示例数据）
+    const pool = currentPool();
+    if (!pool || pool.length === 0) {
+      logLine(now(), `⚠ 暂无「${currentTaskType === 'sample' ? '示例' : '正式'}任务」——请先在自动任务模块添加`, 'warn');
+    } else {
+      logLine(now(), `task source switched → ${currentTaskType === 'sample' ? '示例任务' : '正式任务'}（${pool.length} 个）`, 'tag');
+    }
     updateStats();
+    renderTaskList();
   });
 });
 
@@ -1189,7 +1416,7 @@ bindRange('vLineWidth', 'vLineWidthV', VISUAL, 'lineWidth');
 bindRange('vLineOpacity', 'vLineOpacityV', VISUAL, 'lineOpacity');
 bindRange('vDotWidth', 'vDotWidthV', VISUAL, 'dotWidth');
 bindRange('vDotSpeed', 'vDotSpeedV', VISUAL, 'dotSpeed');
-bindRange('vWobbleAmp', 'vWobbleAmpV', VISUAL, 'wobbleAmp');
+bindRange('vWobbleAmp', 'vWobbleAmpV', VISUAL, 'wobbleAmp', v => v + '%');
 bindRange('vGlowBlur', 'vGlowBlurV', VISUAL, 'glowBlur');
 
 // ── 视觉 · 残影参数 ──
@@ -1242,8 +1469,9 @@ restartLogPump();
 // 初始填充
 updateStats();
 renderTaskList();
+renderSessionPanel();
 logLine(now(), 'orchestrator online · hungfo v0.1', 'tag');
-logLine(now(), '17 agents registered · heartbeat sync', 'ok');
+logLine(now(), AGENTS.length + ' agents registered · heartbeat sync', 'ok');
 logLine(now(), 'validation gate armed · policy loaded', 'ok');
 </script>
 </body>

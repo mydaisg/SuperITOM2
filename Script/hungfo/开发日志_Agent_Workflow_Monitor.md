@@ -207,3 +207,146 @@ function spawnTask() {
 - 接真实心跳接口（当前为模拟引擎）。
 - `hf_agent_tasks` 表扩展：优先级、依赖、定时调度字段，配合 `schedule()` 接口做真实任务下发。
 - 监控页支持按 Agent 维度过滤任务、显示每个节点的实时负载。
+
+---
+
+# 附：元任务闭环（WorkBuddy 定时任务自动执行）
+
+> 需求：以后不再与 WorkBuddy 对话，改在 HungFo「元任务」里添加任务记录，WorkBuddy 定时任务自动读取并执行，把执行过程（分析/方案/结果）写入开发日志。
+
+## 一、整体架构
+
+```
+用户 → HungFo「元任务」页添加任务记录
+        ↓ (R 端 hf_metatask_add)
+   hf_metatask_queue 表（SQLite）
+        ↓ (hf_metatask_export 导出镜像)
+   Script/hungfo/MetaTasks.json（本地文本镜像）
+        ↓ (WorkBuddy 定时任务读取，每 1 小时)
+   Agent 直接执行任务（改文件/写文档）
+        ↓ (hf_metatask_runner.r)
+   写开发日志(devlog) + 标记任务完成 + 更新镜像
+```
+
+## 二、核心文件
+
+| 文件 | 职责 |
+|------|------|
+| `Script/hungfo/hf_core.r` | 元任务数据层 + cron 解析 + `hf_metatask_export` 导出镜像 |
+| `Script/hungfo/hf_mod_metatask.r` | 元任务环节接口（list/add/dispatch） |
+| `Script/hungfo/hf_ui.r` | 元任务专属页（任务记录队列）+ 开发日志查看界面 |
+| `Script/hungfo/hf_metatask_runner.r` | 命令行工具（peek/done/log/export/cron），供定时任务调用 |
+| `Script/hungfo/MetaTasks.json` | 任务队列本地镜像（定时任务读取） |
+
+## 三、数据表 `hf_metatask_queue`
+
+| 字段 | 说明 |
+|------|------|
+| id | 主键 |
+| title / payload | 任务标题 / 详细内容 |
+| cron | cron 表达式（空=只跑一次；非空=循环） |
+| status | pending(待执行) / running(执行中) / done(已完成) |
+| last_run_at / next_run_at | 上次执行 / 下次执行时间 |
+| result | 执行结果摘要 |
+
+## 四、状态机
+
+```
+pending ──(到期: next_run_at <= now)──> 执行中 ──(完成)──┬─ 有 cron → pending(推进 next_run_at)
+                                                        └─ 无 cron → done(一次性)
+```
+
+## 五、命令行工具用法
+
+```bash
+cd /d/GitHub/SuperITOM2
+# 查看当前到期待执行任务（输出 JSON）
+Rscript Script/hungfo/hf_metatask_runner.r peek
+
+# 标记任务完成（有 cron 自动循环，无 cron 标记 done）
+Rscript Script/hungfo/hf_metatask_runner.r done <任务id> "<结果摘要>"
+
+# 写一条开发日志
+Rscript Script/hungfo/hf_metatask_runner.r log "<标题>" "<内容>"
+
+# 重新导出镜像 / 测试 cron
+Rscript Script/hungfo/hf_metatask_runner.r export
+Rscript Script/hungfo/hf_metatask_runner.r cron "*/5 * * * *"
+```
+
+## 六、cron 表达式
+
+支持 5 字段（分 时 日 月 周），`*`、`*/n`、单值、逗号列表、区间：
+- `*/5 * * * *` — 每 5 分钟
+- `0 */1 * * *` — 每小时
+- `0 9 * * 1-5` — 工作日 9 点
+
+## 七、正式环境调试方法
+
+1. **手动触发一次执行**：`Rscript Script/hungfo/hf_metatask_runner.r peek`，看 `due` 是否返回待执行任务。
+2. **测试 cron**：`Rscript Script/hungfo/hf_metatask_runner.r cron "*/5 * * * *"`，验证返回的下次触发时间是否正确。
+3. **验证镜像**：`cat Script/hungfo/MetaTasks.json`，确认任务列表与数据库一致。
+4. **验证数据库**：`SELECT * FROM hf_metatask_queue;` 查看状态流转。
+5. **验证开发日志**：`SELECT * FROM hf_records WHERE module_key='devlog';` 确认执行过程已写入。
+6. **注意**：R 启动会打印 `During startup` / `LC_` 警告，解析 JSON 时需过滤这些行（定时任务 prompt 已说明）。
+
+## 八、定时任务
+
+- **名称**：HungFo 元任务自动执行器
+- **周期**：每 1 小时（WorkBuddy 定时任务平台最小间隔为 1 小时，不支持分钟级）
+- **行为**：读 MetaTasks.json 到期任务 → **子代理隔离执行** → 写 devlog → 标记完成 + 上报元数据 → 更新镜像
+
+## 九、会话追踪与调用元数据（v2 新增）
+
+### 9.1 目标
+1. **每个元任务独立会话**：定时任务对每个到期任务 spawn 一个独立 sub-agent 执行，上下文互不堆积，也便于按任务追踪可视化。
+2. **调用元数据可视化**：把每次执行的 LLM 名称、Token 消耗（输入/输出）、总耗时记录到数据库，并在监控页展示。
+
+### 9.2 数据层（新增）
+- `hf_metatask_queue` 表扩展字段：`session_id` / `llm_name` / `token_in` / `token_out` / `duration_ms` / `started_at` / `finished_at`（记录最近一次执行的元数据）。
+- 新增 `hf_task_sessions` 表：每次执行 = 一行明细（task_id / session_id / llm_name / token_in / token_out / duration_ms / status / result / started_at / finished_at）。
+- 新增镜像 `Script/hungfo/www/hungfo_sessions.js`：导出 `window.HF_SESSIONS = { summary: {total, today}, sessions: [...] }`，供监控页前端读取。
+
+### 9.3 命令行工具（hf_metatask_runner.r）新增/扩展
+- `done` 命令支持元数据参数：`done <id> "<result>" --llm <名> --tin <n> --tout <n> --dur <ms> --sid <会话ID>`
+- 新增 `sessions` 命令：重新导出 hungfo_sessions.js
+- `done` 执行时会自动写入 hf_task_sessions 并导出 sessions 镜像
+
+### 9.4 监控页展示（hungfo_agent_monitor.html）
+- 左侧 `IN-FLIGHT` / `AGENTS` 指标下方新增 **TOKEN 指标**：当天 TOKEN 总数 + 总 TOKEN（含会话数）。
+- `LIVE TASKS` 下方新增 **Agent Sessions 面板**：展示真实元任务执行记录（LLM 名 / Token / 耗时 / 会话ID），多则缓慢流动，少则空行。
+- 数据源：页面 `<head>` 引入 `hungfo_sessions.js`，JS 读取 `window.HF_SESSIONS`。
+
+### 9.5 元数据来源说明
+- **LLM 名称**：定时任务执行时尽力上报当前模型名，无法得知时填 `"auto"`。
+- **Token**：尽力而为，无法获得时填 0（WorkBuddy 定时任务环境未必暴露真实 token 用量）。
+- **耗时**：定时任务记录子代理开始/结束时间，估算 duration_ms。
+
+### 9.6 调试方法（新增）
+1. 手动上报测试：`Rscript Script/hungfo/hf_metatask_runner.r done <id> "结果" --llm "DeepSeek-V4-Pro" --tin 100 --tout 50 --dur 3000 --sid "sess-x"`
+2. 查看会话明细：`SELECT * FROM hf_task_sessions ORDER BY id DESC;`
+3. 验证镜像：`cat Script/hungfo/www/hungfo_sessions.js`
+4. 重新导出：`Rscript Script/hungfo/hf_metatask_runner.r sessions`
+
+
+## 十、Bug 修复：正式任务界面显示示例数据（2026-10-28）
+
+### 现象
+切到「正式任务」后，监控页仍在跑示例任务的数据。
+
+### 根因（两层）
+1. **数据库缺表**：`hf_agent_tasks` 表从没被真正创建——上一轮只做了 R 语法检查，`hf_db_init()` 未在真实 DB 执行；`hungfo_tasks.js` 是手写的临时文件，从未从数据库生成。
+2. **前端静默回退**：`currentPool()` 在「正式任务」池为空时，无条件回退到内置 `TASK_PATHS`（research/codegen/data，与示例同名同路径），导致看起来「还是示例数据」。
+
+### 修复
+1. 实际执行建表 + 播种 3 条示例任务 + 从 DB 导出 `hungfo_tasks.js`（不再手写）。
+2. 前端 `buildTaskPool`/`currentPool`：切到某类型无任务时返回空数组，**不再静默回退示例数据**。
+3. `spawnTask` 空池返回 null；`taskPump` 的 while 补并发循环加 `break`（防死循环）。
+4. 切换类型时：无任务则日志提示「⚠ 暂无正式任务，请先在自动任务模块添加」。
+5. 补充一条正式任务「生产环境发布巡检」（formal）作为正式任务界面的真实数据。
+
+### 结论
+「正式任务界面跑示例数据」的真相是：正式任务池里根本没有正式任务，前端回退逻辑又掩盖了这个空态。修复后，无正式任务会明确提示，有正式任务则正确显示。
+
+### 正确使用方式
+- 自动任务模块页 → 任务类型选「正式任务」→ 添加任务 → 保存（自动 `hf_write_tasks_js` 导出）→ 监控页切「正式任务」即可看到真实正式任务流转。

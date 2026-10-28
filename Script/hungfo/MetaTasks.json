@@ -1,0 +1,55 @@
+{
+  "updated_at": "2026-10-28 17:57:34",
+  "tasks": [
+    {
+      "id": 1,
+      "title": "开发日志，没有查看界面，参照父项目的开发日志样式。",
+      "payload": "开发日志，没有查看界面，参照父项目的开发日志样式。",
+      "cron": "",
+      "status": "done",
+      "last_run_at": "2026-10-28 16:28:11",
+      "next_run_at": null,
+      "result": "已完成：给 HungFo 开发日志环节实现查看界面（参照父项目开发日志卡片样式，含统计/搜索/刷新）。"
+    },
+    {
+      "id": 6,
+      "title": "优化hungfo_agent_monitor.html",
+      "payload": "优化hungfo_agent_monitor.html\\n1、线条晃动值太小了，再扩大上限10倍\\n2、线条太短了，节点拉开一点，尽量以展示线条为主",
+      "cron": "",
+      "status": "done",
+      "last_run_at": "2026-10-28 17:00:50",
+      "next_run_at": null,
+      "result": "监控页优化完成：晃动上限×10、节点拉开"
+    },
+    {
+      "id": 8,
+      "title": "优化日志界面",
+      "payload": "优化日志界面\n日志界面太丑了，参照父项目的日志界面。",
+      "cron": "",
+      "status": "done",
+      "last_run_at": "2026-10-28 17:57:34",
+      "next_run_at": null,
+      "result": "日志界面重构完成：完整payload+分段着色+日期分组+搜索高亮"
+    },
+    {
+      "id": 9,
+      "title": "优化hungfo_agent_monitor.html",
+      "payload": "优化hungfo_agent_monitor.html\n1、线条簇的飘动弧线，不会左右对称形成一个椭圆，而是偏向一侧，成个半椭圆（扇形了），优化一下，要整体对称。\n2、线条不要越界\n3、节点修改为以下\n元任务解析器（Planner）\n分发路由器（Router）\n打工池（Workers）\nCodeBuddy：负责写代码、改 Bug。\nWorkBuddy：负责跑脚本、处理文件、调 API。\nWeb/Data：负责搜索、抓取、数据清洗。\n\n硬校验与 QA（Validator）\n人工审批（HITL / Human-in-the-loop）\n部署/动作触发器（Deployer）",
+      "cron": "",
+      "status": "done",
+      "last_run_at": "2026-10-28 17:57:34",
+      "next_run_at": null,
+      "result": "monitor弧线对称修复+节点文案替换完成"
+    },
+    {
+      "id": 10,
+      "title": "子项目剥离成独立的R+Shiny+SQLite",
+      "payload": "子项目剥离成独立的R+Shiny+SQLite\n剥离出来，可以让我直接把Hungfo目录移植出来就能独立运行，先实现能力，但不要移动文件，我要检查手工测试后，自己移。",
+      "cron": "",
+      "status": "done",
+      "last_run_at": "2026-10-28 17:57:34",
+      "next_run_at": null,
+      "result": "HungFo剥离完成：独立app.R+hf_config.r，双模式验证通过"
+    }
+  ]
+}
