@@ -1,5 +1,13 @@
 # SuperITOM2 项目记忆
 
+> **📌 行为规则请见 `.codebuddy/rules/` 目录（自动加载）**：
+> - `01-core-constraints.md` — 编程禁区 + 响应式规范（动代码前必读）
+> - `02-dev-workflow.md` — 新增功能步骤 + dev_log 强制规范
+> - `03-ui-design.md` — UI 一致性与删除确认机制
+> - `04-coding-style.md` — 编码/数据访问/编号规则
+>
+> 本文档只记录**项目事实**（结构、表、配置），不重复行为规则。
+
 ## 项目概述
 - **名称**：SuperITOM2（IT运维管理系统 V2）
 - **技术栈**：R + Shiny（Web框架），R 4.6.0
@@ -31,10 +39,9 @@ SuperITOM2/
 ```
 
 ### 重要约束
+> 详见 `.codebuddy/rules/01-core-constraints.md`（编程禁区 + 响应式规范）。
 - **不要**在根目录创建新 .r 文件（统一放 Script/）
-- **不要**创建空目录
 - **不要**修改 run_app.R、ui.R、config_loader.r
-- **不要**轻易修改 global.R 的核心迁移逻辑
 
 ## 包依赖
 ```r
@@ -321,22 +328,11 @@ IT服务请求 20260512 1110：
 @韩荣昌-IT部-IT工程师(Sky)
 ```
 
-## 编程禁区（不可修改）
-1. server.R 的 `output$app_ui <- renderUI()` 登录/主界面切换逻辑
-2. ui.R 的核心结构（fluidePage + uiOutput）
-3. config/config_loader.r 配置加载器
-4. global.R 的 `migrate_database()` 自动建表逻辑
-5. 不允许在 renderUI 中修改 rv（会触发响应式循环）
+## 编程禁区与新增功能步骤
 
-## 新增功能步骤
-1. Script/ 目录下创建 `*_ui.r` 和 `*_server.r` 文件
-2. 在 server.R 末尾添加 `source()` 加载新文件
-3. 在 main_ui.r 对应位置添加 `if (can_access("模块名")) tabPanel(...)` 
-4. ★ 同步更新 `Script/module_inventory.r`（模块基本信息、权限码、关键函数）
-5. ★ 在 `rbac_permissions` 表 INSERT 新权限码
-6. 使用 reactiveVal 触发器控制刷新
-7. 保存/添加按钮使用灰化模式：`tags$button(disabled=NA)` + `observe({ toggle_btn(...) })`
-8. ★★ 所有变更（新增功能/修复/重构）都必须写开发日志：调用 `dev_log_add(module, title, requirement, solution, result, requirement_en, solution_en, result_en, commit_msg, files_changed)`；英文字段规范参照 DL20260702007（requirement_en 1-2句 / solution_en 1-2句 / result_en ~6词 / commit_msg ~50字符带 feat:/fix: 前缀）；编号自动生成 DL+YYYYMMDD+3位流水；写完后在回复中报告 log_no
+> **已迁移至 `.codebuddy/rules/`**，此处不再重复：
+> - 编程禁区 → `01-core-constraints.md`
+> - 新增功能步骤 + dev_log 规范 → `02-dev-workflow.md`
 
 ## STD PowerShell脚本
 | 文件 | 说明 |

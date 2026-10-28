@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HungFo · Multi-Agent Workflow Monitor</title>
+<style>
+  :root {
+    --bg: #06070d;
+    --bg2: #0a0d18;
+    --panel: rgba(16, 20, 36, 0.75);
+    --panel-border: rgba(80, 110, 200, 0.18);
+    --neon-blue: #3b8cff;
+    --neon-cyan: #22d3ee;
+    --neon-purple: #a855f7;
+    --neon-pink: #ec4899;
+    --neon-green: #22c55e;
+    --neon-amber: #f59e0b;
+    --text: #cbd5e1;
+    --text-dim: #64748b;
+    --mono: "SF Mono", "JetBrains Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(1200px 600px at 20% -10%, #0d1230 0%, transparent 60%),
+                radial-gradient(1000px 600px at 90% 110%, #170a2e 0%, transparent 55%),
+                linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ===== 顶部标题栏 ===== */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--panel-border);
+    background: rgba(10, 13, 24, 0.6);
+    backdrop-filter: blur(8px);
+    flex-shrink: 0;
+  }
+  .topbar .brand {
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 2px;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 12px rgba(34, 211, 238, 0.6);
+  }
+  .topbar .sep { color: var(--text-dim); opacity: 0.6; }
+  .topbar .env {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--neon-purple);
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+  }
+  .topbar .status-pill {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--neon-green);
+    border: 1px solid rgba(34, 197, 94, 0.4);
+    background: rgba(34, 197, 94, 0.08);
+    padding: 4px 12px;
+    border-radius: 20px;
+  }
+  .topbar .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--neon-green);
+    box-shadow: 0 0 8px var(--neon-green);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  /* ===== 主区域 ===== */
+  .main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 300px 1fr 300px;
+    gap: 16px;
+    padding: 16px 20px;
+    min-height: 0;
+    position: relative;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    backdrop-filter: blur(6px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--panel-border);
+    text-transform: uppercase;
+  }
+
+  /* ===== 左侧：进度环 + 统计 ===== */
+  .left-panel { padding: 0; }
+  .ring-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 28px 20px;
+    gap: 8px;
+  }
+  .ring {
+    position: relative;
+    width: 150px; height: 150px;
+  }
+  .ring svg { transform: rotate(-90deg); }
+  .ring .ring-bg { fill: none; stroke: rgba(80,110,200,0.12); stroke-width: 8; }
+  .ring .ring-fg {
+    fill: none; stroke: url(#ringGrad); stroke-width: 8;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.8s ease;
+    filter: drop-shadow(0 0 8px rgba(59,140,255,0.7));
+  }
+  .ring .ring-center {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .ring .ring-val { font-size: 34px; font-weight: 800; color: #fff; font-family: var(--mono); }
+  .ring .ring-label { font-size: 10px; color: var(--text-dim); letter-spacing: 1px; margin-top: 2px; }
+
+  .left-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 0 16px 20px;
+    width: 100%;
+  }
+  .stat-box {
+    background: rgba(20, 26, 46, 0.5);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .stat-box .k { font-size: 10px; color: var(--text-dim); letter-spacing: 1px; }
+  .stat-box .v { font-size: 20px; font-weight: 700; color: #e2e8f0; font-family: var(--mono); margin-top: 4px; }
+  .stat-box .v.green { color: var(--neon-green); text-shadow: 0 0 10px rgba(34,197,94,0.5); }
+  .stat-box .v.red { color: var(--neon-pink); text-shadow: 0 0 10px rgba(236,72,153,0.5); }
+  .stat-box .v.blue { color: var(--neon-blue); text-shadow: 0 0 10px rgba(59,140,255,0.5); }
+
+  /* ===== 中间：连线画布 + 节点 ===== */
+  .center-panel { position: relative; }
+  #flow-canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+  }
+  #traffic-canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .flowing-line {
+    animation: flow-dash 3s linear infinite;
+  }
+  @keyframes flow-dash {
+    to { stroke-dashoffset: calc(var(--len, 200) * -1); }
+  }
+  .node {
+    position: absolute;
+    width: 118px;
+    z-index: 2;
+    padding: 10px 12px;
+    background: rgba(18, 24, 44, 0.85);
+    border: 1px solid rgba(90, 120, 210, 0.35);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    backdrop-filter: blur(4px);
+  }
+  .node:hover {
+    transform: translateY(-2px);
+    border-color: var(--ac, var(--neon-blue));
+    box-shadow: 0 0 18px var(--ac, var(--neon-blue));
+  }
+  .node .node-head {
+    display: flex; align-items: center; gap: 7px;
+    margin-bottom: 6px;
+  }
+  .node .node-ico {
+    width: 22px; height: 22px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px;
+    color: #fff;
+    background: var(--ac, var(--neon-blue));
+    box-shadow: 0 0 10px var(--ac, var(--neon-blue));
+  }
+  .node .node-name { font-size: 11px; font-weight: 700; color: #e2e8f0; letter-spacing: 0.3px; }
+  .node .node-meta {
+    font-family: var(--mono);
+    font-size: 9px; color: var(--text-dim);
+    display: flex; justify-content: space-between;
+  }
+  .node .node-bar {
+    height: 3px; border-radius: 2px;
+    background: rgba(80,110,200,0.15);
+    margin-top: 6px; overflow: hidden;
+  }
+  .node .node-bar i {
+    display: block; height: 100%;
+    background: var(--ac, var(--neon-blue));
+    box-shadow: 0 0 8px var(--ac, var(--neon-blue));
+    transition: width 0.6s ease;
+  }
+  .node.active { border-color: var(--ac); box-shadow: 0 0 22px var(--ac); }
+  .node .node-state {
+    width: 6px; height: 6px; border-radius: 50%;
+    margin-left: auto;
+    background: var(--neon-green);
+    box-shadow: 0 0 6px var(--neon-green);
+  }
+  .node .node-state.busy { background: var(--neon-amber); box-shadow: 0 0 6px var(--neon-amber); animation: pulse 0.8s infinite; }
+  .node .node-state.idle { background: var(--text-dim); box-shadow: none; }
+
+  /* ===== 右侧：日志 ===== */
+  .right-panel { }
+  .log-scroll {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    line-height: 1.8;
+    color: #7dd3fc;
+  }
+  .log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.9; }
+  .log-line .ts { color: var(--text-dim); margin-right: 8px; }
+  .log-line.ok { color: #86efac; }
+  .log-line.warn { color: var(--neon-amber); }
+  .log-line.err { color: #fca5a5; }
+  .log-line.tag { color: var(--neon-purple); }
+
+  /* ===== 底部统计面板 ===== */
+  .bottombar {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--panel-border);
+    background: rgba(10, 13, 24, 0.75);
+    backdrop-filter: blur(8px);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .bottombar .metric { display: flex; align-items: baseline; gap: 6px; }
+  .bottombar .metric .num { font-size: 20px; font-weight: 800; color: #fff; }
+  .bottombar .metric .lbl { color: var(--text-dim); font-size: 10px; letter-spacing: 1px; }
+  .bottombar .metric.blue .num { color: var(--neon-cyan); text-shadow: 0 0 12px rgba(34,211,238,0.6); }
+  .bottombar .metric.purple .num { color: var(--neon-purple); text-shadow: 0 0 12px rgba(168,85,247,0.6); }
+  .bottombar .valid {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 10px;
+    color: var(--neon-green);
+    letter-spacing: 2px;
+    font-weight: 700;
+    font-size: 13px;
+    text-shadow: 0 0 12px rgba(34,197,94,0.6);
+  }
+  .bottombar .valid .check {
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 2px solid var(--neon-green);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px;
+    box-shadow: 0 0 10px rgba(34,197,94,0.5);
+  }
+
+  /* ===== 配置面板 ===== */
+  .cfg-btn {
+    margin-left: auto;
+    background: rgba(59,140,255,0.12);
+    border: 1px solid rgba(59,140,255,0.4);
+    color: var(--neon-blue);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .cfg-btn:hover { background: rgba(59,140,255,0.25); box-shadow: 0 0 12px rgba(59,140,255,0.4); }
+  .cfg-btn.active { background: rgba(59,140,255,0.3); box-shadow: 0 0 12px rgba(59,140,255,0.5); }
+
+  .cfg-panel {
+    position: fixed;
+    top: 56px; right: 20px;
+    width: 360px;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+    background: rgba(14, 18, 34, 0.97);
+    border: 1px solid rgba(80,110,200,0.3);
+    border-radius: 12px;
+    padding: 20px;
+    z-index: 100;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+    transform: translateX(120%);
+    transition: transform 0.3s ease;
+  }
+  .cfg-panel.open { transform: translateX(0); }
+  .cfg-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--neon-cyan);
+    margin-bottom: 18px;
+    text-shadow: 0 0 8px rgba(34,211,238,0.5);
+  }
+  .cfg-group {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--neon-purple, #a855f7);
+    margin: 18px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(120,120,200,0.2);
+    text-shadow: 0 0 6px rgba(168,85,247,0.4);
+  }
+  .cfg-group:first-of-type { margin-top: 0; }
+  .cfg-grid { display: flex; flex-direction: column; gap: 16px; }
+  .cfg-grid label {
+    font-size: 12px;
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .cfg-grid .cfg-val {
+    color: var(--neon-blue);
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 14px;
+  }
+  .cfg-grid input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    background: rgba(80,110,200,0.25);
+    border-radius: 2px;
+    outline: none;
+  }
+  .cfg-grid input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--neon-blue);
+    box-shadow: 0 0 10px rgba(59,140,255,0.7);
+    cursor: pointer;
+  }
+  .cfg-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .cfg-actions button {
+    flex: 1;
+    background: rgba(20, 26, 46, 0.6);
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 8px 0;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .cfg-actions button:hover { border-color: var(--neon-blue); color: var(--neon-blue); box-shadow: 0 0 10px rgba(59,140,255,0.3); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="brand">HUNGFO · ORCHESTRATOR</span>
+  <span class="sep">/</span>
+  <span class="env">global / Tai-Night-01</span>
+  <span class="status-pill"><span class="dot"></span> LIVE · HEARTBEAT <span id="hbText">2s</span></span>
+  <button class="cfg-btn" id="cfgToggle">⚙ CONFIG</button>
+</div>
+
+<!-- 配置面板 -->
+<div class="cfg-panel" id="cfgPanel">
+  <div class="cfg-title">SIMULATION CONFIG</div>
+
+  <div class="cfg-group">模拟引擎</div>
+  <div class="cfg-grid">
+    <label>并发路数 <span class="cfg-val" id="cfgConcurrencyV">12</span>
+      <input type="range" id="cfgConcurrency" min="1" max="30" value="12">
+    </label>
+    <label>日志频率(条/秒) <span class="cfg-val" id="cfgRateV">12</span>
+      <input type="range" id="cfgRate" min="1" max="40" value="12">
+    </label>
+    <label>任务推进节奏(步/秒) <span class="cfg-val" id="cfgTaskRateV">6</span>
+      <input type="range" id="cfgTaskRate" min="1" max="30" value="6">
+    </label>
+    <label>拦截概率 % <span class="cfg-val" id="cfgBlockV">8</span>
+      <input type="range" id="cfgBlock" min="0" max="50" value="8">
+    </label>
+    <label>任务总量 <span class="cfg-val" id="cfgTotalV">1284</span>
+      <input type="range" id="cfgTotal" min="100" max="5000" step="100" value="1284">
+    </label>
+  </div>
+
+  <div class="cfg-group">视觉 · 线体</div>
+  <div class="cfg-grid">
+    <label>丝线宽度 <span class="cfg-val" id="vLineWidthV">2.6</span>
+      <input type="range" id="vLineWidth" min="0.5" max="6" step="0.1" value="2.6">
+    </label>
+    <label>丝线透明度 <span class="cfg-val" id="vLineOpacityV">0.5</span>
+      <input type="range" id="vLineOpacity" min="0.05" max="1" step="0.05" value="0.5">
+    </label>
+    <label>光点宽度 <span class="cfg-val" id="vDotWidthV">5</span>
+      <input type="range" id="vDotWidth" min="1" max="12" step="0.5" value="5">
+    </label>
+    <label>光点速度 <span class="cfg-val" id="vDotSpeedV">0.3</span>
+      <input type="range" id="vDotSpeed" min="0.05" max="2" step="0.05" value="0.3">
+    </label>
+    <label>晃动幅度 <span class="cfg-val" id="vWobbleAmpV">20</span>
+      <input type="range" id="vWobbleAmp" min="0" max="60" value="20">
+    </label>
+    <label>发光柔和度 <span class="cfg-val" id="vGlowBlurV">7</span>
+      <input type="range" id="vGlowBlur" min="1" max="15" step="0.5" value="7">
+    </label>
+  </div>
+
+  <div class="cfg-group">视觉 · 残影</div>
+  <div class="cfg-grid">
+    <label>残影透明度 <span class="cfg-val" id="vGhostOpacityV">0.16</span>
+      <input type="range" id="vGhostOpacity" min="0.02" max="0.6" step="0.02" value="0.16">
+    </label>
+    <label>残影寿命(秒) <span class="cfg-val" id="vGhostLifeV">3.2</span>
+      <input type="range" id="vGhostLife" min="0.5" max="10" step="0.1" value="3.2">
+    </label>
+    <label>残影数量上限 <span class="cfg-val" id="vGhostMaxV">200</span>
+      <input type="range" id="vGhostMax" min="20" max="500" step="20" value="200">
+    </label>
+  </div>
+
+  <div class="cfg-actions">
+    <button id="cfgPause">⏸ 暂停</button>
+    <button id="cfgReset">↺ 重置</button>
+    <button id="cfgBurst">⚡ 突发峰值</button>
+  </div>
+</div>
+
+<div class="main">
+  <!-- 左侧：进度环 -->
+  <div class="panel left-panel">
+    <div class="panel-title">Input · Orchestration</div>
+    <div class="ring-wrap">
+      <div class="ring">
+        <svg width="150" height="150" viewBox="0 0 150 150">
+          <defs>
+            <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#3b8cff"/>
+              <stop offset="50%" stop-color="#22d3ee"/>
+              <stop offset="100%" stop-color="#a855f7"/>
+            </linearGradient>
+          </defs>
+          <circle class="ring-bg" cx="75" cy="75" r="62"></circle>
+          <circle id="ringFg" class="ring-fg" cx="75" cy="75" r="62"
+                  stroke-dasharray="389.6" stroke-dashoffset="389.6"></circle>
+        </svg>
+        <div class="ring-center">
+          <div class="ring-val" id="ringPct">0%</div>
+          <div class="ring-label">TASK COMPLETION</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);letter-spacing:1px;">VALIDATION GATE · ACTIVE</div>
+    </div>
+    <div class="left-stats">
+      <div class="stat-box"><div class="k">COMPLETED</div><div class="v green" id="stCompleted">0</div></div>
+      <div class="stat-box"><div class="k">BLOCKED</div><div class="v red" id="stBlocked">0</div></div>
+      <div class="stat-box"><div class="k">IN-FLIGHT</div><div class="v blue" id="stInflight">0</div></div>
+      <div class="stat-box"><div class="k">AGENTS</div><div class="v" id="stAgents">17</div></div>
+    </div>
+  </div>
+
+  <!-- 中间：连线画布 + 节点 -->
+  <div class="panel center-panel">
+    <div class="panel-title">Process · Agent Cluster</div>
+    <svg id="flow-canvas"></svg>
+    <!-- 任务活动连线层（叠加在拓扑层之上，动态显示任务流量） -->
+    <svg id="traffic-canvas"></svg>
+    <!-- 节点由 JS 动态渲染 -->
+  </div>
+
+  <!-- 右侧：日志 -->
+  <div class="panel right-panel">
+    <div class="panel-title">Output · Validation Log</div>
+    <div class="log-scroll" id="logScroll"></div>
+  </div>
+</div>
+
+<div class="bottombar">
+  <div class="metric blue"><span class="num" id="mTasks">1284</span><span class="lbl">TASKS</span></div>
+  <div class="metric purple"><span class="num" id="mAgents">17</span><span class="lbl">AGENTS</span></div>
+  <div class="metric"><span class="num" id="mRate">98.7</span><span class="lbl">% PASS RATE</span></div>
+  <div class="valid"><span class="check">✓</span> VALIDATION SUCCESSFUL</div>
+</div>
+
+<script>
+// ============ 节点定义（自由网状布局：大致左入→右出，纵向错落） ============
+const AGENTS = [
+  // ── 入口 / 编排（左区） ──
+  { id:'ai_bot',       name:'AI Bot',         icon:'🤖', color:'#3b8cff', x:0.06, y:0.22 },
+  { id:'chief_staff',  name:'Chief of Staff', icon:'🧭', color:'#22d3ee', x:0.08, y:0.58 },
+  { id:'orchestr',     name:'WorkBuddy',      icon:'🎛️', color:'#818cf8', x:0.15, y:0.82 },
+  // ── 处理集群（中区，错落分布） ──
+  { id:'pm',           name:'Project Manager',icon:'📋', color:'#a855f7', x:0.34, y:0.16 },
+  { id:'web_res',      name:'Web Researcher', icon:'🌐', color:'#ec4899', x:0.42, y:0.40 },
+  { id:'codegen',      name:'CodeBuddy',      icon:'💻', color:'#38bdf8', x:0.36, y:0.66 },
+  { id:'data_agent',   name:'Data Agent',     icon:'📊', color:'#60a5fa', x:0.54, y:0.14 },
+  { id:'crawler',      name:'Crawler',        icon:'🕷️', color:'#c084fc', x:0.62, y:0.36 },
+  { id:'code_rev',     name:'Code Reviewer',  icon:'🔍', color:'#22c55e', x:0.52, y:0.62 },
+  // ── 校验 / 输出（右区） ──
+  { id:'risk_check',   name:'Risk Checker',   icon:'🛡️', color:'#f59e0b', x:0.76, y:0.24 },
+  { id:'qa_verify',    name:'QA Verifier',    icon:'✅', color:'#34d399', x:0.82, y:0.52 },
+  { id:'validator',    name:'Validator',      icon:'⚖️', color:'#f472b6', x:0.78, y:0.80 },
+];
+
+// ============ 连线定义（任务流转路径：网状） ============
+const LINKS = [
+  ['ai_bot','chief_staff'], ['chief_staff','orchestr'],
+  ['orchestr','pm'],
+  ['pm','web_res'], ['pm','codegen'], ['pm','data_agent'],
+  ['web_res','crawler'], ['data_agent','crawler'], ['crawler','code_rev'],
+  ['codegen','code_rev'], ['data_agent','code_rev'],
+  ['code_rev','risk_check'], ['code_rev','qa_verify'],
+  ['risk_check','qa_verify'], ['qa_verify','validator'],
+];
+
+const agentMap = Object.fromEntries(AGENTS.map(a => [a.id, a]));
+
+// ============ 渲染节点 ============
+const centerPanel = document.querySelector('.center-panel');
+AGENTS.forEach(a => {
+  const el = document.createElement('div');
+  el.className = 'node';
+  el.id = 'node_' + a.id;
+  el.style.setProperty('--ac', a.color);
+  el.style.left = (a.x * 100) + '%';
+  el.style.top = (a.y * 100) + '%';
+  el.style.marginLeft = '-59px';   // 节点半宽，让坐标点为节点中心
+  el.style.marginTop = '-30px';    // 节点半高
+  el.innerHTML = `
+    <div class="node-head">
+      <div class="node-ico">${a.icon}</div>
+      <span class="node-name">${a.name}</span>
+      <span class="node-state idle"></span>
+    </div>
+    <div class="node-meta"><span>LOAD</span><span class="load-pct">0%</span></div>
+    <div class="node-bar"><i style="width:0%"></i></div>
+  `;
+  centerPanel.appendChild(el);
+});
+
+// ============ 渲染连线（SVG 贝塞尔曲线 + 流光） ============
+const svg = document.getElementById('flow-canvas');
+const NS = 'http://www.w3.org/2000/svg';
+
+function resizeCanvas() {
+  svg.setAttribute('width', centerPanel.clientWidth);
+  svg.setAttribute('height', centerPanel.clientHeight);
+  drawLinks();
+}
+function nodeCenter(id) {
+  const el = document.getElementById('node_' + id);
+  const r = el.getBoundingClientRect();
+  const cr = centerPanel.getBoundingClientRect();
+  return {
+    x: r.left - cr.left + r.width / 2,
+    y: r.top - cr.top + r.height / 2,
+  };
+}
+// 计算两个节点间的平滑贝塞尔曲线（带轻微自然弯曲，像绵线悬空）
+function edgePath(fromId, toId, wobble = 0) {
+  const a = nodeCenter(fromId), b = nodeCenter(toId);
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const dist = Math.hypot(dx, dy);
+  // 法向偏移，制造自然弧线；wobble 提供随时间的晃动
+  const nx = -dy / (dist || 1), ny = dx / (dist || 1);
+  const bend = Math.min(40, dist * 0.15) + wobble;
+  const cx = (a.x + b.x) / 2 + nx * bend;
+  const cy = (a.y + b.y) / 2 + ny * bend;
+  return `M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`;
+}
+
+function drawLinks() {
+  // 清除旧连线，保留渐变 defs
+  [...svg.children].forEach(c => { if (c.tagName !== 'defs') c.remove(); });
+  let defs = svg.querySelector('defs');
+  if (!defs) { defs = document.createElementNS(NS, 'defs'); svg.appendChild(defs); }
+
+  LINKS.forEach(([from, to], i) => {
+    const a = nodeCenter(from), b = nodeCenter(to);
+    const color = agentMap[from].color;
+    const d = edgePath(from, to);
+
+    // 渐变
+    const gid = 'lg_' + i;
+    const grad = document.createElementNS(NS, 'linearGradient');
+    grad.setAttribute('id', gid);
+    grad.setAttribute('gradientUnits', 'userSpaceOnUse');
+    grad.setAttribute('x1', a.x); grad.setAttribute('y1', a.y);
+    grad.setAttribute('x2', b.x); grad.setAttribute('y2', b.y);
+    const s1 = document.createElementNS(NS, 'stop'); s1.setAttribute('offset','0%'); s1.setAttribute('stop-color', agentMap[from].color);
+    const s2 = document.createElementNS(NS, 'stop'); s2.setAttribute('offset','100%'); s2.setAttribute('stop-color', agentMap[to].color);
+    grad.appendChild(s1); grad.appendChild(s2);
+    defs.appendChild(grad);
+
+    // 底连线（淡底图，仅作拓扑参考）
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', 'url(#' + gid + ')');
+    path.setAttribute('stroke-width', '1');
+    path.setAttribute('opacity', '0.08');
+    svg.appendChild(path);
+  });
+}
+
+// ============ 任务活动连线渲染（动态：每个任务独立一条线） ============
+const trafficSvg = document.getElementById('traffic-canvas');
+
+// 设置 traffic 画布尺寸
+function resizeTrafficCanvas() {
+  trafficSvg.setAttribute('width', centerPanel.clientWidth);
+  trafficSvg.setAttribute('height', centerPanel.clientHeight);
+}
+resizeTrafficCanvas();
+
+// 任务配色：给每个任务分配一个独立色相（色相环上错开）
+const TASK_HUES = [200, 265, 320, 155, 15, 285, 45, 335, 90, 230, 300, 175, 205, 350, 120, 260];
+function taskColor(seed) {
+  const h = TASK_HUES[seed % TASK_HUES.length];
+  return `hsl(${h}, 95%, 60%)`;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 视觉调优配置（风筝线效果）——集中在这里，调参只改这一处
+// ══════════════════════════════════════════════════════════════════
+const VISUAL = {
+  // ── 丝线本体（任务连线的主体，越细越淡越像"风筝线"）──
+  lineWidth: 2.6,        // 丝线宽度(px)：1=细线，2=清晰，3=明显
+  lineOpacity: 0.5,      // 丝线透明度：0.08=几乎隐形，0.3=可见，0.5=明显
+
+  // ── 游走光点（丝线上游走的一颗孤星）──
+  dotWidth: 5,           // 光点宽度(px)：越小越像星星
+  dotOpacity: 0.95,      // 光点透明度
+  dotDashRatio: 0.012,   // 光点占线段比例：0.006=极稀，越大光点越"胖"
+  dotSpeed: 0.3,         // 光点游走速度（乘数，越大越快）：0.3=很慢
+
+  // ── 晃动（风筝线在空中飘摆）──
+  wobbleAmp: 20,         // 晃动幅度(px)：越大飘得越厉害
+  wobbleSpeed: 0.6,      // 晃动频率：越小晃得越慢
+
+  // ── 发光（柔和度）──
+  glowBlur: 7,           // 发光模糊半径：越大光晕越散越柔
+
+  // ── 残影（任务走过后留下的淡痕，越多越有"一大簇"感）──
+  ghostWidth: 1.6,       // 残影线宽
+  ghostOpacity: 0.16,    // 残影初始透明度
+  ghostLife: 3200,       // 残影寿命(ms)：越大拖尾越长
+  ghostMax: 200,         // 残影数量上限：越大同时存在的残影越多 → 越"簇"
+};
+
+// 残影池：任务走过后残留的边，随时间渐隐
+let ghosts = [];      // { from, to, color, born, life, seed }
+let wobbleT = 0;      // 全局晃动相位
+
+// 生成贝塞尔曲线 path（带随时间晃动的控制点）
+function ghostPath(from, to, seed, t) {
+  const a = nodeCenter(from), b = nodeCenter(to);
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  const nx = -dy / dist, ny = dx / dist;
+  // 每条线有独立相位，大幅轻晃（像风筝线在空中飘）
+  const wob = Math.sin(t * VISUAL.wobbleSpeed + seed * 2.7) * VISUAL.wobbleAmp;
+  const bend = Math.min(26, dist * 0.10) + wob;
+  const cx = (a.x + b.x) / 2 + nx * bend;
+  const cy = (a.y + b.y) / 2 + ny * bend;
+  return `M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`;
+}
+
+// 渲染当前所有活跃任务的活动连线 + 残影
+function renderTraffic() {
+  // 清空
+  while (trafficSvg.firstChild) trafficSvg.removeChild(trafficSvg.firstChild);
+
+  // 发光滤镜（提前创建，供所有线引用）
+  let filter = document.createElementNS(NS, 'filter');
+  filter.setAttribute('id', 'trafficGlow');
+  filter.setAttribute('x', '-50%'); filter.setAttribute('y', '-50%');
+  filter.setAttribute('width', '200%'); filter.setAttribute('height', '200%');
+  filter.innerHTML = `<feGaussianBlur stdDeviation="${VISUAL.glowBlur}" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>`;
+  trafficSvg.appendChild(filter);
+
+  // 1) 残影层：先画（在活动线之下），带渐隐
+  const nowMs = performance.now();
+  for (const g of ghosts) {
+    const age = (nowMs - g.born) / g.life;   // 0 → 1
+    if (age >= 1) continue;
+    const opacity = (1 - age) * (1 - age) * VISUAL.ghostOpacity;   // 二次衰减
+    const d = ghostPath(g.from, g.to, g.seed, wobbleT);
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', d);
+    p.setAttribute('fill', 'none');
+    p.setAttribute('stroke', g.color);
+    p.setAttribute('stroke-width', VISUAL.ghostWidth);
+    p.setAttribute('stroke-opacity', opacity);
+    p.setAttribute('stroke-linecap', 'round');
+    p.setAttribute('filter', 'url(#trafficGlow)');
+    trafficSvg.appendChild(p);
+  }
+
+  // 2) 活动线层：每个任务 = 一根极细的丝线 + 一个稀疏游走的光点（风筝线感）
+  for (const task of activeTasks) {
+    if (task.step <= 0 || task.step >= task.path.length) continue;
+    const from = task.path[task.step - 1];
+    const to = task.path[task.step];
+    const color = task.color || taskColor(task.seed);
+    const d = ghostPath(from, to, task.seed, wobbleT);
+
+    // 丝线本体：极细、极淡，几乎只是"线的存在感"
+    const line = document.createElementNS(NS, 'path');
+    line.setAttribute('d', d);
+    line.setAttribute('fill', 'none');
+    line.setAttribute('stroke', color);
+    line.setAttribute('stroke-width', VISUAL.lineWidth);
+    line.setAttribute('stroke-opacity', VISUAL.lineOpacity);
+    line.setAttribute('stroke-linecap', 'round');
+    trafficSvg.appendChild(line);
+    const len = line.getTotalLength();
+
+    // 单光点：在丝线上稀疏游走（极短亮段 + 极长空隙 = 一颗孤星）
+    const flow = ((wobbleT * VISUAL.dotSpeed + task.seed * 137) % len + len) % len;
+    const dash = (len * VISUAL.dotDashRatio) + ' ' + (len * (1 - VISUAL.dotDashRatio));
+    const dot = document.createElementNS(NS, 'path');
+    dot.setAttribute('d', d);
+    dot.setAttribute('fill', 'none');
+    dot.setAttribute('stroke', color);
+    dot.setAttribute('stroke-width', VISUAL.dotWidth);
+    dot.setAttribute('stroke-opacity', VISUAL.dotOpacity);
+    dot.setAttribute('stroke-linecap', 'round');
+    dot.setAttribute('stroke-dasharray', dash);
+    dot.setAttribute('stroke-dashoffset', -flow);
+    dot.setAttribute('filter', 'url(#trafficGlow)');
+    trafficSvg.appendChild(dot);
+  }
+}
+
+// 记录一条残影（任务走完某条边时调用）
+function addGhost(from, to, color, seed) {
+  ghosts.push({ from, to, color, seed, born: performance.now(), life: VISUAL.ghostLife });
+  // 控制残影数量，防止无限膨胀
+  if (ghosts.length > VISUAL.ghostMax) ghosts.splice(0, ghosts.length - VISUAL.ghostMax);
+}
+
+// 残影/晃动渲染循环：每帧推进晃动相位 + 清理过期残影 + 重绘
+function trafficLoop() {
+  wobbleT += 0.005;   // 缓慢相位推进（流动 + 晃动都更舒缓）
+  // 清理过期残影
+  const nowMs = performance.now();
+  ghosts = ghosts.filter(g => nowMs - g.born < g.life);
+  renderTraffic();
+  requestAnimationFrame(trafficLoop);
+}
+requestAnimationFrame(trafficLoop);
+
+// ============ 模拟引擎：多任务并发生命周期 ============
+const cfg = {
+  concurrency: 12,     // 并发路数（活跃任务数）
+  rate: 12,            // 日志频率（条/秒，独立于任务推进）
+  taskRate: 6,         // 任务推进节奏（步/秒，独立于日志，决定线切换速度）
+  blockProb: 0.08,     // 拦截概率
+  total: 1284,         // 任务总量
+  paused: false,
+};
+
+let completed = 0, blocked = 0, taskSeq = 0;
+let activeTasks = [];   // 正在流转的任务
+
+// 任务路径（输入 → 处理 → 输出 的节点序列）
+const TASK_PATHS = [
+  { name: 'research', nodes: ['ai_bot','chief_staff','orchestr','pm','web_res','crawler','code_rev','risk_check','qa_verify','validator'] },
+  { name: 'codegen',  nodes: ['ai_bot','chief_staff','orchestr','pm','codegen','code_rev','risk_check','qa_verify','validator'] },
+  { name: 'data',     nodes: ['ai_bot','chief_staff','orchestr','pm','data_agent','crawler','code_rev','risk_check','qa_verify','validator'] },
+];
+const STEP_LOG = {
+  'ai_bot':      (t) => [`task ${t} dispatched → AI Bot`, 'tag'],
+  'chief_staff': (t) => [`chief-of-staff: goal decomposed`, 'tag'],
+  'orchestr':    (t) => [`workbuddy: sub-task split → ${rand(2,5)}`, 'tag'],
+  'pm':          (t) => [`pm: ${t} assigned to pipeline`, 'ok'],
+  'web_res':     (t) => [`web_researcher: scraping · ${rand(2,20)} pages`, ''],
+  'codegen':     (t) => [`codebuddy: pseudo-code emitted ✓`, 'ok'],
+  'data_agent':  (t) => [`data_agent: ${rand(3,50)}k rows fetched`, ''],
+  'crawler':     (t) => [`crawler: ${rand(5,200)} reqs · 2xx`, 'ok'],
+  'code_rev':    (t) => [`code_reviewer: diff review · ${rand(0,3)} issues`, 'ok'],
+  'risk_check':  (t) => [`risk_checker: sensitive op scan → clean`, 'ok'],
+  'qa_verify':   (t) => [`qa_verifier: edge-case passed`, 'ok'],
+  'validator':   (t) => [`validator: format check PASS`, 'ok'],
+};
+
+function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+function logLine(ts, msg, cls) {
+  const el = document.createElement('div');
+  el.className = 'log-line ' + (cls || '');
+  el.innerHTML = `<span class="ts">${ts}</span>${msg}`;
+  const scroll = document.getElementById('logScroll');
+  scroll.appendChild(el);
+  while (scroll.children.length > 200) scroll.removeChild(scroll.firstChild);
+  scroll.scrollTop = scroll.scrollHeight;
+}
+
+function pad(n) { return String(n).padStart(2, '0'); }
+function now() {
+  const d = new Date();
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(Math.floor(d.getMilliseconds()/10))}`;
+}
+
+// 点亮节点（busy 状态 + load 波动）
+function lightNode(id, busy) {
+  const el = document.getElementById('node_' + id);
+  if (!el) return;
+  const st = el.querySelector('.node-state');
+  const bar = el.querySelector('.node-bar i');
+  const pctEl = el.querySelector('.load-pct');
+  if (busy) {
+    st.className = 'node-state busy'; el.classList.add('active');
+    const load = rand(45, 98);
+    bar.style.width = load + '%'; pctEl.textContent = load + '%';
+  } else {
+    st.className = 'node-state idle'; el.classList.remove('active');
+    const load = rand(3, 25);
+    bar.style.width = load + '%'; pctEl.textContent = load + '%';
+  }
+}
+
+// 生成一个新任务
+function spawnTask() {
+  if (completed + blocked + activeTasks.length >= cfg.total) return;
+  const path = TASK_PATHS[rand(0, TASK_PATHS.length - 1)];
+  const id = 't' + String(++taskSeq).padStart(4, '0');
+  const seed = taskSeq;
+  activeTasks.push({ id, path: path.nodes, step: 0, seed, color: taskColor(seed) });
+}
+
+// 推进单个任务一步（不再产日志，日志由 logPump 独立生成）
+function stepTask(task) {
+  const nodeId = task.path[task.step];
+  // 点亮当前节点
+  lightNode(nodeId, true);
+
+  // 记录残影：任务离开当前边（从 step-1 → step 这条边已走过）
+  if (task.step > 0 && task.step < task.path.length) {
+    const from = task.path[task.step - 1];
+    const to = task.path[task.step];
+    addGhost(from, to, task.color, task.seed);
+  }
+
+  // 推进到下一步
+  task.step++;
+
+  // 走到终点 → 校验器裁决
+  if (task.step >= task.path.length) {
+    lightNode(nodeId, false);
+    // 拦截裁决
+    if (Math.random() < cfg.blockProb) {
+      blocked++;
+    } else {
+      completed++;
+    }
+    return true; // 任务终结（无论通过或拦截）
+  }
+  return false;
+}
+
+// 任务推进循环：独立于日志频率，控制线切换的节奏
+function taskPump() {
+  if (cfg.paused) return;
+
+  // 维持并发路数：补足活跃任务
+  while (activeTasks.length < cfg.concurrency && completed + blocked + activeTasks.length < cfg.total) {
+    spawnTask();
+  }
+
+  // 异步错峰推进：每个任务按独立概率推进，而非齐步走
+  const remaining = [];
+  for (const task of activeTasks) {
+    // 每个任务有独立概率本 tick 推进一步（模拟真实异步节奏）
+    if (Math.random() < 0.7) {
+      const done = stepTask(task);
+      if (!done) remaining.push(task);
+    } else {
+      remaining.push(task);  // 本 tick 不动
+    }
+  }
+  activeTasks = remaining;
+
+  // 刷新 UI 统计（连线由独立 trafficLoop 每帧渲染）
+  updateStats();
+}
+
+// 日志生成循环：独立于任务推进，按日志频率产日志
+// 日志内容从活跃任务中随机取一个，模拟"该任务当前产生的日志"
+function logPump() {
+  if (cfg.paused) return;
+  // 随机抽取一条日志（优先级：活跃任务的实际节点 > 通用心跳日志）
+  if (activeTasks.length > 0 && Math.random() < 0.75) {
+    const task = activeTasks[rand(0, activeTasks.length - 1)];
+    const nodeId = task.path[Math.min(task.step, task.path.length - 1)];
+    const fn = STEP_LOG[nodeId];
+    if (fn) {
+      const [msg, cls] = fn(task.id);
+      logLine(now(), msg, cls);
+      return;
+    }
+  }
+  // 兜底：通用心跳日志
+  const pool = [
+    ['heartbeat ok · latency ' + rand(8, 40) + 'ms', ''],
+    ['validator: format check PASS', 'ok'],
+    ['risk_checker: sensitive op scan → clean', 'ok'],
+    ['workbuddy: sub-task split → ' + rand(2, 5), 'tag'],
+  ];
+  const e = pool[rand(0, pool.length - 1)];
+  logLine(now(), e[0], e[1]);
+}
+
+// 更新统计面板
+function updateStats() {
+  const inflight = activeTasks.length;
+  const pct = cfg.total > 0 ? Math.min(100, Math.round((completed + blocked) / cfg.total * 100)) : 0;
+  document.getElementById('ringPct').textContent = pct + '%';
+  const C = 389.6;
+  document.getElementById('ringFg').style.strokeDashoffset = C - (C * pct / 100);
+  document.getElementById('stCompleted').textContent = completed;
+  document.getElementById('stBlocked').textContent = blocked;
+  document.getElementById('stInflight').textContent = inflight;
+  document.getElementById('mTasks').textContent = cfg.total;
+  document.getElementById('mAgents').textContent = '17';
+  const pass = completed + blocked > 0 ? (completed / (completed + blocked) * 100).toFixed(1) : 100;
+  document.getElementById('mRate').textContent = pass;
+}
+
+// ============ 配置面板交互 ============
+const cfgToggle = document.getElementById('cfgToggle');
+const cfgPanel = document.getElementById('cfgPanel');
+cfgToggle.addEventListener('click', () => {
+  cfgPanel.classList.toggle('open');
+  cfgToggle.classList.toggle('active');
+});
+
+// 通用滑块绑定：绑定到任意对象（cfg / VISUAL）的任意字段
+function bindRange(id, valId, obj, key, fmt, onchange) {
+  const el = document.getElementById(id);
+  const val = document.getElementById(valId);
+  el.addEventListener('input', () => {
+    obj[key] = parseFloat(el.value);
+    val.textContent = fmt ? fmt(obj[key]) : obj[key];
+    if (onchange) onchange(obj[key]);
+  });
+}
+
+// ── 模拟引擎参数 ──
+bindRange('cfgConcurrency', 'cfgConcurrencyV', cfg, 'concurrency');
+bindRange('cfgRate', 'cfgRateV', cfg, 'rate', null, restartLogPump);
+bindRange('cfgTaskRate', 'cfgTaskRateV', cfg, 'taskRate', null, restartTaskPump);
+bindRange('cfgTotal', 'cfgTotalV', cfg, 'total', null, updateStats);
+// 拦截概率：滑块值 0-50 → 实际概率 0-0.5
+document.getElementById('cfgBlock').addEventListener('input', () => {
+  cfg.blockProb = parseFloat(document.getElementById('cfgBlock').value) / 100;
+  document.getElementById('cfgBlockV').textContent = Math.round(cfg.blockProb * 100) + '%';
+});
+
+// ── 视觉 · 线体参数 ──
+bindRange('vLineWidth', 'vLineWidthV', VISUAL, 'lineWidth');
+bindRange('vLineOpacity', 'vLineOpacityV', VISUAL, 'lineOpacity');
+bindRange('vDotWidth', 'vDotWidthV', VISUAL, 'dotWidth');
+bindRange('vDotSpeed', 'vDotSpeedV', VISUAL, 'dotSpeed');
+bindRange('vWobbleAmp', 'vWobbleAmpV', VISUAL, 'wobbleAmp');
+bindRange('vGlowBlur', 'vGlowBlurV', VISUAL, 'glowBlur');
+
+// ── 视觉 · 残影参数 ──
+bindRange('vGhostOpacity', 'vGhostOpacityV', VISUAL, 'ghostOpacity');
+// 残影寿命：滑块单位是「秒」，内部 VISUAL.ghostLife 是「毫秒」
+document.getElementById('vGhostLife').addEventListener('input', () => {
+  const sec = parseFloat(document.getElementById('vGhostLife').value);
+  VISUAL.ghostLife = sec * 1000;
+  document.getElementById('vGhostLifeV').textContent = sec.toFixed(1);
+});
+bindRange('vGhostMax', 'vGhostMaxV', VISUAL, 'ghostMax');
+
+document.getElementById('cfgPause').addEventListener('click', function() {
+  cfg.paused = !cfg.paused;
+  this.textContent = cfg.paused ? '▶ 恢复' : '⏸ 暂停';
+});
+document.getElementById('cfgReset').addEventListener('click', () => {
+  completed = 0; blocked = 0; taskSeq = 0; activeTasks = []; ghosts = [];
+  document.getElementById('logScroll').innerHTML = '';
+  updateStats();
+  logLine(now(), 'orchestrator reset · simulation restarted', 'tag');
+});
+document.getElementById('cfgBurst').addEventListener('click', () => {
+  // 突发峰值：瞬间注入 3 倍并发任务
+  for (let i = 0; i < cfg.concurrency * 3; i++) spawnTask();
+  logLine(now(), '⚡ BURST: ' + (cfg.concurrency * 3) + ' tasks injected', 'warn');
+});
+
+// ============ 启动 ============
+window.addEventListener('resize', () => { resizeCanvas(); resizeTrafficCanvas(); });
+resizeCanvas();
+resizeTrafficCanvas();
+
+// 两个独立定时器：任务推进节奏 与 日志频率 彻底解耦
+let taskTimer = null, logTimer = null;
+function restartTaskPump() {
+  if (taskTimer) clearInterval(taskTimer);
+  const interval = Math.max(60, Math.round(1000 / cfg.taskRate));
+  taskTimer = setInterval(taskPump, interval);
+}
+function restartLogPump() {
+  if (logTimer) clearInterval(logTimer);
+  const interval = Math.max(40, Math.round(1000 / cfg.rate));
+  logTimer = setInterval(logPump, interval);
+  document.getElementById('hbText').textContent = Math.round(interval / 1000 * 10) / 10 + 's';
+}
+restartTaskPump();
+restartLogPump();
+
+// 初始填充
+updateStats();
+logLine(now(), 'orchestrator online · hungfo v0.1', 'tag');
+logLine(now(), '17 agents registered · heartbeat sync', 'ok');
+logLine(now(), 'validation gate armed · policy loaded', 'ok');
+</script>
+</body>
+</html>

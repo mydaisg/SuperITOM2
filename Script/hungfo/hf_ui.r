@@ -4,6 +4,9 @@
 # 新增环节只需：新增 hf_mod_*.r + 在 server.R 加一行 source()
 ##################
 
+# 注册 HungFo 静态资源路径（www 下文件通过 /hungfo/ 前缀访问，自包含、不依赖主应用 www）
+addResourcePath("hungfo", "Script/hungfo/www")
+
 # ── 单个环节页面 UI ──
 hf_module_page_ui <- function(m) {
   key <- m$key
@@ -92,6 +95,20 @@ hf_module_page_server <- function(input, output, session, rv, m, trigger) {
   observeEvent(input[[p("refresh_btn")]], local_refresh())
 }
 
+# ── Agent 监控面板 Tab（iframe 嵌入独立 HTML，后续接真实心跳接口）──
+hf_agent_monitor_tab <- function() {
+  tabPanel(
+    "Agent监控", icon = icon("network-wired"),
+    div(style = "padding:0;",
+      tags$iframe(
+        src = "hungfo/hungfo_agent_monitor.html",
+        style = "width:100%;height:calc(100vh - 160px);border:none;border-radius:8px;",
+        frameborder = "0"
+      )
+    )
+  )
+}
+
 # ── HungFo 主 UI（总览 + 各环节 Tab）──
 hungfo_ui <- function() {
   mods <- hf_modules()
@@ -108,7 +125,8 @@ hungfo_ui <- function() {
     do.call(tabsetPanel, c(
       list(id = "hf_main_tabs", type = "pills"),
       list(tabPanel("总览", icon = icon("home"), br(), uiOutput("hf_overview"))),
-      unname(lapply(mods, hf_module_page_ui))
+      unname(lapply(mods, hf_module_page_ui)),
+      list(hf_agent_monitor_tab())
     ))
   )
 }
@@ -139,6 +157,8 @@ hungfo_standalone_ui <- function() {
     ),
     # 12 个环节页
     unname(lapply(mods, hf_module_page_ui)),
+    # Agent 监控面板
+    list(hf_agent_monitor_tab()),
     # 回 ITOM 导航（放在最右，作为「返回链接」）
     list(
       tabPanel("回 ITOM", value = "back", icon = icon("arrow-left"),

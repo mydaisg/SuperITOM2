@@ -57,7 +57,12 @@ flow_viz_ui <- function() {
             tags$hr(style = "margin:10px 0;"),
             tags$p(style = "font-size:12px; color:#666; margin-bottom:6px;",
               "或引用「通用数据导入」中的数据集（需含 流程名称/当前节点/发起人/发起时间 列）直接生成看板："),
-            selectInput("fvz_dataset", "引用数据集", choices = NULL, width = "100%"),
+            tags$div(style = "font-size:12px; color:#666; margin-bottom:2px;", "引用数据集"),
+            tags$div(style = "display:flex; gap:6px; align-items:center;",
+              tags$div(style = "flex:1;", selectInput("fvz_dataset", NULL, choices = NULL, width = "100%")),
+              actionButton("fvz_refresh_dataset", NULL, icon = icon("sync"),
+                           class = "btn-default btn-sm", title = "刷新数据集列表")
+            ),
             actionButton("fvz_generate_from_dataset", "引用数据集生成看板", icon = icon("database"),
                          class = "btn-success", style = "width:100%;")
           ),

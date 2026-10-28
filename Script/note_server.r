@@ -853,10 +853,10 @@ note_server <- function(input, output, session, rv) {
         reply_btn <- sprintf('<button class="btn btn-xs %s comment-reply-btn" data-id="%d" data-name="%s">💬 回复</button>', reply_btn_cls, c$id, cn)
         indent <- if (level > 0) sprintf("margin-left:%dpx;", level * 24) else ""
 
-        # 是否一级评论（level=0）：默认收缩正文与子评论，仅显示头部
+        # 是否一级评论（level=0）：默认全部展开（正文完整显示 + 子评论显示）
         is_top <- (level == 0)
 
-        # 子评论（一级默认收缩，子级默认展开）
+        # 子评论（默认全部展开显示）
         sub_html <- ""
         if (!is.null(children_df) && nrow(children_df) > 0) {
           subs <- children_df[children_df$parent_id == c$id, ]
@@ -866,7 +866,7 @@ note_server <- function(input, output, session, rv) {
               sub_label <- if (!is.null(num_label)) sprintf("%s.%d", num_label, si) else as.character(si)
               sub_parts <- c(sub_parts, render_one_comment(subs[si, ], children_df, level + 1, counter + si, sub_label))
             }
-            sub_display <- if (is_top) "display:none;" else ""
+            sub_display <- ""
             sub_html <- sprintf('<div class="comment-sub-list" style="margin-top:4px;%s">%s</div>', sub_display, paste(sub_parts, collapse = ""))
           }
         }
@@ -876,13 +876,13 @@ note_server <- function(input, output, session, rv) {
           sprintf('<span style="font-weight:bold; color:%s; font-family:Consolas,monospace; font-size:12px; margin-right:2px;">%s.</span>', clr, num_label)
         } else ""
 
-        # 有子评论或正文的一级评论：默认折叠（正文仅首行预览 + 子评论隐藏）
+        # 默认全部展开：一级评论有正文或子评论时显示「▴ 收缩」按钮，可手动收缩
         has_sub <- (nchar(sub_html) > 0)
         has_body <- (isTRUE(nchar(c$content %||% "") > 0))
-        is_collapsed <- is_top && (has_sub || has_body)
-        item_cls <- if (is_collapsed) "comment-item collapsed" else "comment-item"
-        collapse_btn <- if (is_collapsed) {
-          sprintf('<button class="btn btn-xs btn-default comment-collapse-btn" data-id="%d">▾ 展开</button>', c$id)
+        is_collapsed <- FALSE
+        item_cls <- "comment-item"
+        collapse_btn <- if (is_top && (has_sub || has_body)) {
+          sprintf('<button class="btn btn-xs btn-default comment-collapse-btn" data-id="%d">▴ 收缩</button>', c$id)
         } else ""
 
         base <- sprintf(
@@ -969,7 +969,7 @@ note_server <- function(input, output, session, rv) {
             id = "note_comment_collapse_all_btn",
             class = "btn btn-xs btn-default",
             onclick = "var $tops=$('.note-comment-list > .comment-item');var allCollapsed=($tops.length>0)&&($tops.filter('.collapsed').length===$tops.length);if(allCollapsed){$tops.removeClass('collapsed');$tops.find('.comment-text').css('display','');$tops.find('.comment-sub-list').show();$tops.find('.comment-collapse-btn').text('▴ 收缩');$(this).text('▴ 全部收缩');}else{$tops.addClass('collapsed');$tops.find('.comment-text').css('display','');$tops.find('.comment-sub-list').hide();$tops.find('.comment-collapse-btn').text('▾ 展开');$(this).text('▾ 全部展开');}",
-            "▾ 全部展开"
+            "▴ 全部收缩"
           ),
           tags$button(
             id = "note_comment_sort_btn",

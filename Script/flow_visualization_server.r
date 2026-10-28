@@ -9,17 +9,24 @@ flow_viz_server <- function(input, output, session, rv) {
   fvz_result <- reactiveVal(NULL)       # 流程数据看板结果
   fvz_log_result <- reactiveVal(NULL)   # 流程日志效率图结果
 
+  # 引用数据集下拉框选项：从「通用数据导入」读取所有数据集
+  fvz_dataset_choices <- function() {
+    ds <- data_import_get_datasets()
+    if (nrow(ds) == 0) return(NULL)
+    setNames(as.character(ds$id), sprintf("%s · %s", ds$dataset_no, ds$name))
+  }
+
   # 引用数据集下拉框：列出「通用数据导入」的所有数据集
   observe({
     req(rv$logged_in)
-    ds <- data_import_get_datasets()
-    if (nrow(ds) == 0) {
-      updateSelectInput(session, "fvz_dataset", choices = NULL)
-    } else {
-      choices <- setNames(as.character(ds$id),
-        sprintf("%s · %s", ds$dataset_no, ds$name))
-      updateSelectInput(session, "fvz_dataset", choices = choices)
-    }
+    updateSelectInput(session, "fvz_dataset", choices = fvz_dataset_choices())
+  })
+
+  # 手动刷新数据集下拉框（通用数据导入新增数据集后无需重新进入页面）
+  observeEvent(input$fvz_refresh_dataset, {
+    req(rv$logged_in)
+    updateSelectInput(session, "fvz_dataset", choices = fvz_dataset_choices())
+    showNotification("数据集列表已刷新", type = "message", duration = 1.5)
   })
 
   # 操作人
