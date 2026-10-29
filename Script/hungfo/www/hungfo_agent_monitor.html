@@ -8,6 +8,8 @@
 <script src="hungfo_tasks.js"></script>
 <!-- 会话追踪数据源：由 HungFo 元任务执行生成（LLM/Token/耗时），监控页据此展示 -->
 <script src="hungfo_sessions.js"></script>
+<!-- WorkBuddy 用量数据源：由 HungFo 采集本机 workbuddy.db 生成（积分/估算token），监控页据此展示 -->
+<script src="hungfo_usage.js"></script>
 <style>
   :root {
     --bg: #06070d;
@@ -242,6 +244,38 @@
   }
   .token-stats .tk-v.purple { color: var(--neon-purple); text-shadow: 0 0 10px rgba(168,85,247,0.5); }
   .token-stats .tk-sub { font-size: 8px; color: var(--text-dim); margin-top: 2px; }
+
+  /* ===== 左侧底部：WorkBuddy 用量（积分 credit / 估算 token）===== */
+  .wb-usage {
+    flex-shrink: 0;
+    margin: 0 16px 12px;
+    border: 1px solid rgba(34,211,238,0.16);
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(34,211,238,0.06), rgba(168,85,247,0.05));
+    padding: 8px 10px;
+  }
+  .wb-usage .wu-title {
+    font-family: var(--mono);
+    font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--text-dim);
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 6px;
+  }
+  .wb-usage .wu-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  }
+  .wb-usage .wu-box {
+    background: rgba(16,20,36,0.5);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px; padding: 6px 8px;
+  }
+  .wb-usage .wu-k { font-size: 8px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
+  .wb-usage .wu-v {
+    font-family: var(--mono); font-size: 15px; font-weight: 800; margin-top: 2px;
+    color: var(--neon-cyan); text-shadow: 0 0 8px rgba(34,211,238,0.45);
+  }
+  .wb-usage .wu-v.credit { color: var(--neon-pink); text-shadow: 0 0 8px rgba(236,72,153,0.45); }
+  .wb-usage .wu-sub { font-size: 8px; color: var(--text-dim); margin-top: 1px; }
 
   /* ===== 左侧底部：会话追踪面板（LIVE TASKS 同行右侧） ===== */
   .session-panel {
@@ -698,6 +732,25 @@
         <div class="tk-k">TOKEN · TOTAL</div>
         <div class="tk-v purple" id="tkTotal">0</div>
         <div class="tk-sub" id="tkTotalSub">0 会话</div>
+      </div>
+    </div>
+    <!-- WorkBuddy 用量：积分(credit) + 估算 token（来自本机 workbuddy.db 采集） -->
+    <div class="wb-usage">
+      <div class="wu-title">
+        <span>WorkBuddy 用量 · TODAY</span>
+        <span id="wuUpdated" style="color:var(--text-dim);">—</span>
+      </div>
+      <div class="wu-grid">
+        <div class="wu-box">
+          <div class="wu-k">CREDIT</div>
+          <div class="wu-v credit" id="wuCreditToday">0</div>
+          <div class="wu-sub" id="wuCreditTodaySub">0 会话</div>
+        </div>
+        <div class="wu-box">
+          <div class="wu-k">TOKEN(估)</div>
+          <div class="wu-v" id="wuTokToday">0</div>
+          <div class="wu-sub" id="wuTokTodaySub">0 请求</div>
+        </div>
       </div>
     </div>
     <!-- 任务名称列表：固定比例、无下拉条、少则空行、多则缓慢流动 -->
@@ -1343,6 +1396,29 @@ function renderSessionPanel() {
   });
 }
 
+// ============ WorkBuddy 用量面板（积分 credit / 估算 token） ============
+// 数据来源：window.HF_WB_USAGE（由 collect_usage 生成 hungfo_usage.js）
+function fmtCredit(n) {
+  if (n == null || isNaN(n) || n <= 0) return '0';
+  if (n >= 1000) return (n / 1000).toFixed(2) + 'k';
+  return (Math.round(n * 100) / 100).toString();
+}
+function renderWbUsage() {
+  const data = (typeof window.HF_WB_USAGE !== 'undefined') ? window.HF_WB_USAGE : null;
+  if (!data || !data.summary) {
+    document.getElementById('wuUpdated').textContent = '未采集';
+    return;
+  }
+  const s = data.summary;
+  const today = s.today || {};
+  document.getElementById('wuCreditToday').textContent = fmtCredit(today.credit);
+  document.getElementById('wuTokToday').textContent = fmtTok(today.token_est);
+  document.getElementById('wuCreditTodaySub').textContent = (today.sessions || 0) + ' 会话';
+  document.getElementById('wuTokTodaySub').textContent = (today.requests || 0) + ' 请求';
+  const upd = data.updated_at || '';
+  document.getElementById('wuUpdated').textContent = upd.slice(5, 16);
+}
+
 // 更新统计面板
 function updateStats() {
   const inflight = activeTasks.length;
@@ -1470,6 +1546,7 @@ restartLogPump();
 updateStats();
 renderTaskList();
 renderSessionPanel();
+renderWbUsage();
 logLine(now(), 'orchestrator online · hungfo v0.1', 'tag');
 logLine(now(), AGENTS.length + ' agents registered · heartbeat sync', 'ok');
 logLine(now(), 'validation gate armed · policy loaded', 'ok');

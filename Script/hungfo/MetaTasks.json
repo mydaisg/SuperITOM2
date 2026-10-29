@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-10-28 17:57:34",
+  "updated_at": "2026-10-29 09:07:20",
   "tasks": [
     {
       "id": 1,
@@ -50,6 +50,26 @@
       "last_run_at": "2026-10-28 17:57:34",
       "next_run_at": null,
       "result": "HungFo剥离完成：独立app.R+hf_config.r，双模式验证通过"
+    },
+    {
+      "id": 11,
+      "title": "独立数据库出来",
+      "payload": "独立数据库出来\n1、已放好SQLite的必要文件在D:\\GITHUB\\SUPERITOM2\\SCRIPT\\HUNGFO\\DB\n    sqldiff.exe\n    sqlite3.exe\n    sqlite3_analyzer.exe\n2、创建HF_HungFo.DB文件\n3、移植父项目数据库的本子项目数据\n4、改写本子项目的想着数据库代码，导向HF_HungFo.DB\n5、目的是逐步解耦，实现HungFo子项目完全独立\n启动独立：专用WEB端口8999\n数据库独立：HF_HungFo.DB",
+      "cron": "",
+      "status": "pending",
+      "last_run_at": null,
+      "next_run_at": "2026-10-29 09:04:41",
+      "result": ""
+    },
+    {
+      "id": 12,
+      "title": "元任务模块的需求队列展示问题",
+      "payload": "元任务模块的需求队列展示问题\n1、只有标题，没有内容\n2、不同状态要用颜色块标记，待开发黄色，已完成绿色，开发异常红色\n3、增加完成LLM和Agent，是哪个LLM和Agent(WorkBuddy还是CodeBuddy)",
+      "cron": "",
+      "status": "pending",
+      "last_run_at": null,
+      "next_run_at": "2026-10-29 09:07:20",
+      "result": ""
     }
   ]
 }

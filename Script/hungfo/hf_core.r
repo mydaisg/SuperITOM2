@@ -143,6 +143,18 @@ hf_db_init <- function() {
     finished_at TEXT,
     created_at TEXT DEFAULT (datetime('now','localtime'))
   )")
+  # WorkBuddy 用量采集表：从本机 workbuddy.db 采到的每个对话/自动任务积分与估算 token
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_wb_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT,                            -- WorkBuddy 会话 ID
+    title TEXT,                                 -- 对话标题
+    credit REAL DEFAULT 0,                      -- 积分消耗合计（credit）
+    token_est INTEGER DEFAULT 0,                -- 估算 token（积分 × 比例）
+    requests INTEGER DEFAULT 0,                 -- 请求次数
+    model TEXT,                                 -- 所用模型
+    last_updated TEXT,                          -- 最近更新时间戳(毫秒字符串，避免 int64 溢出)
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+  )")
   invisible(TRUE)
 }
 
@@ -583,5 +595,132 @@ hf_sessions_export <- function(limit = 200) {
   body <- jsonlite::toJSON(out, auto_unbox = TRUE, pretty = TRUE, null = "null")
   writeLines(paste0("// 由 HungFo 生成（hf_sessions_export），勿手改\nwindow.HF_SESSIONS = ", body, ";\n"),
              HF_SESSIONS_JSON, useBytes = TRUE)
+  invisible(out)
+}
+
+# ══════════════════════════════════════════════════════════════════════
+# WorkBuddy 用量采集（从本机 workbuddy.db 读取真实积分/token 消耗）
+# 数据源：C:/Users/<用户>/.workbuddy/workbuddy.db 的 session_usage 表
+#   - credit_json: {"请求ID": 积分值}，每次请求消耗的积分明细
+#   - used: 累计计量值
+# 口径：credit=积分(计费单位)，token_est=估算token（credit × 比例）
+# ══════════════════════════════════════════════════════════════════════
+
+# 定位本机 workbuddy.db
+hf_wb_db_path <- function() {
+  env <- Sys.getenv("WORKBUDDY_DB")
+  if (nzchar(env) && file.exists(env)) return(env)
+  cand <- c(
+    file.path(Sys.getenv("USERPROFILE", unset = Sys.getenv("HOME", unset = "")), ".workbuddy", "workbuddy.db"),
+    file.path(Sys.getenv("HOME", unset = ""), ".workbuddy", "workbuddy.db")
+  )
+  for (p in cand) if (nzchar(p) && file.exists(p)) return(p)
+  NULL
+}
+
+# 积分 → 估算 token 的比例（可调；默认 1 积分 ≈ 500 token，经验值）
+HF_WB_CREDIT_TO_TOKEN <- 500
+
+# 从 workbuddy.db 读取每个会话的积分与估算 token
+# 返回 data.frame: session_id, title, model, credit, token_est, requests, last_updated
+hf_wb_read_usage <- function() {
+  path <- hf_wb_db_path()
+  if (is.null(path)) return(data.frame())
+  con <- tryCatch(DBI::dbConnect(RSQLite::SQLite(), path), error = function(e) NULL)
+  if (is.null(con)) return(data.frame())
+  on.exit(try(DBI::dbDisconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    usg <- DBI::dbGetQuery(con, "SELECT session_id, credit_json, updated_at FROM session_usage")
+    ses <- DBI::dbGetQuery(con, "SELECT id, title, model FROM sessions")
+    if (is.null(usg) || nrow(usg) == 0) return(data.frame())
+    # 标题/模型映射（容错：NA 归空）
+    tid <- if (!is.null(ses) && nrow(ses) > 0) as.character(ses$id) else character(0)
+    ttl <- if (!is.null(ses) && nrow(ses) > 0) as.character(ses$title) else character(0)
+    mdl <- if (!is.null(ses) && nrow(ses) > 0) as.character(ses$model) else character(0)
+    ttl[is.na(ttl)] <- ""; mdl[is.na(mdl)] <- ""
+    names(ttl) <- tid; names(mdl) <- tid
+    # 解析 credit_json，累计每个 session 的积分与请求次数
+    rows <- lapply(seq_len(nrow(usg)), function(i) {
+      cj <- usg$credit_json[i]
+      credits <- if (is.na(cj) || !nzchar(cj)) list() else tryCatch(jsonlite::fromJSON(cj), error = function(e) list())
+      credit <- if (length(credits) == 0) 0 else sum(as.numeric(unlist(credits)), na.rm = TRUE)
+      nreq <- length(credits)
+      sid <- as.character(usg$session_id[i])
+      title <- if (sid %in% tid) ttl[[sid]] else ""
+      model <- if (sid %in% tid) mdl[[sid]] else ""
+      lu <- as.character(usg$updated_at[i])
+      if (is.na(lu)) lu <- "0"
+      list(session_id = sid, title = title, model = model, credit = credit,
+           requests = nreq, last_updated = lu)
+    })
+    df <- do.call(rbind, lapply(rows, as.data.frame, stringsAsFactors = FALSE))
+    df$token_est <- round(as.numeric(df$credit) * HF_WB_CREDIT_TO_TOKEN)
+    df[order(-as.numeric(df$last_updated)), , drop = FALSE]
+  }, error = function(e) data.frame())
+}
+
+# 采集 WorkBuddy 用量写入 hf_wb_usage（全量覆盖式刷新），并导出 hungfo_usage.js
+hf_wb_usage_sync <- function() {
+  df <- hf_wb_read_usage()
+  con <- db_connect()
+  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  if (is.null(df) || nrow(df) == 0) {
+    hf_wb_usage_export()
+    return(list(success = TRUE, sessions = 0, message = "未读取到 WorkBuddy 用量数据（workbuddy.db 不存在或为空）"))
+  }
+  # 覆盖式刷新：先清空再插入
+  dbExecute(con, "DELETE FROM hf_wb_usage")
+  for (i in seq_len(nrow(df))) {
+    dbExecute(con, sprintf(
+      "INSERT INTO hf_wb_usage (session_id,title,credit,token_est,requests,model,last_updated)
+       VALUES ('%s','%s',%f,%d,%d,'%s','%s')",
+      hf_esc(df$session_id[i]), hf_esc(df$title[i]),
+      as.numeric(df$credit[i]), as.integer(df$token_est[i]), as.integer(df$requests[i]),
+      hf_esc(df$model[i]), hf_esc(as.character(df$last_updated[i]))))
+  }
+  hf_wb_usage_export()
+  list(success = TRUE, sessions = nrow(df), message = paste0("已采集 ", nrow(df), " 个 WorkBuddy 会话用量"))
+}
+
+# 查询采集的 WorkBuddy 用量（供界面/导出使用）
+hf_wb_usage_list <- function(limit = 200) {
+  con <- db_connect()
+  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch(dbGetQuery(con, sprintf(
+    "SELECT * FROM hf_wb_usage ORDER BY last_updated DESC LIMIT %d", as.integer(limit))),
+    error = function(e) data.frame())
+}
+
+# WorkBuddy 用量汇总（今日 / 全部，积分与估算 token 双口径）
+hf_wb_usage_summary <- function() {
+  con <- db_connect()
+  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    all_s <- dbGetQuery(con, "SELECT COALESCE(SUM(credit),0) credit, COALESCE(SUM(token_est),0) tok, COALESCE(SUM(requests),0) req, COUNT(*) n FROM hf_wb_usage")
+    day_s <- dbGetQuery(con, "SELECT COALESCE(SUM(credit),0) credit, COALESCE(SUM(token_est),0) tok, COALESCE(SUM(requests),0) req, COUNT(*) n FROM hf_wb_usage WHERE datetime(CAST(last_updated AS INTEGER)/1000,'unixepoch','localtime') >= date('now','localtime')")
+    list(
+      total = list(credit = all_s$credit[1], token_est = all_s$tok[1], requests = all_s$req[1], sessions = all_s$n[1]),
+      today = list(credit = day_s$credit[1], token_est = day_s$tok[1], requests = day_s$req[1], sessions = day_s$n[1])
+    )
+  }, error = function(e) list(total = list(credit = 0, token_est = 0, requests = 0, sessions = 0), today = list(credit = 0, token_est = 0, requests = 0, sessions = 0)))
+}
+
+# 导出 WorkBuddy 用量到 www/hungfo_usage.js（监控页前端读取）
+hf_wb_usage_export <- function(limit = 200) {
+  u <- hf_wb_usage_list(limit)
+  sm <- hf_wb_usage_summary()
+  usages <- if (is.null(u) || nrow(u) == 0) list() else lapply(seq_len(nrow(u)), function(i) list(
+    session_id = hf_or(u$session_id[i], ""), title = hf_or(u$title[i], ""),
+    credit = if (is.na(u$credit[i])) 0 else u$credit[i],
+    token_est = if (is.na(u$token_est[i])) 0 else u$token_est[i],
+    requests = if (is.na(u$requests[i])) 0 else u$requests[i],
+    model = hf_or(u$model[i], ""),
+    last_updated = if (is.na(u$last_updated[i])) 0 else u$last_updated[i]
+  ))
+  out <- list(updated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S"), summary = sm, usages = usages)
+  dir.create(file.path(hf_home(), "www"), showWarnings = FALSE, recursive = TRUE)
+  body <- jsonlite::toJSON(out, auto_unbox = TRUE, pretty = TRUE, null = "null")
+  writeLines(paste0("// 由 HungFo 生成（hf_wb_usage_export），勿手改\nwindow.HF_WB_USAGE = ", body, ";\n"),
+             file.path(hf_home(), "www", "hungfo_usage.js"), useBytes = TRUE)
   invisible(out)
 }

@@ -1,0 +1,7 @@
+Sys.setlocale("LC_ALL", "en_US.UTF-8")
+suppressMessages({ library(DBI); library(RSQLite); library(jsonlite) })
+con <- dbConnect(SQLite(), "DB/GH_ITOM.db")
+q <- dbGetQuery(con, "SELECT id, title, status, cron, llm_name, token_in, token_out, duration_ms, started_at, finished_at, session_id, result FROM hf_metatask_queue WHERE id IN (8,9,10) ORDER BY id ASC")
+writeLines(toJSON(q, pretty = TRUE, auto_unbox = TRUE), "D:/GitHub/SuperITOM2/.workbuddy/task_meta.json", useBytes = TRUE)
+dbDisconnect(con)
+cat("ok\n")

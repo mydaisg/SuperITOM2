@@ -7,7 +7,8 @@
 #   Rscript hf_metatask_runner.r peek              # 输出到期待执行任务(JSON)到 stdout
 #   Rscript hf_metatask_runner.r done <id> "<结果>"  # 标记任务完成(写库+更新镜像)
 #   Rscript hf_metatask_runner.r log "<标题>" "<内容>"  # 写一条开发日志(devlog)
-#   Rscript hf_metatask_runner.r export            # 重新导出 MetaTasks.json 镜像
+#   Rscript hf_metatask_runner.r sessions          # 重新导出 hungfo_sessions.js
+#   Rscript hf_metatask_runner.r usage             # 采集本机 WorkBuddy 用量(积分/token)并导出
 #   Rscript hf_metatask_runner.r cron "<expr>"     # 测试 cron 表达式的下一个触发时间
 ##################
 
@@ -169,6 +170,82 @@ export_sessions <- function(limit = 200) {
   invisible(out)
 }
 
+# ── usage：采集本机 WorkBuddy 用量（积分/估算token）写入 hf_wb_usage 并导出 js ──
+WB_DB_PATH <- function() {
+  env <- Sys.getenv("WORKBUDDY_DB")
+  if (nzchar(env) && file.exists(env)) return(env)
+  up <- Sys.getenv("USERPROFILE", unset = Sys.getenv("HOME", unset = ""))
+  cand <- c(
+    file.path(up, ".workbuddy", "workbuddy.db"),
+    file.path(Sys.getenv("HOME", unset = ""), ".workbuddy", "workbuddy.db"))
+  for (p in cand) if (nzchar(p) && file.exists(p)) return(p)
+  NULL
+}
+CREDIT_TO_TOKEN <- 500
+collect_usage <- function() {
+  wb <- WB_DB_PATH()
+  if (is.null(wb)) { cat(toJSON(list(success = FALSE, message = "未找到本机 workbuddy.db"))); return(invisible(FALSE)) }
+  wcon <- tryCatch(dbConnect(SQLite(), wb), error = function(e) NULL)
+  if (is.null(wcon)) { cat(toJSON(list(success = FALSE, message = "无法打开 workbuddy.db"))); return(invisible(FALSE)) }
+  on.exit(try(dbDisconnect(wcon), silent = TRUE), add = TRUE)
+  usg <- tryCatch(dbGetQuery(wcon, "SELECT session_id, credit_json, updated_at FROM session_usage"), error = function(e) data.frame())
+  ses <- tryCatch(dbGetQuery(wcon, "SELECT id, title, model FROM sessions"), error = function(e) data.frame())
+  if (is.null(usg) || nrow(usg) == 0) { cat(toJSON(list(success = FALSE, message = "workbuddy.db 中无 session_usage 数据"))); return(invisible(FALSE)) }
+  # 标题/模型映射（容错：NA 归空）
+  tid <- if (!is.null(ses) && nrow(ses) > 0) as.character(ses$id) else character(0)
+  ttl <- if (!is.null(ses) && nrow(ses) > 0) as.character(ses$title) else character(0)
+  mdl <- if (!is.null(ses) && nrow(ses) > 0) as.character(ses$model) else character(0)
+  ttl[is.na(ttl)] <- ""; mdl[is.na(mdl)] <- ""
+  names(ttl) <- tid; names(mdl) <- tid
+  rows <- lapply(seq_len(nrow(usg)), function(i) {
+    cj <- usg$credit_json[i]
+    credits <- if (is.na(cj) || !nzchar(cj)) list() else tryCatch(fromJSON(cj), error = function(e) list())
+    credit <- if (length(credits) == 0) 0 else sum(as.numeric(unlist(credits)), na.rm = TRUE)
+    nreq <- length(credits)
+    sid <- as.character(usg$session_id[i])
+    title <- if (sid %in% tid) ttl[[sid]] else ""
+    model <- if (sid %in% tid) mdl[[sid]] else ""
+    lu <- as.character(usg$updated_at[i])   # integer64 → 字符，避免溢出
+    if (is.na(lu)) lu <- "0"
+    list(session_id = sid, title = title, model = model, credit = credit,
+         token_est = round(credit * CREDIT_TO_TOKEN), requests = nreq, last_updated = lu)
+  })
+  df <- do.call(rbind, lapply(rows, function(r) data.frame(r, stringsAsFactors = FALSE)))
+  df <- df[order(-as.numeric(df$last_updated)), , drop = FALSE]
+  # 写 HungFo 库（last_updated 用 TEXT 存毫秒时间戳，避免 int64 溢出）
+  con <- db(); on.exit(dbDisconnect(con), add = TRUE)
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_wb_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, title TEXT, credit REAL DEFAULT 0,
+    token_est INTEGER DEFAULT 0, requests INTEGER DEFAULT 0, model TEXT, last_updated TEXT,
+    created_at TEXT DEFAULT (datetime('now','localtime')))")
+  dbExecute(con, "DELETE FROM hf_wb_usage")
+  for (i in seq_len(nrow(df))) {
+    dbExecute(con, sprintf(
+      "INSERT INTO hf_wb_usage (session_id,title,credit,token_est,requests,model,last_updated)
+       VALUES ('%s','%s',%f,%d,%d,'%s','%s')",
+      esc(df$session_id[i]), esc(df$title[i]), as.numeric(df$credit[i]),
+      as.integer(df$token_est[i]), as.integer(df$requests[i]), esc(df$model[i]),
+      esc(as.character(df$last_updated[i]))))
+  }
+  # 导出 js
+  all_s <- dbGetQuery(con, "SELECT COALESCE(SUM(credit),0) credit, COALESCE(SUM(token_est),0) tok, COALESCE(SUM(requests),0) req, COUNT(*) n FROM hf_wb_usage")
+  day_s <- dbGetQuery(con, "SELECT COALESCE(SUM(credit),0) credit, COALESCE(SUM(token_est),0) tok, COALESCE(SUM(requests),0) req, COUNT(*) n FROM hf_wb_usage WHERE datetime(CAST(last_updated AS INTEGER)/1000,'unixepoch','localtime') >= date('now','localtime')")
+  usages <- lapply(seq_len(nrow(df)), function(i) list(
+    session_id = df$session_id[i], title = df$title[i], credit = df$credit[i],
+    token_est = df$token_est[i], requests = df$requests[i], model = df$model[i],
+    last_updated = df$last_updated[i]))
+  out <- list(updated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+              summary = list(
+                total = list(credit = all_s$credit[1], token_est = all_s$tok[1], requests = all_s$req[1], sessions = all_s$n[1]),
+                today = list(credit = day_s$credit[1], token_est = day_s$tok[1], requests = day_s$req[1], sessions = day_s$n[1])),
+              usages = usages)
+  js_path <- file.path(hungfo_home(), "www", "hungfo_usage.js")
+  dir.create(dirname(js_path), showWarnings = FALSE, recursive = TRUE)
+  writeLines(paste0("// 由 HungFo 生成（collect_usage），勿手改\nwindow.HF_WB_USAGE = ", toJSON(out, auto_unbox = TRUE, pretty = TRUE, null = "null"), ";\n"), js_path, useBytes = TRUE)
+  cat(toJSON(list(success = TRUE, sessions = nrow(df), message = paste0("已采集 ", nrow(df), " 个 WorkBuddy 会话用量，导出 hungfo_usage.js"))))
+  invisible(TRUE)
+}
+
 # ── log：写一条开发日志 ──
 write_log <- function(title, content) {
   con <- db(); on.exit(dbDisconnect(con))
@@ -182,7 +259,7 @@ write_log <- function(title, content) {
 
 # ── 主入口 ──
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) == 0) { cat("用法: peek | done <id> <result> [--llm n --tin n --tout n --dur ms --sid s] | log <title> <content> | export | sessions | cron <expr>\n"); quit(status = 0) }
+if (length(args) == 0) { cat("用法: peek | done <id> <result> [--llm n --tin n --tout n --dur ms --sid s] | log <title> <content> | export | sessions | usage | cron <expr>\n"); quit(status = 0) }
 
 # 解析 --key value 形式的名值参数（从 args 中提取）
 parse_flags <- function(a) {
@@ -214,6 +291,8 @@ if (cmd == "peek") {
   export(); cat(toJSON(list(success = TRUE, message = "镜像已导出")))
 } else if (cmd == "sessions") {
   export_sessions(); cat(toJSON(list(success = TRUE, message = "会话明细已导出")))
+} else if (cmd == "usage") {
+  collect_usage()
 } else if (cmd == "cron" && length(args) >= 2) {
   nxt <- cron_next(paste(args[-1], collapse = " "))
   cat(if (is.null(nxt)) "NULL" else format(nxt, "%Y-%m-%d %H:%M:%S"))
