@@ -1,19 +1,47 @@
 // 由 HungFo 生成（hf_sessions_export），勿手改
 window.HF_SESSIONS = {
-  "updated_at": "2026-10-29 12:23:55",
+  "updated_at": "2026-10-30 17:30:06",
   "summary": {
     "total": {
       "token_in": 26500,
       "token_out": 8400,
-      "sessions": 12
+      "sessions": 14
     },
     "today": {
       "token_in": 0,
       "token_out": 0,
-      "sessions": 6
+      "sessions": 2
     }
   },
   "sessions": [
+    {
+      "id": 16,
+      "task_id": 19,
+      "session_id": "mt19-202610301729",
+      "title": "自动架构及自动架构规则",
+      "llm_name": "auto",
+      "agent": "CodeBuddy",
+      "token_in": 0,
+      "token_out": 0,
+      "duration_ms": 400000,
+      "status": "success",
+      "started_at": "2026-10-30 17:30:06",
+      "finished_at": "2026-10-30 17:30:06"
+    },
+    {
+      "id": 15,
+      "task_id": 18,
+      "session_id": "mt18-202610301729",
+      "title": "规则模块继续开发及数据表格规则",
+      "llm_name": "auto",
+      "agent": "CodeBuddy",
+      "token_in": 0,
+      "token_out": 0,
+      "duration_ms": 290980,
+      "status": "success",
+      "started_at": "2026-10-30 17:30:02",
+      "finished_at": "2026-10-30 17:30:02"
+    },
     {
       "id": 14,
       "task_id": 16,

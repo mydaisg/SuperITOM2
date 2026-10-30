@@ -17,6 +17,10 @@ hf_module_page_ui <- function(m) {
   if (identical(key, "metatask")) return(hf_metatask_page_ui(m))
   # 开发日志环节：特殊页面（查看界面，参照父项目开发日志样式）
   if (identical(key, "devlog")) return(hf_devlog_page_ui(m))
+  # 规则环节：特殊页面（分类 + 查看/编辑，参照父项目合规模块）
+  if (identical(key, "rules")) return(hf_rules_page_ui(m))
+  # 自动架构环节：特殊页面（数据驱动，随代码演进自动更新）
+  if (identical(key, "arch")) return(hf_arch_page_ui(m))
   tabPanel(
     m$name, icon = icon(m$icon),
     div(style = "padding:4px 2px;",
@@ -36,7 +40,6 @@ hf_module_page_ui <- function(m) {
           placeholder = "输入内容，第一行自动作为标题…"),
         div(style = "display:flex;gap:8px;justify-content:flex-end;margin-top:4px;",
           actionButton(p("add_btn"), "新增记录", icon = icon("plus"), class = "btn-success btn-sm"),
-          actionButton(p("run_btn"), "运行接口", icon = icon("play"), class = "btn-primary btn-sm"),
           actionButton(p("refresh_btn"), "刷新", icon = icon("sync"), class = "btn-info btn-sm")
         )
       ),
@@ -173,6 +176,392 @@ hf_devlog_page_ui <- function(m) {
     )
   )
 }
+
+# ── 数据表格规范（统一交互契约）──────────────────────────────
+# 排序：三态 asc → desc → none（DT 表头点击默认行为，无需额外配置）
+# 分页：每页 20 / 50 / 100 及「全部」；page_size = -1/"all" 时隐藏分页器
+# 虚拟化：> virtualize_threshold 行启用固定高度滚动（scrollY）
+# 空态：区分「无数据」(no_data) 与「筛选无结果」(no_match)
+# 颜色：不硬编码，空态提示走 CSS 类 .hf-dt-empty（www/hungfo.css）
+hf_datatable <- function(df, page_size = 20, virtualize_threshold = 50, scroll_y = 420,
+                         empty = c("no_data", "no_match"), ...) {
+  empty <- match.arg(empty)
+  if (is.null(df) || nrow(df) == 0) {
+    msg <- if (identical(empty, "no_match")) "没有符合筛选条件的结果" else "暂无数据"
+    return(DT::datatable(
+      data.frame(setNames(list(msg), "提示"), check.names = FALSE, stringsAsFactors = FALSE),
+      rownames = FALSE, class = "hf-dt-empty",
+      options = list(dom = "t", ordering = FALSE, paging = FALSE, searching = FALSE)))
+  }
+  pl <- if (identical(page_size, "all") || identical(page_size, -1)) -1 else as.integer(page_size)
+  opts <- list(
+    pageLength = pl,
+    lengthMenu = list(c(20, 50, 100, -1), c("20", "50", "100", "全部")),
+    autoWidth = FALSE,
+    order = list(),
+    dom = if (pl == -1) "t" else "ltip",
+    language = list(lengthMenu = "每页 _MENU_ 条", search = "搜索：",
+                    info = "第 _START_-_END_ 条 / 共 _TOTAL_ 条",
+                    paginate = list(previous = "上一页", `next` = "下一页"))
+  )
+  if (nrow(df) > virtualize_threshold) opts$scrollY <- scroll_y
+  # 选择「全部」时隐藏分页器
+  opts$drawCallback <- DT::JS(
+    "function(settings){",
+    "  var api=this.api();",
+    "  if(api.page.len()===-1){$(api.table().container()).find('.dataTables_paginate').hide();}",
+    "  else{$(api.table().container()).find('.dataTables_paginate').show();}",
+    "}")
+  DT::datatable(df, rownames = FALSE, options = opts, ...)
+}
+
+# ── 规则环节专属页面：分类 + 查看/编辑（参照父项目合规模块）──
+hf_rules_page_ui <- function(m) {
+  p <- function(x) paste0("hf_rules_", x)
+  tabPanel(
+    m$name, icon = icon(m$icon),
+    div(style = "padding:4px 2px;",
+      div(style = "background:linear-gradient(135deg,#263238,#37474f);color:#fff;border-radius:8px;padding:14px 18px;margin-bottom:12px;",
+        tags$span(style = "font-size:16px;font-weight:bold;", icon(m$icon), " ", m$name),
+        tags$span(style = "font-size:11px;background:#455a64;padding:2px 8px;border-radius:10px;margin-left:8px;", "HF-RULES"),
+        tags$span(style = "font-size:11px;background:#00695c;padding:2px 8px;border-radius:10px;margin-left:6px;", hf_or(m$status, "scaffold")),
+        tags$div(style = "font-size:12px;opacity:.88;margin-top:8px;", m$desc),
+        tags$div(style = "font-size:11px;color:#b0bec5;margin-top:4px;", icon("plug"), " 接口：", m$api_desc)
+      ),
+      # 工具栏：分类筛选 + 搜索 + 操作按钮
+      div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
+        fluidRow(
+          column(3, selectInput(p("filter_cat"), "分类",
+            choices = c("全部分类" = "", hf_rules_categories()), width = "100%")),
+          column(3, textInput(p("search"), NULL, width = "100%", placeholder = "搜索规则…")),
+          column(6, div(style = "display:flex;gap:6px;justify-content:flex-end;margin-top:24px;",
+            actionButton(p("add_btn"), "新增规则", icon = icon("plus"), class = "btn-success btn-sm"),
+            actionButton(p("view_btn"), "查看", icon = icon("eye"), class = "btn-info btn-sm"),
+            actionButton(p("edit_btn"), "编辑", icon = icon("pen"), class = "btn-primary btn-sm"),
+            actionButton(p("del_btn"), "删除", icon = icon("trash"), class = "btn-danger btn-sm"),
+            actionButton(p("refresh_btn"), "刷新", icon = icon("sync"), class = "btn-default btn-sm")
+          ))
+        )
+      ),
+      uiOutput(p("status")),
+      DTOutput(p("table"))
+    )
+  )
+}
+
+# ── 规则环节专属 Server ──
+hf_rules_page_server <- function(input, output, session, rv, m, trigger) {
+  p <- function(x) paste0("hf_rules_", x)
+  local_trigger <- reactiveVal(0)
+  local_refresh <- function() local_trigger(local_trigger() + 1)
+  filter_cat <- reactiveVal(NULL)
+  search_term <- reactiveVal("")
+  editing_id <- reactiveVal(NULL)   # NULL=新增；非空=编辑该 id
+
+  observeEvent(input[[p("filter_cat")]], {
+    v <- trimws(hf_or(input[[p("filter_cat")]], ""))
+    filter_cat(if (nzchar(v)) v else NULL)
+  })
+  observeEvent(input[[p("search")]], search_term(trimws(hf_or(input[[p("search")]], ""))))
+  observeEvent(input[[p("refresh_btn")]], local_refresh())
+
+  output[[p("status")]] <- renderUI({
+    trigger(); local_trigger()
+    n <- hf_rules_count()
+    div(style = "font-size:12px;color:#555;margin:2px 0 8px;",
+      tags$b("规则："), tags$span(style = "color:#1565c0;", paste0(n, " 条")),
+      " · ", tags$span(style = "color:#2e7d32;", hf_or(m$status, "scaffold")),
+      " · 版本 ", hf_or(m$version, "v0.1"))
+  })
+
+  # 过滤后的规则数据
+  rules_df <- reactive({
+    trigger(); local_trigger()
+    df <- hf_rules_list(filter_cat())
+    if (is.null(df) || nrow(df) == 0) return(df)
+    kw <- search_term()
+    if (nzchar(kw)) {
+      payload_safe <- ifelse(is.na(df$payload), "", df$payload)
+      hit <- grepl(kw, df$title, ignore.case = TRUE) |
+             grepl(kw, df$category, ignore.case = TRUE) |
+             grepl(kw, payload_safe, ignore.case = TRUE)
+      df <- df[hit, , drop = FALSE]
+    }
+    df
+  })
+
+  output[[p("table")]] <- DT::renderDT({
+    df <- rules_df()
+    # 空态区分：整表无数据 vs 筛选无结果
+    empty <- if (hf_rules_count(filter_cat()) == 0) "no_data" else "no_match"
+    if (is.null(df) || nrow(df) == 0) return(hf_datatable(df, empty = empty))
+    out <- data.frame(
+      ID = df$id,
+      编号 = hf_or(df$rule_no, ""),
+      名称 = hf_or(df$title, ""),
+      分类 = ifelse(is.na(df$category) | df$category == "", "—", df$category),
+      状态 = hf_or(df$status, "draft"),
+      创建时间 = ifelse(is.na(df$created_at) | df$created_at == "", "—", df$created_at),
+      stringsAsFactors = FALSE)
+    hf_datatable(out, selection = "single", page_size = 20)
+  })
+
+  selected_id <- reactive({
+    idx <- input[[p("table_rows_selected")]]
+    if (is.null(idx) || length(idx) == 0) return(NULL)
+    df <- rules_df()
+    if (is.null(df) || nrow(df) == 0) return(NULL)
+    df$id[idx[1]]
+  })
+
+  # ── 查看：只读弹窗 ──
+  observeEvent(input[[p("view_btn")]], {
+    id <- selected_id()
+    if (is.null(id)) { showNotification("请先在列表选中一条规则", type = "warning"); return() }
+    r <- hf_rules_get(id)
+    if (is.null(r) || nrow(r) == 0) { showNotification("规则不存在，请刷新后重试", type = "warning"); return() }
+    showModal(modalDialog(
+      title = paste0("查看规则 #", id),
+      tags$div(
+        tags$p(tags$b("编号："), hf_or(r$rule_no[1], "—")),
+        tags$p(tags$b("名称："), hf_or(r$title[1], "—")),
+        tags$p(tags$b("分类："), hf_or(r$category[1], "—")),
+        tags$p(tags$b("状态："), hf_or(r$status[1], "draft")),
+        tags$p(tags$b("创建时间："), hf_or(r$created_at[1], "—")),
+        tags$hr(),
+        tags$b("规则内容："),
+        tags$div(style = "white-space:pre-wrap;line-height:1.6;color:#333;",
+          hf_or(r$payload[1], "（无）"))
+      ),
+      footer = modalButton("关闭"), size = "m", easyClose = TRUE
+    ))
+  })
+
+  # ── 新增 / 编辑：共用弹窗 ──
+  observeEvent(input[[p("add_btn")]], {
+    req(rv$logged_in)
+    editing_id(NULL)
+    showModal(modalDialog(
+      title = "新增规则",
+      textInput(p("edit_title"), "规则名称", width = "100%"),
+      selectInput(p("edit_cat"), "分类", choices = hf_rules_categories(), width = "100%"),
+      textAreaInput(p("edit_payload"), "规则内容", rows = 6, width = "100%"),
+      footer = tagList(
+        actionButton(p("save_btn"), "保存", class = "btn-primary"),
+        modalButton("取消")
+      ), size = "m", easyClose = TRUE
+    ))
+  })
+
+  observeEvent(input[[p("edit_btn")]], {
+    req(rv$logged_in)
+    id <- selected_id()
+    if (is.null(id)) { showNotification("请先在列表选中一条规则", type = "warning"); return() }
+    r <- hf_rules_get(id)
+    if (is.null(r) || nrow(r) == 0) { showNotification("规则不存在，请刷新后重试", type = "warning"); return() }
+    editing_id(id)
+    showModal(modalDialog(
+      title = paste0("编辑规则 #", id),
+      textInput(p("edit_title"), "规则名称", value = hf_or(r$title[1], ""), width = "100%"),
+      selectInput(p("edit_cat"), "分类", choices = hf_rules_categories(),
+                  selected = hf_or(r$category[1], hf_rules_categories()[1]), width = "100%"),
+      textAreaInput(p("edit_payload"), "规则内容", value = hf_or(r$payload[1], ""), rows = 6, width = "100%"),
+      footer = tagList(
+        actionButton(p("save_btn"), "保存修改", class = "btn-primary"),
+        modalButton("取消")
+      ), size = "m", easyClose = TRUE
+    ))
+  })
+
+  observeEvent(input[[p("save_btn")]], {
+    req(rv$logged_in)
+    title <- trimws(hf_or(input[[p("edit_title")]], ""))
+    if (!nzchar(title)) { showNotification("请输入规则名称", type = "warning"); return() }
+    id <- editing_id()
+    if (is.null(id)) {
+      r <- hf_rules_add(title, input[[p("edit_cat")]], hf_or(input[[p("edit_payload")]], ""),
+                        created_by = hf_current_uid(rv))
+    } else {
+      r <- hf_rules_update(id, title, input[[p("edit_cat")]], hf_or(input[[p("edit_payload")]], ""))
+    }
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (isTRUE(r$success)) { removeModal(); editing_id(NULL) }
+    local_refresh()
+  })
+
+  # ── 删除 ──
+  observeEvent(input[[p("del_btn")]], {
+    req(rv$logged_in)
+    id <- selected_id()
+    if (is.null(id)) { showNotification("请先在列表选中一条规则", type = "warning"); return() }
+    r <- hf_rules_delete(id)
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    local_refresh()
+  })
+}
+
+# ── 自动架构环节专属页面（数据驱动，随代码演进自动更新）──
+# 参照父项目 system_architecture.r 的「色块 + 箭头 + 表格」纯 HTML 风格，
+# 但节点 / 接口 / 表均来自 hf_arch_scan() 实时采集，刷新即自动反映架构变动。
+hf_arch_page_ui <- function(m) {
+  p <- function(x) paste0("hf_arch_", x)
+  tabPanel(
+    m$name, icon = icon(m$icon),
+    div(style = "padding:4px 2px;",
+      div(style = "background:linear-gradient(135deg,#263238,#37474f);color:#fff;border-radius:8px;padding:14px 18px;margin-bottom:12px;",
+        tags$span(style = "font-size:16px;font-weight:bold;", icon(m$icon), " ", m$name),
+        tags$span(style = "font-size:11px;background:#455a64;padding:2px 8px;border-radius:10px;margin-left:8px;", "HF-ARCH"),
+        tags$span(style = "font-size:11px;background:#00695c;padding:2px 8px;border-radius:10px;margin-left:6px;", hf_or(m$status, "scaffold")),
+        tags$div(style = "font-size:12px;opacity:.88;margin-top:8px;",
+          "架构图由运行时状态自动生成：环节注册表、模块文件、数据表、对外接口。任何开发涉及架构变动，刷新即自动更新，无需手工维护。")
+      ),
+      # 工具栏：重建 + 刷新
+      div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
+        div(style = "display:flex;gap:6px;align-items:center;flex-wrap:wrap;",
+          actionButton(p("rebuild"), "重建架构", icon = icon("sync"), class = "btn-primary btn-sm"),
+          actionButton(p("refresh"), "刷新", icon = icon("rotate"), class = "btn-info btn-sm"),
+          tags$span(style = "font-size:11px;color:#888;margin-left:auto;", "扫描时间："),
+          tags$span(style = "font-size:11px;color:#1565c0;font-family:Consolas,monospace;",
+            textOutput(p("scanned_at"), inline = TRUE))
+        )
+      ),
+      uiOutput(p("body"))
+    )
+  )
+}
+
+# ── 自动架构环节专属 Server ──
+hf_arch_page_server <- function(input, output, session, rv, m, trigger) {
+  p <- function(x) paste0("hf_arch_", x)
+  local_trigger <- reactiveVal(0)
+  local_refresh <- function() local_trigger(local_trigger() + 1)
+
+  # 当前架构快照（触发重扫）
+  snapshot <- reactive({
+    trigger(); local_trigger()
+    hf_arch_scan()
+  })
+
+  observeEvent(input[[p("rebuild")]], local_refresh())
+  observeEvent(input[[p("refresh")]], local_refresh())
+
+  output[[p("scanned_at")]] <- renderText({
+    snap <- snapshot()
+    hf_or(snap$scanned_at, "—")
+  })
+
+  output[[p("body")]] <- renderUI({
+    snap <- snapshot()
+    if (!is.null(snap$error)) {
+      return(tags$div(style = "color:#d9534f;padding:20px;", "架构扫描失败：", snap$error))
+    }
+    mods <- snap$modules
+    n <- length(mods)
+    cols <- HF_ARCH_COLORS
+
+    # 色块 / 箭头样式（与父项目 system_architecture.r 一致的纯 HTML 风格）
+    style_css <- tags$style(HTML("
+      .hf-arch-block { border-radius:8px; padding:12px 16px; background:#fff; border:1px solid #e0e0e0; margin-bottom:12px; }
+      .hf-arch-node { display:inline-block; padding:5px 12px; border-radius:6px; color:#fff; font-size:12px; margin:3px; white-space:nowrap; }
+      .hf-arch-arrow { display:inline-block; margin:0 4px; font-size:16px; color:#999; }
+      .hf-arch-table { width:100%; border-collapse:collapse; font-size:12px; }
+      .hf-arch-table th { background:#f5f5f5; border:1px solid #e0e0e0; padding:6px 8px; text-align:left; color:#555; }
+      .hf-arch-table td { border:1px solid #e0e0e0; padding:6px 8px; color:#333; }
+      .hf-arch-title { font-size:14px; font-weight:bold; color:#333; margin:4px 0 8px; }
+      .hf-arch-sub { font-size:12px; color:#888; margin-bottom:8px; }
+    "))
+
+    # 区块一：环节拓扑（色块 + 箭头）
+    nodes_html <- lapply(seq_along(mods), function(i) {
+      md <- mods[[i]]
+      col <- cols[((i - 1) %% length(cols)) + 1]
+      tagList(
+        tags$span(class = "hf-arch-node", style = sprintf("background:%s;", col),
+          icon(hf_or(md$icon, "circle")), " ", md$name,
+          tags$span(style = "opacity:.8;font-size:10px;margin-left:4px;", hf_or(md$version, ""))),
+        if (i < n) tags$span(class = "hf-arch-arrow", "→") else ""
+      )
+    })
+
+    # 区块二：环节明细表（id / key / 状态 / 接口说明）
+    detail_rows <- lapply(mods, function(md) {
+      tags$tr(
+        tags$td(tags$code(hf_or(md$id, ""))),
+        tags$td(tags$code(hf_or(md$key, ""))),
+        tags$td(tags$b(hf_or(md$name, ""))),
+        tags$td(hf_or(md$status, "scaffold")),
+        tags$td(hf_or(md$api_desc, ""))
+      )
+    })
+
+    # 区块三：模块文件
+    mod_files <- snap$mod_files
+    core_files <- snap$core_files
+    files_block <- tags$div(
+      class = "hf-arch-block",
+      tags$div(class = "hf-arch-title", icon("file-code"), " 模块文件（", length(mod_files), " 个环节模块）"),
+      tags$div(class = "hf-arch-sub", "核心文件：", tags$code(paste(core_files, collapse = "、"))),
+      if (length(mod_files) > 0) {
+        tags$div(style = "display:flex;flex-wrap:wrap;gap:4px;",
+          lapply(mod_files, function(f) {
+            tags$span(style = "font-family:Consolas,monospace;font-size:11px;background:#f5f5f5;border:1px solid #e0e0e0;border-radius:4px;padding:2px 6px;", f)
+          }))
+      } else tags$div(class = "hf-arch-sub", "未发现 hf_mod_*.r 模块文件")
+    )
+
+    # 区块四：数据库表
+    tables <- snap$tables
+    tables_block <- tags$div(
+      class = "hf-arch-block",
+      tags$div(class = "hf-arch-title", icon("database"), " 数据表（", length(tables), " 张）"),
+      if (length(tables) > 0) {
+        tags$div(style = "display:flex;flex-wrap:wrap;gap:4px;",
+          lapply(tables, function(t) {
+            tags$span(style = "font-family:Consolas,monospace;font-size:11px;background:#e3f2fd;border:1px solid #bbdefb;border-radius:4px;padding:2px 6px;", t)
+          }))
+      } else tags$div(class = "hf-arch-sub", "暂无数据表")
+    )
+
+    # 区块五：对外接口映射
+    api_map <- snap$api_map
+    api_block <- tags$div(
+      class = "hf-arch-block",
+      tags$div(class = "hf-arch-title", icon("plug"), " 对外接口（", length(api_map), " 个环节）"),
+      if (length(api_map) > 0) {
+        tags$table(class = "hf-arch-table",
+          tags$tr(tags$th("环节 key"), tags$th("接口函数")),
+          lapply(api_map, function(a) {
+            tags$tr(
+              tags$td(tags$code(hf_or(a$key, ""))),
+              tags$td(paste(a$fns, collapse = ", "))
+            )
+          })
+        )
+      } else tags$div(class = "hf-arch-sub", "暂无注册接口")
+    )
+
+    tagList(
+      style_css,
+      tags$div(class = "hf-arch-block",
+        tags$div(class = "hf-arch-title", icon("sitemap"), " 环节拓扑（", n, " 个环节）"),
+        tags$div(style = "line-height:2;", nodes_html)
+      ),
+      tags$div(class = "hf-arch-block",
+        tags$div(class = "hf-arch-title", icon("list"), " 环节明细"),
+        tags$table(class = "hf-arch-table",
+          tags$tr(tags$th("ID"), tags$th("key"), tags$th("名称"), tags$th("状态"), tags$th("接口说明")),
+          detail_rows
+        )
+      ),
+      files_block,
+      tables_block,
+      api_block,
+      tags$div(style = "font-size:11px;color:#bbb;text-align:center;padding:8px;",
+        "HungFo 自动架构 · 数据驱动 · 随代码演进自动更新")
+    )
+  })
+}
+
 hf_module_page_server <- function(input, output, session, rv, m, trigger) {
   key <- m$key
   p <- function(x) paste0("hf_", key, "_", x)
@@ -182,6 +571,10 @@ hf_module_page_server <- function(input, output, session, rv, m, trigger) {
   if (identical(key, "metatask")) return(hf_metatask_page_server(input, output, session, rv, m, trigger))
   # 开发日志环节：专属 Server（查看界面）
   if (identical(key, "devlog")) return(hf_devlog_page_server(input, output, session, rv, m, trigger))
+  # 规则环节：专属 Server（分类 + 查看/编辑）
+  if (identical(key, "rules")) return(hf_rules_page_server(input, output, session, rv, m, trigger))
+  # 自动架构环节：专属 Server（数据驱动，自动扫描）
+  if (identical(key, "arch")) return(hf_arch_page_server(input, output, session, rv, m, trigger))
   local_trigger <- reactiveVal(0)
   local_refresh <- function() local_trigger(local_trigger() + 1)
 
@@ -216,17 +609,6 @@ hf_module_page_server <- function(input, output, session, rv, m, trigger) {
     r <- hf_record_add(key, title, payload = t, created_by = hf_current_uid(rv))
     showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
     updateTextAreaInput(session, p("new_text"), value = "")
-    local_refresh()
-  })
-
-  observeEvent(input[[p("run_btn")]], {
-    req(rv$logged_in)
-    t <- trimws(hf_or(input[[p("new_text")]], ""))
-    title <- if (nzchar(t)) trimws(strsplit(t, "\n")[[1]][1]) else ""
-    r <- tryCatch(
-      hf_call(key, "run", payload = list(title = title)),
-      error = function(e) list(success = FALSE, message = e$message))
-    showNotification(hf_or(r$message, "接口已执行"), type = if (isTRUE(r$success)) "message" else "error")
     local_refresh()
   })
 
@@ -840,6 +1222,8 @@ hf_agent_monitor_page_server <- function(input, output, session, rv, trigger) {
 hungfo_ui <- function() {
   mods <- hf_modules()
   tagList(
+    # 引入数据表格规范样式（空态提示颜色统一在此，禁止在 R 里硬编码）
+    tags$head(tags$link(rel = "stylesheet", href = "hungfo/hungfo.css")),
     fluidRow(
       column(12,
         div(style = "background:linear-gradient(135deg,#0d47a1,#1976d2);color:#fff;border-radius:10px;padding:16px 20px;margin-bottom:12px;",
@@ -892,6 +1276,7 @@ hungfo_standalone_ui <- function(show_back = TRUE) {
       collapsible = TRUE,
       # 顶部说明条（保留与嵌入式版本一致的品牌感）
       header = div(
+        tags$head(tags$link(rel = "stylesheet", href = "hungfo/hungfo.css")),
         style = "background:linear-gradient(135deg,#0d47a1,#1976d2);color:#fff;border-radius:8px;padding:12px 18px;margin:8px 12px 4px;",
         tags$span(style = "font-size:16px;font-weight:bold;", icon("cubes"), " HungFo 子项目"),
         tags$span(style = "font-size:12px;opacity:.85;margin-left:10px;",

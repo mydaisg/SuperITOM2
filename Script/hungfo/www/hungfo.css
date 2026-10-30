@@ -1,0 +1,6 @@
+/* HungFo 数据表格规范：空态提示样式（颜色统一在此，禁止在 R 里硬编码） */
+.hf-dt-empty table.dataTable td {
+  color: #999;
+  text-align: center;
+  padding: 24px 0;
+}

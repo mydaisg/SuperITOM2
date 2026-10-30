@@ -106,6 +106,18 @@ hf_db_init <- function() {
     created_at TEXT DEFAULT (datetime('now','localtime')),
     updated_at TEXT DEFAULT (datetime('now','localtime'))
   )")
+  # 规则表（规则模块专属：含「分类」字段，支持查看/编辑/删除）
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_no TEXT,
+    title TEXT NOT NULL,
+    category TEXT DEFAULT '',                -- 规则分类（爬取频率/算法参数/风控阈值…）
+    payload TEXT,                             -- 规则内容 / 判定逻辑
+    status TEXT DEFAULT 'draft',
+    created_by INTEGER,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+  )")
   # Agent 任务表（自动任务模块作为任务来源，示例任务 / 正式任务共用一张表）
   dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_agent_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -290,6 +302,99 @@ hf_records_stats <- function(module_key) {
 hf_current_uid <- function(rv) {
   if (is.null(rv$current_user) || nrow(rv$current_user) == 0) return(NULL)
   rv$current_user$id[1]
+}
+
+# ══════════════════════════════════════════════════════════════════
+# 规则数据层（规则模块专属：含「分类」字段，支持查看/编辑/删除）
+# ══════════════════════════════════════════════════════════════════
+
+# 规则默认分类（业务规则，与规则模块职责「爬取频率/算法参数/风控阈值」对齐）
+HF_RULES_CATEGORIES <- c("爬取频率", "算法参数", "风控阈值", "数据质量", "调度策略", "其它")
+
+hf_rules_categories <- function() HF_RULES_CATEGORIES
+
+# 规则列表（可按分类筛选）
+hf_rules_list <- function(category = NULL) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    sql <- "SELECT id,rule_no,title,category,payload,status,created_at,updated_at FROM hf_rules"
+    if (!is.null(category) && nzchar(trimws(category))) {
+      sql <- sprintf("%s WHERE category='%s'", sql, hf_esc(category))
+    }
+    dbGetQuery(con, paste0(sql, " ORDER BY id DESC LIMIT 500"))
+  }, error = function(e) data.frame())
+}
+
+# 单条规则
+hf_rules_get <- function(id) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    dbGetQuery(con, sprintf("SELECT * FROM hf_rules WHERE id=%s", as.character(as.integer(id))))
+  }, error = function(e) data.frame())
+}
+
+# 规则编号生成（RUL+日期+3位序号）
+hf_rules_generate_no <- function() {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    prefix <- paste0("RUL", format(Sys.Date(), "%Y%m%d"))
+    ex <- dbGetQuery(con, sprintf("SELECT rule_no FROM hf_rules WHERE rule_no LIKE '%s%%' ORDER BY rule_no DESC LIMIT 1", prefix))
+    if (nrow(ex) == 0) return(paste0(prefix, "001"))
+    sprintf("%s%03d", prefix, as.integer(substr(ex$rule_no[1], 12, 14)) + 1L)
+  }, error = function(e) paste0("RUL", format(Sys.time(), "%Y%m%d%H%M%S")))
+}
+
+# 新增规则
+hf_rules_add <- function(title, category = "", payload = "", created_by = NULL) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  if (is.null(title) || !nzchar(trimws(title))) return(list(success = FALSE, message = "规则名称不能为空"))
+  no <- hf_rules_generate_no()
+  tryCatch({
+    dbExecute(con, sprintf(
+      "INSERT INTO hf_rules (rule_no,title,category,payload,created_by) VALUES ('%s','%s','%s','%s',%s)",
+      hf_esc(no), hf_esc(title), hf_esc(hf_or(category, "")), hf_esc(hf_or(payload, "")),
+      if (is.null(created_by)) "NULL" else as.character(created_by)))
+    list(success = TRUE, rule_no = no, message = paste0("已新增规则：", no))
+  }, error = function(e) list(success = FALSE, message = e$message))
+}
+
+# 更新规则
+hf_rules_update <- function(id, title, category = "", payload = "") {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  if (is.null(id) || is.na(id)) return(list(success = FALSE, message = "规则 id 无效"))
+  if (is.null(title) || !nzchar(trimws(title))) return(list(success = FALSE, message = "规则名称不能为空"))
+  tryCatch({
+    dbExecute(con, sprintf(
+      "UPDATE hf_rules SET title='%s',category='%s',payload='%s',updated_at=datetime('now','localtime') WHERE id=%s",
+      hf_esc(title), hf_esc(hf_or(category, "")), hf_esc(hf_or(payload, "")), as.character(as.integer(id))))
+    list(success = TRUE, message = paste0("已更新规则：", title))
+  }, error = function(e) list(success = FALSE, message = e$message))
+}
+
+# 删除规则
+hf_rules_delete <- function(id) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    dbExecute(con, sprintf("DELETE FROM hf_rules WHERE id=%s", as.character(as.integer(id))))
+    list(success = TRUE, message = "已删除规则")
+  }, error = function(e) list(success = FALSE, message = e$message))
+}
+
+# 规则计数
+hf_rules_count <- function(category = NULL) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    sql <- "SELECT COUNT(*) n FROM hf_rules"
+    if (!is.null(category) && nzchar(trimws(category))) sql <- sprintf("%s WHERE category='%s'", sql, hf_esc(category))
+    dbGetQuery(con, sql)$n[1]
+  }, error = function(e) 0)
 }
 
 # ── 接口构造器 ──
@@ -839,6 +944,63 @@ hf_cb_sessions_summary <- function() {
     s <- dbGetQuery(con, "SELECT COUNT(*) n, COALESCE(SUM(token_total),0) tok, COALESCE(SUM(CASE WHEN token_total>0 THEN 1 ELSE 0 END),0) tok_n FROM hf_cb_sessions")
     list(total_sessions = s$n[1], total_tokens = s$tok[1], token_sessions = s$tok_n[1])
   }, error = function(e) list(total_sessions = 0, total_tokens = 0, token_sessions = 0))
+}
+
+# ══════════════════════════════════════════════════════════════════
+# 自动架构数据层（自动架构模块 = 数据驱动，随代码演进自动更新）
+# 与父项目 system_architecture.r 的「手工硬编码文档」不同，这里从运行时真实状态
+# 自动采集：环节注册表 / 模块文件 / 数据库表 / 对外接口，无需人工维护。
+# ══════════════════════════════════════════════════════════════════
+
+# 环节 → 颜色映射（与父项目 ARCH_COLORS 思路一致，但键按 HungFo 环节 key 约定）
+HF_ARCH_COLORS <- c(
+  "#3b82f6", "#10b981", "#ef4444", "#f59e0b", "#8b5cf6", "#6b7280",
+  "#0ea5e9", "#ec4899", "#14b8a6", "#f97316", "#6366f1", "#84cc16"
+)
+
+# 自动扫描当前架构快照：环节 / 模块文件 / 数据库表 / 对外接口
+hf_arch_scan <- function() {
+  home <- hf_home()
+  # 1) 环节注册表（内存总线，随 source 顺序动态）
+  mods <- hf_modules()
+  modules <- if (length(mods) == 0) list() else lapply(seq_along(mods), function(i) {
+    m <- mods[[i]]
+    list(id = hf_or(m$id, ""), key = hf_or(m$key, ""), name = hf_or(m$name, ""),
+         icon = hf_or(m$icon, "circle"), status = hf_or(m$status, "scaffold"),
+         version = hf_or(m$version, "v0.1"),
+         desc = hf_or(m$desc, ""), api_desc = hf_or(m$api_desc, ""))
+  })
+  # 2) 模块文件（磁盘上的 hf_mod_*.r，反映真实源码结构）
+  mod_files <- sort(list.files(home, pattern = "^hf_mod_.*\\.r$", full.names = FALSE))
+  core_files <- sort(list.files(home, pattern = "^(hf_core|hf_config|hf_ui|app)\\.r$", full.names = FALSE))
+  # 3) 数据库表（独立库 sqlite_master）
+  tables <- character(0)
+  con <- tryCatch(hf_db_connect(), error = function(e) NULL)
+  if (!is.null(con)) {
+    on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+    tt <- tryCatch(dbGetQuery(con,
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"),
+      error = function(e) data.frame())
+    if (!is.null(tt) && nrow(tt) > 0) tables <- tt$name
+  }
+  # 4) 对外接口（每个环节注册到总线上的接口函数名）
+  apis <- hf_bus$apis
+  api_map <- list()
+  if (length(apis) > 0) {
+    api_map <- lapply(names(apis), function(k) {
+      list(key = k, fns = sort(names(apis[[k]])))
+    })
+  }
+  list(
+    scanned_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+    home = home,
+    module_count = length(modules),
+    modules = modules,
+    mod_files = mod_files,
+    core_files = core_files,
+    tables = tables,
+    api_map = api_map
+  )
 }
 
 # 导出 CodeBuddy 会话清单到 www/hungfo_cb_sessions.js（监控页前端读取）

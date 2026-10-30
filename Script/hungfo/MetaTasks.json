@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-10-29 12:53:37",
+  "updated_at": "2026-10-30 18:24:15",
   "tasks": [
     {
       "id": 1,
@@ -143,6 +143,30 @@
       "next_run_at": null,
       "result": "已完成：创建 CodeBuddy automation（id=hungfo，FREQ=HOURLY;INTERVAL=1）；改造 hf_metatask_runner.r / hf_core.r / hf_ui.r；usage 命令成功采集 1 个自动任务 + 20 个会话；token 命令录入当前会话明细（总计 1043002，命中率 97.1%）；开发日志 DL20261029001 / DL20261029002。",
       "llm_name": "deepseek-v4-pro",
+      "agent": "CodeBuddy"
+    },
+    {
+      "id": 18,
+      "title": "规则模块继续开发及数据表格规则",
+      "payload": "规则模块继续开发及数据表格规则\n1、去掉没用的“运行接口”\n2、规则列表要增加一个字段：分类\n3、规则列表要增加查看和编辑\n4、数据表格规则，参照其它项目的，写一个本项目的\n---\ndescription: 数据表格/列表组件的排序、分页、显示全部交互契约\nglobs: src/**/components/**/*{Table,List,DataGrid}*.tsx\nalwaysApply: false\n---\n\n# 数据表格规范\n\n## 分页\n- 每页条数选择器 MUST 包含 20 / 50 / 100，并额外提供“显示全部”。\n- 切换到固定条数时，页码 MUST 重置为第 1 页。\n- 分页区域 MUST 使用 `<nav aria-label=\"表格分页\">`，每页按钮有独立可访问名称。\n\n## 排序\n- 可排序列头 MUST 实现三态循环：asc → desc → none。\n- 列头 MUST 可键盘聚焦（Enter/Space 触发），并正确切换 `aria-sort`。\n- “显示全部”模式下排序 MUST 作用于全量数据集，NEVER 只排已渲染行。\n\n## 显示全部\n- `pageSize = all` 时 MUST NOT 渲染分页器（页码、上一页/下一页、跳页输入框全部不渲染）。\n- 显示全部模式 MUST 提供固定表头（sticky）与独立垂直滚动视口，NEVER 让页面整体无限撑长。\n- 行数 ≤ 50 可直接渲染；行数 > 50 MUST 启用行虚拟化，NEVER 将全量行同时挂载到 DOM。\n- 底部状态栏 MUST 显示“共 X 条，已显示全部”。\n- 切回 20/50/100 时，分页器恢复且页码重置为第 1 页。\n- 若数据源可能返回 > 10,000 行且后端无全量接口，该场景 MAY 不暴露“显示全部”，但需在组件注释中注明原因。\n\n## 状态\n- 加载 MUST 使用骨架屏保持表格结构，NEVER 用整块 spinner 替换区域。\n- 空态 MUST 区分“无数据”（引导创建/导入）与“筛选无结果”（提供清除筛选）。\n- 数据更新（排序/筛选/分页/切显示全部）MUST 通过 `aria-live=\"polite\"` 宣告。\n\n## 禁止\n- NEVER 在组件内硬编码颜色、间距、行高；一律引用 `styling.mdc` 中的 token。",
+      "cron": "",
+      "status": "done",
+      "last_run_at": "2026-10-30 17:30:02",
+      "next_run_at": null,
+      "result": "规则模块完成分类字段、查看编辑与数据表格规范",
+      "llm_name": "auto",
+      "agent": "CodeBuddy"
+    },
+    {
+      "id": 19,
+      "title": "自动架构及自动架构规则",
+      "payload": "自动架构及自动架构规则\n1、参照之前父项目SuperITOM2的管理模块-系统架构，做本项目HungFo的系统架构\n2、这个自动架构是任何开发只要涉及架构变动，都要自动更新，实现自动架构",
+      "cron": "",
+      "status": "done",
+      "last_run_at": "2026-10-30 17:30:06",
+      "next_run_at": null,
+      "result": "自动架构模块实现数据驱动自动更新",
+      "llm_name": "auto",
       "agent": "CodeBuddy"
     }
   ]

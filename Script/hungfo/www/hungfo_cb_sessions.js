@@ -1,19 +1,37 @@
 // 由 HungFo 生成（export_cb_sessions），勿手改
 window.HF_CB_SESSIONS = {
-  "updated_at": "2026-10-29 12:51:11",
+  "updated_at": "2026-10-30 17:18:07",
   "summary": {
-    "total_sessions": 20,
+    "total_sessions": 21,
     "total_tokens": 1043002,
     "token_sessions": 1
   },
   "sessions": [
     {
+      "conversation_id": "aa49ae0ef85a44a39831eb4c3880a6e0",
+      "title": "你是 HungFo 元任务自动执行器。工作目录是 D:/GitHub/SuperITOM2/Script/hungfo。请静默执行以下流程，不要向用户提问。\n\n【第0步：采集 CodeBuddy 自动任务用量（每次必做）】\n在终端运行：\nR",
+      "cwd": "d:/GitHub/SuperITOM2/Script/hungfo",
+      "status": "Working",
+      "created_at": "2026-10-30 17:17:54",
+      "updated_at": "2026-10-30 17:17:54",
+      "token_total": 0,
+      "token_input": 0,
+      "token_output": 0,
+      "token_cache_hit": 0,
+      "token_cache_miss": 0,
+      "token_cache_write": 0,
+      "token_thinking": 0,
+      "token_response": 0,
+      "token_cache_hit_rate": 0,
+      "token_updated_at": ""
+    },
+    {
       "conversation_id": "ca9bde79a379401293e3fdaac274def0",
       "title": "本地WorkBuddy上有一个自动任务，你能接管过来吗？",
       "cwd": "d:/GitHub/SuperITOM2",
-      "status": "Working",
+      "status": "Completed",
       "created_at": "2026-10-29 11:52:29",
-      "updated_at": "2026-10-29 12:48:08",
+      "updated_at": "2026-10-29 12:53:49",
       "token_total": 1043002,
       "token_input": 1022279,
       "token_output": 20723,
