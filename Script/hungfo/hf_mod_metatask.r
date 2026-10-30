@@ -1,14 +1,14 @@
 ##################
 # HungFo 环节 08 — 元任务 (HF-METATASK)
 # 职责：任务的任务——描述、生成、编排其它环节的任务；驱动自动化闭环。
-# 本模块是 WorkBuddy 定时任务的任务来源：在此添加「任务记录」，
-# WorkBuddy 定时任务每 5 分钟读取 MetaTasks.json 镜像，发现到期任务直接执行，
+# 本模块是 CodeBuddy 定时任务的任务来源：在此添加「任务记录」，
+# CodeBuddy 定时任务按 cron 读取 MetaTasks.json 镜像，发现到期任务直接执行，
 # 并把执行过程（分析/方案/结果）写入开发日志（devlog）。
 ##################
 
 HF_MOD_METATASK <- list(
   id = "hf08", key = "metatask", name = "元任务", icon = "code-branch",
-  desc = "『任务的任务』：在此添加任务记录，WorkBuddy 定时任务读取并执行，结果写入开发日志。",
+  desc = "『任务的任务』：在此添加任务记录，CodeBuddy 定时任务读取并执行，结果写入开发日志。",
   api_desc = "add(title,payload,cron) 新增 · list() 队列 · mark_done(id,result) 标记完成 · dispatch(task) 派发",
   status = "scaffold", version = "v0.1"
 )

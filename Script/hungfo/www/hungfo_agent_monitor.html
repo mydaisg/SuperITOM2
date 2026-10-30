@@ -8,7 +8,7 @@
 <script src="hungfo_tasks.js"></script>
 <!-- 会话追踪数据源：由 HungFo 元任务执行生成（LLM/Token/耗时），监控页据此展示 -->
 <script src="hungfo_sessions.js"></script>
-<!-- WorkBuddy 用量数据源：由 HungFo 采集本机 workbuddy.db 生成（积分/估算token），监控页据此展示 -->
+<!-- CodeBuddy 自动任务运行统计数据源：由 HungFo 采集本机 automations.db 生成（运行次数/成功率/耗时），监控页据此展示 -->
 <script src="hungfo_usage.js"></script>
 <style>
   :root {
@@ -96,6 +96,15 @@
     padding: 16px 20px;
     min-height: 0;
     position: relative;
+    transition: grid-template-columns 0.35s ease;
+  }
+  /* INPUT / OUTPUT 侧边面板折叠：列宽归零，中间画布自适应铺满 */
+  .main.hide-left  { grid-template-columns: 0 1fr 300px; }
+  .main.hide-right { grid-template-columns: 300px 1fr 0; }
+  .main.hide-left.hide-right { grid-template-columns: 0 1fr 0; }
+  .main.hide-left .left-panel,
+  .main.hide-right .right-panel {
+    border: none; opacity: 0; pointer-events: none; visibility: hidden;
   }
 
   .panel {
@@ -245,7 +254,7 @@
   .token-stats .tk-v.purple { color: var(--neon-purple); text-shadow: 0 0 10px rgba(168,85,247,0.5); }
   .token-stats .tk-sub { font-size: 8px; color: var(--text-dim); margin-top: 2px; }
 
-  /* ===== 左侧底部：WorkBuddy 用量（积分 credit / 估算 token）===== */
+  /* ===== 左侧底部：CodeBuddy 自动任务运行统计（运行次数 / 成功率）===== */
   .wb-usage {
     flex-shrink: 0;
     margin: 0 16px 12px;
@@ -525,6 +534,22 @@
   .cfg-btn:hover { background: rgba(59,140,255,0.25); box-shadow: 0 0 12px rgba(59,140,255,0.4); }
   .cfg-btn.active { background: rgba(59,140,255,0.3); box-shadow: 0 0 12px rgba(59,140,255,0.5); }
 
+  .side-btn {
+    background: rgba(20, 26, 46, 0.6);
+    border: 1px solid var(--panel-border);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .side-btn:hover { border-color: var(--neon-cyan); color: var(--neon-cyan); }
+  .side-btn.off { color: var(--neon-cyan); border-color: var(--neon-cyan); background: rgba(34,211,238,0.12); }
+
   .cfg-panel {
     position: fixed;
     top: 56px; right: 20px;
@@ -591,6 +616,18 @@
     box-shadow: 0 0 10px rgba(59,140,255,0.7);
     cursor: pointer;
   }
+  .cfg-grid input[type="text"] {
+    background: rgba(20, 26, 46, 0.7);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 7px 10px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .cfg-grid input[type="text"]:focus { border-color: var(--neon-blue); }
   .cfg-actions {
     display: flex;
     gap: 10px;
@@ -619,9 +656,11 @@
   <span class="env">global / Tai-Night-01</span>
   <span class="status-pill"><span class="dot"></span> LIVE · HEARTBEAT <span id="hbText">2s</span></span>
   <div class="task-switch" id="taskSwitch">
-    <span class="ts-opt active" data-type="sample">示例任务</span>
-    <span class="ts-opt" data-type="formal">正式任务</span>
+    <span class="ts-opt active" data-type="sample">测试环境</span>
+    <span class="ts-opt" data-type="formal">生产环境</span>
   </div>
+  <button class="side-btn" id="leftToggle">◀ INPUT</button>
+  <button class="side-btn" id="rightToggle">OUTPUT ▶</button>
   <button class="cfg-btn" id="cfgToggle">⚙ CONFIG</button>
 </div>
 
@@ -683,6 +722,19 @@
     </label>
   </div>
 
+  <div class="cfg-group">环境 · 名称自定义</div>
+  <div class="cfg-grid">
+    <label>测试环境（sample）
+      <input type="text" class="cfg-text" id="cfgEnvSample" value="测试环境">
+    </label>
+    <label>生产环境（formal）
+      <input type="text" class="cfg-text" id="cfgEnvFormal" value="生产环境">
+    </label>
+  </div>
+
+  <div class="cfg-group">节点 · 名称自定义</div>
+  <div class="cfg-grid" id="cfgNodeNames"></div>
+
   <div class="cfg-actions">
     <button id="cfgPause">⏸ 暂停</button>
     <button id="cfgReset">↺ 重置</button>
@@ -734,22 +786,22 @@
         <div class="tk-sub" id="tkTotalSub">0 会话</div>
       </div>
     </div>
-    <!-- WorkBuddy 用量：积分(credit) + 估算 token（来自本机 workbuddy.db 采集） -->
+    <!-- CodeBuddy 自动任务运行统计：运行次数 + 成功率（来自本机 automations.db 采集） -->
     <div class="wb-usage">
       <div class="wu-title">
-        <span>WorkBuddy 用量 · TODAY</span>
+        <span>CodeBuddy 自动任务 · TODAY</span>
         <span id="wuUpdated" style="color:var(--text-dim);">—</span>
       </div>
       <div class="wu-grid">
         <div class="wu-box">
-          <div class="wu-k">CREDIT</div>
-          <div class="wu-v credit" id="wuCreditToday">0</div>
-          <div class="wu-sub" id="wuCreditTodaySub">0 会话</div>
+          <div class="wu-k">RUNS</div>
+          <div class="wu-v credit" id="wuRunsToday">0</div>
+          <div class="wu-sub" id="wuRunsTodaySub">0 自动任务</div>
         </div>
         <div class="wu-box">
-          <div class="wu-k">TOKEN(估)</div>
-          <div class="wu-v" id="wuTokToday">0</div>
-          <div class="wu-sub" id="wuTokTodaySub">0 请求</div>
+          <div class="wu-k">SUCCESS</div>
+          <div class="wu-v" id="wuSuccessToday">0</div>
+          <div class="wu-sub" id="wuSuccessTodaySub">成功率 0%</div>
         </div>
       </div>
     </div>
@@ -801,17 +853,17 @@
 <script>
 // ============ 节点定义（自由网状布局：大致左入→右出，纵向错落） ============
 const AGENTS = [
-  // ── 入口 / 编排 ──
-  { id:'planner',   name:'元任务解析器',   en:'Planner',  icon:'🎯', color:'#3b8cff', x:0.06, y:0.50 },
+  // ── 入口 / 编排（分解器在路由器正上方，省掉最左一列，入口更紧凑） ──
+  { id:'planner',   name:'元任务解析器',   en:'Planner',  icon:'🎯', color:'#3b8cff', x:0.24, y:0.24 },
   { id:'router',    name:'分发路由器',     en:'Router',   icon:'🔀', color:'#22d3ee', x:0.24, y:0.50 },
   // ── 打工池 Workers（三个并行执行器） ──
   { id:'codebuddy', name:'CodeBuddy',     en:'写代码 · 改 Bug',   icon:'💻', color:'#38bdf8', x:0.48, y:0.22 },
   { id:'workbuddy', name:'WorkBuddy',     en:'跑脚本 · 文件 · API', icon:'🎛️', color:'#818cf8', x:0.48, y:0.50 },
   { id:'webdata',   name:'Web/Data',      en:'搜索 · 抓取 · 清洗',  icon:'🌐', color:'#ec4899', x:0.48, y:0.78 },
-  // ── 校验 / 审批 / 输出 ──
+  // ── 校验 / 审批 / 输出（审批上移、部署下移，与校验形成舒展扇形） ──
   { id:'validator', name:'硬校验与 QA',   en:'Validator', icon:'✅', color:'#34d399', x:0.72, y:0.50 },
-  { id:'hitl',      name:'人工审批',      en:'HITL',      icon:'👤', color:'#f59e0b', x:0.88, y:0.28 },
-  { id:'deployer',  name:'部署/动作触发器', en:'Deployer', icon:'🚀', color:'#f472b6', x:0.88, y:0.72 },
+  { id:'hitl',      name:'人工审批',      en:'HITL',      icon:'👤', color:'#f59e0b', x:0.88, y:0.22 },
+  { id:'deployer',  name:'部署/动作触发器', en:'Deployer', icon:'🚀', color:'#f472b6', x:0.88, y:0.78 },
 ];
 
 // ============ 连线定义（任务流转路径：入口 → 分发 → 打工池 → 校验 → 审批 → 部署） ============
@@ -824,6 +876,9 @@ const LINKS = [
 ];
 
 const agentMap = Object.fromEntries(AGENTS.map(a => [a.id, a]));
+
+// ── 节点显示名自定义（id → 显示名，默认取 AGENTS.name，可在 CONFIG 面板修改） ──
+const nodeNames = Object.fromEntries(AGENTS.map(a => [a.id, a.name]));
 
 // ============ 渲染节点 ============
 const centerPanel = document.querySelector('.center-panel');
@@ -840,7 +895,7 @@ AGENTS.forEach(a => {
     <div class="node-head">
       <div class="node-ico">${a.icon}</div>
       <div class="node-title">
-        <span class="node-name">${a.name}</span>
+        <span class="node-name">${nodeNames[a.id]}</span>
         <span class="node-en">${a.en}</span>
       </div>
       <span class="node-state idle"></span>
@@ -877,9 +932,21 @@ function nodeCenter(id) {
     y: r.top - cr.top + r.height / 2,
   };
 }
+// 计算连线在节点边框上的落点：从 from 中心指向 to 中心的方向，
+// 沿该方向收缩到节点边框（近似椭圆：半宽70px、半高38px），让线只到边框不穿入内部
+function nodePort(fromId, toId) {
+  const a = nodeCenter(fromId), b = nodeCenter(toId);
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  const ux = dx / dist, uy = dy / dist;
+  // 椭圆边界与该方向射线的交点距中心长度：1 / hypot(ux/hw, uy/hh)
+  const hw = 70, hh = 38;
+  const t = 1 / Math.hypot(ux / hw, uy / hh);
+  return { x: a.x + ux * t, y: a.y + uy * t };
+}
 // 计算两个节点间的平滑贝塞尔曲线（带轻微自然弯曲，像绵线悬空）
 function edgePath(fromId, toId, wobble = 0) {
-  const a = nodeCenter(fromId), b = nodeCenter(toId);
+  const a = nodePort(fromId, toId), b = nodePort(toId, fromId);
   const dx = b.x - a.x, dy = b.y - a.y;
   const dist = Math.hypot(dx, dy);
   // 法向偏移，制造自然弧线；wobble 提供随时间的晃动
@@ -897,7 +964,7 @@ function drawLinks() {
   if (!defs) { defs = document.createElementNS(NS, 'defs'); svg.appendChild(defs); }
 
   LINKS.forEach(([from, to], i) => {
-    const a = nodeCenter(from), b = nodeCenter(to);
+    const a = nodePort(from, to), b = nodePort(to, from);
     const color = agentMap[from].color;
     const d = edgePath(from, to);
 
@@ -977,7 +1044,7 @@ let wobbleT = 0;      // 全局晃动相位
 // 弧高固定按弦长比例取值、摆动只是围绕基准弧高做小幅度变化，
 // 保证弧线始终朝同一侧弯曲 → 形成左右对称的椭圆弧，而非偏向一侧的扇形，并天然不越界
 function ghostPath(from, to, seed, t) {
-  const a = nodeCenter(from), b = nodeCenter(to);
+  const a = nodePort(from, to), b = nodePort(to, from);
   const dx = b.x - a.x, dy = b.y - a.y;
   const dist = Math.hypot(dx, dy) || 1;
   const nx = -dy / dist, ny = dx / dist;
@@ -1292,7 +1359,7 @@ function renderTaskList() {
     const ag = agentMap[node] || { name: node, color: '#3b8cff' };
     return `<div class="tl-item" style="--ac:${t.color || ag.color};">
       <span class="tname">${t.id} · ${t.name}</span>
-      <span class="tstep">@${ag.name}</span>
+      <span class="tstep">@${nodeNames[node] || ag.name}</span>
     </div>`;
   }).join('');
 
@@ -1396,25 +1463,26 @@ function renderSessionPanel() {
   });
 }
 
-// ============ WorkBuddy 用量面板（积分 credit / 估算 token） ============
-// 数据来源：window.HF_WB_USAGE（由 collect_usage 生成 hungfo_usage.js）
-function fmtCredit(n) {
+// ============ CodeBuddy 自动任务运行统计面板（运行次数 / 成功率） ============
+// 数据来源：window.HF_CB_USAGE（由 collect_usage 生成 hungfo_usage.js）
+function fmtNum(n) {
   if (n == null || isNaN(n) || n <= 0) return '0';
   if (n >= 1000) return (n / 1000).toFixed(2) + 'k';
   return (Math.round(n * 100) / 100).toString();
 }
-function renderWbUsage() {
-  const data = (typeof window.HF_WB_USAGE !== 'undefined') ? window.HF_WB_USAGE : null;
+function renderCbUsage() {
+  const data = (typeof window.HF_CB_USAGE !== 'undefined') ? window.HF_CB_USAGE : null;
   if (!data || !data.summary) {
     document.getElementById('wuUpdated').textContent = '未采集';
     return;
   }
   const s = data.summary;
   const today = s.today || {};
-  document.getElementById('wuCreditToday').textContent = fmtCredit(today.credit);
-  document.getElementById('wuTokToday').textContent = fmtTok(today.token_est);
-  document.getElementById('wuCreditTodaySub').textContent = (today.sessions || 0) + ' 会话';
-  document.getElementById('wuTokTodaySub').textContent = (today.requests || 0) + ' 请求';
+  const total = s.total || {};
+  document.getElementById('wuRunsToday').textContent = fmtNum(today.runs);
+  document.getElementById('wuSuccessToday').textContent = fmtNum(today.success);
+  document.getElementById('wuRunsTodaySub').textContent = '累计 ' + fmtNum(total.runs) + ' 次';
+  document.getElementById('wuSuccessTodaySub').textContent = '成功率 ' + (today.rate || 0) + '%';
   const upd = data.updated_at || '';
   document.getElementById('wuUpdated').textContent = upd.slice(5, 16);
 }
@@ -1443,8 +1511,87 @@ cfgToggle.addEventListener('click', () => {
   cfgToggle.classList.toggle('active');
 });
 
+// ── 配置持久化（localStorage，可选增强） ──
+const CFG_KEY = 'hungfo_monitor_cfg_v1';
+function saveCfg() {
+  try {
+    localStorage.setItem(CFG_KEY, JSON.stringify({ nodeNames, envNames, sideHidden }));
+  } catch (e) { /* 隐私模式等异常忽略 */ }
+}
+function loadCfg() {
+  try {
+    const raw = localStorage.getItem(CFG_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (saved.nodeNames) Object.assign(nodeNames, saved.nodeNames);
+    if (saved.envNames) Object.assign(envNames, saved.envNames);
+    if (saved.sideHidden) Object.assign(sideHidden, saved.sideHidden);
+  } catch (e) { /* 数据损坏等异常忽略 */ }
+}
+
+// ── INPUT / OUTPUT 侧边面板折叠 ──
+const mainEl = document.querySelector('.main');
+const leftToggle = document.getElementById('leftToggle');
+const rightToggle = document.getElementById('rightToggle');
+let sideHidden = { left: false, right: false };
+function applySide() {
+  mainEl.classList.toggle('hide-left', sideHidden.left);
+  mainEl.classList.toggle('hide-right', sideHidden.right);
+  leftToggle.classList.toggle('off', sideHidden.left);
+  rightToggle.classList.toggle('off', sideHidden.right);
+  // 折叠动画结束后重算画布尺寸，让连线与节点跟随新布局
+  setTimeout(() => { resizeCanvas(); resizeTrafficCanvas(); }, 380);
+}
+leftToggle.addEventListener('click', () => { sideHidden.left = !sideHidden.left; applySide(); saveCfg(); });
+rightToggle.addEventListener('click', () => { sideHidden.right = !sideHidden.right; applySide(); saveCfg(); });
+
+// ── 节点名称自定义（动态生成输入框） ──
+const nodeNameInputs = {};   // id → input 元素
+const nodeNamesBox = document.getElementById('cfgNodeNames');
+function applyNodeName(id, name) {
+  const el = document.getElementById('node_' + id);
+  if (el) { const n = el.querySelector('.node-name'); if (n) n.textContent = name; }
+}
+AGENTS.forEach(a => {
+  const label = document.createElement('label');
+  label.innerHTML = `<span>${a.en} <span style="color:${a.color}">· ${a.id}</span></span>`;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'cfg-text';
+  input.value = nodeNames[a.id];
+  input.addEventListener('input', () => {
+    nodeNames[a.id] = input.value.trim() || a.name;
+    applyNodeName(a.id, nodeNames[a.id]);
+    renderTaskList();   // 同步任务列表中的节点名
+    saveCfg();
+  });
+  label.appendChild(input);
+  nodeNamesBox.appendChild(label);
+  nodeNameInputs[a.id] = input;
+});
+
 // ── 任务类型切换（示例 / 正式）──
 const taskSwitch = document.getElementById('taskSwitch');
+
+// ── 环境名称自定义（测试环境 / 生产环境，data-type 键保持不变） ──
+const envNames = { sample: '测试环境', formal: '生产环境' };
+const envInputs = {
+  sample: document.getElementById('cfgEnvSample'),
+  formal: document.getElementById('cfgEnvFormal'),
+};
+function applyEnvNames() {
+  taskSwitch.querySelector('[data-type="sample"]').textContent = envNames.sample;
+  taskSwitch.querySelector('[data-type="formal"]').textContent = envNames.formal;
+}
+['sample', 'formal'].forEach(k => {
+  envInputs[k].addEventListener('input', () => {
+    envNames[k] = envInputs[k].value.trim() || (k === 'sample' ? '测试环境' : '生产环境');
+    applyEnvNames();
+    saveCfg();
+  });
+});
+applyEnvNames();
+
 taskSwitch.querySelectorAll('.ts-opt').forEach(opt => {
   opt.addEventListener('click', () => {
     taskSwitch.querySelectorAll('.ts-opt').forEach(o => o.classList.remove('active'));
@@ -1456,9 +1603,9 @@ taskSwitch.querySelectorAll('.ts-opt').forEach(opt => {
     // 检查该类型是否有任务，无则明确提示（不再静默回退示例数据）
     const pool = currentPool();
     if (!pool || pool.length === 0) {
-      logLine(now(), `⚠ 暂无「${currentTaskType === 'sample' ? '示例' : '正式'}任务」——请先在自动任务模块添加`, 'warn');
+      logLine(now(), `⚠ 暂无「${envNames[currentTaskType]}」任务——请先在自动任务模块添加`, 'warn');
     } else {
-      logLine(now(), `task source switched → ${currentTaskType === 'sample' ? '示例任务' : '正式任务'}（${pool.length} 个）`, 'tag');
+      logLine(now(), `task source switched → ${envNames[currentTaskType]}（${pool.length} 个）`, 'tag');
     }
     updateStats();
     renderTaskList();
@@ -1542,11 +1689,22 @@ function restartLogPump() {
 restartTaskPump();
 restartLogPump();
 
+// ── 加载并应用持久化配置（节点名 / 环境名 / 侧边折叠状态） ──
+loadCfg();
+applyEnvNames();
+envInputs.sample.value = envNames.sample;
+envInputs.formal.value = envNames.formal;
+applySide();
+AGENTS.forEach(a => {
+  applyNodeName(a.id, nodeNames[a.id]);
+  nodeNameInputs[a.id].value = nodeNames[a.id];
+});
+
 // 初始填充
 updateStats();
 renderTaskList();
 renderSessionPanel();
-renderWbUsage();
+renderCbUsage();
 logLine(now(), 'orchestrator online · hungfo v0.1', 'tag');
 logLine(now(), AGENTS.length + ' agents registered · heartbeat sync', 'ok');
 logLine(now(), 'validation gate armed · policy loaded', 'ok');

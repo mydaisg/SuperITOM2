@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-10-29 09:07:20",
+  "updated_at": "2026-10-29 12:53:37",
   "tasks": [
     {
       "id": 1,
@@ -9,7 +9,9 @@
       "status": "done",
       "last_run_at": "2026-10-28 16:28:11",
       "next_run_at": null,
-      "result": "已完成：给 HungFo 开发日志环节实现查看界面（参照父项目开发日志卡片样式，含统计/搜索/刷新）。"
+      "result": "已完成：给 HungFo 开发日志环节实现查看界面（参照父项目开发日志卡片样式，含统计/搜索/刷新）。",
+      "llm_name": "",
+      "agent": ""
     },
     {
       "id": 6,
@@ -19,7 +21,9 @@
       "status": "done",
       "last_run_at": "2026-10-28 17:00:50",
       "next_run_at": null,
-      "result": "监控页优化完成：晃动上限×10、节点拉开"
+      "result": "监控页优化完成：晃动上限×10、节点拉开",
+      "llm_name": "DeepSeek-V4-Pro",
+      "agent": ""
     },
     {
       "id": 8,
@@ -29,7 +33,9 @@
       "status": "done",
       "last_run_at": "2026-10-28 17:57:34",
       "next_run_at": null,
-      "result": "日志界面重构完成：完整payload+分段着色+日期分组+搜索高亮"
+      "result": "日志界面重构完成：完整payload+分段着色+日期分组+搜索高亮",
+      "llm_name": "DeepSeek-V4-Pro",
+      "agent": ""
     },
     {
       "id": 9,
@@ -39,7 +45,9 @@
       "status": "done",
       "last_run_at": "2026-10-28 17:57:34",
       "next_run_at": null,
-      "result": "monitor弧线对称修复+节点文案替换完成"
+      "result": "monitor弧线对称修复+节点文案替换完成",
+      "llm_name": "DeepSeek-V4-Pro",
+      "agent": ""
     },
     {
       "id": 10,
@@ -49,27 +57,93 @@
       "status": "done",
       "last_run_at": "2026-10-28 17:57:34",
       "next_run_at": null,
-      "result": "HungFo剥离完成：独立app.R+hf_config.r，双模式验证通过"
+      "result": "HungFo剥离完成：独立app.R+hf_config.r，双模式验证通过",
+      "llm_name": "DeepSeek-V4-Pro",
+      "agent": ""
     },
     {
       "id": 11,
       "title": "独立数据库出来",
       "payload": "独立数据库出来\n1、已放好SQLite的必要文件在D:\\GITHUB\\SUPERITOM2\\SCRIPT\\HUNGFO\\DB\n    sqldiff.exe\n    sqlite3.exe\n    sqlite3_analyzer.exe\n2、创建HF_HungFo.DB文件\n3、移植父项目数据库的本子项目数据\n4、改写本子项目的想着数据库代码，导向HF_HungFo.DB\n5、目的是逐步解耦，实现HungFo子项目完全独立\n启动独立：专用WEB端口8999\n数据库独立：HF_HungFo.DB",
       "cron": "",
-      "status": "pending",
-      "last_run_at": null,
-      "next_run_at": "2026-10-29 09:04:41",
-      "result": ""
+      "status": "done",
+      "last_run_at": "2026-10-29 09:44:53",
+      "next_run_at": null,
+      "result": "HungFo子项目数据库独立：创建HF_HungFo.DB并移植6表数据，改写连接代码默认导向独立库，端口8999，验证行数一致父库未动",
+      "llm_name": "DeepSeek-V4-Pro",
+      "agent": ""
     },
     {
       "id": 12,
       "title": "元任务模块的需求队列展示问题",
       "payload": "元任务模块的需求队列展示问题\n1、只有标题，没有内容\n2、不同状态要用颜色块标记，待开发黄色，已完成绿色，开发异常红色\n3、增加完成LLM和Agent，是哪个LLM和Agent(WorkBuddy还是CodeBuddy)",
       "cron": "",
-      "status": "pending",
-      "last_run_at": null,
-      "next_run_at": "2026-10-29 09:07:20",
-      "result": ""
+      "status": "done",
+      "last_run_at": "2026-10-29 09:45:00",
+      "next_run_at": null,
+      "result": "元任务需求队列展示优化：增加payload内容展示、状态颜色块标记(黄/绿/红)、完成LLM与Agent(WorkBuddy/CodeBuddy)列，agent字段落库",
+      "llm_name": "DeepSeek-V4-Pro",
+      "agent": ""
+    },
+    {
+      "id": 13,
+      "title": "Agent WorkFlow Monitor模块",
+      "payload": "Agent WorkFlow Monitor模块\n1、页面下增加Monitor的原始记录及来源\n2、保留原按键放右上角“点击下方按钮在新标签页打开独立页面。”",
+      "cron": "",
+      "status": "done",
+      "last_run_at": "2026-10-29 11:15:56",
+      "next_run_at": null,
+      "result": "Monitor页下方新增原始记录及来源，打开按钮移至右上角，语法通过",
+      "llm_name": "DeepSeek-V4-Pro",
+      "agent": "WorkBuddy"
+    },
+    {
+      "id": 14,
+      "title": "元任务-需求队列",
+      "payload": "元任务-需求队列\n1、字段内容的字体太大，整个界面不协调\n2、要支持“待开发“和”开发异常\"状态的需求可以编辑修改\n3、去掉界面上没用的2个按键“删除选中”和“立即执行”\n4、刷新按键检查一下，能否真刷新\n5、按键“提交需求”往左边放",
+      "cron": "",
+      "status": "done",
+      "last_run_at": "2026-10-29 11:16:11",
+      "next_run_at": null,
+      "result": "需求队列字体缩小、支持编辑、去无用键、提交键左移，语法通过",
+      "llm_name": "DeepSeek-V4-Pro",
+      "agent": "WorkBuddy"
+    },
+    {
+      "id": 15,
+      "title": "优化 Agent Workflow Monitor",
+      "payload": "优化 Agent Workflow Monitor\n1、线的连接点，不是在节点中心，而是要在节点边框线的中间点|\n2、节点“元任务分解器”放“分发路由器”上面，这样整体布局少一列，线条空间更大\n3、节点“人工审批”往上一点，节点“部署”往一下一点。\n4、总体目标是尽量展示线条的美",
+      "cron": "",
+      "status": "done",
+      "last_run_at": "2026-10-29 12:23:53",
+      "next_run_at": null,
+      "result": "优化工作流连线端口改为节点边框中点、调整节点布局",
+      "llm_name": "DeepSeek-V4-Pro",
+      "agent": ""
+    },
+    {
+      "id": 16,
+      "title": "优化 Agent Workflow Monitor配置项",
+      "payload": "优化 Agent Workflow Monitor配置项\n1、CONFIG 增加节点名称可自定义\n2、“示例任务”改名为“测试环境”，“正式任务”改名为“生产环境”，也做到CONFIG可自定义\n3、INPUT和OUTPUT做成可侧边隐藏",
+      "cron": "",
+      "status": "done",
+      "last_run_at": "2026-10-29 12:23:55",
+      "next_run_at": null,
+      "result": "CONFIG节点名称自定义、任务类型改名、INPUT/OUTPUT侧边可隐藏",
+      "llm_name": "DeepSeek-V4-Pro",
+      "agent": ""
+    },
+    {
+      "id": 17,
+      "title": "接管 WorkBuddy 自动任务到 CodeBuddy，并新增会话清单采集与 Token 录入",
+      "payload": "本次对话完成：1) 将 WorkBuddy 的 HungFo 元任务自动执行器接管到 CodeBuddy automation（每小时执行，工作目录 Script/hungfo，模型 deepseek-v4-pro）；2) 用量采集从 WorkBuddy 积分/token 改为 CodeBuddy 自动任务运行统计（运行次数/成功率/耗时）；3) 新增 CodeBuddy 会话清单采集（codebuddy-sessions.vscdb → hf_cb_sessions 表）+ Token 明细手动录入命令（token 命令，命中率自动计算）。",
+      "cron": "",
+      "status": "done",
+      "last_run_at": "2026-10-29 12:53:31",
+      "next_run_at": null,
+      "result": "已完成：创建 CodeBuddy automation（id=hungfo，FREQ=HOURLY;INTERVAL=1）；改造 hf_metatask_runner.r / hf_core.r / hf_ui.r；usage 命令成功采集 1 个自动任务 + 20 个会话；token 命令录入当前会话明细（总计 1043002，命中率 97.1%）；开发日志 DL20261029001 / DL20261029002。",
+      "llm_name": "deepseek-v4-pro",
+      "agent": "CodeBuddy"
     }
   ]
 }

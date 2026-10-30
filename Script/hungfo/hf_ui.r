@@ -13,7 +13,7 @@ hf_module_page_ui <- function(m) {
   p <- function(x) paste0("hf_", key, "_", x)
   # 自动任务环节：特殊页面（Agent 任务来源编辑器）
   if (identical(key, "autotask")) return(hf_autotask_page_ui(m))
-  # 元任务环节：特殊页面（任务记录队列，WorkBuddy 定时任务来源）
+  # 元任务环节：特殊页面（任务记录队列，CodeBuddy 定时任务来源）
   if (identical(key, "metatask")) return(hf_metatask_page_ui(m))
   # 开发日志环节：特殊页面（查看界面，参照父项目开发日志样式）
   if (identical(key, "devlog")) return(hf_devlog_page_ui(m))
@@ -96,7 +96,7 @@ hf_autotask_page_ui <- function(m) {
   )
 }
 
-# ── 元任务环节专属页面：任务记录队列（WorkBuddy 定时任务来源）──
+# ── 元任务环节专属页面：任务记录队列（CodeBuddy 定时任务来源）──
 hf_metatask_page_ui <- function(m) {
   p <- function(x) paste0("hf_metatask_", x)
   tabPanel(
@@ -107,26 +107,27 @@ hf_metatask_page_ui <- function(m) {
         tags$span(style = "font-size:11px;background:#455a64;padding:2px 8px;border-radius:10px;margin-left:8px;", "HF-METATASK"),
         tags$span(style = "font-size:11px;background:#00695c;padding:2px 8px;border-radius:10px;margin-left:6px;", hf_or(m$status, "scaffold")),
         tags$div(style = "font-size:12px;opacity:.88;margin-top:8px;",
-          "直接提交一条需求说明，标记为「待开发」。WorkBuddy 自动任务识别后执行，并把需求/分析/过程/结果写入开发日志，执行完成自动标记为「已完成」。")
+          "直接提交一条需求说明，标记为「待开发」。CodeBuddy 自动任务识别后执行，并把需求/分析/过程/结果写入开发日志，执行完成自动标记为「已完成」。")
       ),
 
-      # 新增需求说明区（单框，无标题无 cron）
+      # 新增 / 编辑需求说明区（单框，无标题无 cron；提交需求按钮在左侧）
       div(style = "background:#fff;border-radius:8px;padding:12px;margin:8px 0;border:1px solid #e8ecf1;",
-        tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:8px;", "✦ 新增需求说明"),
+        tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:8px;",
+          uiOutput(p("mt_form_title"))),
         textAreaInput(p("mt_req"), NULL, rows = 5, width = "100%",
           placeholder = "在这里写一条需求说明，第一行自动作为标题…\n例如：给开发日志模块加一个查看界面，参照父项目样式。"),
-        div(style = "display:flex;justify-content:flex-end;margin-top:6px;",
-          actionButton(p("mt_add"), "提交需求", icon = icon("paper-plane"), class = "btn-success btn-sm")
+        div(style = "display:flex;justify-content:flex-start;gap:8px;margin-top:6px;",
+          uiOutput(p("mt_form_buttons"))
         )
       ),
 
-      # 任务队列
+      # 任务队列（待开发 / 开发异常可编辑，编辑按钮在左）
       div(style = "background:#fff;border-radius:8px;padding:12px;margin:8px 0;border:1px solid #e8ecf1;",
+        tags$style("#hf_metatask_mt_table table.dataTable, #hf_metatask_mt_table table.dataTable td, #hf_metatask_mt_table table.dataTable th { font-size:12px; }"),
         div(style = "display:flex;align-items:center;gap:10px;margin-bottom:8px;",
           tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;", "✦ 需求队列"),
           div(style = "margin-left:auto;display:flex;gap:6px;",
-            actionButton(p("mt_del"), "删除选中", icon = icon("trash"), class = "btn-danger btn-xs"),
-            actionButton(p("mt_run"), "立即执行", icon = icon("play"), class = "btn-warning btn-xs"),
+            actionButton(p("mt_edit"), "编辑选中", icon = icon("pen"), class = "btn-primary btn-xs"),
             actionButton(p("mt_refresh"), "刷新", icon = icon("sync"), class = "btn-info btn-xs")
           )
         ),
@@ -329,11 +330,83 @@ hf_autotask_page_server <- function(input, output, session, rv, m, trigger) {
   })
 }
 
+# ── 元任务队列展示辅助：HTML 转义 / 状态颜色块 / payload 摘要 / Agent 徽章 ──
+hf_html_escape <- function(x) {
+  x <- hf_or(x, "")
+  x <- gsub("&", "&amp;", x, fixed = TRUE)
+  x <- gsub("<", "&lt;", x, fixed = TRUE)
+  x <- gsub(">", "&gt;", x, fixed = TRUE)
+  x <- gsub("\"", "&quot;", x, fixed = TRUE)
+  x <- gsub("'", "&#39;", x, fixed = TRUE)
+  x
+}
+
+# 状态 → 颜色块（待开发黄 #f0ad4e / 执行中蓝 / 已完成绿 #5cb85c / 开发异常红 #d9534f）
+hf_metatask_status_badge <- function(status) {
+  st <- hf_or(status, "pending")
+  map <- list(
+    pending = list(label = "待开发", bg = "#f0ad4e", fg = "#fff"),
+    running = list(label = "执行中", bg = "#5bc0de", fg = "#fff"),
+    done    = list(label = "已完成", bg = "#5cb85c", fg = "#fff"),
+    error   = list(label = "开发异常", bg = "#d9534f", fg = "#fff"),
+    failed  = list(label = "开发异常", bg = "#d9534f", fg = "#fff")
+  )
+  m <- map[[st]]
+  if (is.null(m)) m <- list(label = st, bg = "#9e9e9e", fg = "#fff")
+  sprintf('<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:%s;color:%s;white-space:nowrap;">%s</span>',
+          m$bg, m$fg, m$label)
+}
+
+# payload 内容单元格：单行摘要 + 悬浮 tooltip 显示全文（换行保留）
+hf_metatask_payload_cell <- function(payload) {
+  txt <- hf_or(payload, "")
+  if (!nzchar(trimws(txt))) return('<span style="color:#bbb;">—</span>')
+  one_line <- gsub("\\s+", " ", txt)
+  brief <- if (nchar(one_line) > 60) paste0(substr(one_line, 1, 60), "…") else one_line
+  tooltip <- gsub("\n", "&#10;", hf_html_escape(txt), fixed = TRUE)
+  sprintf('<span style="color:#444;cursor:default;border-bottom:1px dashed #bbb;" title="%s">%s</span>',
+          tooltip, hf_html_escape(brief))
+}
+
+# Agent 徽章：WorkBuddy 紫 / CodeBuddy 橙，未知显示 —
+hf_metatask_agent_badge <- function(agent) {
+  agt <- trimws(hf_or(agent, ""))
+  if (!nzchar(agt)) return('<span style="color:#bbb;">—</span>')
+  if (grepl("WorkBuddy", agt, ignore.case = TRUE)) {
+    return('<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;background:#ede9fe;color:#5b21b6;white-space:nowrap;">WorkBuddy</span>')
+  }
+  if (grepl("CodeBuddy", agt, ignore.case = TRUE)) {
+    return('<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;background:#fff3e0;color:#e65100;white-space:nowrap;">CodeBuddy</span>')
+  }
+  sprintf('<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;background:#f5f5f5;color:#555;white-space:nowrap;">%s</span>', hf_html_escape(agt))
+}
+
 # ── 元任务环节专属 Server ──
 hf_metatask_page_server <- function(input, output, session, rv, m, trigger) {
   p <- function(x) paste0("hf_metatask_", x)
   local_trigger <- reactiveVal(0)
   local_refresh <- function() local_trigger(local_trigger() + 1)
+  editing_id <- reactiveVal(NULL)   # NULL=新增模式；非空=编辑该 id 需求
+
+  # 表单标题（新增 / 编辑态切换）
+  output[[p("mt_form_title")]] <- renderUI({
+    id <- editing_id()
+    if (is.null(id)) return(tags$span("✦ 新增需求说明"))
+    tags$span("✦ 编辑需求 #", id, " ",
+      tags$span(style = "color:#d9534f;font-weight:700;", "（保存后重置为待开发，等待重新执行）"))
+  })
+
+  # 表单按钮（新增态=提交需求；编辑态=保存修改 / 取消编辑）
+  output[[p("mt_form_buttons")]] <- renderUI({
+    id <- editing_id()
+    if (is.null(id)) {
+      return(actionButton(p("mt_add"), "提交需求", icon = icon("paper-plane"), class = "btn-success btn-sm"))
+    }
+    tagList(
+      actionButton(p("mt_save"), "保存修改", icon = icon("check"), class = "btn-success btn-sm"),
+      actionButton(p("mt_cancel"), "取消编辑", icon = icon("times"), class = "btn-default btn-sm")
+    )
+  })
 
   output[[p("status")]] <- renderUI({
     trigger(); local_trigger()
@@ -346,7 +419,7 @@ hf_metatask_page_server <- function(input, output, session, rv, m, trigger) {
       " · ", tags$span(style = "color:#888;", "执行完成自动写入开发日志"))
   })
 
-  # 任务队列表
+  # 任务队列表（含 payload 内容、状态颜色块、完成 LLM / Agent）
   output[[p("mt_table")]] <- DT::renderDT({
     trigger(); local_trigger()
     q <- hf_metatask_list()
@@ -355,15 +428,40 @@ hf_metatask_page_server <- function(input, output, session, rv, m, trigger) {
         data.frame(提示 = "暂无需求，在上方提交一条需求说明", stringsAsFactors = FALSE),
         options = list(dom = "t"), rownames = FALSE))
     }
+    meta <- hf_metatask_session_meta()   # task_id, llm_name, agent（每个任务最近一次执行会话）
+    has_meta <- !is.null(meta) && nrow(meta) > 0
+    # 队列冗余字段（mark_done 写回）作为会话表之外的回退
+    q_llm  <- if (!is.null(q$llm_name) && length(q$llm_name) >= nrow(q)) q$llm_name else rep("", nrow(q))
+    q_agt  <- if (!is.null(q$agent)    && length(q$agent)    >= nrow(q)) q$agent    else rep("", nrow(q))
+    n <- nrow(q)
     out <- data.frame(
       ID = q$id,
-      需求 = q$title,
-      状态 = ifelse(q$status == "done", "已完成",
-                    ifelse(q$status == "running", "执行中", "待开发")),
+      需求 = vapply(seq_len(n), function(i) hf_html_escape(hf_or(q$title[i], "")), character(1)),
+      内容 = vapply(seq_len(n), function(i) hf_metatask_payload_cell(hf_or(q$payload[i], "")), character(1)),
+      状态 = vapply(seq_len(n), function(i) hf_metatask_status_badge(hf_or(q$status[i], "pending")), character(1)),
+      完成LLM = vapply(seq_len(n), function(i) {
+        llm <- ""
+        if (has_meta) {
+          hit <- meta[meta$task_id == q$id[i] & !is.na(meta$task_id), , drop = FALSE]
+          if (nrow(hit) > 0) llm <- hf_or(hit$llm_name[1], "")
+        }
+        if (!nzchar(trimws(llm))) llm <- hf_or(q_llm[i], "")
+        if (!nzchar(trimws(llm))) return('<span style="color:#bbb;">—</span>')
+        sprintf('<span style="color:#333;">%s</span>', hf_html_escape(llm))
+      }, character(1)),
+      Agent = vapply(seq_len(n), function(i) {
+        agt <- ""
+        if (has_meta) {
+          hit <- meta[meta$task_id == q$id[i] & !is.na(meta$task_id), , drop = FALSE]
+          if (nrow(hit) > 0) agt <- hf_or(hit$agent[1], "")
+        }
+        if (!nzchar(trimws(agt))) agt <- hf_or(q_agt[i], "")
+        hf_metatask_agent_badge(agt)
+      }, character(1)),
       提交时间 = ifelse(is.na(q$created_at) | q$created_at == "", "—", q$created_at),
       完成时间 = ifelse(is.na(q$last_run_at) | q$last_run_at == "", "—", q$last_run_at),
       stringsAsFactors = FALSE)
-    DT::datatable(out, rownames = FALSE, selection = "single",
+    DT::datatable(out, rownames = FALSE, selection = "single", escape = FALSE,
       options = list(pageLength = 15, dom = "ltip"))
   })
 
@@ -386,35 +484,54 @@ hf_metatask_page_server <- function(input, output, session, rv, m, trigger) {
     r <- hf_metatask_add(title, req_text, cron = "")
     showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
     if (isTRUE(r$success)) {
+      editing_id(NULL)
       updateTextAreaInput(session, p("mt_req"), value = "")
     }
     local_refresh()
   })
 
-  # 删除选中
-  observeEvent(input[[p("mt_del")]], {
+  # 编辑选中（仅「待开发 / 开发异常」状态可编辑，回填到上方表单）
+  observeEvent(input[[p("mt_edit")]], {
     id <- selected_id()
-    if (is.null(id)) { showNotification("请先选中一个任务", type = "warning"); return() }
-    r <- hf_metatask_delete(id)
+    if (is.null(id)) { showNotification("请先在列表选中一条需求", type = "warning"); return() }
+    q <- hf_metatask_list()
+    row <- q[q$id == id, , drop = FALSE]
+    if (nrow(row) == 0) { showNotification("需求不存在，请刷新后重试", type = "warning"); return() }
+    st <- hf_or(row$status[1], "pending")
+    if (!(st %in% c("pending", "error", "failed"))) {
+      showNotification("仅「待开发 / 开发异常」状态的需求可编辑", type = "warning"); return()
+    }
+    editing_id(id)
+    updateTextAreaInput(session, p("mt_req"),
+      value = hf_or(row$payload[1], hf_or(row$title[1], "")))
+  })
+
+  # 保存修改（编辑态提交，重置为待开发等待重新执行）
+  observeEvent(input[[p("mt_save")]], {
+    req(rv$logged_in)
+    id <- editing_id()
+    if (is.null(id)) return()
+    req_text <- trimws(hf_or(input[[p("mt_req")]], ""))
+    if (!nzchar(req_text)) { showNotification("请输入需求说明", type = "warning"); return() }
+    lines <- strsplit(req_text, "\n")[[1]]
+    title <- trimws(lines[1])
+    if (!nzchar(title)) title <- "未命名需求"
+    r <- hf_metatask_update(id, title, req_text)
     showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (isTRUE(r$success)) {
+      editing_id(NULL)
+      updateTextAreaInput(session, p("mt_req"), value = "")
+    }
     local_refresh()
   })
 
-  # 立即执行（把 next_run_at 置为当前，WorkBuddy 下一轮即会执行）
-  observeEvent(input[[p("mt_run")]], {
-    id <- selected_id()
-    if (is.null(id)) { showNotification("请先选中一个任务", type = "warning"); return() }
-    con <- db_connect(); on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
-    tryCatch({
-      dbExecute(con, sprintf(
-        "UPDATE hf_metatask_queue SET status='pending', next_run_at=datetime('now','localtime') WHERE id=%s",
-        as.character(id)))
-      hf_metatask_export()
-      showNotification("已置为待执行，WorkBuddy 下一轮（≤5分钟）将执行", type = "message")
-    }, error = function(e) showNotification(e$message, type = "error"))
-    local_refresh()
+  # 取消编辑（回到新增态并清空表单）
+  observeEvent(input[[p("mt_cancel")]], {
+    editing_id(NULL)
+    updateTextAreaInput(session, p("mt_req"), value = "")
   })
 
+  # 刷新：重读数据库并重渲染队列（local_trigger 为 mt_table / status 的响应式依赖）
   observeEvent(input[[p("mt_refresh")]], local_refresh())
 }
 
@@ -579,26 +696,144 @@ hf_devlog_page_server <- function(input, output, session, rv, m, trigger) {
 }
 
 # ── Agent Workflow Monitor 面板 Tab ──
-# 独立页面（新标签页打开 hungfo_agent_monitor.html），不需要返回；
+# 独立页面（新标签页打开 hungfo_agent_monitor.html），原打开按键放右上角；
+# 页面下方展示 Monitor 的原始记录及来源（任务来源 / 会话追踪 / CodeBuddy 自动任务）。
 # 放置在「权限体系」（12 环节最后一个）之后。
+
+# 单个来源块：标签 + 来源（数据表 → 导出文件 → 前端变量）+ 原始记录表
+hf_monitor_source_block <- function(p, id, label, table, jsfile, jsvar) {
+  div(style = "border:1px solid #e8ecf1;border-radius:8px;padding:10px;margin-bottom:10px;",
+    div(style = "display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;",
+      tags$b(label),
+      tags$span(style = "font-size:11px;background:#ede9fe;color:#5b21b6;padding:2px 8px;border-radius:10px;",
+        "来源：", table),
+      tags$span(style = "font-size:11px;color:#888;font-family:Consolas,monospace;",
+        paste0("→ ", jsfile, " → ", jsvar))
+    ),
+    DTOutput(p(id))
+  )
+}
+
 hf_agent_monitor_tab <- function() {
+  p <- function(x) paste0("hf_agent_monitor_", x)
   tabPanel(
     "Agent Workflow Monitor", value = "agent_monitor", icon = icon("network-wired"),
-    div(style = "padding:48px 24px;text-align:center;",
-      div(style = "font-size:15px;font-weight:bold;color:#455a64;margin-bottom:8px;",
-        icon("network-wired"), " Agent Workflow Monitor"),
-      p(style = "color:#888;font-size:13px;",
-        "多智能体工作流可视化监控面板（深色科技风）。点击下方按钮在新标签页打开独立页面。"),
-      tags$a(
-        id = "hf_agent_monitor_open",
-        href = "hungfo/hungfo_agent_monitor.html",
-        target = "_blank",
-        class = "btn btn-primary",
-        style = "color:#fff;",
-        icon("external-link-alt"), " 打开监控面板（新标签页）"
+    div(style = "padding:4px 2px;",
+      # 顶部：标题 + 说明（左），原打开按键（右上角）
+      div(style = "background:linear-gradient(135deg,#263238,#37474f);color:#fff;border-radius:8px;padding:14px 18px;margin-bottom:12px;display:flex;align-items:center;gap:12px;",
+        div(style = "flex:1;min-width:0;",
+          tags$span(style = "font-size:16px;font-weight:bold;", icon("network-wired"), " Agent Workflow Monitor"),
+          tags$span(style = "font-size:11px;background:#455a64;padding:2px 8px;border-radius:10px;margin-left:8px;", "HF-MONITOR"),
+          tags$div(style = "font-size:12px;opacity:.88;margin-top:8px;",
+            "多智能体工作流可视化监控面板（深色科技风）。点击下方按钮在新标签页打开独立页面。")
+        ),
+        tags$a(
+          id = "hf_agent_monitor_open",
+          href = "hungfo/hungfo_agent_monitor.html",
+          target = "_blank",
+          class = "btn btn-primary",
+          style = "color:#fff;flex-shrink:0;",
+          icon("external-link-alt"), " 打开监控面板（新标签页）"
+        )
+      ),
+      # 页面下方：Monitor 原始记录及来源（三类监控采集原始数据，各自标注来源）
+      div(style = "background:#fff;border-radius:8px;padding:12px;margin:8px 0;border:1px solid #e8ecf1;",
+        tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:4px;", "✦ Monitor 原始记录及来源"),
+        tags$div(style = "font-size:11px;color:#999;margin-bottom:10px;",
+          "监控页展示数据均来自以下原始记录，每条记录标注来源（数据表 → 导出文件 → 前端变量）。"),
+        hf_monitor_source_block(p, "raw_tasks",    "任务来源",       "hf_agent_tasks",   "hungfo_tasks.js",    "window.HF_TASKS"),
+        hf_monitor_source_block(p, "raw_sessions", "会话追踪",       "hf_task_sessions", "hungfo_sessions.js", "window.HF_SESSIONS"),
+        hf_monitor_source_block(p, "raw_usage",    "CodeBuddy 自动任务", "hf_cb_usage",   "hungfo_usage.js",    "window.HF_CB_USAGE"),
+        hf_monitor_source_block(p, "raw_cb_sessions", "CodeBuddy 会话清单", "hf_cb_sessions", "hungfo_cb_sessions.js", "window.HF_CB_SESSIONS")
       )
     )
   )
+}
+
+# ── Agent Workflow Monitor 面板 Server（原始记录及来源） ──
+hf_agent_monitor_page_server <- function(input, output, session, rv, trigger) {
+  p <- function(x) paste0("hf_agent_monitor_", x)
+  empty_dt <- function(txt) {
+    DT::datatable(data.frame(提示 = txt, stringsAsFactors = FALSE),
+      options = list(dom = "t"), rownames = FALSE)
+  }
+
+  # 来源一：任务来源（hf_agent_tasks → hungfo_tasks.js → window.HF_TASKS）
+  output[[p("raw_tasks")]] <- DT::renderDT({
+    trigger()
+    df <- hf_task_list()
+    if (is.null(df) || nrow(df) == 0) return(empty_dt("暂无任务原始记录"))
+    out <- data.frame(
+      ID = df$id,
+      名称 = df$name,
+      类型 = ifelse(df$task_type == "sample", "示例", "正式"),
+      节点数 = vapply(df$nodes, function(x) length(tryCatch(jsonlite::fromJSON(x), error = function(e) character(0))), integer(1)),
+      启用 = ifelse(df$enabled == 1, "是", "否"),
+      创建时间 = df$created_at,
+      stringsAsFactors = FALSE)
+    DT::datatable(out, rownames = FALSE, options = list(pageLength = 5, dom = "ltip"))
+  })
+
+  # 来源二：会话追踪（hf_task_sessions → hungfo_sessions.js → window.HF_SESSIONS）
+  output[[p("raw_sessions")]] <- DT::renderDT({
+    trigger()
+    df <- hf_sessions_list(50)
+    if (is.null(df) || nrow(df) == 0) return(empty_dt("暂无会话原始记录"))
+    out <- data.frame(
+      ID = df$id,
+      任务ID = ifelse(is.na(df$task_id), "—", as.character(df$task_id)),
+      标题 = ifelse(is.na(df$title) | df$title == "", "—", df$title),
+      LLM = ifelse(is.na(df$llm_name) | df$llm_name == "", "—", df$llm_name),
+      Token入 = ifelse(is.na(df$token_in), 0, df$token_in),
+      Token出 = ifelse(is.na(df$token_out), 0, df$token_out),
+      耗时ms = ifelse(is.na(df$duration_ms), 0, df$duration_ms),
+      状态 = df$status,
+      开始时间 = ifelse(is.na(df$started_at), "—", as.character(df$started_at)),
+      stringsAsFactors = FALSE)
+    DT::datatable(out, rownames = FALSE, options = list(pageLength = 5, dom = "ltip"))
+  })
+
+  # 来源三：CodeBuddy 自动任务（hf_cb_usage → hungfo_usage.js → window.HF_CB_USAGE）
+  output[[p("raw_usage")]] <- DT::renderDT({
+    trigger()
+    df <- hf_cb_usage_list(50)
+    if (is.null(df) || nrow(df) == 0) return(empty_dt("暂无 CodeBuddy 自动任务运行统计"))
+    out <- data.frame(
+      ID = df$id,
+      任务ID = ifelse(is.na(df$automation_id) | df$automation_id == "", "—", df$automation_id),
+      名称 = ifelse(is.na(df$name) | df$name == "", "—", df$name),
+      类型 = ifelse(is.na(df$schedule_type) | df$schedule_type == "", "—", df$schedule_type),
+      状态 = ifelse(is.na(df$status) | df$status == "", "—", df$status),
+      运行次数 = ifelse(is.na(df$runs_total), 0, df$runs_total),
+      成功次数 = ifelse(is.na(df$runs_success), 0, df$runs_success),
+      失败次数 = ifelse(is.na(df$runs_failed), 0, df$runs_failed),
+      成功率 = ifelse(is.na(df$success_rate), "0%", paste0(df$success_rate, "%")),
+      平均耗时ms = ifelse(is.na(df$avg_duration_ms), 0, df$avg_duration_ms),
+      最近运行 = ifelse(is.na(df$last_run_at) | df$last_run_at == "", "—", df$last_run_at),
+      stringsAsFactors = FALSE)
+    DT::datatable(out, rownames = FALSE, options = list(pageLength = 5, dom = "ltip"))
+  })
+
+  # 来源四：CodeBuddy 会话清单（hf_cb_sessions → hungfo_cb_sessions.js → window.HF_CB_SESSIONS）
+  output[[p("raw_cb_sessions")]] <- DT::renderDT({
+    trigger()
+    df <- hf_cb_sessions_list(50)
+    if (is.null(df) || nrow(df) == 0) return(empty_dt("暂无 CodeBuddy 会话清单"))
+    out <- data.frame(
+      ID = df$id,
+      会话ID = ifelse(is.na(df$conversation_id) | df$conversation_id == "", "—", df$conversation_id),
+      标题 = ifelse(is.na(df$title) | df$title == "", "—", df$title),
+      状态 = ifelse(is.na(df$status) | df$status == "", "—", df$status),
+      Token总计 = ifelse(is.na(df$token_total), 0, df$token_total),
+      输入 = ifelse(is.na(df$token_input), 0, df$token_input),
+      输出 = ifelse(is.na(df$token_output), 0, df$token_output),
+      缓存命中 = ifelse(is.na(df$token_cache_hit), 0, df$token_cache_hit),
+      思考 = ifelse(is.na(df$token_thinking), 0, df$token_thinking),
+      命中率 = ifelse(is.na(df$token_cache_hit_rate), "—", paste0(df$token_cache_hit_rate, "%")),
+      更新时间 = ifelse(is.na(df$updated_at) | df$updated_at == "", "—", df$updated_at),
+      stringsAsFactors = FALSE)
+    DT::datatable(out, rownames = FALSE, options = list(pageLength = 5, dom = "ltip"))
+  })
 }
 
 # ── HungFo 主 UI（总览 + 各环节 Tab）──
@@ -685,7 +920,7 @@ hungfo_server <- function(input, output, session, rv) {
     hf_sync_registry()
     hf_task_seed_sample()       # 首次播种示例任务
     hf_write_tasks_js()         # 导出任务到监控页前端
-    hf_metatask_export()        # 导出元任务队列镜像 MetaTasks.json（供 WorkBuddy 定时任务读取）
+    hf_metatask_export()        # 导出元任务队列镜像 MetaTasks.json（供 CodeBuddy 定时任务读取）
     hf_trigger(isolate(hf_trigger()) + 1)  # isolate 防止 observer 订阅自身写入的 hf_trigger 造成响应式死循环
   })
 
@@ -715,4 +950,7 @@ hungfo_server <- function(input, output, session, rv) {
   for (m in hf_modules()) {
     hf_module_page_server(input, output, session, rv, m, hf_trigger)
   }
+
+  # Agent Workflow Monitor 面板（原始记录及来源）
+  hf_agent_monitor_page_server(input, output, session, rv, hf_trigger)
 }

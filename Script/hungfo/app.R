@@ -4,7 +4,8 @@
 #   1) Rscript app.R                        # 直接启动
 #   2) shiny::runApp("<hungfo 目录>")        # 或 RStudio 打开本目录点 Run App
 # 依赖 R 包：shiny / shinythemes / DT / RSQLite / DBI / jsonlite
-# 独立数据库：默认 DB/hungfo.db（可用环境变量 HUNGFO_DB 覆盖；根目录可用 HUNGFO_HOME 覆盖）
+# 独立数据库：默认 DB/HF_HungFo.DB（可用环境变量 HUNGFO_DB 覆盖；根目录可用 HUNGFO_HOME 覆盖）
+# 专用端口：默认 8999（可用环境变量 HUNGFO_PORT 覆盖）
 ##################
 
 # 定位本文件目录并切换（保证 source 相对路径 / 资源路径一致）
@@ -17,6 +18,8 @@
 if (file.exists(file.path(.hf_script_dir, "hf_core.r"))) setwd(.hf_script_dir)
 
 options(shiny.autoreload = FALSE)
+# 专用 WEB 端口 8999（独立服务，可用环境变量 HUNGFO_PORT 覆盖）
+options(shiny.port = as.integer(Sys.getenv("HUNGFO_PORT", unset = "8999")))
 
 # 1) 核心层（注册表 + 根目录解析 + 数据层）
 source("hf_core.r")

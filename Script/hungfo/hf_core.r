@@ -60,11 +60,29 @@ hf_call <- function(key, fn, ...) {
   api[[fn]](...)
 }
 
-# ── 数据库 ──
+# ── 数据库（独立 HF_HungFo.DB，与父项目 GH_ITOM.db 逐步解耦）──
 # 自包含建表，不修改 global.R 的 migrate_database()
+# DB 路径统一由 hf_db_file() 解析：环境变量 HUNGFO_DB > 默认 hungfo/DB/HF_HungFo.DB。
+# HungFo 一律走 hf_db_connect()/hf_db_disconnect() 连接独立库，不触碰父项目 db_connect / db_path。
+hf_db_file <- function() {
+  env <- Sys.getenv("HUNGFO_DB")
+  if (nzchar(env)) return(env)
+  file.path(hf_home(), "DB", "HF_HungFo.DB")
+}
+
+hf_db_connect <- function() {
+  dir.create(dirname(hf_db_file()), showWarnings = FALSE, recursive = TRUE)
+  con <- DBI::dbConnect(RSQLite::SQLite(), hf_db_file())
+  DBI::dbExecute(con, "PRAGMA busy_timeout = 5000")
+  DBI::dbExecute(con, "PRAGMA localtime = 1")
+  con
+}
+
+hf_db_disconnect <- function(con) DBI::dbDisconnect(con)
+
 hf_db_init <- function() {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_modules (
     id TEXT PRIMARY KEY,
     module_key TEXT,
@@ -99,7 +117,7 @@ hf_db_init <- function() {
     created_at TEXT DEFAULT (datetime('now','localtime')),
     updated_at TEXT DEFAULT (datetime('now','localtime'))
   )")
-  # 元任务队列表（WorkBuddy 定时任务读取并执行的待办队列，支持 cron 循环）
+  # 元任务队列表（CodeBuddy 定时任务读取并执行的待办队列，支持 cron 循环）
   dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_metatask_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
@@ -117,6 +135,7 @@ hf_db_init <- function() {
   for (col in list(
     c("session_id", "TEXT"),
     c("llm_name",   "TEXT"),
+    c("agent",      "TEXT"),
     c("token_in",   "INTEGER DEFAULT 0"),
     c("token_out",  "INTEGER DEFAULT 0"),
     c("duration_ms","INTEGER DEFAULT 0"),
@@ -134,6 +153,7 @@ hf_db_init <- function() {
     session_id TEXT,                            -- 隔离会话 ID
     title TEXT,
     llm_name TEXT,                              -- 调用的 LLM 名称
+    agent TEXT,                                 -- 执行 Agent 来源（WorkBuddy / CodeBuddy）
     token_in INTEGER DEFAULT 0,
     token_out INTEGER DEFAULT 0,
     duration_ms INTEGER DEFAULT 0,              -- 总耗时(ms)
@@ -143,25 +163,54 @@ hf_db_init <- function() {
     finished_at TEXT,
     created_at TEXT DEFAULT (datetime('now','localtime'))
   )")
-  # WorkBuddy 用量采集表：从本机 workbuddy.db 采到的每个对话/自动任务积分与估算 token
-  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_wb_usage (
+  # 会话表兼容：旧库补 agent 字段（记录执行 Agent 来源 WorkBuddy / CodeBuddy）
+  has_sess <- dbGetQuery(con, "PRAGMA table_info(hf_task_sessions)")
+  if (!("agent" %in% has_sess$name)) {
+    dbExecute(con, "ALTER TABLE hf_task_sessions ADD COLUMN agent TEXT")
+  }
+  # CodeBuddy 自动任务运行统计采集表：从本机 automations.db 采到的每个自动任务运行次数/成功率/耗时
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_cb_usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id TEXT,                            -- WorkBuddy 会话 ID
-    title TEXT,                                 -- 对话标题
-    credit REAL DEFAULT 0,                      -- 积分消耗合计（credit）
-    token_est INTEGER DEFAULT 0,                -- 估算 token（积分 × 比例）
-    requests INTEGER DEFAULT 0,                 -- 请求次数
-    model TEXT,                                 -- 所用模型
-    last_updated TEXT,                          -- 最近更新时间戳(毫秒字符串，避免 int64 溢出)
+    automation_id TEXT,                         -- CodeBuddy 自动化任务 ID
+    name TEXT,                                  -- 任务名称
+    schedule_type TEXT,                         -- recurring / once
+    status TEXT,                                -- ACTIVE / PAUSED
+    runs_total INTEGER DEFAULT 0,               -- 累计运行次数
+    runs_success INTEGER DEFAULT 0,             -- 成功次数
+    runs_failed INTEGER DEFAULT 0,              -- 失败次数
+    success_rate REAL DEFAULT 0,                -- 成功率(0-100)
+    avg_duration_ms INTEGER DEFAULT 0,          -- 平均耗时(ms)
+    last_run_at TEXT,                           -- 最近运行时间(本地时间字符串)
     created_at TEXT DEFAULT (datetime('now','localtime'))
+  )")
+  # CodeBuddy 会话清单采集表：从本机 codebuddy-sessions.vscdb 采到的会话元信息 + 手动补录的 Token 明细
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_cb_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id TEXT UNIQUE,                -- CodeBuddy 会话 ID
+    title TEXT,                                 -- 会话标题
+    cwd TEXT,                                   -- 工作目录
+    status TEXT,                                -- Working / Completed
+    created_at TEXT,                            -- 会话创建时间
+    updated_at TEXT,                            -- 会话更新时间
+    token_total REAL DEFAULT 0,                 -- Token 总计
+    token_input REAL DEFAULT 0,                 -- 输入
+    token_output REAL DEFAULT 0,                -- 输出
+    token_cache_hit REAL DEFAULT 0,             -- 缓存命中
+    token_cache_miss REAL DEFAULT 0,            -- 缓存未命中
+    token_cache_write REAL DEFAULT 0,           -- 缓存写入
+    token_thinking REAL DEFAULT 0,              -- 思考过程
+    token_response REAL DEFAULT 0,              -- 回复内容
+    token_cache_hit_rate REAL DEFAULT 0,        -- 缓存命中率(%)
+    token_updated_at TEXT,                      -- Token 手动录入时间
+    synced_at TEXT DEFAULT (datetime('now','localtime'))
   )")
   invisible(TRUE)
 }
 
 # 将内存注册表同步到数据库
 hf_sync_registry <- function() {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   mods <- hf_modules()
   for (i in seq_along(mods)) {
     m <- mods[[i]]
@@ -183,8 +232,8 @@ hf_sync_registry <- function() {
 
 # ── 通用记录接口（各环节共享的默认数据通道）──
 hf_record_add <- function(module_key, title, payload = "", created_by = NULL, rec_no = NULL) {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch({
     no <- hf_or(rec_no, sprintf("HF-%s-%s", toupper(module_key), format(Sys.time(), "%Y%m%d%H%M%S")))
     dbExecute(con, sprintf(
@@ -196,8 +245,8 @@ hf_record_add <- function(module_key, title, payload = "", created_by = NULL, re
 }
 
 hf_records <- function(module_key) {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch({
     dbGetQuery(con, sprintf(
       "SELECT id,rec_no,title,substr(payload,1,60) AS payload,status,created_at FROM hf_records WHERE module_key='%s' ORDER BY id DESC LIMIT 200",
@@ -206,8 +255,8 @@ hf_records <- function(module_key) {
 }
 
 hf_records_count <- function(module_key) {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch(
     dbGetQuery(con, sprintf("SELECT COUNT(*) n FROM hf_records WHERE module_key='%s'", hf_esc(module_key)))$n[1],
     error = function(e) 0)
@@ -215,8 +264,8 @@ hf_records_count <- function(module_key) {
 
 # 完整记录（含全文 payload，供开发日志查看界面使用，不受 60 字截断）
 hf_records_full <- function(module_key) {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch({
     dbGetQuery(con, sprintf(
       "SELECT id,rec_no,title,payload,status,created_at FROM hf_records WHERE module_key='%s' ORDER BY id DESC LIMIT 200",
@@ -226,8 +275,8 @@ hf_records_full <- function(module_key) {
 
 # 记录统计（总数 + 今日新增），供开发日志头部徽章使用
 hf_records_stats <- function(module_key) {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch({
     total <- dbGetQuery(con, sprintf("SELECT COUNT(*) n FROM hf_records WHERE module_key='%s'", hf_esc(module_key)))$n[1]
     today <- dbGetQuery(con, sprintf(
@@ -271,8 +320,8 @@ HF_DEFAULT_TASK_NODES <- list(
 
 # 读取任务列表（task_type: sample/formal/NULL=全部）
 hf_task_list <- function(task_type = NULL) {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch({
     sql <- "SELECT id,name,task_type,nodes,enabled,sort_order,created_at FROM hf_agent_tasks"
     if (!is.null(task_type)) sql <- sprintf("%s WHERE task_type='%s'", sql, hf_esc(task_type))
@@ -282,8 +331,8 @@ hf_task_list <- function(task_type = NULL) {
 
 # 新增 / 更新任务
 hf_task_save <- function(id = NULL, name = NULL, task_type = "sample", nodes = NULL, enabled = 1) {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   if (is.null(name) || !nzchar(trimws(name))) return(list(success = FALSE, message = "任务名称不能为空"))
   nodes_json <- if (is.null(nodes)) "[]" else jsonlite::toJSON(as.character(nodes), auto_unbox = FALSE)
   tryCatch({
@@ -303,8 +352,8 @@ hf_task_save <- function(id = NULL, name = NULL, task_type = "sample", nodes = N
 
 # 删除任务
 hf_task_delete <- function(id) {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch({
     dbExecute(con, sprintf("DELETE FROM hf_agent_tasks WHERE id=%s", as.character(id)))
     list(success = TRUE, message = "已删除任务")
@@ -313,8 +362,8 @@ hf_task_delete <- function(id) {
 
 # 切换任务类型（示例 ↔ 正式）
 hf_task_toggle_type <- function(id) {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch({
     dbExecute(con, sprintf(
       "UPDATE hf_agent_tasks SET task_type = CASE task_type WHEN 'sample' THEN 'formal' ELSE 'sample' END, updated_at=datetime('now','localtime') WHERE id=%s",
@@ -343,8 +392,8 @@ hf_write_tasks_js <- function() {
 
 # 初始化示例任务（首次建表后若无数据则播种，供监控页展示与编辑）
 hf_task_seed_sample <- function() {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch({
     n <- dbGetQuery(con, "SELECT COUNT(*) n FROM hf_agent_tasks")$n[1]
     if (n > 0) return(invisible(FALSE))
@@ -364,11 +413,11 @@ hf_task_seed_sample <- function() {
 }
 
 # ══════════════════════════════════════════════════════════════════
-# 元任务队列数据层（WorkBuddy 定时任务读取并执行）
+# 元任务队列数据层（CodeBuddy 定时任务读取并执行）
 # 状态机：pending(待执行) → running(执行中) → 有 cron 则回到 pending 并推进 next_run_at，
 #         无 cron 则 done(一次性完成)。
 # 同时把队列镜像导出为本地文本文件 Script/hungfo/MetaTasks.json，
-# 供 WorkBuddy 定时任务直接读取（无需访问数据库）。
+# 供 CodeBuddy 定时任务直接读取（无需访问数据库）。
 # ══════════════════════════════════════════════════════════════════
 
 HF_METATASK_JSON <- file.path(hf_home(), "MetaTasks.json")
@@ -427,8 +476,8 @@ hf_cron_next <- function(cron, from = Sys.time()) {
 
 # ── 读取队列 ──
 hf_metatask_list <- function() {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch(
     dbGetQuery(con, "SELECT * FROM hf_metatask_queue ORDER BY id ASC"),
     error = function(e) data.frame())
@@ -436,8 +485,8 @@ hf_metatask_list <- function() {
 
 # ── 新增元任务（含 cron，自动计算 next_run_at）──
 hf_metatask_add <- function(title, payload = "", cron = "") {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   if (is.null(title) || !nzchar(trimws(title))) return(list(success = FALSE, message = "任务标题不能为空"))
   nxt <- if (nzchar(trimws(cron))) hf_cron_next(cron) else Sys.time()
   nxt_str <- if (is.null(nxt)) NULL else format(nxt, "%Y-%m-%d %H:%M:%S")
@@ -454,16 +503,17 @@ hf_metatask_add <- function(title, payload = "", cron = "") {
 # ── 记录一次执行会话（供监控页任务追踪可视化 + Token/耗时统计）──
 hf_session_record <- function(task_id, session_id = "", llm_name = "", token_in = 0,
                               token_out = 0, duration_ms = 0, status = "success",
-                              result = "", title = "", started_at = NULL, finished_at = NULL) {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+                              result = "", title = "", started_at = NULL, finished_at = NULL,
+                              agent = "") {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch({
     now_str <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
     dbExecute(con, sprintf(
-      "INSERT INTO hf_task_sessions (task_id,session_id,title,llm_name,token_in,token_out,duration_ms,status,result,started_at,finished_at)
-       VALUES (%s,'%s','%s','%s',%d,%d,%d,'%s','%s',%s,%s)",
+      "INSERT INTO hf_task_sessions (task_id,session_id,title,llm_name,agent,token_in,token_out,duration_ms,status,result,started_at,finished_at)
+       VALUES (%s,'%s','%s','%s','%s',%d,%d,%d,'%s','%s',%s,%s)",
       if (is.null(task_id) || is.na(task_id)) "NULL" else as.character(as.integer(task_id)),
-      hf_esc(session_id), hf_esc(hf_or(title, "")), hf_esc(hf_or(llm_name, "")),
+      hf_esc(session_id), hf_esc(hf_or(title, "")), hf_esc(hf_or(llm_name, "")), hf_esc(hf_or(agent, "")),
       as.integer(hf_or(token_in, 0)), as.integer(hf_or(token_out, 0)), as.integer(hf_or(duration_ms, 0)),
       hf_esc(hf_or(status, "success")), hf_esc(hf_or(result, "")),
       if (is.null(started_at)) sprintf("'%s'", now_str) else sprintf("'%s'", hf_esc(started_at)),
@@ -476,9 +526,9 @@ hf_session_record <- function(task_id, session_id = "", llm_name = "", token_in 
 # 有 cron → 计算下一个 next_run_at，回到 pending（循环）；无 cron → done（一次性完成）
 # 可附带会话元数据（session_id/llm_name/token_in/token_out/duration_ms），一并写回队列表 + 会话表
 hf_metatask_mark_done <- function(id, result = "", session_id = "", llm_name = "",
-                                  token_in = 0, token_out = 0, duration_ms = 0) {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+                                  token_in = 0, token_out = 0, duration_ms = 0, agent = "") {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch({
     row <- dbGetQuery(con, sprintf("SELECT * FROM hf_metatask_queue WHERE id=%s", as.character(id)))
     if (nrow(row) == 0) return(list(success = FALSE, message = "任务不存在"))
@@ -486,8 +536,8 @@ hf_metatask_mark_done <- function(id, result = "", session_id = "", llm_name = "
     cron <- hf_or(row$cron[1], "")
     # 会话追踪字段写回队列表（记录最近一次执行的元数据）
     meta_sql <- sprintf(
-      "session_id='%s', llm_name='%s', token_in=%d, token_out=%d, duration_ms=%d, started_at='%s', finished_at='%s'",
-      hf_esc(hf_or(session_id, "")), hf_esc(hf_or(llm_name, "")),
+      "session_id='%s', llm_name='%s', agent='%s', token_in=%d, token_out=%d, duration_ms=%d, started_at='%s', finished_at='%s'",
+      hf_esc(hf_or(session_id, "")), hf_esc(hf_or(llm_name, "")), hf_esc(hf_or(agent, "")),
       as.integer(hf_or(token_in, 0)), as.integer(hf_or(token_out, 0)), as.integer(hf_or(duration_ms, 0)),
       hf_or(row$started_at[1], now_str), now_str)
     if (nzchar(trimws(cron))) {
@@ -504,7 +554,8 @@ hf_metatask_mark_done <- function(id, result = "", session_id = "", llm_name = "
     # 写执行会话明细
     hf_session_record(id, session_id, llm_name, token_in, token_out, duration_ms,
                       status = "success", result = result, title = hf_or(row$title[1], ""),
-                      started_at = hf_or(row$started_at[1], now_str), finished_at = now_str)
+                      started_at = hf_or(row$started_at[1], now_str), finished_at = now_str,
+                      agent = agent)
     hf_metatask_export()
     hf_sessions_export()
     list(success = TRUE, message = "已更新任务状态")
@@ -513,8 +564,8 @@ hf_metatask_mark_done <- function(id, result = "", session_id = "", llm_name = "
 
 # ── 删除元任务 ──
 hf_metatask_delete <- function(id) {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch({
     dbExecute(con, sprintf("DELETE FROM hf_metatask_queue WHERE id=%s", as.character(id)))
     hf_metatask_export()
@@ -522,7 +573,29 @@ hf_metatask_delete <- function(id) {
   }, error = function(e) list(success = FALSE, message = e$message))
 }
 
-# ── 导出队列到 MetaTasks.json（WorkBuddy 定时任务读取的本地镜像）──
+# ── 编辑元任务（仅「待开发 pending / 开发异常 error·failed」状态可改）──
+# 编辑后重置为待开发并置 next_run_at=当前，等待 CodeBuddy 下一轮重新执行。
+hf_metatask_update <- function(id, title, payload = "") {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  if (is.null(id) || is.na(id)) return(list(success = FALSE, message = "任务 id 无效"))
+  if (is.null(title) || !nzchar(trimws(title))) return(list(success = FALSE, message = "任务标题不能为空"))
+  tryCatch({
+    row <- dbGetQuery(con, sprintf("SELECT * FROM hf_metatask_queue WHERE id=%s", as.character(as.integer(id))))
+    if (nrow(row) == 0) return(list(success = FALSE, message = "任务不存在"))
+    st <- hf_or(row$status[1], "pending")
+    if (!(st %in% c("pending", "error", "failed"))) {
+      return(list(success = FALSE, message = "仅「待开发 / 开发异常」状态的需求可编辑"))
+    }
+    dbExecute(con, sprintf(
+      "UPDATE hf_metatask_queue SET title='%s', payload='%s', status='pending', next_run_at=datetime('now','localtime'), result=NULL, updated_at=datetime('now','localtime') WHERE id=%s",
+      hf_esc(title), hf_esc(payload), as.character(as.integer(id))))
+    hf_metatask_export()
+    list(success = TRUE, message = paste0("已保存修改：", title))
+  }, error = function(e) list(success = FALSE, message = e$message))
+}
+
+# ── 导出队列到 MetaTasks.json（CodeBuddy 定时任务读取的本地镜像）──
 hf_metatask_export <- function() {
   q <- hf_metatask_list()
   tasks <- if (is.null(q) || nrow(q) == 0) list() else lapply(seq_len(nrow(q)), function(i) {
@@ -531,7 +604,9 @@ hf_metatask_export <- function() {
       cron = hf_or(q$cron[i], ""), status = hf_or(q$status[i], "pending"),
       last_run_at = if (is.na(q$last_run_at[i]) || is.null(q$last_run_at[i])) NULL else q$last_run_at[i],
       next_run_at = if (is.na(q$next_run_at[i]) || is.null(q$next_run_at[i])) NULL else q$next_run_at[i],
-      result = hf_or(q$result[i], "")
+      result = hf_or(q$result[i], ""),
+      llm_name = if (is.null(q$llm_name) || length(q$llm_name) == 0 || is.na(q$llm_name[i])) "" else hf_or(q$llm_name[i], ""),
+      agent = if (is.null(q$agent) || length(q$agent) == 0 || is.na(q$agent[i])) "" else hf_or(q$agent[i], "")
     )
   })
   out <- list(
@@ -552,18 +627,32 @@ hf_metatask_refresh <- function() {
 
 # ── 会话明细查询（供监控页展示执行记录）──
 hf_sessions_list <- function(limit = 100) {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch(
     dbGetQuery(con, sprintf(
       "SELECT * FROM hf_task_sessions ORDER BY id DESC LIMIT %d", as.integer(limit))),
     error = function(e) data.frame())
 }
 
+# ── 每个元任务最近一次执行会话的 LLM / Agent 元数据（供需求队列展示「完成 LLM / Agent」）──
+# 返回 data.frame: task_id, llm_name, agent（每个 task 取 id 最大的一条会话）
+hf_metatask_session_meta <- function() {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    dbGetQuery(con,
+      "SELECT s.task_id, s.llm_name, s.agent
+       FROM hf_task_sessions s
+       JOIN (SELECT task_id, MAX(id) AS mid FROM hf_task_sessions WHERE task_id IS NOT NULL GROUP BY task_id) m
+         ON s.id = m.mid")
+  }, error = function(e) data.frame())
+}
+
 # ── Token 汇总（当天 / 全部）──
 hf_token_summary <- function() {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch({
     all_s <- dbGetQuery(con, "SELECT COALESCE(SUM(token_in),0) tin, COALESCE(SUM(token_out),0) tout, COUNT(*) n FROM hf_task_sessions")
     day_s <- dbGetQuery(con, "SELECT COALESCE(SUM(token_in),0) tin, COALESCE(SUM(token_out),0) tout, COUNT(*) n FROM hf_task_sessions WHERE date(started_at)=date('now','localtime')")
@@ -582,7 +671,7 @@ hf_sessions_export <- function(limit = 200) {
   sessions <- if (is.null(s) || nrow(s) == 0) list() else lapply(seq_len(nrow(s)), function(i) list(
     id = s$id[i], task_id = if (is.na(s$task_id[i]) || is.null(s$task_id[i])) NULL else s$task_id[i],
     session_id = hf_or(s$session_id[i], ""), title = hf_or(s$title[i], ""),
-    llm_name = hf_or(s$llm_name[i], ""),
+    llm_name = hf_or(s$llm_name[i], ""), agent = hf_or(s$agent[i], ""),
     token_in = if (is.na(s$token_in[i])) 0 else s$token_in[i],
     token_out = if (is.na(s$token_out[i])) 0 else s$token_out[i],
     duration_ms = if (is.na(s$duration_ms[i])) 0 else s$duration_ms[i],
@@ -599,128 +688,182 @@ hf_sessions_export <- function(limit = 200) {
 }
 
 # ══════════════════════════════════════════════════════════════════════
-# WorkBuddy 用量采集（从本机 workbuddy.db 读取真实积分/token 消耗）
-# 数据源：C:/Users/<用户>/.workbuddy/workbuddy.db 的 session_usage 表
-#   - credit_json: {"请求ID": 积分值}，每次请求消耗的积分明细
-#   - used: 累计计量值
-# 口径：credit=积分(计费单位)，token_est=估算token（credit × 比例）
+# CodeBuddy 自动任务运行统计采集（从本机 automations.db 读取运行次数/成功率/耗时）
+# 数据源：%APPDATA%/CodeBuddy CN/automations/automations.db 的 automations + automation_runs 表
+#   - automations: 自动任务清单（id/name/status/schedule_type）
+#   - automation_runs: 每次运行记录（automation_id/result_success/created_at/updated_at）
+# 口径：runs=运行次数，success_rate=成功率(%)，avg_duration_ms=平均耗时(ms)
 # ══════════════════════════════════════════════════════════════════════
 
-# 定位本机 workbuddy.db
-hf_wb_db_path <- function() {
-  env <- Sys.getenv("WORKBUDDY_DB")
+# 定位本机 CodeBuddy automations.db
+hf_cb_db_path <- function() {
+  env <- Sys.getenv("CODEBUDDY_AUTOMATION_DB")
   if (nzchar(env) && file.exists(env)) return(env)
+  appdata <- Sys.getenv("APPDATA", unset = Sys.getenv("USERPROFILE", unset = ""))
   cand <- c(
-    file.path(Sys.getenv("USERPROFILE", unset = Sys.getenv("HOME", unset = "")), ".workbuddy", "workbuddy.db"),
-    file.path(Sys.getenv("HOME", unset = ""), ".workbuddy", "workbuddy.db")
+    file.path(appdata, "CodeBuddy CN", "automations", "automations.db"),
+    file.path(appdata, "CodeBuddy", "automations", "automations.db")
   )
   for (p in cand) if (nzchar(p) && file.exists(p)) return(p)
   NULL
 }
 
-# 积分 → 估算 token 的比例（可调；默认 1 积分 ≈ 500 token，经验值）
-HF_WB_CREDIT_TO_TOKEN <- 500
+# 秒/毫秒时间戳 → 本地时间字符串
+hf_cb_ts_str <- function(x) {
+  x <- as.numeric(x)
+  if (length(x) == 0 || is.na(x) || x <= 0) return("")
+  secs <- if (x > 1e12) x / 1000 else x
+  format(as.POSIXct(secs, origin = "1970-01-01", tz = "Asia/Shanghai"), "%Y-%m-%d %H:%M:%S")
+}
 
-# 从 workbuddy.db 读取每个会话的积分与估算 token
-# 返回 data.frame: session_id, title, model, credit, token_est, requests, last_updated
-hf_wb_read_usage <- function() {
-  path <- hf_wb_db_path()
+# 从 CodeBuddy automations.db 读取每个自动任务的运行统计
+# 返回 data.frame: automation_id, name, schedule_type, status, runs_total, runs_success, runs_failed, success_rate, avg_duration_ms, last_run_at
+hf_cb_read_usage <- function() {
+  path <- hf_cb_db_path()
   if (is.null(path)) return(data.frame())
   con <- tryCatch(DBI::dbConnect(RSQLite::SQLite(), path), error = function(e) NULL)
   if (is.null(con)) return(data.frame())
   on.exit(try(DBI::dbDisconnect(con), silent = TRUE), add = TRUE)
   tryCatch({
-    usg <- DBI::dbGetQuery(con, "SELECT session_id, credit_json, updated_at FROM session_usage")
-    ses <- DBI::dbGetQuery(con, "SELECT id, title, model FROM sessions")
-    if (is.null(usg) || nrow(usg) == 0) return(data.frame())
-    # 标题/模型映射（容错：NA 归空）
-    tid <- if (!is.null(ses) && nrow(ses) > 0) as.character(ses$id) else character(0)
-    ttl <- if (!is.null(ses) && nrow(ses) > 0) as.character(ses$title) else character(0)
-    mdl <- if (!is.null(ses) && nrow(ses) > 0) as.character(ses$model) else character(0)
-    ttl[is.na(ttl)] <- ""; mdl[is.na(mdl)] <- ""
-    names(ttl) <- tid; names(mdl) <- tid
-    # 解析 credit_json，累计每个 session 的积分与请求次数
-    rows <- lapply(seq_len(nrow(usg)), function(i) {
-      cj <- usg$credit_json[i]
-      credits <- if (is.na(cj) || !nzchar(cj)) list() else tryCatch(jsonlite::fromJSON(cj), error = function(e) list())
-      credit <- if (length(credits) == 0) 0 else sum(as.numeric(unlist(credits)), na.rm = TRUE)
-      nreq <- length(credits)
-      sid <- as.character(usg$session_id[i])
-      title <- if (sid %in% tid) ttl[[sid]] else ""
-      model <- if (sid %in% tid) mdl[[sid]] else ""
-      lu <- as.character(usg$updated_at[i])
-      if (is.na(lu)) lu <- "0"
-      list(session_id = sid, title = title, model = model, credit = credit,
-           requests = nreq, last_updated = lu)
+    autos <- DBI::dbGetQuery(con, "SELECT id, name, status, schedule_type FROM automations ORDER BY name")
+    runs <- DBI::dbGetQuery(con, "SELECT automation_id, result_success, created_at, updated_at FROM automation_runs")
+    if (is.null(autos) || nrow(autos) == 0) return(data.frame())
+    if (is.null(runs) || nrow(runs) == 0) runs <- data.frame(automation_id = character(0), result_success = integer(0), created_at = numeric(0), updated_at = numeric(0), stringsAsFactors = FALSE)
+    # 聚合每个自动任务的运行统计（次数/成功率/耗时）
+    rows <- lapply(seq_len(nrow(autos)), function(i) {
+      aid <- as.character(autos$id[i])
+      r <- runs[!is.na(runs$automation_id) & as.character(runs$automation_id) == aid, , drop = FALSE]
+      total <- nrow(r)
+      success <- if (total == 0) 0 else sum(as.integer(r$result_success) == 1, na.rm = TRUE)
+      failed <- total - success
+      rate <- if (total == 0) 0 else round(success / total * 100, 1)
+      last_ts <- if (total == 0) NA else suppressWarnings(max(as.numeric(r$created_at), na.rm = TRUE))
+      use_ms <- !is.na(last_ts) && last_ts > 1e12
+      diff_units <- pmax(0, as.numeric(r$updated_at) - as.numeric(r$created_at), na.rm = TRUE)
+      dur_ms <- if (total == 0) 0 else round(mean(diff_units, na.rm = TRUE) * ifelse(use_ms, 1, 1000))
+      list(automation_id = aid, name = as.character(autos$name[i]),
+           schedule_type = ifelse(is.na(autos$schedule_type[i]), "", as.character(autos$schedule_type[i])),
+           status = ifelse(is.na(autos$status[i]), "", as.character(autos$status[i])),
+           runs_total = total, runs_success = success, runs_failed = failed,
+           success_rate = rate, avg_duration_ms = dur_ms, last_run_at = hf_cb_ts_str(last_ts))
     })
-    df <- do.call(rbind, lapply(rows, as.data.frame, stringsAsFactors = FALSE))
-    df$token_est <- round(as.numeric(df$credit) * HF_WB_CREDIT_TO_TOKEN)
-    df[order(-as.numeric(df$last_updated)), , drop = FALSE]
+    df <- do.call(rbind, lapply(rows, function(r) as.data.frame(r, stringsAsFactors = FALSE)))
+    df[order(df$last_run_at, decreasing = TRUE, na.last = TRUE), , drop = FALSE]
   }, error = function(e) data.frame())
 }
 
-# 采集 WorkBuddy 用量写入 hf_wb_usage（全量覆盖式刷新），并导出 hungfo_usage.js
-hf_wb_usage_sync <- function() {
-  df <- hf_wb_read_usage()
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+# 采集 CodeBuddy 自动任务运行统计写入 hf_cb_usage（全量覆盖式刷新），并导出 hungfo_usage.js
+hf_cb_usage_sync <- function() {
+  df <- hf_cb_read_usage()
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   if (is.null(df) || nrow(df) == 0) {
-    hf_wb_usage_export()
-    return(list(success = TRUE, sessions = 0, message = "未读取到 WorkBuddy 用量数据（workbuddy.db 不存在或为空）"))
+    hf_cb_usage_export()
+    return(list(success = TRUE, automations = 0, message = "未读取到 CodeBuddy 自动任务（automations.db 不存在或为空）"))
   }
   # 覆盖式刷新：先清空再插入
-  dbExecute(con, "DELETE FROM hf_wb_usage")
+  dbExecute(con, "DELETE FROM hf_cb_usage")
   for (i in seq_len(nrow(df))) {
     dbExecute(con, sprintf(
-      "INSERT INTO hf_wb_usage (session_id,title,credit,token_est,requests,model,last_updated)
-       VALUES ('%s','%s',%f,%d,%d,'%s','%s')",
-      hf_esc(df$session_id[i]), hf_esc(df$title[i]),
-      as.numeric(df$credit[i]), as.integer(df$token_est[i]), as.integer(df$requests[i]),
-      hf_esc(df$model[i]), hf_esc(as.character(df$last_updated[i]))))
+      "INSERT INTO hf_cb_usage (automation_id,name,schedule_type,status,runs_total,runs_success,runs_failed,success_rate,avg_duration_ms,last_run_at)
+       VALUES ('%s','%s','%s','%s',%d,%d,%d,%f,%d,'%s')",
+      hf_esc(df$automation_id[i]), hf_esc(df$name[i]), hf_esc(df$schedule_type[i]), hf_esc(df$status[i]),
+      as.integer(df$runs_total[i]), as.integer(df$runs_success[i]), as.integer(df$runs_failed[i]),
+      as.numeric(df$success_rate[i]), as.integer(df$avg_duration_ms[i]), hf_esc(as.character(df$last_run_at[i]))))
   }
-  hf_wb_usage_export()
-  list(success = TRUE, sessions = nrow(df), message = paste0("已采集 ", nrow(df), " 个 WorkBuddy 会话用量"))
+  hf_cb_usage_export()
+  list(success = TRUE, automations = nrow(df), message = paste0("已采集 ", nrow(df), " 个 CodeBuddy 自动任务运行统计"))
 }
 
-# 查询采集的 WorkBuddy 用量（供界面/导出使用）
-hf_wb_usage_list <- function(limit = 200) {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+# 查询采集的 CodeBuddy 自动任务运行统计（供界面/导出使用）
+hf_cb_usage_list <- function(limit = 200) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch(dbGetQuery(con, sprintf(
-    "SELECT * FROM hf_wb_usage ORDER BY last_updated DESC LIMIT %d", as.integer(limit))),
+    "SELECT * FROM hf_cb_usage ORDER BY last_run_at DESC LIMIT %d", as.integer(limit))),
     error = function(e) data.frame())
 }
 
-# WorkBuddy 用量汇总（今日 / 全部，积分与估算 token 双口径）
-hf_wb_usage_summary <- function() {
-  con <- db_connect()
-  on.exit(try(db_disconnect(con), silent = TRUE), add = TRUE)
+# CodeBuddy 自动任务运行汇总（今日 / 全部：运行次数·成功率·成功/失败·任务数）
+hf_cb_usage_summary <- function() {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  mk <- function(s) list(runs = s$runs[1], success = s$succ[1], failed = s$fail[1],
+                         rate = if (s$runs[1] > 0) round(s$succ[1] / s$runs[1] * 100, 1) else 0,
+                         automations = s$n[1])
   tryCatch({
-    all_s <- dbGetQuery(con, "SELECT COALESCE(SUM(credit),0) credit, COALESCE(SUM(token_est),0) tok, COALESCE(SUM(requests),0) req, COUNT(*) n FROM hf_wb_usage")
-    day_s <- dbGetQuery(con, "SELECT COALESCE(SUM(credit),0) credit, COALESCE(SUM(token_est),0) tok, COALESCE(SUM(requests),0) req, COUNT(*) n FROM hf_wb_usage WHERE datetime(CAST(last_updated AS INTEGER)/1000,'unixepoch','localtime') >= date('now','localtime')")
-    list(
-      total = list(credit = all_s$credit[1], token_est = all_s$tok[1], requests = all_s$req[1], sessions = all_s$n[1]),
-      today = list(credit = day_s$credit[1], token_est = day_s$tok[1], requests = day_s$req[1], sessions = day_s$n[1])
-    )
-  }, error = function(e) list(total = list(credit = 0, token_est = 0, requests = 0, sessions = 0), today = list(credit = 0, token_est = 0, requests = 0, sessions = 0)))
+    all_s <- dbGetQuery(con, "SELECT COALESCE(SUM(runs_total),0) runs, COALESCE(SUM(runs_success),0) succ, COALESCE(SUM(runs_failed),0) fail, COUNT(*) n FROM hf_cb_usage")
+    day_s <- dbGetQuery(con, "SELECT COALESCE(SUM(runs_total),0) runs, COALESCE(SUM(runs_success),0) succ, COALESCE(SUM(runs_failed),0) fail, COUNT(*) n FROM hf_cb_usage WHERE date(last_run_at) = date('now','localtime')")
+    list(total = mk(all_s), today = mk(day_s))
+  }, error = function(e) list(
+    total = list(runs = 0, success = 0, failed = 0, rate = 0, automations = 0),
+    today = list(runs = 0, success = 0, failed = 0, rate = 0, automations = 0)))
 }
 
-# 导出 WorkBuddy 用量到 www/hungfo_usage.js（监控页前端读取）
-hf_wb_usage_export <- function(limit = 200) {
-  u <- hf_wb_usage_list(limit)
-  sm <- hf_wb_usage_summary()
+# 导出 CodeBuddy 自动任务运行统计到 www/hungfo_usage.js（监控页前端读取）
+hf_cb_usage_export <- function(limit = 200) {
+  u <- hf_cb_usage_list(limit)
+  sm <- hf_cb_usage_summary()
   usages <- if (is.null(u) || nrow(u) == 0) list() else lapply(seq_len(nrow(u)), function(i) list(
-    session_id = hf_or(u$session_id[i], ""), title = hf_or(u$title[i], ""),
-    credit = if (is.na(u$credit[i])) 0 else u$credit[i],
-    token_est = if (is.na(u$token_est[i])) 0 else u$token_est[i],
-    requests = if (is.na(u$requests[i])) 0 else u$requests[i],
-    model = hf_or(u$model[i], ""),
-    last_updated = if (is.na(u$last_updated[i])) 0 else u$last_updated[i]
+    automation_id = hf_or(u$automation_id[i], ""), name = hf_or(u$name[i], ""),
+    schedule_type = hf_or(u$schedule_type[i], ""), status = hf_or(u$status[i], ""),
+    runs_total = if (is.na(u$runs_total[i])) 0 else u$runs_total[i],
+    runs_success = if (is.na(u$runs_success[i])) 0 else u$runs_success[i],
+    runs_failed = if (is.na(u$runs_failed[i])) 0 else u$runs_failed[i],
+    success_rate = if (is.na(u$success_rate[i])) 0 else u$success_rate[i],
+    avg_duration_ms = if (is.na(u$avg_duration_ms[i])) 0 else u$avg_duration_ms[i],
+    last_run_at = hf_or(u$last_run_at[i], "")
   ))
   out <- list(updated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S"), summary = sm, usages = usages)
   dir.create(file.path(hf_home(), "www"), showWarnings = FALSE, recursive = TRUE)
   body <- jsonlite::toJSON(out, auto_unbox = TRUE, pretty = TRUE, null = "null")
-  writeLines(paste0("// 由 HungFo 生成（hf_wb_usage_export），勿手改\nwindow.HF_WB_USAGE = ", body, ";\n"),
+  writeLines(paste0("// 由 HungFo 生成（hf_cb_usage_export），勿手改\nwindow.HF_CB_USAGE = ", body, ";\n"),
              file.path(hf_home(), "www", "hungfo_usage.js"), useBytes = TRUE)
+  invisible(out)
+}
+
+# 查询采集的 CodeBuddy 会话清单（供界面/导出使用）
+hf_cb_sessions_list <- function(limit = 200) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch(dbGetQuery(con, sprintf(
+    "SELECT * FROM hf_cb_sessions ORDER BY COALESCE(token_updated_at, updated_at, created_at) DESC LIMIT %d", as.integer(limit))),
+    error = function(e) data.frame())
+}
+
+# CodeBuddy 会话汇总（会话数 + Token 合计）
+hf_cb_sessions_summary <- function() {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    s <- dbGetQuery(con, "SELECT COUNT(*) n, COALESCE(SUM(token_total),0) tok, COALESCE(SUM(CASE WHEN token_total>0 THEN 1 ELSE 0 END),0) tok_n FROM hf_cb_sessions")
+    list(total_sessions = s$n[1], total_tokens = s$tok[1], token_sessions = s$tok_n[1])
+  }, error = function(e) list(total_sessions = 0, total_tokens = 0, token_sessions = 0))
+}
+
+# 导出 CodeBuddy 会话清单到 www/hungfo_cb_sessions.js（监控页前端读取）
+hf_cb_sessions_export <- function(limit = 200) {
+  u <- hf_cb_sessions_list(limit)
+  sm <- hf_cb_sessions_summary()
+  sessions <- if (is.null(u) || nrow(u) == 0) list() else lapply(seq_len(nrow(u)), function(i) list(
+    conversation_id = hf_or(u$conversation_id[i], ""), title = hf_or(u$title[i], ""),
+    cwd = hf_or(u$cwd[i], ""), status = hf_or(u$status[i], ""),
+    created_at = hf_or(u$created_at[i], ""), updated_at = hf_or(u$updated_at[i], ""),
+    token_total = if (is.na(u$token_total[i])) 0 else u$token_total[i],
+    token_input = if (is.na(u$token_input[i])) 0 else u$token_input[i],
+    token_output = if (is.na(u$token_output[i])) 0 else u$token_output[i],
+    token_cache_hit = if (is.na(u$token_cache_hit[i])) 0 else u$token_cache_hit[i],
+    token_cache_miss = if (is.na(u$token_cache_miss[i])) 0 else u$token_cache_miss[i],
+    token_cache_write = if (is.na(u$token_cache_write[i])) 0 else u$token_cache_write[i],
+    token_thinking = if (is.na(u$token_thinking[i])) 0 else u$token_thinking[i],
+    token_response = if (is.na(u$token_response[i])) 0 else u$token_response[i],
+    token_cache_hit_rate = if (is.na(u$token_cache_hit_rate[i])) 0 else u$token_cache_hit_rate[i],
+    token_updated_at = hf_or(u$token_updated_at[i], "")
+  ))
+  out <- list(updated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S"), summary = sm, sessions = sessions)
+  dir.create(file.path(hf_home(), "www"), showWarnings = FALSE, recursive = TRUE)
+  body <- jsonlite::toJSON(out, auto_unbox = TRUE, pretty = TRUE, null = "null")
+  writeLines(paste0("// 由 HungFo 生成（hf_cb_sessions_export），勿手改\nwindow.HF_CB_SESSIONS = ", body, ";\n"),
+             file.path(hf_home(), "www", "hungfo_cb_sessions.js"), useBytes = TRUE)
   invisible(out)
 }
