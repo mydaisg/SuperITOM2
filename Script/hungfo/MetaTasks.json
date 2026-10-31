@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-10-30 18:35:26",
+  "updated_at": "2026-10-31 14:14:07",
   "tasks": [
     {
       "id": 1,
@@ -180,6 +180,18 @@
       "result": "开发日志分段机制已修复：解析兼容两种格式、写入自动规范化、三条历史日志已恢复四段样式",
       "llm_name": "auto",
       "agent": "CodeBuddy"
+    },
+    {
+      "id": 21,
+      "title": "CodeBuddy的元任务结果和数据要写入Agent Workflow Monitor",
+      "payload": "CodeBuddy的元任务结果和数据要写入Agent Workflow Monitor \nHungFo 元任务自动执行器的\n【第5步：标记完成 + 上报元数据】\n对每个已完成任务运行：\nRscript D:/GitHub/SuperITOM2/Script/hungfo/hf_metatask_runner.r done <任务id> <结果摘要> --llm <LLM名称> --agent CodeBuddy --tin <输入token> --tout <输出token> --dur <耗时ms> --sid <会话ID>\n这会更新任务状态（有 cron 回 pending 并推进 next_run_at，无 cron 标记 done），把元数据写入 hf_metatask_queue 和 hf_task_sessions 表，并自动重新导出 MetaTasks.json 和 hungfo_sessions.js。\n\n这些数据要在Agent Workflow Monitor 的会话追踪列表展示，并且展示这些数据汇总。",
+      "cron": "",
+      "status": "pending",
+      "last_run_at": null,
+      "next_run_at": "2026-10-31 14:14:07",
+      "result": "",
+      "llm_name": "",
+      "agent": ""
     }
   ]
 }

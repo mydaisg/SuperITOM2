@@ -1,6 +1,6 @@
 // 由 HungFo 生成（export_cb_sessions），勿手改
 window.HF_CB_SESSIONS = {
-  "updated_at": "2026-10-31 09:39:09",
+  "updated_at": "2026-10-31 13:39:03",
   "summary": {
     "total_sessions": 22,
     "total_tokens": 1043002,
@@ -13,7 +13,7 @@ window.HF_CB_SESSIONS = {
       "cwd": "d:/GitHub/SuperITOM2/Script/hungfo",
       "status": "Working",
       "created_at": "2026-10-30 17:17:54",
-      "updated_at": "2026-10-31 09:38:19",
+      "updated_at": "2026-10-31 13:38:54",
       "token_total": 0,
       "token_input": 0,
       "token_output": 0,
