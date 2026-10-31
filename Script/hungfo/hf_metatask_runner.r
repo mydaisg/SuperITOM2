@@ -389,6 +389,10 @@ mark_token <- function(cid, vals) {
 write_log <- function(title, content) {
   con <- db(); on.exit(dbDisconnect(con))
   no <- sprintf("HF-DEVLOG-%s", format(Sys.time(), "%Y%m%d%H%M%S"))
+  # 规范化分段：在非行首的段标签（【xx】）前插入换行，确保每个【】段独立成行，
+  # 与父项目开发日志的严格样式一致（避免内容挤在一行导致分段解析错乱）。
+  content <- gsub("(?<!\n)(?=\u3010[^\u3011]*\u3011)", "\n", content, perl = TRUE)
+  content <- trimws(content)
   dbExecute(con, sprintf(
     "INSERT INTO hf_records (module_key, rec_no, title, payload, status) VALUES ('devlog','%s','%s','%s','draft')",
     esc(no), esc(title), esc(content)))

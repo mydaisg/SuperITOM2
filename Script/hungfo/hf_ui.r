@@ -968,23 +968,27 @@ hf_devlog_page_server <- function(input, output, session, rv, m, trigger) {
   hf_devlog_sections <- function(txt) {
     txt <- hf_or(txt, "")
     if (!nzchar(trimws(txt))) return(list())
-    lines <- strsplit(txt, "\n", fixed = TRUE)[[1]]
-    out <- list(); cur <- NULL
-    for (ln in lines) {
-      t <- trimws(ln, which = "left")
-      if (nzchar(t) && (substr(t, 1, 1) == "\u3010" || substr(t, 1, 1) == "[")) {
-        close <- regexpr("\u3011|]", t)
-        if (close[1] > 1) {
-          label <- trimws(substr(t, 2, close[1] - 1))
-          body <- trimws(substr(t, close[1] + 1, nchar(t)))
-          if (nzchar(label)) {
-            out[[length(out) + 1]] <- list(label = label, body = body)
-            cur <- length(out)
-            next
-          }
-        }
-      }
-      if (!is.null(cur)) out[[cur]]$body <- paste(out[[cur]]$body, ln, sep = "\n")
+    # 按段标签（【xx】或 [xx]）边界切分：兼容「每个段独立一行」与「同行多标签」两种写法，
+    # 从根本上避免日志内容挤在同一行时只识别出第一个【需求】段、其余内容全堆进 body 的错乱。
+    m <- gregexpr("(\u3010[^\u3011]*\u3011|\\[[^\\]]*\\])", txt)[[1]]
+    starts <- as.integer(m)
+    lens <- attr(m, "match.length")
+    if (starts[1] < 0) {
+      return(list(list(label = "", body = trimws(txt))))
+    }
+    out <- list()
+    for (i in seq_along(starts)) {
+      s <- starts[i]; l <- lens[i]
+      label <- trimws(substr(txt, s + 1, s + l - 2))   # 去掉首尾括号后的标签
+      e <- s + l - 1
+      next_s <- if (i < length(starts)) starts[i + 1] - 1 else nchar(txt)
+      body <- if (next_s >= e + 1) trimws(substr(txt, e + 1, next_s)) else ""
+      out[[length(out) + 1]] <- list(label = label, body = body)
+    }
+    # 首个标签之前的引导文本（若有）作为无标签首段保留
+    if (starts[1] > 1) {
+      head <- trimws(substr(txt, 1, starts[1] - 1))
+      if (nzchar(head)) out <- c(list(list(label = "", body = head)), out)
     }
     out
   }

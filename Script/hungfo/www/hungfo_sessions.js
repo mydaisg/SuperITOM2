@@ -1,19 +1,33 @@
 // 由 HungFo 生成（hf_sessions_export），勿手改
 window.HF_SESSIONS = {
-  "updated_at": "2026-10-30 17:30:06",
+  "updated_at": "2026-10-30 18:35:26",
   "summary": {
     "total": {
       "token_in": 26500,
       "token_out": 8400,
-      "sessions": 14
+      "sessions": 15
     },
     "today": {
       "token_in": 0,
       "token_out": 0,
-      "sessions": 2
+      "sessions": 3
     }
   },
   "sessions": [
+    {
+      "id": 17,
+      "task_id": 20,
+      "session_id": "mt20-202610301835",
+      "title": "Fix开发日志的机制",
+      "llm_name": "auto",
+      "agent": "CodeBuddy",
+      "token_in": 0,
+      "token_out": 0,
+      "duration_ms": 320000,
+      "status": "success",
+      "started_at": "2026-10-30 18:35:26",
+      "finished_at": "2026-10-30 18:35:26"
+    },
     {
       "id": 16,
       "task_id": 19,
