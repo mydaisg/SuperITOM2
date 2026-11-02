@@ -87,7 +87,7 @@ source("Script/mini_program_management.r")      # 小程序用户 + VIP 模块�
 source("Script/mini_program_server.r")          # 小程序用户 + VIP 模块服务端
 source("Script/message_management.r")           # 消息机制数据层（消息中心 + 动作流模板）
 source("Script/message_server.r")               # 消息机制服务端
-# HungFo 独立子项目（12 环节骨架：规则/爬取/数据/算法/展示/自动任务/回测/元任务/开发日志/自动架构/对外集成/权限体系）
+# HungFo 独立子项目（14 环节骨架：规则/爬取/数据/算法/展示/自动任务/回测/元任务/项目/开发日志/自动架构/对外集成/权限体系/配置）
 source("Script/hungfo/hf_core.r")               # 核心层：环节注册表 + 数据库（自包含）
 source("Script/hungfo/hf_mod_rules.r")          # 环节01 规则
 source("Script/hungfo/hf_mod_crawl.r")          # 环节02 爬取
@@ -97,10 +97,12 @@ source("Script/hungfo/hf_mod_display.r")        # 环节05 展示
 source("Script/hungfo/hf_mod_autotask.r")       # 环节06 自动任务
 source("Script/hungfo/hf_mod_backtest.r")       # 环节07 回测
 source("Script/hungfo/hf_mod_metatask.r")       # 环节08 元任务
+source("Script/hungfo/hf_mod_project.r")         # 环节(08后) 项目（需求/记事/总结/项目模板）
 source("Script/hungfo/hf_mod_devlog.r")         # 环节09 开发日志
 source("Script/hungfo/hf_mod_arch.r")           # 环节10 自动架构
 source("Script/hungfo/hf_mod_integration.r")    # 环节11 对外集成
 source("Script/hungfo/hf_mod_permission.r")     # 环节12 权限体系
+source("Script/hungfo/hf_mod_config.r")         # 环节13 配置（导航栏菜单配置中心）
 source("Script/hungfo/hf_ui.r")                 # 聚合 UI + Server
 
 

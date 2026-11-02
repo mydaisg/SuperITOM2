@@ -30,8 +30,8 @@ for (f in sort(list.files(".", pattern = "^hf_mod_.*\\.r$"))) source(f)
 # 4) 聚合 UI + Server
 source("hf_ui.r")
 
-# 独立运行无需登录：直接视为已登录
-rv <- reactiveValues(logged_in = TRUE, current_user = NULL, app_view = "hungfo")
+# 独立运行：默认未登录，由 hungfo_ui 的登录遮罩 + hungfo_server 的登录/登出逻辑完成鉴权
+rv <- reactiveValues(logged_in = FALSE, current_user = NULL, app_view = "hungfo")
 
 ui <- hungfo_standalone_ui(show_back = FALSE)
 

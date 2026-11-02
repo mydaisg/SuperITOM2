@@ -69,6 +69,15 @@
 - 均写 devlog（HF-DEVLOG-20261029122345/6）+ mark done，元数据（LLM=DeepSeek-V4-Pro, dur=272000, sid）写入。
 - 经验：PowerShell 下 Rscript 中文乱码，用 `[Console]::OutputEncoding=UTF8` + `$env:R_ARCH=""` 可让 peek/JSON 中文正常显示；写 log/done 用 here-string + 双引号变量传参可行（`n 转义换行）。
 
+## 2026-11-02 11:40 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 22 个会话）。队列 peek 返回 4 个到期任务（id 22/23/24/25），均走独立 sub-agent 执行并完成。
+- id 22「增加模块：项目」：新增 hf_mod_project.r（需求/记事/总结/项目模板多子 Tab 整合 + 数据联动自动刷新），导航菜单位置放元任务之后；改 hf_core.r + hf_ui.r。
+- id 23「开发权限体系模块」：hf_mod_permission.r 从占位升级为完整 RBAC（用户/角色/安全组三层 + 登录鉴权 + 初始化 2组2账号 DaiSG/GodHat@falwpa）；改 hf_core.r（迁移末尾建表）+ hf_ui.r。
+- id 24「开发规则模块」：新增规则类别的新增/编辑功能；改 hf_mod_rules.r + hf_core.r + hf_ui.r。
+- id 25「增加模块：配置」：新增 hf_mod_config.r（导航栏菜单名称/图标/位置/显示隐藏可自定义，放最右，实时刷新）；改 hf_core.r + hf_ui.r。
+- 四任务均写 devlog（HF-DEVLOG-20261102*）+ mark done，元数据（LLM=DeepSeek-V4-Pro, dur, sid）写入 hf_metatask_queue 与 hf_task_sessions。
+- 注意：本轮 sub-agent 为 team 模式（TaskOutput 不等待，靠轮询 status 判定完成）；PowerShell 下 Rscript 中文输出仍 GBK 乱码，但 log/done 传参用双引号+中文可正常写入 UTF-8（脚本内部已处理）。
+
 ## 关键经验
 - PowerShell 下 `Rscript ... peek` 的中文会以 GBK 乱码显示，需用脚本 writeLines(useBytes=TRUE) 落盘 UTF-8 文件后再 Read 获取干净内容。
 - hf_metatask_runner.r 被 source() 时会执行尾部 CLI 入口（commandArgs + quit），不能直接 source 复用其函数；需把 write_log/mark_done 等函数复制进独立脚本，或改用 Rscript 子命令传参。

@@ -1,25 +1,85 @@
 // 由 HungFo 生成（hf_sessions_export），勿手改
 window.HF_SESSIONS = {
-  "updated_at": "2026-10-31 19:44:16",
+  "updated_at": "2026-11-02 11:40:21",
   "summary": {
     "total": {
       "token_in": 26500,
       "token_out": 8400,
-      "sessions": 16,
-      "success": 16,
+      "sessions": 20,
+      "success": 20,
       "failed": 0,
-      "duration_ms": 6043980
+      "duration_ms": 8845980
     },
     "today": {
       "token_in": 0,
       "token_out": 0,
-      "sessions": 1,
-      "success": 1,
+      "sessions": 4,
+      "success": 4,
       "failed": 0,
-      "duration_ms": 250000
+      "duration_ms": 2802000
     }
   },
   "sessions": [
+    {
+      "id": 22,
+      "task_id": 23,
+      "session_id": "mt23-20261102",
+      "title": "开发权限体系模块",
+      "llm_name": "DeepSeek-V4-Pro",
+      "agent": "",
+      "token_in": 0,
+      "token_out": 0,
+      "duration_ms": 929000,
+      "status": "success",
+      "result": "完成权限体系（RBAC用户/角色/安全组+登录）",
+      "started_at": "2026-11-02 11:40:21",
+      "finished_at": "2026-11-02 11:40:21"
+    },
+    {
+      "id": 21,
+      "task_id": 22,
+      "session_id": "mt22-20261102",
+      "title": "增加模块：项目",
+      "llm_name": "DeepSeek-V4-Pro",
+      "agent": "",
+      "token_in": 0,
+      "token_out": 0,
+      "duration_ms": 676000,
+      "status": "success",
+      "result": "完成项目模块（需求/记事/总结/模板整合）",
+      "started_at": "2026-11-02 11:36:08",
+      "finished_at": "2026-11-02 11:36:08"
+    },
+    {
+      "id": 20,
+      "task_id": 25,
+      "session_id": "mt25-20261102",
+      "title": "增加模块：配置",
+      "llm_name": "DeepSeek-V4-Pro",
+      "agent": "",
+      "token_in": 0,
+      "token_out": 0,
+      "duration_ms": 657000,
+      "status": "success",
+      "result": "完成配置模块，导航栏菜单可自定义配置",
+      "started_at": "2026-11-02 11:35:48",
+      "finished_at": "2026-11-02 11:35:48"
+    },
+    {
+      "id": 19,
+      "task_id": 24,
+      "session_id": "mt24-20261102",
+      "title": "开发规则模块",
+      "llm_name": "DeepSeek-V4-Pro",
+      "agent": "",
+      "token_in": 0,
+      "token_out": 0,
+      "duration_ms": 540000,
+      "status": "success",
+      "result": "完成规则类别新增/编辑功能",
+      "started_at": "2026-11-02 11:33:30",
+      "finished_at": "2026-11-02 11:33:30"
+    },
     {
       "id": 18,
       "task_id": 21,

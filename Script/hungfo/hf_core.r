@@ -216,7 +216,177 @@ hf_db_init <- function() {
     token_updated_at TEXT,                      -- Token 手动录入时间
     synced_at TEXT DEFAULT (datetime('now','localtime'))
   )")
+  # ══════════════════════════════════════════════════════════════════
+  # 权限体系数据表（环节 12）：用户 / 安全组 / 角色 / 权限，参照父项目 RBAC 三层授权
+  #   用户 → 安全组 → 角色 → 权限；一个用户可属多个组，一个组可挂多个角色。
+  # ══════════════════════════════════════════════════════════════════
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    display_name TEXT DEFAULT '',
+    active INTEGER DEFAULT 1,
+    hashing_algo TEXT DEFAULT 'plain',           -- 密码存储方式：plain=明文（与父项目一致）
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+  )")
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    description TEXT DEFAULT '',
+    active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+  )")
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_roles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    description TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+  )")
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_permissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_key TEXT DEFAULT '',
+    code TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT ''
+  )")
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_user_groups (
+    user_id INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    PRIMARY KEY (user_id, group_id)
+  )")
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_role_groups (
+    role_id INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    PRIMARY KEY (role_id, group_id)
+  )")
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_role_permissions (
+    role_id INTEGER NOT NULL,
+    permission_id INTEGER NOT NULL,
+    PRIMARY KEY (role_id, permission_id)
+  )")
+  # 导航栏配置表（配置模块专属：导航菜单的名称/图标/位置/显示隐藏可自定义）
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_nav_config (
+    nav_key TEXT PRIMARY KEY,
+    name TEXT,
+    icon TEXT,
+    position INTEGER DEFAULT 0,
+    visible INTEGER DEFAULT 1,
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+  )")
+  # 规则分类表（规则分类可独立新增 / 编辑，与 hf_rules.category 关联）
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_rules_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    sort_order INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+  )")
+  # 首次建表后播种默认分类（已有数据则跳过，不覆盖用户自定义分类）
+  n_cat <- dbGetQuery(con, "SELECT COUNT(*) n FROM hf_rules_categories")$n[1]
+  if (is.na(n_cat) || n_cat == 0) {
+    for (i in seq_along(HF_RULES_CATEGORIES)) {
+      dbExecute(con, sprintf(
+        "INSERT INTO hf_rules_categories (name, sort_order) VALUES ('%s', %d)",
+        hf_esc(HF_RULES_CATEGORIES[i]), i))
+    }
+  }
+  hf_perm_seed(con)
   invisible(TRUE)
+}
+
+# ── 权限体系种子数据（幂等）：权限码 / 角色 / 安全组 / 初始账号 ──
+# 权限码覆盖 12 个环节，每个环节提供「查看」「管理」两级能力。
+HF_PERM_CODES <- list(
+  list(key = "rules",        name = "规则",       view = "规则查看", manage = "规则管理"),
+  list(key = "crawl",        name = "爬取",       view = "爬取查看", manage = "爬取管理"),
+  list(key = "data",         name = "数据",       view = "数据查看", manage = "数据管理"),
+  list(key = "algorithm",    name = "算法",       view = "算法查看", manage = "算法管理"),
+  list(key = "display",      name = "展示",       view = "展示查看", manage = "展示管理"),
+  list(key = "autotask",     name = "自动任务",   view = "任务查看", manage = "任务管理"),
+  list(key = "backtest",     name = "回测",       view = "回测查看", manage = "回测管理"),
+  list(key = "metatask",     name = "元任务",     view = "元任务查看", manage = "元任务管理"),
+  list(key = "devlog",       name = "开发日志",   view = "日志查看", manage = "日志管理"),
+  list(key = "arch",         name = "自动架构",   view = "架构查看", manage = "架构管理"),
+  list(key = "integration",  name = "对外集成",   view = "集成查看", manage = "集成管理"),
+  list(key = "permission",   name = "权限体系",   view = "权限查看", manage = "权限管理")
+)
+# 用户组（普通用户）默认只读权限码集合（*_view）
+HF_PERM_VIEW_SUFFIX <- "_view"
+
+hf_perm_seed <- function(con = NULL) {
+  own <- is.null(con)
+  if (own) {
+    con <- hf_db_connect()
+    on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  }
+  tryCatch({
+    # 1) 权限码（幂等，按 code 去重）
+    for (p in HF_PERM_CODES) {
+      view_code <- paste0(p$key, "_view")
+      mgmt_code <- paste0(p$key, "_manage")
+      dbExecute(con, sprintf(
+        "INSERT OR IGNORE INTO hf_permissions (module_key, code, name, description) VALUES ('%s','%s','%s','%s')",
+        hf_esc(p$key), view_code, p$view, paste0(p$name, "模块查看权限")))
+      dbExecute(con, sprintf(
+        "INSERT OR IGNORE INTO hf_permissions (module_key, code, name, description) VALUES ('%s','%s','%s','%s')",
+        hf_esc(p$key), mgmt_code, p$manage, paste0(p$name, "模块管理权限")))
+    }
+    # 2) 安全组（admins / user）
+    dbExecute(con, "INSERT OR IGNORE INTO hf_groups (name, description) VALUES ('admins', '系统管理员组，拥有全部权限')")
+    dbExecute(con, "INSERT OR IGNORE INTO hf_groups (name, description) VALUES ('user', '普通用户组，只读访问各环节')")
+    # 3) 角色（admin / user，与安全组同名对齐）
+    dbExecute(con, "INSERT OR IGNORE INTO hf_roles (name, description) VALUES ('admin', '管理员角色，拥有全部权限')")
+    dbExecute(con, "INSERT OR IGNORE INTO hf_roles (name, description) VALUES ('user', '普通用户角色，只读访问')")
+    # 4) 组 ↔ 角色：admins 组挂 admin 角色，user 组挂 user 角色
+    admins_g <- dbGetQuery(con, "SELECT id FROM hf_groups WHERE name='admins'")
+    user_g   <- dbGetQuery(con, "SELECT id FROM hf_groups WHERE name='user'")
+    admin_r  <- dbGetQuery(con, "SELECT id FROM hf_roles WHERE name='admin'")
+    user_r   <- dbGetQuery(con, "SELECT id FROM hf_roles WHERE name='user'")
+    if (nrow(admins_g) > 0 && nrow(admin_r) > 0) {
+      dbExecute(con, sprintf("INSERT OR IGNORE INTO hf_role_groups (role_id, group_id) VALUES (%d, %d)",
+        admin_r$id[1], admins_g$id[1]))
+    }
+    if (nrow(user_g) > 0 && nrow(user_r) > 0) {
+      dbExecute(con, sprintf("INSERT OR IGNORE INTO hf_role_groups (role_id, group_id) VALUES (%d, %d)",
+        user_r$id[1], user_g$id[1]))
+    }
+    # 5) 角色 ↔ 权限：admin 全量，user 只读（*_view）
+    if (nrow(admin_r) > 0) {
+      all_p <- dbGetQuery(con, "SELECT id FROM hf_permissions")
+      for (pid in all_p$id) {
+        dbExecute(con, sprintf("INSERT OR IGNORE INTO hf_role_permissions (role_id, permission_id) VALUES (%d, %d)",
+          admin_r$id[1], pid))
+      }
+    }
+    if (nrow(user_r) > 0) {
+      view_p <- dbGetQuery(con, sprintf(
+        "SELECT id FROM hf_permissions WHERE code LIKE '%%%s'", hf_esc(HF_PERM_VIEW_SUFFIX)))
+      for (pid in view_p$id) {
+        dbExecute(con, sprintf("INSERT OR IGNORE INTO hf_role_permissions (role_id, permission_id) VALUES (%d, %d)",
+          user_r$id[1], pid))
+      }
+    }
+    # 6) 初始账号（仅在用户表为空时播种）：DaiSG→admins 组，GodHat→user 组，密码均 falwpa
+    n <- dbGetQuery(con, "SELECT COUNT(*) n FROM hf_users")$n[1]
+    if (n == 0) {
+      dbExecute(con, "INSERT INTO hf_users (username, password, display_name) VALUES ('DaiSG','falwpa','DaiSG')")
+      dbExecute(con, "INSERT INTO hf_users (username, password, display_name) VALUES ('GodHat','falwpa','GodHat')")
+      dai <- dbGetQuery(con, "SELECT id FROM hf_users WHERE username='DaiSG'")
+      god <- dbGetQuery(con, "SELECT id FROM hf_users WHERE username='GodHat'")
+      if (nrow(dai) > 0 && nrow(admins_g) > 0) {
+        dbExecute(con, sprintf("INSERT OR IGNORE INTO hf_user_groups (user_id, group_id) VALUES (%d, %d)",
+          dai$id[1], admins_g$id[1]))
+      }
+      if (nrow(god) > 0 && nrow(user_g) > 0) {
+        dbExecute(con, sprintf("INSERT OR IGNORE INTO hf_user_groups (user_id, group_id) VALUES (%d, %d)",
+          god$id[1], user_g$id[1]))
+      }
+    }
+    invisible(TRUE)
+  }, error = function(e) invisible(FALSE))
 }
 
 # 将内存注册表同步到数据库
@@ -308,10 +478,73 @@ hf_current_uid <- function(rv) {
 # 规则数据层（规则模块专属：含「分类」字段，支持查看/编辑/删除）
 # ══════════════════════════════════════════════════════════════════
 
-# 规则默认分类（业务规则，与规则模块职责「爬取频率/算法参数/风控阈值」对齐）
+# 规则默认分类（首次建表时播种；此后以 hf_rules_categories 表为准）
 HF_RULES_CATEGORIES <- c("爬取频率", "算法参数", "风控阈值", "数据质量", "调度策略", "其它")
 
-hf_rules_categories <- function() HF_RULES_CATEGORIES
+# ── 规则分类数据层（分类可独立新增 / 编辑，与 hf_rules.category 关联）──
+
+# 分类列表（data.frame，含关联规则数，供管理界面与下拉使用）
+hf_rules_categories_df <- function() {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch(
+    dbGetQuery(con,
+      "SELECT c.id, c.name, c.sort_order, c.created_at, c.updated_at,
+              COUNT(r.id) AS rule_count
+       FROM hf_rules_categories c
+       LEFT JOIN hf_rules r ON r.category = c.name
+       GROUP BY c.id, c.name, c.sort_order, c.created_at, c.updated_at
+       ORDER BY c.sort_order ASC, c.id ASC"),
+    error = function(e) data.frame())
+}
+
+# 分类名称向量（供 selectInput 等下拉使用；表为空时回退默认分类）
+hf_rules_categories <- function() {
+  df <- hf_rules_categories_df()
+  if (is.null(df) || nrow(df) == 0) return(HF_RULES_CATEGORIES)
+  as.character(df$name)
+}
+
+# 新增分类
+hf_rules_category_add <- function(name) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  if (is.null(name) || !nzchar(trimws(name))) return(list(success = FALSE, message = "分类名称不能为空"))
+  name <- trimws(name)
+  tryCatch({
+    ex <- dbGetQuery(con, sprintf("SELECT id FROM hf_rules_categories WHERE name='%s'", hf_esc(name)))
+    if (nrow(ex) > 0) return(list(success = FALSE, message = paste0("分类「", name, "」已存在")))
+    mx <- dbGetQuery(con, "SELECT COALESCE(MAX(sort_order),0) AS m FROM hf_rules_categories")$m[1]
+    dbExecute(con, sprintf(
+      "INSERT INTO hf_rules_categories (name, sort_order) VALUES ('%s', %d)",
+      hf_esc(name), as.integer(mx) + 1L))
+    list(success = TRUE, message = paste0("已新增分类：", name))
+  }, error = function(e) list(success = FALSE, message = e$message))
+}
+
+# 编辑（重命名）分类，并同步更新关联规则中的分类字段
+hf_rules_category_update <- function(id, name) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  if (is.null(id) || is.na(id)) return(list(success = FALSE, message = "分类 id 无效"))
+  if (is.null(name) || !nzchar(trimws(name))) return(list(success = FALSE, message = "分类名称不能为空"))
+  name <- trimws(name)
+  tryCatch({
+    row <- dbGetQuery(con, sprintf("SELECT id, name FROM hf_rules_categories WHERE id=%s", as.character(as.integer(id))))
+    if (nrow(row) == 0) return(list(success = FALSE, message = "分类不存在"))
+    old_name <- row$name[1]
+    dup <- dbGetQuery(con, sprintf("SELECT id FROM hf_rules_categories WHERE name='%s' AND id<>%s",
+      hf_esc(name), as.character(as.integer(id))))
+    if (nrow(dup) > 0) return(list(success = FALSE, message = paste0("分类「", name, "」已存在")))
+    dbExecute(con, sprintf(
+      "UPDATE hf_rules_categories SET name='%s', updated_at=datetime('now','localtime') WHERE id=%s",
+      hf_esc(name), as.character(as.integer(id))))
+    dbExecute(con, sprintf(
+      "UPDATE hf_rules SET category='%s', updated_at=datetime('now','localtime') WHERE category='%s'",
+      hf_esc(name), hf_esc(old_name)))
+    list(success = TRUE, message = paste0("已重命名分类：", old_name, " → ", name))
+  }, error = function(e) list(success = FALSE, message = e$message))
+}
 
 # 规则列表（可按分类筛选）
 hf_rules_list <- function(category = NULL) {
@@ -1031,4 +1264,99 @@ hf_cb_sessions_export <- function(limit = 200) {
   writeLines(paste0("// 由 HungFo 生成（hf_cb_sessions_export），勿手改\nwindow.HF_CB_SESSIONS = ", body, ";\n"),
              file.path(hf_home(), "www", "hungfo_cb_sessions.js"), useBytes = TRUE)
   invisible(out)
+}
+
+# ══════════════════════════════════════════════════════════════════
+# 导航栏配置数据层（配置模块专属）
+# 首个可配置项：导航栏菜单的名称 / 图标 / 位置 / 显示隐藏。
+# 默认值来自运行时注册表（总览 + 各环节 + Agent 监控），
+# 用户自定义覆盖写 hf_nav_config，读取时「默认 + 覆盖」合并，配置保存后导航栏实时刷新。
+# ══════════════════════════════════════════════════════════════════
+
+# 导航项类型：overview=总览 / module=环节页 / agent_monitor=Agent 监控面板
+# 返回 data.frame: nav_key, kind, name, icon, position, visible（默认值，position 决定导航栏顺序）
+hf_nav_defaults <- function() {
+  mods <- hf_modules()   # 已按 id 排序，配置环节(hf20)排最后
+  rows <- lapply(seq_along(mods), function(i) {
+    m <- mods[[i]]
+    data.frame(nav_key = hf_or(m$key, ""), kind = "module",
+               name = hf_or(m$name, m$key), icon = hf_or(m$icon, "circle"),
+               position = as.integer(i + 1), visible = 1L, stringsAsFactors = FALSE)
+  })
+  df <- if (length(rows) > 0) do.call(rbind, rows) else
+    data.frame(nav_key = character(0), kind = character(0), name = character(0),
+               icon = character(0), position = integer(0), visible = integer(0),
+               stringsAsFactors = FALSE)
+  n <- nrow(df)
+  # 固定导航项：总览（最左，position=1）+ Agent 监控（环节之后，position=n+1）
+  fixed <- data.frame(
+    nav_key = c("overview", "agent_monitor"),
+    kind     = c("overview", "agent_monitor"),
+    name     = c("总览", "Agent Workflow Monitor"),
+    icon     = c("home", "network-wired"),
+    position = c(1L, as.integer(n + 1)),
+    visible  = c(1L, 1L),
+    stringsAsFactors = FALSE)
+  # 「配置」环节固定放导航栏最右（Agent 监控之后）
+  if ("config" %in% df$nav_key) {
+    df$position[df$nav_key == "config"] <- as.integer(n + 2)
+  }
+  rbind(fixed, df)
+}
+
+# 读取导航配置（默认 + DB 覆盖合并），返回 data.frame 供导航栏渲染
+hf_nav_config_list <- function() {
+  defaults <- hf_nav_defaults()
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  ovr <- tryCatch(
+    dbGetQuery(con, "SELECT nav_key,name,icon,position,visible FROM hf_nav_config"),
+    error = function(e) data.frame())
+  if (is.null(ovr) || nrow(ovr) == 0) return(defaults)
+  for (i in seq_len(nrow(ovr))) {
+    k <- ovr$nav_key[i]
+    if (!(k %in% defaults$nav_key)) next
+    idx <- which(defaults$nav_key == k)
+    defaults$name[idx]     <- hf_or(ovr$name[i], defaults$name[idx])
+    defaults$icon[idx]     <- hf_or(ovr$icon[i], defaults$icon[idx])
+    defaults$position[idx] <- as.integer(hf_or(ovr$position[i], defaults$position[idx]))
+    defaults$visible[idx]  <- as.integer(hf_or(ovr$visible[i], 1L))
+  }
+  defaults
+}
+
+# 保存单条导航配置（upsert 风格：先查后插/改）
+hf_nav_config_save <- function(nav_key, name = NULL, icon = NULL, position = NULL, visible = NULL) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  if (is.null(nav_key) || !nzchar(trimws(nav_key))) {
+    return(list(success = FALSE, message = "导航项 key 无效"))
+  }
+  nm  <- hf_or(name, "")
+  ic  <- hf_or(icon, "")
+  pos <- as.integer(hf_or(position, 0))
+  vis <- as.integer(hf_or(visible, 1))
+  tryCatch({
+    ex <- dbGetQuery(con, sprintf("SELECT nav_key FROM hf_nav_config WHERE nav_key='%s'", hf_esc(nav_key)))
+    if (nrow(ex) == 0) {
+      dbExecute(con, sprintf(
+        "INSERT INTO hf_nav_config (nav_key,name,icon,position,visible) VALUES ('%s','%s','%s',%d,%d)",
+        hf_esc(nav_key), hf_esc(nm), hf_esc(ic), pos, vis))
+    } else {
+      dbExecute(con, sprintf(
+        "UPDATE hf_nav_config SET name='%s',icon='%s',position=%d,visible=%d,updated_at=datetime('now','localtime') WHERE nav_key='%s'",
+        hf_esc(nm), hf_esc(ic), pos, vis, hf_esc(nav_key)))
+    }
+    list(success = TRUE, message = paste0("已保存导航配置：", if (nzchar(nm)) nm else nav_key))
+  }, error = function(e) list(success = FALSE, message = e$message))
+}
+
+# 重置导航配置为默认值（清空覆盖表）
+hf_nav_config_reset <- function() {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    dbExecute(con, "DELETE FROM hf_nav_config")
+    list(success = TRUE, message = "已重置导航配置为默认值")
+  }, error = function(e) list(success = FALSE, message = e$message))
 }

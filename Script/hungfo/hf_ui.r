@@ -21,6 +21,12 @@ hf_module_page_ui <- function(m) {
   if (identical(key, "rules")) return(hf_rules_page_ui(m))
   # 自动架构环节：特殊页面（数据驱动，随代码演进自动更新）
   if (identical(key, "arch")) return(hf_arch_page_ui(m))
+  # 项目环节：特殊页面（集合需求/记事/总结/项目模板，内部 Tab 快速切换）
+  if (identical(key, "project")) return(hf_project_page_ui(m))
+  # 权限体系环节：特殊页面（用户 / 安全组 / 角色 / 权限管理）
+  if (identical(key, "permission")) return(hf_permission_page_ui(m))
+  # 配置环节：特殊页面（导航栏菜单配置中心）
+  if (identical(key, "config")) return(hf_config_page_ui(m))
   tabPanel(
     m$name, icon = icon(m$icon),
     div(style = "padding:4px 2px;",
@@ -47,6 +53,14 @@ hf_module_page_ui <- function(m) {
       DTOutput(p("table"))
     )
   )
+}
+
+# ── 权限写操作守卫：非管理员（admins 组）直接拒绝并提示 ──
+# 各环节的新增 / 编辑 / 删除 / 保存等写操作在 req(rv$logged_in) 后调用本函数。
+hf_perm_guard_admin <- function(rv) {
+  if (isTRUE(rv$logged_in) && hf_perm_is_admin(rv$current_user)) return(TRUE)
+  showNotification("当前账号无管理权限（需 admins 组），仅可查看", type = "error")
+  FALSE
 }
 
 # ── 自动任务环节专属页面：Agent 任务来源编辑器 ──
@@ -243,6 +257,18 @@ hf_rules_page_ui <- function(m) {
           ))
         )
       ),
+      # 规则分类管理（分类可独立新增 / 编辑，与规则关联）
+      div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
+        div(style = "display:flex;align-items:center;gap:10px;margin-bottom:8px;",
+          tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;", "✦ 规则分类管理"),
+          div(style = "margin-left:auto;display:flex;gap:6px;",
+            actionButton(p("cat_add_btn"), "新增分类", icon = icon("plus"), class = "btn-success btn-xs"),
+            actionButton(p("cat_edit_btn"), "编辑分类", icon = icon("pen"), class = "btn-primary btn-xs"),
+            actionButton(p("cat_refresh_btn"), "刷新", icon = icon("sync"), class = "btn-info btn-xs")
+          )
+        ),
+        DTOutput(p("cat_table"))
+      ),
       uiOutput(p("status")),
       DTOutput(p("table"))
     )
@@ -257,6 +283,9 @@ hf_rules_page_server <- function(input, output, session, rv, m, trigger) {
   filter_cat <- reactiveVal(NULL)
   search_term <- reactiveVal("")
   editing_id <- reactiveVal(NULL)   # NULL=新增；非空=编辑该 id
+  cat_trigger <- reactiveVal(0)
+  cat_refresh <- function() cat_trigger(cat_trigger() + 1)
+  cat_editing_id <- reactiveVal(NULL)   # NULL=新增分类；非空=编辑该分类 id
 
   observeEvent(input[[p("filter_cat")]], {
     v <- trimws(hf_or(input[[p("filter_cat")]], ""))
@@ -264,6 +293,17 @@ hf_rules_page_server <- function(input, output, session, rv, m, trigger) {
   })
   observeEvent(input[[p("search")]], search_term(trimws(hf_or(input[[p("search")]], ""))))
   observeEvent(input[[p("refresh_btn")]], local_refresh())
+
+  # 分类下拉动态同步（分类新增/重命名后，筛选下拉自动更新）
+  observe({
+    trigger(); local_trigger(); cat_trigger()
+    cats <- hf_rules_categories()
+    cur <- isolate(filter_cat())
+    if (!is.null(cur) && !(cur %in% cats)) cur <- ""
+    updateSelectInput(session, p("filter_cat"),
+      choices = c("全部分类" = "", cats),
+      selected = if (is.null(cur)) "" else cur)
+  })
 
   output[[p("status")]] <- renderUI({
     trigger(); local_trigger()
@@ -340,6 +380,7 @@ hf_rules_page_server <- function(input, output, session, rv, m, trigger) {
   # ── 新增 / 编辑：共用弹窗 ──
   observeEvent(input[[p("add_btn")]], {
     req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
     editing_id(NULL)
     showModal(modalDialog(
       title = "新增规则",
@@ -355,6 +396,7 @@ hf_rules_page_server <- function(input, output, session, rv, m, trigger) {
 
   observeEvent(input[[p("edit_btn")]], {
     req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
     id <- selected_id()
     if (is.null(id)) { showNotification("请先在列表选中一条规则", type = "warning"); return() }
     r <- hf_rules_get(id)
@@ -375,6 +417,7 @@ hf_rules_page_server <- function(input, output, session, rv, m, trigger) {
 
   observeEvent(input[[p("save_btn")]], {
     req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
     title <- trimws(hf_or(input[[p("edit_title")]], ""))
     if (!nzchar(title)) { showNotification("请输入规则名称", type = "warning"); return() }
     id <- editing_id()
@@ -392,10 +435,89 @@ hf_rules_page_server <- function(input, output, session, rv, m, trigger) {
   # ── 删除 ──
   observeEvent(input[[p("del_btn")]], {
     req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
     id <- selected_id()
     if (is.null(id)) { showNotification("请先在列表选中一条规则", type = "warning"); return() }
     r <- hf_rules_delete(id)
     showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    local_refresh()
+  })
+
+  # ── 规则分类管理（独立新增 / 编辑，与规则关联）──
+  cat_selected_id <- reactive({
+    idx <- input[[p("cat_table_rows_selected")]]
+    if (is.null(idx) || length(idx) == 0) return(NULL)
+    df <- hf_rules_categories_df()
+    if (is.null(df) || nrow(df) == 0) return(NULL)
+    df$id[idx[1]]
+  })
+
+  output[[p("cat_table")]] <- DT::renderDT({
+    trigger(); local_trigger(); cat_trigger()
+    df <- hf_rules_categories_df()
+    if (is.null(df) || nrow(df) == 0) return(hf_datatable(df, empty = "no_data"))
+    out <- data.frame(
+      ID = df$id,
+      分类名称 = hf_or(df$name, ""),
+      关联规则数 = ifelse(is.na(df$rule_count), 0, df$rule_count),
+      排序 = ifelse(is.na(df$sort_order), 0, df$sort_order),
+      创建时间 = ifelse(is.na(df$created_at) | df$created_at == "", "—", df$created_at),
+      stringsAsFactors = FALSE)
+    hf_datatable(out, selection = "single", page_size = 20)
+  })
+
+  observeEvent(input[[p("cat_refresh_btn")]], cat_refresh())
+
+  # 新增分类
+  observeEvent(input[[p("cat_add_btn")]], {
+    req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
+    cat_editing_id(NULL)
+    showModal(modalDialog(
+      title = "新增规则分类",
+      textInput(p("cat_name"), "分类名称", width = "100%", placeholder = "如：告警策略"),
+      footer = tagList(
+        actionButton(p("cat_save_btn"), "保存", class = "btn-primary"),
+        modalButton("取消")
+      ), size = "s", easyClose = TRUE
+    ))
+  })
+
+  # 编辑（重命名）分类
+  observeEvent(input[[p("cat_edit_btn")]], {
+    req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
+    id <- cat_selected_id()
+    if (is.null(id)) { showNotification("请先在分类列表选中一条分类", type = "warning"); return() }
+    df <- hf_rules_categories_df()
+    row <- df[df$id == id, , drop = FALSE]
+    if (nrow(row) == 0) { showNotification("分类不存在，请刷新后重试", type = "warning"); return() }
+    cat_editing_id(id)
+    showModal(modalDialog(
+      title = paste0("编辑分类 #", id),
+      textInput(p("cat_name"), "分类名称", value = hf_or(row$name[1], ""), width = "100%"),
+      footer = tagList(
+        actionButton(p("cat_save_btn"), "保存修改", class = "btn-primary"),
+        modalButton("取消")
+      ), size = "s", easyClose = TRUE
+    ))
+  })
+
+  # 保存分类（新增 / 重命名）
+  observeEvent(input[[p("cat_save_btn")]], {
+    req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
+    name <- trimws(hf_or(input[[p("cat_name")]], ""))
+    if (!nzchar(name)) { showNotification("请输入分类名称", type = "warning"); return() }
+    id <- cat_editing_id()
+    if (is.null(id)) {
+      r <- hf_rules_category_add(name)
+    } else {
+      r <- hf_rules_category_update(id, name)
+    }
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (isTRUE(r$success)) { removeModal(); cat_editing_id(NULL) }
+    cat_refresh()
     local_refresh()
   })
 }
@@ -562,6 +684,566 @@ hf_arch_page_server <- function(input, output, session, rv, m, trigger) {
   })
 }
 
+# ── 项目环节专属页面：集合需求/记事/总结/项目模板，内部 Tab 快速切换 ──
+# 项目状态 / 优先级 / 记事状态 颜色映射（供渲染与看板使用）
+hf_project_status_badge <- function(status) {
+  st <- hf_or(status, "planning")
+  map <- list(
+    planning  = list(label = "规划中", bg = "#f0ad4e", fg = "#fff"),
+    active    = list(label = "进行中", bg = "#5bc0de", fg = "#fff"),
+    completed = list(label = "已完成", bg = "#5cb85c", fg = "#fff"),
+    suspended = list(label = "已暂停", bg = "#9e9e9e", fg = "#fff")
+  )
+  m <- map[[st]]
+  if (is.null(m)) m <- list(label = st, bg = "#9e9e9e", fg = "#fff")
+  sprintf('<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:%s;color:%s;white-space:nowrap;">%s</span>',
+          m$bg, m$fg, m$label)
+}
+
+hf_project_prio_badge <- function(p) {
+  pr <- hf_or(p, "中")
+  bg <- switch(pr, "高" = "#d9534f", "中" = "#f0ad4e", "低" = "#5bc0de", "#999")
+  sprintf('<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:%s;color:#fff;white-space:nowrap;">%s</span>', bg, pr)
+}
+
+hf_project_req_status_badge <- function(status) {
+  st <- hf_or(status, "进行中")
+  bg <- if (identical(st, "已完成")) "#5cb85c" else "#f0ad4e"
+  sprintf('<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:%s;color:#fff;white-space:nowrap;">%s</span>', bg, st)
+}
+
+hf_project_note_status_label <- function(status) {
+  switch(hf_or(status, "pending"), pending = "待处理", in_progress = "进行中", done = "已完成", status)
+}
+
+hf_project_page_ui <- function(m) {
+  p <- function(x) paste0("hf_project_", x)
+  tabPanel(
+    m$name, icon = icon(m$icon),
+    div(style = "padding:4px 2px;",
+      # 记事看板卡片操作按钮 JS（左移/右移/删除）
+      tags$script(HTML("
+        $(document).on('click', '.hf-pnote-btn', function(e){
+          e.stopPropagation();
+          var id = $(this).data('id');
+          var act = $(this).data('act');
+          Shiny.setInputValue('hf_project_note_act', {id: id, act: act}, {priority:'event'});
+        });
+      ")),
+      # 顶部横幅
+      div(style = "background:linear-gradient(135deg,#263238,#37474f);color:#fff;border-radius:8px;padding:14px 18px;margin-bottom:12px;",
+        tags$span(style = "font-size:16px;font-weight:bold;", icon(m$icon), " ", m$name),
+        tags$span(style = "font-size:11px;background:#455a64;padding:2px 8px;border-radius:10px;margin-left:8px;", "HF-PROJECT"),
+        tags$span(style = "font-size:11px;background:#00695c;padding:2px 8px;border-radius:10px;margin-left:6px;", hf_or(m$status, "scaffold")),
+        tags$div(style = "font-size:12px;opacity:.88;margin-top:8px;",
+          "集合父项目「需求 / 记事 / 总结 / 项目模板」为一体：选择项目后，各 Tab 数据联动、增删改自动刷新。"),
+        tags$div(style = "font-size:11px;color:#b0bec5;margin-top:4px;", icon("plug"), " 接口：", m$api_desc)
+      ),
+      # 项目上下文选择器（联动需求/记事/总结三个 Tab）
+      div(style = "background:#fff;border-radius:8px;padding:10px 12px;margin:8px 0;border:1px solid #e8ecf1;",
+        div(style = "display:flex;align-items:center;gap:10px;flex-wrap:wrap;",
+          tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;white-space:nowrap;", "✦ 当前项目"),
+          uiOutput(p("ctx_selector"), inline = TRUE),
+          tags$span(style = "font-size:11px;color:#999;", "切换项目后，下方需求 / 记事 / 总结自动按项目过滤刷新。")
+        )
+      ),
+      # 内部快速 Tab 切换（项目 / 需求 / 记事 / 总结）
+      tabsetPanel(
+        id = p("subtabs"), type = "pills",
+
+        # ── Tab 1：项目（项目模板）──
+        tabPanel("项目", icon = icon("folder"),
+          br(),
+          div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
+            div(style = "display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;",
+              actionButton(p("proj_add"), "新增项目", icon = icon("plus"), class = "btn-success btn-sm"),
+              actionButton(p("proj_edit"), "编辑", icon = icon("pen"), class = "btn-primary btn-sm"),
+              actionButton(p("proj_del"), "删除", icon = icon("trash"), class = "btn-danger btn-sm"),
+              actionButton(p("proj_refresh"), "刷新", icon = icon("sync"), class = "btn-default btn-sm")
+            )
+          ),
+          DTOutput(p("proj_table"))
+        ),
+
+        # ── Tab 2：需求（需求模块）──
+        tabPanel("需求", icon = icon("clipboard-list"),
+          br(),
+          div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
+            div(style = "display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;",
+              actionButton(p("req_add"), "新增需求", icon = icon("plus"), class = "btn-success btn-sm"),
+              actionButton(p("req_edit"), "编辑", icon = icon("pen"), class = "btn-primary btn-sm"),
+              actionButton(p("req_done"), "切换完成", icon = icon("check"), class = "btn-info btn-sm"),
+              actionButton(p("req_del"), "删除", icon = icon("trash"), class = "btn-danger btn-sm"),
+              actionButton(p("req_refresh"), "刷新", icon = icon("sync"), class = "btn-default btn-sm")
+            )
+          ),
+          DTOutput(p("req_table"))
+        ),
+
+        # ── Tab 3：记事（记事模块，Trello 看板三列）──
+        tabPanel("记事", icon = icon("sticky-note"),
+          br(),
+          div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
+            div(style = "display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;",
+              actionButton(p("note_add"), "新增记事", icon = icon("plus"), class = "btn-success btn-sm"),
+              actionButton(p("note_refresh"), "刷新", icon = icon("sync"), class = "btn-default btn-sm")
+            )
+          ),
+          uiOutput(p("note_board"))
+        ),
+
+        # ── Tab 4：总结（总结模块，一键聚合）──
+        tabPanel("总结", icon = icon("calendar-day"),
+          br(),
+          div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
+            div(style = "display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;",
+              actionButton(p("sum_build"), "一键生成", icon = icon("magic"), class = "btn-warning btn-sm"),
+              actionButton(p("sum_add"), "新增总结", icon = icon("plus"), class = "btn-success btn-sm"),
+              actionButton(p("sum_edit"), "编辑", icon = icon("pen"), class = "btn-primary btn-sm"),
+              actionButton(p("sum_del"), "删除", icon = icon("trash"), class = "btn-danger btn-sm"),
+              actionButton(p("sum_refresh"), "刷新", icon = icon("sync"), class = "btn-default btn-sm")
+            )
+          ),
+          DTOutput(p("sum_table"))
+        )
+      ),
+      uiOutput(p("status"))
+    )
+  )
+}
+
+# ── 项目环节专属 Server ──
+hf_project_page_server <- function(input, output, session, rv, m, trigger) {
+  p <- function(x) paste0("hf_project_", x)
+  local_trigger <- reactiveVal(0)
+  local_refresh <- function() local_trigger(local_trigger() + 1)
+  project_ctx <- reactiveVal(NULL)      # 当前项目 id；NULL=全部
+  editing_id <- reactiveVal(NULL)       # 弹窗编辑目标 id（NULL=新增）
+
+  # 项目上下文选择器（依赖 local_trigger 动态刷新，selected 绑定 project_ctx 保持选中）
+  output[[p("ctx_selector")]] <- renderUI({
+    trigger(); local_trigger()
+    projs <- hf_project_list()
+    choices <- c("全部项目" = "")
+    if (!is.null(projs) && nrow(projs) > 0) {
+      choices <- c(choices, setNames(as.character(projs$id), projs$name))
+    }
+    selectInput(p("ctx"), NULL, choices = choices,
+                selected = if (is.null(project_ctx())) "" else as.character(project_ctx()),
+                width = "240px")
+  })
+
+  observeEvent(input[[p("ctx")]], {
+    v <- trimws(hf_or(input[[p("ctx")]], ""))
+    project_ctx(if (nzchar(v)) as.integer(v) else NULL)
+  }, ignoreNULL = FALSE)
+
+  # 顶部状态栏
+  output[[p("status")]] <- renderUI({
+    trigger(); local_trigger()
+    np <- hf_project_count()
+    reqs <- hf_project_req_list(project_ctx())
+    notes <- hf_project_note_list(project_ctx())
+    sums <- hf_project_summary_list(project_ctx())
+    div(style = "font-size:12px;color:#555;margin:2px 0 8px;",
+      tags$b("项目："), tags$span(style = "color:#1565c0;", paste0(np, " 个")),
+      " · ", tags$span(style = "color:#2e7d32;", paste0("需求 ", if (is.null(reqs)) 0 else nrow(reqs), " 条")),
+      " · ", tags$span(style = "color:#e65100;", paste0("记事 ", if (is.null(notes)) 0 else nrow(notes), " 条")),
+      " · ", tags$span(style = "color:#6a1b9a;", paste0("总结 ", if (is.null(sums)) 0 else nrow(sums), " 条")),
+      " · 版本 ", hf_or(m$version, "v0.1"))
+  })
+
+  # ── Tab 1：项目表 ──
+  output[[p("proj_table")]] <- DT::renderDT({
+    trigger(); local_trigger()
+    df <- hf_project_list()
+    if (is.null(df) || nrow(df) == 0) return(hf_datatable(df, empty = "no_data"))
+    out <- data.frame(
+      ID = df$id,
+      编号 = hf_or(df$project_no, ""),
+      名称 = hf_or(df$name, ""),
+      优先级 = vapply(seq_len(nrow(df)), function(i) hf_project_prio_badge(df$priority[i]), character(1)),
+      状态 = vapply(seq_len(nrow(df)), function(i) hf_project_status_badge(df$status[i]), character(1)),
+      开始 = ifelse(is.na(df$start_date) | df$start_date == "", "—", df$start_date),
+      结束 = ifelse(is.na(df$end_date) | df$end_date == "", "—", df$end_date),
+      创建时间 = ifelse(is.na(df$created_at) | df$created_at == "", "—", df$created_at),
+      stringsAsFactors = FALSE)
+    hf_datatable(out, selection = "single", page_size = 20, escape = FALSE)
+  })
+
+  # ── Tab 2：需求表 ──
+  output[[p("req_table")]] <- DT::renderDT({
+    trigger(); local_trigger()
+    df <- hf_project_req_list(project_ctx())
+    if (is.null(df) || nrow(df) == 0) {
+      empty <- if (is.null(hf_project_req_list()) || nrow(hf_project_req_list()) == 0) "no_data" else "no_match"
+      return(hf_datatable(df, empty = empty))
+    }
+    out <- data.frame(
+      ID = df$id,
+      编号 = hf_or(df$req_no, ""),
+      标题 = hf_or(df$title, ""),
+      状态 = vapply(seq_len(nrow(df)), function(i) hf_project_req_status_badge(df$status[i]), character(1)),
+      优先级 = vapply(seq_len(nrow(df)), function(i) hf_project_prio_badge(df$priority[i]), character(1)),
+      负责人 = ifelse(is.na(df$owner) | df$owner == "", "—", df$owner),
+      截止 = ifelse(is.na(df$due_date) | df$due_date == "", "—", df$due_date),
+      stringsAsFactors = FALSE)
+    hf_datatable(out, selection = "single", page_size = 20, escape = FALSE)
+  })
+
+  # ── Tab 3：记事看板（三列）──
+  output[[p("note_board")]] <- renderUI({
+    trigger(); local_trigger()
+    df <- hf_project_note_list(project_ctx())
+    if (is.null(df) || nrow(df) == 0) {
+      return(tags$div(style = "text-align:center;color:#999;padding:30px;font-size:13px;",
+        "暂无记事，点击上方 [新增记事] 创建"))
+    }
+    render_col <- function(st) {
+      sub <- df[df$status == st, , drop = FALSE]
+      if (nrow(sub) == 0) {
+        return(tags$div(style = "color:#bbb;font-size:12px;padding:8px;text-align:center;", "（空）"))
+      }
+      cards <- lapply(seq_len(nrow(sub)), function(i) {
+        r <- sub[i, , drop = FALSE]
+        left_btn <- if (st == "in_progress" || st == "done")
+          sprintf('<button class="btn btn-xs btn-default hf-pnote-btn" data-id="%s" data-act="left" title="左移">←</button>', r$id) else ""
+        right_btn <- if (st == "pending" || st == "in_progress")
+          sprintf('<button class="btn btn-xs btn-default hf-pnote-btn" data-id="%s" data-act="right" title="右移">→</button>', r$id) else ""
+        del_btn <- sprintf('<button class="btn btn-xs btn-danger hf-pnote-btn" data-id="%s" data-act="del" title="删除">🗑</button>', r$id)
+        tags$div(style = "background:#fff;border:1px solid #e8ecf1;border-radius:8px;padding:10px 12px;margin-bottom:8px;",
+          tags$div(style = "font-size:13px;font-weight:700;color:#1a2236;margin-bottom:4px;", hf_or(r$title, "")),
+          tags$div(style = "font-size:12px;color:#596780;white-space:pre-wrap;max-height:120px;overflow-y:auto;",
+            hf_or(r$content, "")),
+          tags$div(style = "font-size:10px;color:#a0aec0;margin-top:6px;",
+            hf_or(r$note_no, ""), " · ", hf_project_prio_badge(r$priority)),
+          tags$div(style = "margin-top:6px;display:flex;gap:4px;justify-content:flex-end;",
+            HTML(paste0(left_btn, right_btn, del_btn)))
+        )
+      })
+      tagList(cards)
+    }
+    col_style <- function(bg) sprintf("background:%s;border-radius:10px;padding:10px;min-height:120px;", bg)
+    tagList(
+      tags$style("
+        .hf-pnote-col h4 { margin:0 0 8px; font-size:13px; font-weight:700; padding:6px 10px; border-radius:6px; }
+      "),
+      fluidRow(
+        column(4, div(class = "hf-pnote-col", style = col_style("#f8f4ff"),
+          tags$h4(style = "background:#ede2ff;color:#6c3bbf;", icon("inbox"), " 待处理"),
+          render_col("pending"))),
+        column(4, div(class = "hf-pnote-col", style = col_style("#f0f7ff"),
+          tags$h4(style = "background:#d6ebff;color:#2563eb;", icon("spinner"), " 进行中"),
+          render_col("in_progress"))),
+        column(4, div(class = "hf-pnote-col", style = col_style("#f0faf5"),
+          tags$h4(style = "background:#c7f0d8;color:#0d7d3a;", icon("check-circle"), " 已完成"),
+          render_col("done")))
+      )
+    )
+  })
+
+  # ── Tab 4：总结表 ──
+  output[[p("sum_table")]] <- DT::renderDT({
+    trigger(); local_trigger()
+    df <- hf_project_summary_list(project_ctx())
+    if (is.null(df) || nrow(df) == 0) {
+      empty <- if (is.null(hf_project_summary_list()) || nrow(hf_project_summary_list()) == 0) "no_data" else "no_match"
+      return(hf_datatable(df, empty = empty))
+    }
+    out <- data.frame(
+      ID = df$id,
+      编号 = hf_or(df$summary_no, ""),
+      标题 = hf_or(df$title, ""),
+      内容 = vapply(seq_len(nrow(df)), function(i) {
+        one <- gsub("\\s+", " ", hf_or(df$content[i], ""))
+        if (nchar(one) > 50) paste0(substr(one, 1, 50), "…") else one
+      }, character(1)),
+      日期 = ifelse(is.na(df$summary_date) | df$summary_date == "", "—", df$summary_date),
+      创建时间 = ifelse(is.na(df$created_at) | df$created_at == "", "—", df$created_at),
+      stringsAsFactors = FALSE)
+    hf_datatable(out, selection = "single", page_size = 20)
+  })
+
+  # ── 选中行 id 辅助 ──
+  selected_id_of <- function(table_id, data_fn) {
+    idx <- input[[table_id]]
+    if (is.null(idx) || length(idx) == 0) return(NULL)
+    df <- data_fn()
+    if (is.null(df) || nrow(df) == 0) return(NULL)
+    df$id[idx[1]]
+  }
+
+  # ═══════ 项目 Tab 操作 ═══════
+  observeEvent(input[[p("proj_refresh")]], local_refresh())
+  observeEvent(input[[p("proj_add")]], {
+    req(rv$logged_in)
+    editing_id(NULL)
+    showModal(modalDialog(
+      title = "新增项目",
+      textInput(p("e_proj_name"), "项目名称", width = "100%"),
+      selectInput(p("e_proj_prio"), "优先级", choices = c("高", "中", "低"), selected = "中", width = "100%"),
+      selectInput(p("e_proj_status"), "状态",
+        choices = c("规划中" = "planning", "进行中" = "active", "已完成" = "completed", "已暂停" = "suspended"),
+        selected = "planning", width = "100%"),
+      fluidRow(
+        column(6, dateInput(p("e_proj_start"), "开始日期", value = Sys.Date(), language = "zh-CN")),
+        column(6, dateInput(p("e_proj_end"), "结束日期", value = Sys.Date() + 30, language = "zh-CN"))
+      ),
+      textAreaInput(p("e_proj_desc"), "项目描述", rows = 3, width = "100%"),
+      footer = tagList(actionButton(p("proj_save"), "保存", class = "btn-primary"), modalButton("取消")),
+      size = "m", easyClose = TRUE
+    ))
+  })
+  observeEvent(input[[p("proj_edit")]], {
+    req(rv$logged_in)
+    id <- selected_id_of(p("proj_table_rows_selected"), hf_project_list)
+    if (is.null(id)) { showNotification("请先在项目表选中一行", type = "warning"); return() }
+    r <- hf_project_get(id)
+    if (is.null(r) || nrow(r) == 0) { showNotification("项目不存在，请刷新", type = "warning"); return() }
+    r <- r[1, ]
+    editing_id(id)
+    showModal(modalDialog(
+      title = paste0("编辑项目 #", id),
+      textInput(p("e_proj_name"), "项目名称", value = hf_or(r$name, ""), width = "100%"),
+      selectInput(p("e_proj_prio"), "优先级", choices = c("高", "中", "低"), selected = hf_or(r$priority, "中"), width = "100%"),
+      selectInput(p("e_proj_status"), "状态",
+        choices = c("规划中" = "planning", "进行中" = "active", "已完成" = "completed", "已暂停" = "suspended"),
+        selected = hf_or(r$status, "planning"), width = "100%"),
+      fluidRow(
+        column(6, dateInput(p("e_proj_start"), "开始日期",
+          value = if (is.na(r$start_date) || r$start_date == "") Sys.Date() else as.Date(r$start_date), language = "zh-CN")),
+        column(6, dateInput(p("e_proj_end"), "结束日期",
+          value = if (is.na(r$end_date) || r$end_date == "") Sys.Date() + 30 else as.Date(r$end_date), language = "zh-CN"))
+      ),
+      textAreaInput(p("e_proj_desc"), "项目描述", value = hf_or(r$description, ""), rows = 3, width = "100%"),
+      footer = tagList(actionButton(p("proj_save"), "保存修改", class = "btn-primary"), modalButton("取消")),
+      size = "m", easyClose = TRUE
+    ))
+  })
+  observeEvent(input[[p("proj_save")]], {
+    req(rv$logged_in)
+    name <- trimws(hf_or(input[[p("e_proj_name")]], ""))
+    if (!nzchar(name)) { showNotification("请输入项目名称", type = "warning"); return() }
+    id <- editing_id()
+    if (is.null(id)) {
+      r <- hf_project_add(name, input[[p("e_proj_desc")]], input[[p("e_proj_prio")]],
+        input[[p("e_proj_status")]], as.character(input[[p("e_proj_start")]]),
+        as.character(input[[p("e_proj_end")]]), created_by = hf_current_uid(rv))
+    } else {
+      r <- hf_project_update(id, name, input[[p("e_proj_desc")]], input[[p("e_proj_prio")]],
+        input[[p("e_proj_status")]], as.character(input[[p("e_proj_start")]]),
+        as.character(input[[p("e_proj_end")]]))
+    }
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (isTRUE(r$success)) { removeModal(); editing_id(NULL) }
+    local_refresh()
+  })
+  observeEvent(input[[p("proj_del")]], {
+    req(rv$logged_in)
+    id <- selected_id_of(p("proj_table_rows_selected"), hf_project_list)
+    if (is.null(id)) { showNotification("请先在项目表选中一行", type = "warning"); return() }
+    r <- hf_project_delete(id)
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (!is.null(project_ctx()) && project_ctx() == id) project_ctx(NULL)
+    local_refresh()
+  })
+
+  # ═══════ 需求 Tab 操作 ═══════
+  observeEvent(input[[p("req_refresh")]], local_refresh())
+  req_df <- reactive({ trigger(); local_trigger(); hf_project_req_list(project_ctx()) })
+  observeEvent(input[[p("req_add")]], {
+    req(rv$logged_in)
+    editing_id(NULL)
+    showModal(modalDialog(
+      title = "新增需求",
+      textInput(p("e_req_title"), "需求标题", width = "100%"),
+      selectInput(p("e_req_status"), "状态", choices = c("进行中", "已完成"), selected = "进行中", width = "100%"),
+      selectInput(p("e_req_prio"), "优先级", choices = c("高", "中", "低"), selected = "中", width = "100%"),
+      fluidRow(
+        column(6, textInput(p("e_req_owner"), "负责人", width = "100%")),
+        column(6, dateInput(p("e_req_due"), "截止日期", value = Sys.Date() + 7, language = "zh-CN"))
+      ),
+      textAreaInput(p("e_req_desc"), "需求描述", rows = 3, width = "100%"),
+      footer = tagList(actionButton(p("req_save"), "保存", class = "btn-primary"), modalButton("取消")),
+      size = "m", easyClose = TRUE
+    ))
+  })
+  observeEvent(input[[p("req_edit")]], {
+    req(rv$logged_in)
+    id <- selected_id_of(p("req_table_rows_selected"), function() req_df())
+    if (is.null(id)) { showNotification("请先在需求表选中一行", type = "warning"); return() }
+    r <- hf_project_req_get(id)
+    if (is.null(r) || nrow(r) == 0) { showNotification("需求不存在，请刷新", type = "warning"); return() }
+    r <- r[1, ]
+    editing_id(id)
+    showModal(modalDialog(
+      title = paste0("编辑需求 #", id),
+      textInput(p("e_req_title"), "需求标题", value = hf_or(r$title, ""), width = "100%"),
+      selectInput(p("e_req_status"), "状态", choices = c("进行中", "已完成"), selected = hf_or(r$status, "进行中"), width = "100%"),
+      selectInput(p("e_req_prio"), "优先级", choices = c("高", "中", "低"), selected = hf_or(r$priority, "中"), width = "100%"),
+      fluidRow(
+        column(6, textInput(p("e_req_owner"), "负责人", value = hf_or(r$owner, ""), width = "100%")),
+        column(6, dateInput(p("e_req_due"), "截止日期",
+          value = if (is.na(r$due_date) || r$due_date == "") Sys.Date() + 7 else as.Date(r$due_date), language = "zh-CN"))
+      ),
+      textAreaInput(p("e_req_desc"), "需求描述", value = hf_or(r$description, ""), rows = 3, width = "100%"),
+      footer = tagList(actionButton(p("req_save"), "保存修改", class = "btn-primary"), modalButton("取消")),
+      size = "m", easyClose = TRUE
+    ))
+  })
+  observeEvent(input[[p("req_save")]], {
+    req(rv$logged_in)
+    title <- trimws(hf_or(input[[p("e_req_title")]], ""))
+    if (!nzchar(title)) { showNotification("请输入需求标题", type = "warning"); return() }
+    id <- editing_id()
+    if (is.null(id)) {
+      r <- hf_project_req_add(project_ctx(), title, input[[p("e_req_desc")]], input[[p("e_req_status")]],
+        input[[p("e_req_prio")]], input[[p("e_req_owner")]], as.character(input[[p("e_req_due")]]),
+        created_by = hf_current_uid(rv))
+    } else {
+      r <- hf_project_req_update(id, title, input[[p("e_req_desc")]], input[[p("e_req_status")]],
+        input[[p("e_req_prio")]], input[[p("e_req_owner")]], as.character(input[[p("e_req_due")]]))
+    }
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (isTRUE(r$success)) { removeModal(); editing_id(NULL) }
+    local_refresh()
+  })
+  observeEvent(input[[p("req_done")]], {
+    req(rv$logged_in)
+    id <- selected_id_of(p("req_table_rows_selected"), function() req_df())
+    if (is.null(id)) { showNotification("请先在需求表选中一行", type = "warning"); return() }
+    r <- hf_project_req_toggle_done(id)
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error", duration = 1.5)
+    local_refresh()
+  })
+  observeEvent(input[[p("req_del")]], {
+    req(rv$logged_in)
+    id <- selected_id_of(p("req_table_rows_selected"), function() req_df())
+    if (is.null(id)) { showNotification("请先在需求表选中一行", type = "warning"); return() }
+    r <- hf_project_req_delete(id)
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    local_refresh()
+  })
+
+  # ═══════ 记事 Tab 操作（看板卡片 act: left/right/del）══
+  observeEvent(input[[p("note_refresh")]], local_refresh())
+  observeEvent(input[[p("note_add")]], {
+    req(rv$logged_in)
+    showModal(modalDialog(
+      title = "新增记事",
+      textInput(p("e_note_title"), "记事标题", width = "100%"),
+      selectInput(p("e_note_status"), "状态",
+        choices = c("待处理" = "pending", "进行中" = "in_progress", "已完成" = "done"),
+        selected = "pending", width = "100%"),
+      selectInput(p("e_note_prio"), "优先级", choices = c("高", "中", "低"), selected = "中", width = "100%"),
+      textAreaInput(p("e_note_content"), "记事内容", rows = 4, width = "100%"),
+      footer = tagList(actionButton(p("note_save"), "保存", class = "btn-primary"), modalButton("取消")),
+      size = "m", easyClose = TRUE
+    ))
+  })
+  observeEvent(input[[p("note_save")]], {
+    req(rv$logged_in)
+    title <- trimws(hf_or(input[[p("e_note_title")]], ""))
+    if (!nzchar(title)) { showNotification("请输入记事标题", type = "warning"); return() }
+    r <- hf_project_note_add(project_ctx(), title, input[[p("e_note_content")]],
+      input[[p("e_note_status")]], input[[p("e_note_prio")]], created_by = hf_current_uid(rv))
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (isTRUE(r$success)) removeModal()
+    local_refresh()
+  })
+  observeEvent(input[[p("note_act")]], {
+    req(rv$logged_in)
+    val <- input[[p("note_act")]]
+    id <- val$id; act <- val$act
+    if (is.null(id) || is.null(act)) return()
+    if (identical(act, "del")) {
+      r <- hf_project_note_delete(as.integer(id))
+    } else {
+      cur <- hf_project_note_get(as.integer(id))
+      if (is.null(cur) || nrow(cur) == 0) { local_refresh(); return() }
+      st <- hf_or(cur$status[1], "pending")
+      next_st <- switch(st,
+        pending = if (act == "right") "in_progress" else st,
+        in_progress = if (act == "left") "pending" else if (act == "right") "done" else st,
+        done = if (act == "left") "in_progress" else st,
+        st)
+      if (identical(next_st, st)) { local_refresh(); return() }
+      r <- hf_project_note_move(as.integer(id), next_st)
+    }
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error", duration = 1.5)
+    local_refresh()
+  })
+
+  # ═══════ 总结 Tab 操作 ═══════
+  observeEvent(input[[p("sum_refresh")]], local_refresh())
+  sum_df <- reactive({ trigger(); local_trigger(); hf_project_summary_list(project_ctx()) })
+  observeEvent(input[[p("sum_build")]], {
+    req(rv$logged_in)
+    pid <- project_ctx()
+    if (is.null(pid)) { showNotification("请先在顶部选择项目，再一键生成总结", type = "warning"); return() }
+    b <- hf_project_summary_build(pid)
+    if (!isTRUE(b$success)) { showNotification(b$message, type = "warning"); return() }
+    editing_id(NULL)
+    showModal(modalDialog(
+      title = "一键生成总结（已聚合当前项目）",
+      textInput(p("e_sum_title"), "总结标题", value = b$title, width = "100%"),
+      textAreaInput(p("e_sum_content"), "总结内容", value = b$content, rows = 12, width = "100%"),
+      footer = tagList(actionButton(p("sum_save"), "保存总结", class = "btn-primary"), modalButton("取消")),
+      size = "l", easyClose = TRUE
+    ))
+  })
+  observeEvent(input[[p("sum_add")]], {
+    req(rv$logged_in)
+    editing_id(NULL)
+    showModal(modalDialog(
+      title = "新增总结",
+      textInput(p("e_sum_title"), "总结标题", width = "100%"),
+      textAreaInput(p("e_sum_content"), "总结内容（可用【需求】【记事】【结果】分段）", rows = 10, width = "100%"),
+      footer = tagList(actionButton(p("sum_save"), "保存", class = "btn-primary"), modalButton("取消")),
+      size = "l", easyClose = TRUE
+    ))
+  })
+  observeEvent(input[[p("sum_edit")]], {
+    req(rv$logged_in)
+    id <- selected_id_of(p("sum_table_rows_selected"), function() sum_df())
+    if (is.null(id)) { showNotification("请先在总结表选中一行", type = "warning"); return() }
+    r <- hf_project_summary_get(id)
+    if (is.null(r) || nrow(r) == 0) { showNotification("总结不存在，请刷新", type = "warning"); return() }
+    r <- r[1, ]
+    editing_id(id)
+    showModal(modalDialog(
+      title = paste0("编辑总结 #", id),
+      textInput(p("e_sum_title"), "总结标题", value = hf_or(r$title, ""), width = "100%"),
+      textAreaInput(p("e_sum_content"), "总结内容", value = hf_or(r$content, ""), rows = 10, width = "100%"),
+      footer = tagList(actionButton(p("sum_save"), "保存修改", class = "btn-primary"), modalButton("取消")),
+      size = "l", easyClose = TRUE
+    ))
+  })
+  observeEvent(input[[p("sum_save")]], {
+    req(rv$logged_in)
+    title <- trimws(hf_or(input[[p("e_sum_title")]], ""))
+    if (!nzchar(title)) { showNotification("请输入总结标题", type = "warning"); return() }
+    id <- editing_id()
+    if (is.null(id)) {
+      r <- hf_project_summary_add(project_ctx(), title, input[[p("e_sum_content")]],
+        created_by = hf_current_uid(rv))
+    } else {
+      r <- hf_project_summary_update(id, title, input[[p("e_sum_content")]])
+    }
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (isTRUE(r$success)) { removeModal(); editing_id(NULL) }
+    local_refresh()
+  })
+  observeEvent(input[[p("sum_del")]], {
+    req(rv$logged_in)
+    id <- selected_id_of(p("sum_table_rows_selected"), function() sum_df())
+    if (is.null(id)) { showNotification("请先在总结表选中一行", type = "warning"); return() }
+    r <- hf_project_summary_delete(id)
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    local_refresh()
+  })
+}
+
 hf_module_page_server <- function(input, output, session, rv, m, trigger) {
   key <- m$key
   p <- function(x) paste0("hf_", key, "_", x)
@@ -575,6 +1257,12 @@ hf_module_page_server <- function(input, output, session, rv, m, trigger) {
   if (identical(key, "rules")) return(hf_rules_page_server(input, output, session, rv, m, trigger))
   # 自动架构环节：专属 Server（数据驱动，自动扫描）
   if (identical(key, "arch")) return(hf_arch_page_server(input, output, session, rv, m, trigger))
+  # 项目环节：专属 Server（需求/记事/总结/项目模板，Tab 切换 + 数据联动刷新）
+  if (identical(key, "project")) return(hf_project_page_server(input, output, session, rv, m, trigger))
+  # 权限体系环节：专属 Server（用户 / 安全组 / 角色 / 权限管理）
+  if (identical(key, "permission")) return(hf_permission_page_server(input, output, session, rv, m, trigger))
+  # 配置环节：专属 Server（导航栏菜单配置）
+  if (identical(key, "config")) return(hf_config_page_server(input, output, session, rv, m, trigger))
   local_trigger <- reactiveVal(0)
   local_refresh <- function() local_trigger(local_trigger() + 1)
 
@@ -601,6 +1289,7 @@ hf_module_page_server <- function(input, output, session, rv, m, trigger) {
 
   observeEvent(input[[p("add_btn")]], {
     req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
     t <- trimws(hf_or(input[[p("new_text")]], ""))
     if (!nzchar(t)) { showNotification("请输入内容", type = "warning"); return() }
     lines <- strsplit(t, "\n")[[1]]
@@ -668,6 +1357,7 @@ hf_autotask_page_server <- function(input, output, session, rv, m, trigger) {
   # 新增任务
   observeEvent(input[[p("task_add")]], {
     req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
     name <- trimws(hf_or(input[[p("task_name")]], ""))
     if (!nzchar(name)) { showNotification("请输入任务名称", type = "warning"); return() }
     nodes_raw <- trimws(hf_or(input[[p("task_nodes")]], ""))
@@ -858,6 +1548,7 @@ hf_metatask_page_server <- function(input, output, session, rv, m, trigger) {
   # 新增需求（单框：需求说明，首行自动作标题，cron 留空=只跑一次）
   observeEvent(input[[p("mt_add")]], {
     req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
     req_text <- trimws(hf_or(input[[p("mt_req")]], ""))
     if (!nzchar(req_text)) { showNotification("请输入需求说明", type = "warning"); return() }
     lines <- strsplit(req_text, "\n")[[1]]
@@ -891,6 +1582,7 @@ hf_metatask_page_server <- function(input, output, session, rv, m, trigger) {
   # 保存修改（编辑态提交，重置为待开发等待重新执行）
   observeEvent(input[[p("mt_save")]], {
     req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
     id <- editing_id()
     if (is.null(id)) return()
     req_text <- trimws(hf_or(input[[p("mt_req")]], ""))
@@ -1100,15 +1792,15 @@ hf_monitor_source_block <- function(p, id, label, table, jsfile, jsvar) {
   )
 }
 
-hf_agent_monitor_tab <- function() {
+hf_agent_monitor_tab <- function(name = "Agent Workflow Monitor", ic = "network-wired") {
   p <- function(x) paste0("hf_agent_monitor_", x)
   tabPanel(
-    "Agent Workflow Monitor", value = "agent_monitor", icon = icon("network-wired"),
+    name, value = "agent_monitor", icon = icon(ic),
     div(style = "padding:4px 2px;",
       # 顶部：标题 + 说明（左），原打开按键（右上角）
       div(style = "background:linear-gradient(135deg,#263238,#37474f);color:#fff;border-radius:8px;padding:14px 18px;margin-bottom:12px;display:flex;align-items:center;gap:12px;",
         div(style = "flex:1;min-width:0;",
-          tags$span(style = "font-size:16px;font-weight:bold;", icon("network-wired"), " Agent Workflow Monitor"),
+          tags$span(style = "font-size:16px;font-weight:bold;", icon(ic), " ", name),
           tags$span(style = "font-size:11px;background:#455a64;padding:2px 8px;border-radius:10px;margin-left:8px;", "HF-MONITOR"),
           tags$div(style = "font-size:12px;opacity:.88;margin-top:8px;",
             "多智能体工作流可视化监控面板（深色科技风）。点击下方按钮在新标签页打开独立页面。")
@@ -1222,9 +1914,416 @@ hf_agent_monitor_page_server <- function(input, output, session, rv, trigger) {
   })
 }
 
-# ── HungFo 主 UI（总览 + 各环节 Tab）──
+# ── 权限体系环节专属页面：用户 / 安全组 / 角色 / 权限管理 ──
+hf_permission_page_ui <- function(m) {
+  p <- function(x) paste0("hf_perm_", x)
+  tabPanel(
+    m$name, icon = icon(m$icon),
+    div(style = "padding:4px 2px;",
+      div(style = "background:linear-gradient(135deg,#263238,#37474f);color:#fff;border-radius:8px;padding:14px 18px;margin-bottom:12px;",
+        tags$span(style = "font-size:16px;font-weight:bold;", icon(m$icon), " ", m$name),
+        tags$span(style = "font-size:11px;background:#455a64;padding:2px 8px;border-radius:10px;margin-left:8px;", "HF-PERMISSION"),
+        tags$span(style = "font-size:11px;background:#00695c;padding:2px 8px;border-radius:10px;margin-left:6px;", hf_or(m$status, "active")),
+        tags$div(style = "font-size:12px;opacity:.88;margin-top:8px;",
+          "子项目自带的 RBAC 授权管理：用户 → 安全组 → 角色 → 权限。仅管理员（admins 组）可增删改。"),
+        tags$div(style = "font-size:11px;color:#b0bec5;margin-top:4px;", icon("plug"), " 接口：", m$api_desc)
+      ),
+      do.call(tabsetPanel, c(
+        list(id = p("tabs"), type = "pills"),
+        # ── 用户管理 ──
+        list(tabPanel("用户管理", value = "users", icon = icon("users"),
+          div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
+            div(style = "display:flex;gap:6px;align-items:center;flex-wrap:wrap;",
+              actionButton(p("user_add"), "新增用户", icon = icon("plus"), class = "btn-success btn-sm"),
+              actionButton(p("user_edit"), "编辑", icon = icon("pen"), class = "btn-primary btn-sm"),
+              actionButton(p("user_toggle"), "启用/禁用", icon = icon("power-off"), class = "btn-warning btn-sm"),
+              actionButton(p("user_del"), "删除", icon = icon("trash"), class = "btn-danger btn-sm"),
+              actionButton(p("user_refresh"), "刷新", icon = icon("sync"), class = "btn-info btn-sm")
+            )
+          ),
+          uiOutput(p("user_status")),
+          DTOutput(p("user_table"))
+        )),
+        # ── 安全组 ──
+        list(tabPanel("安全组", value = "groups", icon = icon("users-cog"),
+          div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
+            div(style = "display:flex;gap:6px;align-items:center;flex-wrap:wrap;",
+              actionButton(p("group_add"), "新增组", icon = icon("plus"), class = "btn-success btn-sm"),
+              actionButton(p("group_edit"), "编辑", icon = icon("pen"), class = "btn-primary btn-sm"),
+              actionButton(p("group_del"), "删除", icon = icon("trash"), class = "btn-danger btn-sm"),
+              actionButton(p("group_refresh"), "刷新", icon = icon("sync"), class = "btn-info btn-sm")
+            )
+          ),
+          uiOutput(p("group_status")),
+          DTOutput(p("group_table"))
+        )),
+        # ── 角色 ──
+        list(tabPanel("角色", value = "roles", icon = icon("id-badge"),
+          div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
+            div(style = "display:flex;gap:6px;align-items:center;flex-wrap:wrap;",
+              actionButton(p("role_add"), "新增角色", icon = icon("plus"), class = "btn-success btn-sm"),
+              actionButton(p("role_edit"), "编辑", icon = icon("pen"), class = "btn-primary btn-sm"),
+              actionButton(p("role_del"), "删除", icon = icon("trash"), class = "btn-danger btn-sm"),
+              actionButton(p("role_refresh"), "刷新", icon = icon("sync"), class = "btn-info btn-sm")
+            )
+          ),
+          uiOutput(p("role_status")),
+          DTOutput(p("role_table"))
+        )),
+        # ── 权限明细 ──
+        list(tabPanel("权限明细", value = "perms", icon = icon("key"),
+          div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
+            tags$span(style = "font-size:12px;color:#666;", "各环节的查看 / 管理权限码，由角色授权后经「组 → 角色」链路作用于用户。")
+          ),
+          DTOutput(p("perm_table"))
+        ))
+      ))
+    )
+  )
+}
+
+# ── 权限体系环节专属 Server ──
+hf_permission_page_server <- function(input, output, session, rv, m, trigger) {
+  p <- function(x) paste0("hf_perm_", x)
+  local_trigger <- reactiveVal(0)
+  local_refresh <- function() local_trigger(local_trigger() + 1)
+
+  # 是否管理员（无管理员权限则只读展示，写操作弹提示）
+  is_admin <- reactive({
+    req(rv$logged_in)
+    hf_perm_is_admin(rv$current_user)
+  })
+
+  # 写操作守卫：非管理员直接提示并中断
+  guard_admin <- function() {
+    if (!isTRUE(is_admin())) {
+      showNotification("需要管理员（admins 组）权限才能执行此操作", type = "error")
+      return(FALSE)
+    }
+    TRUE
+  }
+
+  # ── 用户 ──
+  users_df <- reactive({ trigger(); local_trigger(); hf_perm_users_list() })
+  output[[p("user_status")]] <- renderUI({
+    n <- nrow(users_df())
+    div(style = "font-size:12px;color:#555;margin:2px 0 8px;",
+      tags$b("用户："), tags$span(style = "color:#1565c0;", paste0(n, " 个")),
+      " · 初始账号 DaiSG(admins) / GodHat(user)，密码均为 falwpa")
+  })
+  output[[p("user_table")]] <- DT::renderDT({
+    df <- users_df()
+    if (is.null(df) || nrow(df) == 0) return(hf_datatable(df, empty = "no_data"))
+    out <- data.frame(
+      ID = df$id, 用户名 = df$username, 显示名 = ifelse(is.na(df$display_name) | df$display_name == "", "—", df$display_name),
+      所属组 = ifelse(is.na(df$group_names) | df$group_names == "", "—", df$group_names),
+      状态 = ifelse(df$active == 1, "启用", "禁用"),
+      创建时间 = ifelse(is.na(df$created_at), "—", df$created_at),
+      stringsAsFactors = FALSE)
+    hf_datatable(out, selection = "single", page_size = 20)
+  })
+  sel_user_id <- reactive({
+    idx <- input[[p("user_table_rows_selected")]]
+    if (is.null(idx) || length(idx) == 0) return(NULL)
+    users_df()$id[idx[1]]
+  })
+
+  observeEvent(input[[p("user_add")]], {
+    if (!guard_admin()) return()
+    groups <- hf_perm_groups_list()
+    choices <- setNames(groups$id, groups$name)
+    showModal(modalDialog(
+      title = "新增用户",
+      textInput(p("user_f_uname"), "用户名", width = "100%"),
+      passwordInput(p("user_f_pw"), "密码", width = "100%"),
+      textInput(p("user_f_dn"), "显示名", width = "100%"),
+      selectInput(p("user_f_grp"), "所属组", choices = choices, multiple = TRUE, width = "100%"),
+      footer = tagList(actionButton(p("user_save"), "保存", class = "btn-primary"), modalButton("取消")),
+      size = "m", easyClose = TRUE
+    ))
+  })
+
+  observeEvent(input[[p("user_edit")]], {
+    if (!guard_admin()) return()
+    id <- sel_user_id()
+    if (is.null(id)) { showNotification("请先选中一个用户", type = "warning"); return() }
+    u <- users_df()[users_df()$id == id, , drop = FALSE]
+    if (nrow(u) == 0) return()
+    groups <- hf_perm_groups_list()
+    choices <- setNames(groups$id, groups$name)
+    sel_grp <- if (is.na(u$group_ids[1]) || u$group_ids[1] == "") NULL else as.integer(strsplit(u$group_ids[1], ",")[[1]])
+    showModal(modalDialog(
+      title = paste0("编辑用户 #", id),
+      textInput(p("user_f_uname"), "用户名", value = u$username[1], width = "100%"),
+      passwordInput(p("user_f_pw"), "密码（留空不修改）", width = "100%"),
+      textInput(p("user_f_dn"), "显示名", value = ifelse(is.na(u$display_name[1]), "", u$display_name[1]), width = "100%"),
+      selectInput(p("user_f_grp"), "所属组", choices = choices, multiple = TRUE, selected = sel_grp, width = "100%"),
+      footer = tagList(actionButton(p("user_save"), "保存", class = "btn-primary"), modalButton("取消")),
+      size = "m", easyClose = TRUE
+    ))
+  })
+
+  editing_user_id <- reactiveVal(NULL)
+  observeEvent(input[[p("user_add")]], editing_user_id(NULL))
+  observeEvent(input[[p("user_edit")]], editing_user_id(sel_user_id()))
+
+  observeEvent(input[[p("user_save")]], {
+    if (!guard_admin()) return()
+    uname <- trimws(hf_or(input[[p("user_f_uname")]], ""))
+    pw <- input[[p("user_f_pw")]]
+    dn <- hf_or(input[[p("user_f_dn")]], "")
+    grp <- input[[p("user_f_grp")]]
+    if (!nzchar(uname)) { showNotification("请输入用户名", type = "warning"); return() }
+    id <- editing_user_id()
+    if (is.null(id)) {
+      r <- hf_perm_user_add(uname, if (is.null(pw)) "" else pw, dn, grp)
+    } else {
+      r <- hf_perm_user_update(id, uname, dn, password = if (is.null(pw) || !nzchar(pw)) NULL else pw, active = 1, group_ids = grp)
+    }
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (isTRUE(r$success)) { removeModal(); editing_user_id(NULL) }
+    local_refresh()
+  })
+
+  observeEvent(input[[p("user_toggle")]], {
+    if (!guard_admin()) return()
+    id <- sel_user_id()
+    if (is.null(id)) { showNotification("请先选中一个用户", type = "warning"); return() }
+    r <- hf_perm_user_toggle(id)
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    local_refresh()
+  })
+
+  observeEvent(input[[p("user_del")]], {
+    if (!guard_admin()) return()
+    id <- sel_user_id()
+    if (is.null(id)) { showNotification("请先选中一个用户", type = "warning"); return() }
+    r <- hf_perm_user_delete(id)
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    local_refresh()
+  })
+  observeEvent(input[[p("user_refresh")]], local_refresh())
+
+  # ── 安全组 ──
+  groups_df <- reactive({ trigger(); local_trigger(); hf_perm_groups_list() })
+  output[[p("group_status")]] <- renderUI({
+    n <- nrow(groups_df())
+    div(style = "font-size:12px;color:#555;margin:2px 0 8px;",
+      tags$b("安全组："), tags$span(style = "color:#1565c0;", paste0(n, " 个")),
+      " · admins=管理员组 / user=普通用户组")
+  })
+  output[[p("group_table")]] <- DT::renderDT({
+    df <- groups_df()
+    if (is.null(df) || nrow(df) == 0) return(hf_datatable(df, empty = "no_data"))
+    out <- data.frame(
+      ID = df$id, 组名 = df$name, 说明 = ifelse(is.na(df$description) | df$description == "", "—", df$description),
+      角色 = ifelse(is.na(df$role_names) | df$role_names == "", "—", df$role_names),
+      成员数 = df$member_count,
+      状态 = ifelse(df$active == 1, "启用", "禁用"),
+      stringsAsFactors = FALSE)
+    hf_datatable(out, selection = "single", page_size = 20)
+  })
+  sel_group_id <- reactive({
+    idx <- input[[p("group_table_rows_selected")]]
+    if (is.null(idx) || length(idx) == 0) return(NULL)
+    groups_df()$id[idx[1]]
+  })
+
+  observeEvent(input[[p("group_add")]], {
+    if (!guard_admin()) return()
+    roles <- hf_perm_roles_list()
+    choices <- setNames(roles$id, roles$name)
+    showModal(modalDialog(
+      title = "新增安全组",
+      textInput(p("group_f_name"), "组名", width = "100%"),
+      textInput(p("group_f_desc"), "说明", width = "100%"),
+      selectInput(p("group_f_role"), "角色", choices = choices, multiple = TRUE, width = "100%"),
+      footer = tagList(actionButton(p("group_save"), "保存", class = "btn-primary"), modalButton("取消")),
+      size = "m", easyClose = TRUE
+    ))
+  })
+  observeEvent(input[[p("group_edit")]], {
+    if (!guard_admin()) return()
+    id <- sel_group_id()
+    if (is.null(id)) { showNotification("请先选中一个安全组", type = "warning"); return() }
+    g <- groups_df()[groups_df()$id == id, , drop = FALSE]
+    if (nrow(g) == 0) return()
+    roles <- hf_perm_roles_list()
+    choices <- setNames(roles$id, roles$name)
+    sel_role <- if (is.na(g$role_ids[1]) || g$role_ids[1] == "") NULL else as.integer(strsplit(g$role_ids[1], ",")[[1]])
+    showModal(modalDialog(
+      title = paste0("编辑安全组 #", id),
+      textInput(p("group_f_name"), "组名", value = g$name[1], width = "100%"),
+      textInput(p("group_f_desc"), "说明", value = ifelse(is.na(g$description[1]), "", g$description[1]), width = "100%"),
+      selectInput(p("group_f_role"), "角色", choices = choices, multiple = TRUE, selected = sel_role, width = "100%"),
+      footer = tagList(actionButton(p("group_save"), "保存", class = "btn-primary"), modalButton("取消")),
+      size = "m", easyClose = TRUE
+    ))
+  })
+  editing_group_id <- reactiveVal(NULL)
+  observeEvent(input[[p("group_add")]], editing_group_id(NULL))
+  observeEvent(input[[p("group_edit")]], editing_group_id(sel_group_id()))
+
+  observeEvent(input[[p("group_save")]], {
+    if (!guard_admin()) return()
+    name <- trimws(hf_or(input[[p("group_f_name")]], ""))
+    if (!nzchar(name)) { showNotification("请输入组名", type = "warning"); return() }
+    id <- editing_group_id()
+    if (is.null(id)) {
+      r <- hf_perm_group_add(name, hf_or(input[[p("group_f_desc")]], ""), input[[p("group_f_role")]])
+    } else {
+      r <- hf_perm_group_update(id, name, hf_or(input[[p("group_f_desc")]], ""), active = 1, role_ids = input[[p("group_f_role")]])
+    }
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (isTRUE(r$success)) { removeModal(); editing_group_id(NULL) }
+    local_refresh()
+  })
+
+  observeEvent(input[[p("group_del")]], {
+    if (!guard_admin()) return()
+    id <- sel_group_id()
+    if (is.null(id)) { showNotification("请先选中一个安全组", type = "warning"); return() }
+    r <- hf_perm_group_delete(id)
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    local_refresh()
+  })
+  observeEvent(input[[p("group_refresh")]], local_refresh())
+
+  # ── 角色 ──
+  roles_df <- reactive({ trigger(); local_trigger(); hf_perm_roles_list() })
+  output[[p("role_status")]] <- renderUI({
+    n <- nrow(roles_df())
+    div(style = "font-size:12px;color:#555;margin:2px 0 8px;",
+      tags$b("角色："), tags$span(style = "color:#1565c0;", paste0(n, " 个")),
+      " · admin=全部权限 / user=只读权限")
+  })
+  output[[p("role_table")]] <- DT::renderDT({
+    df <- roles_df()
+    if (is.null(df) || nrow(df) == 0) return(hf_datatable(df, empty = "no_data"))
+    out <- data.frame(
+      ID = df$id, 角色名 = df$name, 说明 = ifelse(is.na(df$description) | df$description == "", "—", df$description),
+      权限数 = df$perm_count,
+      权限码 = ifelse(is.na(df$perm_codes) | df$perm_codes == "", "—", df$perm_codes),
+      stringsAsFactors = FALSE)
+    hf_datatable(out, selection = "single", page_size = 20)
+  })
+  sel_role_id <- reactive({
+    idx <- input[[p("role_table_rows_selected")]]
+    if (is.null(idx) || length(idx) == 0) return(NULL)
+    roles_df()$id[idx[1]]
+  })
+
+  observeEvent(input[[p("role_add")]], {
+    if (!guard_admin()) return()
+    perms <- hf_perm_permissions_list()
+    choices <- setNames(perms$id, sprintf("%s（%s）", perms$name, perms$code))
+    showModal(modalDialog(
+      title = "新增角色",
+      textInput(p("role_f_name"), "角色名", width = "100%"),
+      textInput(p("role_f_desc"), "说明", width = "100%"),
+      selectInput(p("role_f_perm"), "权限", choices = choices, multiple = TRUE, width = "100%"),
+      footer = tagList(actionButton(p("role_save"), "保存", class = "btn-primary"), modalButton("取消")),
+      size = "m", easyClose = TRUE
+    ))
+  })
+  observeEvent(input[[p("role_edit")]], {
+    if (!guard_admin()) return()
+    id <- sel_role_id()
+    if (is.null(id)) { showNotification("请先选中一个角色", type = "warning"); return() }
+    r <- roles_df()[roles_df()$id == id, , drop = FALSE]
+    if (nrow(r) == 0) return()
+    perms <- hf_perm_permissions_list()
+    choices <- setNames(perms$id, sprintf("%s（%s）", perms$name, perms$code))
+    sel_perm <- if (is.na(r$perm_ids[1]) || r$perm_ids[1] == "") NULL else as.integer(strsplit(r$perm_ids[1], ",")[[1]])
+    showModal(modalDialog(
+      title = paste0("编辑角色 #", id),
+      textInput(p("role_f_name"), "角色名", value = r$name[1], width = "100%"),
+      textInput(p("role_f_desc"), "说明", value = ifelse(is.na(r$description[1]), "", r$description[1]), width = "100%"),
+      selectInput(p("role_f_perm"), "权限", choices = choices, multiple = TRUE, selected = sel_perm, width = "100%"),
+      footer = tagList(actionButton(p("role_save"), "保存", class = "btn-primary"), modalButton("取消")),
+      size = "m", easyClose = TRUE
+    ))
+  })
+  editing_role_id <- reactiveVal(NULL)
+  observeEvent(input[[p("role_add")]], editing_role_id(NULL))
+  observeEvent(input[[p("role_edit")]], editing_role_id(sel_role_id()))
+
+  observeEvent(input[[p("role_save")]], {
+    if (!guard_admin()) return()
+    name <- trimws(hf_or(input[[p("role_f_name")]], ""))
+    if (!nzchar(name)) { showNotification("请输入角色名", type = "warning"); return() }
+    id <- editing_role_id()
+    if (is.null(id)) {
+      r <- hf_perm_role_add(name, hf_or(input[[p("role_f_desc")]], ""), input[[p("role_f_perm")]])
+    } else {
+      r <- hf_perm_role_update(id, name, hf_or(input[[p("role_f_desc")]], ""), input[[p("role_f_perm")]])
+    }
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (isTRUE(r$success)) { removeModal(); editing_role_id(NULL) }
+    local_refresh()
+  })
+
+  observeEvent(input[[p("role_del")]], {
+    if (!guard_admin()) return()
+    id <- sel_role_id()
+    if (is.null(id)) { showNotification("请先选中一个角色", type = "warning"); return() }
+    r <- hf_perm_role_delete(id)
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    local_refresh()
+  })
+  observeEvent(input[[p("role_refresh")]], local_refresh())
+
+  # ── 权限明细（只读） ──
+  output[[p("perm_table")]] <- DT::renderDT({
+    trigger(); local_trigger()
+    df <- hf_perm_permissions_list()
+    if (is.null(df) || nrow(df) == 0) return(hf_datatable(df, empty = "no_data"))
+    out <- data.frame(
+      ID = df$id, 环节 = df$module_key, 权限码 = df$code, 名称 = df$name,
+      说明 = ifelse(is.na(df$description) | df$description == "", "—", df$description),
+      stringsAsFactors = FALSE)
+    hf_datatable(out, page_size = 20)
+  })
+}
+
+# ── 导航栏由「配置」模块驱动（名称/图标/位置/显示隐藏可自定义，保存后刷新即生效）──
+
+# 读取导航配置（默认 + 用户覆盖），按 position 排序，过滤隐藏项
+hf_nav_entries <- function() {
+  df <- hf_nav_config_list()
+  if (is.null(df) || nrow(df) == 0) return(df)
+  df <- df[df$visible == 1, , drop = FALSE]
+  df[order(as.integer(df$position), df$nav_key), , drop = FALSE]
+}
+
+# 单个导航项 → tabPanel（overview / 环节 / Agent 监控）
+hf_nav_tab <- function(entry) {
+  key  <- entry$nav_key[1]
+  name <- hf_or(entry$name[1], key)
+  ic   <- hf_or(entry$icon[1], "circle")
+  if (identical(key, "overview")) {
+    return(tabPanel(name, value = "overview", icon = icon(ic), br(), uiOutput("hf_overview")))
+  }
+  if (identical(key, "agent_monitor")) {
+    return(hf_agent_monitor_tab(name = name, ic = ic))
+  }
+  m <- hf_module(key)
+  if (is.null(m)) return(NULL)
+  m$name <- name   # 用配置的名称/图标覆盖模块默认值
+  m$icon <- ic
+  hf_module_page_ui(m)
+}
+
+# 全部导航项 → tabPanel 列表（过滤未知 key 产生的 NULL）
+hf_nav_tabs <- function() {
+  entries <- hf_nav_entries()
+  if (is.null(entries) || nrow(entries) == 0) return(list())
+  tabs <- lapply(seq_len(nrow(entries)), function(i) hf_nav_tab(entries[i, , drop = FALSE]))
+  Filter(Negate(is.null), tabs)
+}
+
+# ── HungFo 主 UI（总览 + 各环节 Tab，由导航配置驱动）──
 hungfo_ui <- function() {
-  mods <- hf_modules()
   tagList(
     # 引入数据表格规范样式（空态提示颜色统一在此，禁止在 R 里硬编码）
     tags$head(tags$link(rel = "stylesheet", href = "hungfo/hungfo.css")),
@@ -1239,10 +2338,29 @@ hungfo_ui <- function() {
     ),
     do.call(tabsetPanel, c(
       list(id = "hf_main_tabs", type = "pills"),
-      list(tabPanel("总览", icon = icon("home"), br(), uiOutput("hf_overview"))),
-      unname(lapply(mods, hf_module_page_ui)),
-      list(hf_agent_monitor_tab())
+      hf_nav_tabs()
     ))
+  )
+}
+
+# ── HungFo 登录遮罩（独立运行时显示，登录前覆盖整页）──
+hf_login_overlay <- function() {
+  div(
+    id = "hf_login_overlay",
+    style = "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 10000;
+             display: flex; justify-content: center; align-items: center;
+             background: rgba(13,71,161,0.85);",
+    div(
+      style = "background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); width: 400px;",
+      h3("HungFo 登录", style = "text-align: center; color: #0d47a1; margin-bottom: 24px;"),
+      textInput("hf_login_username", "用户名", placeholder = "请输入用户名"),
+      passwordInput("hf_login_password", "密码", placeholder = "请输入密码"),
+      br(),
+      actionButton("hf_login_btn", "登录", class = "btn-primary btn-block", style = "width: 100%;"),
+      br(),
+      p(style = "text-align:center;color:#999;font-size:12px;margin-top:8px;",
+        "初始账号：DaiSG（admins） / GodHat（user），密码 falwpa")
+    )
   )
 }
 
@@ -1250,21 +2368,10 @@ hungfo_ui <- function() {
 # 进入方式：server.R 检测 rv$app_view == "hungfo" 时渲染本函数
 # show_back = FALSE 时去掉「回 ITOM」页签，用于完全独立运行（脱离父项目后无 ITOM 可回）。
 hungfo_standalone_ui <- function(show_back = TRUE) {
-  mods <- hf_modules()
-  tabs <- c(
-    # 总览页（默认选中）
-    list(
-      tabPanel("总览", value = "overview", icon = icon("home"),
-        br(), uiOutput("hf_overview")
-      )
-    ),
-    # 12 个环节页
-    unname(lapply(mods, hf_module_page_ui)),
-    # Agent 监控面板
-    list(hf_agent_monitor_tab())
-  )
+  # 总览 + 各环节 + Agent 监控 + 配置，全部由导航配置驱动（含「回 ITOM」除外）
+  tabs <- hf_nav_tabs()
   if (isTRUE(show_back)) {
-    # 回 ITOM 导航（放在最右，作为「返回链接」）
+    # 回 ITOM 导航（始终放最右，作为「返回链接」，不参与导航配置）
     tabs <- c(tabs, list(
       tabPanel("回 ITOM", value = "back", icon = icon("arrow-left"),
         div(style = "padding:60px;text-align:center;color:#888;",
@@ -1272,7 +2379,7 @@ hungfo_standalone_ui <- function(show_back = TRUE) {
       )
     ))
   }
-  do.call(navbarPage, c(
+  navbar <- do.call(navbarPage, c(
     list(
       id = "hf_navbar",
       title = "HungFo",
@@ -1284,16 +2391,68 @@ hungfo_standalone_ui <- function(show_back = TRUE) {
         style = "background:linear-gradient(135deg,#0d47a1,#1976d2);color:#fff;border-radius:8px;padding:12px 18px;margin:8px 12px 4px;",
         tags$span(style = "font-size:16px;font-weight:bold;", icon("cubes"), " HungFo 子项目"),
         tags$span(style = "font-size:12px;opacity:.85;margin-left:10px;",
-          "独立子项目（R + Shiny + SQLite）· 12 个环节各自独立、互相提供接口")
+          "独立子项目（R + Shiny + SQLite）· 12 个环节各自独立、互相提供接口"),
+        tags$span(style = "float:right;font-size:12px;opacity:.9;",
+          textOutput("hf_nav_user", inline = TRUE)),
+        tags$span(style = "float:right;margin-left:10px;",
+          actionButton("hf_logout_btn", "退出登录", icon = icon("sign-out-alt"),
+            class = "btn-sm btn-default", style = "font-size:12px;padding:2px 8px;"))
       )
     ),
     tabs
   ))
+  tagList(
+    # 登录遮罩：未登录时覆盖，登录后隐藏
+    conditionalPanel(condition = "output.hungfo_login_state != '1'", hf_login_overlay()),
+    # 主导航：登录后显示
+    conditionalPanel(condition = "output.hungfo_login_state == '1'", navbar)
+  )
 }
 
 # ── HungFo 主 Server ──
 hungfo_server <- function(input, output, session, rv) {
   hf_trigger <- reactiveVal(0)
+
+  # 登录状态桥：供 UI 的 conditionalPanel 使用（'1'=已登录）
+  output$hungfo_login_state <- renderText({
+    if (isTRUE(rv$logged_in)) "1" else "0"
+  })
+  outputOptions(output, "hungfo_login_state", suspendWhenHidden = FALSE)
+
+  # 顶部导航显示当前用户
+  output$hf_nav_user <- renderText({
+    req(rv$logged_in)
+    u <- rv$current_user
+    if (is.null(u) || nrow(u) == 0) return("")
+    dn <- if (!is.null(u$display_name) && length(u$display_name) > 0 &&
+              !is.na(u$display_name[1]) && nzchar(u$display_name[1])) u$display_name[1] else u$username[1]
+    grp <- if (!is.null(u$group_names) && length(u$group_names) > 0 &&
+               !is.na(u$group_names[1]) && nzchar(u$group_names[1])) paste0("（", u$group_names[1], "）") else ""
+    paste0("当前用户：", dn, grp)
+  })
+
+  # 登录（独立运行：先确保建表播种，再校验凭据）
+  observeEvent(input$hf_login_btn, {
+    req(input$hf_login_username, input$hf_login_password)
+    hf_db_init()
+    res <- hf_auth_login(input$hf_login_username, input$hf_login_password)
+    if (isTRUE(res$success)) {
+      rv$logged_in <- TRUE
+      rv$current_user <- res$user
+      dn <- if (!is.null(res$user$display_name) && length(res$user$display_name) > 0 &&
+                !is.na(res$user$display_name[1]) && nzchar(res$user$display_name[1])) res$user$display_name[1] else res$user$username[1]
+      showNotification(sprintf("欢迎回来，%s！", dn), type = "message")
+    } else {
+      showNotification(res$message, type = "error")
+    }
+  })
+
+  # 退出登录（HungFo 自身登出，仅清空 HungFo 登录态）
+  observeEvent(input$hf_logout_btn, {
+    rv$logged_in <- FALSE
+    rv$current_user <- NULL
+    showNotification("已退出登录", type = "message")
+  })
 
   # 返回 ITOM：独立导航栏点击「回 ITOM」时切回主应用
   observeEvent(input$hf_navbar, {
@@ -1306,6 +2465,7 @@ hungfo_server <- function(input, output, session, rv) {
   observe({
     req(rv$logged_in)
     hf_db_init()
+    hf_project_init()          # 项目模块建表（需求/记事/总结/项目模板）
     hf_sync_registry()
     hf_task_seed_sample()       # 首次播种示例任务
     hf_write_tasks_js()         # 导出任务到监控页前端
