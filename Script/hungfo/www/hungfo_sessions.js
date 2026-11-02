@@ -1,19 +1,40 @@
 // 由 HungFo 生成（hf_sessions_export），勿手改
 window.HF_SESSIONS = {
-  "updated_at": "2026-10-30 18:35:26",
+  "updated_at": "2026-10-31 19:44:16",
   "summary": {
     "total": {
       "token_in": 26500,
       "token_out": 8400,
-      "sessions": 15
+      "sessions": 16,
+      "success": 16,
+      "failed": 0,
+      "duration_ms": 6043980
     },
     "today": {
       "token_in": 0,
       "token_out": 0,
-      "sessions": 3
+      "sessions": 1,
+      "success": 1,
+      "failed": 0,
+      "duration_ms": 250000
     }
   },
   "sessions": [
+    {
+      "id": 18,
+      "task_id": 21,
+      "session_id": "mt21-202610311944",
+      "title": "CodeBuddy的元任务结果和数据要写入Agent Workflow Monitor",
+      "llm_name": "auto",
+      "agent": "CodeBuddy",
+      "token_in": 0,
+      "token_out": 0,
+      "duration_ms": 250000,
+      "status": "success",
+      "result": "会话追踪面板现展示元任务结果与汇总，导出含 result 及 success/failed/duration_ms",
+      "started_at": "2026-10-31 19:44:16",
+      "finished_at": "2026-10-31 19:44:16"
+    },
     {
       "id": 17,
       "task_id": 20,
@@ -25,6 +46,7 @@ window.HF_SESSIONS = {
       "token_out": 0,
       "duration_ms": 320000,
       "status": "success",
+      "result": "开发日志分段机制已修复：解析兼容两种格式、写入自动规范化、三条历史日志已恢复四段样式",
       "started_at": "2026-10-30 18:35:26",
       "finished_at": "2026-10-30 18:35:26"
     },
@@ -39,6 +61,7 @@ window.HF_SESSIONS = {
       "token_out": 0,
       "duration_ms": 400000,
       "status": "success",
+      "result": "自动架构模块实现数据驱动自动更新",
       "started_at": "2026-10-30 17:30:06",
       "finished_at": "2026-10-30 17:30:06"
     },
@@ -53,6 +76,7 @@ window.HF_SESSIONS = {
       "token_out": 0,
       "duration_ms": 290980,
       "status": "success",
+      "result": "规则模块完成分类字段、查看编辑与数据表格规范",
       "started_at": "2026-10-30 17:30:02",
       "finished_at": "2026-10-30 17:30:02"
     },
@@ -67,6 +91,7 @@ window.HF_SESSIONS = {
       "token_out": 0,
       "duration_ms": 272000,
       "status": "success",
+      "result": "CONFIG节点名称自定义、任务类型改名、INPUT/OUTPUT侧边可隐藏",
       "started_at": "2026-10-29 12:23:55",
       "finished_at": "2026-10-29 12:23:55"
     },
@@ -81,6 +106,7 @@ window.HF_SESSIONS = {
       "token_out": 0,
       "duration_ms": 272000,
       "status": "success",
+      "result": "优化工作流连线端口改为节点边框中点、调整节点布局",
       "started_at": "2026-10-29 12:23:53",
       "finished_at": "2026-10-29 12:23:53"
     },
@@ -95,6 +121,7 @@ window.HF_SESSIONS = {
       "token_out": 0,
       "duration_ms": 590000,
       "status": "success",
+      "result": "需求队列字体缩小、支持编辑、去无用键、提交键左移，语法通过",
       "started_at": "2026-10-29 11:16:11",
       "finished_at": "2026-10-29 11:16:11"
     },
@@ -109,6 +136,7 @@ window.HF_SESSIONS = {
       "token_out": 0,
       "duration_ms": 610000,
       "status": "success",
+      "result": "Monitor页下方新增原始记录及来源，打开按钮移至右上角，语法通过",
       "started_at": "2026-10-29 11:15:56",
       "finished_at": "2026-10-29 11:15:56"
     },
@@ -123,6 +151,7 @@ window.HF_SESSIONS = {
       "token_out": 0,
       "duration_ms": 379000,
       "status": "success",
+      "result": "元任务需求队列展示优化：增加payload内容展示、状态颜色块标记(黄/绿/红)、完成LLM与Agent(WorkBuddy/CodeBuddy)列，agent字段落库",
       "started_at": "2026-10-29 09:45:00",
       "finished_at": "2026-10-29 09:45:00"
     },
@@ -137,6 +166,7 @@ window.HF_SESSIONS = {
       "token_out": 0,
       "duration_ms": 564000,
       "status": "success",
+      "result": "HungFo子项目数据库独立：创建HF_HungFo.DB并移植6表数据，改写连接代码默认导向独立库，端口8999，验证行数一致父库未动",
       "started_at": "2026-10-29 09:44:53",
       "finished_at": "2026-10-29 09:44:53"
     },
@@ -151,6 +181,7 @@ window.HF_SESSIONS = {
       "token_out": 0,
       "duration_ms": 720000,
       "status": "success",
+      "result": "HungFo剥离完成：独立app.R+hf_config.r，双模式验证通过",
       "started_at": "2026-10-28 17:57:34",
       "finished_at": "2026-10-28 17:57:34"
     },
@@ -165,6 +196,7 @@ window.HF_SESSIONS = {
       "token_out": 0,
       "duration_ms": 600000,
       "status": "success",
+      "result": "monitor弧线对称修复+节点文案替换完成",
       "started_at": "2026-10-28 17:57:34",
       "finished_at": "2026-10-28 17:57:34"
     },
@@ -179,6 +211,7 @@ window.HF_SESSIONS = {
       "token_out": 0,
       "duration_ms": 630000,
       "status": "success",
+      "result": "日志界面重构完成：完整payload+分段着色+日期分组+搜索高亮",
       "started_at": "2026-10-28 17:57:34",
       "finished_at": "2026-10-28 17:57:34"
     },
@@ -193,6 +226,7 @@ window.HF_SESSIONS = {
       "token_out": 0,
       "duration_ms": 0,
       "status": "success",
+      "result": "已完成测试需求",
       "started_at": "2026-10-28 17:18:04",
       "finished_at": "2026-10-28 17:18:04"
     },
@@ -207,6 +241,7 @@ window.HF_SESSIONS = {
       "token_out": 3200,
       "duration_ms": 122000,
       "status": "success",
+      "result": "监控页优化完成：晃动上限×10、节点拉开",
       "started_at": "2026-10-28 17:00:50",
       "finished_at": "2026-10-28 17:00:50"
     },
@@ -221,6 +256,7 @@ window.HF_SESSIONS = {
       "token_out": 5200,
       "duration_ms": 24000,
       "status": "success",
+      "result": "完成",
       "started_at": "2026-10-28 16:00:00",
       "finished_at": "2026-10-28 16:00:24"
     }

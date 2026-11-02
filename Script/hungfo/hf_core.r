@@ -754,18 +754,20 @@ hf_metatask_session_meta <- function() {
   }, error = function(e) data.frame())
 }
 
-# ── Token 汇总（当天 / 全部）──
+# ── 会话汇总（当天 / 全部）：Token、会话数、成功/失败、总耗时 ──
 hf_token_summary <- function() {
   con <- hf_db_connect()
   on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  mk <- function(s) list(
+    token_in = s$tin[1], token_out = s$tout[1], sessions = s$n[1],
+    success = s$succ[1], failed = max(0, s$n[1] - s$succ[1]), duration_ms = s$dur[1])
   tryCatch({
-    all_s <- dbGetQuery(con, "SELECT COALESCE(SUM(token_in),0) tin, COALESCE(SUM(token_out),0) tout, COUNT(*) n FROM hf_task_sessions")
-    day_s <- dbGetQuery(con, "SELECT COALESCE(SUM(token_in),0) tin, COALESCE(SUM(token_out),0) tout, COUNT(*) n FROM hf_task_sessions WHERE date(started_at)=date('now','localtime')")
-    list(
-      total = list(token_in = all_s$tin[1], token_out = all_s$tout[1], sessions = all_s$n[1]),
-      today = list(token_in = day_s$tin[1], token_out = day_s$tout[1], sessions = day_s$n[1])
-    )
-  }, error = function(e) list(total = list(token_in = 0, token_out = 0, sessions = 0), today = list(token_in = 0, token_out = 0, sessions = 0)))
+    all_s <- dbGetQuery(con, "SELECT COALESCE(SUM(token_in),0) tin, COALESCE(SUM(token_out),0) tout, COUNT(*) n, COALESCE(SUM(duration_ms),0) dur, COALESCE(SUM(CASE WHEN status='success' THEN 1 ELSE 0 END),0) succ FROM hf_task_sessions")
+    day_s <- dbGetQuery(con, "SELECT COALESCE(SUM(token_in),0) tin, COALESCE(SUM(token_out),0) tout, COUNT(*) n, COALESCE(SUM(duration_ms),0) dur, COALESCE(SUM(CASE WHEN status='success' THEN 1 ELSE 0 END),0) succ FROM hf_task_sessions WHERE date(started_at)=date('now','localtime')")
+    list(total = mk(all_s), today = mk(day_s))
+  }, error = function(e) list(
+    total = list(token_in = 0, token_out = 0, sessions = 0, success = 0, failed = 0, duration_ms = 0),
+    today = list(token_in = 0, token_out = 0, sessions = 0, success = 0, failed = 0, duration_ms = 0)))
 }
 
 # ── 导出会话明细到 hungfo_sessions.js（监控页前端读取）──
@@ -781,6 +783,7 @@ hf_sessions_export <- function(limit = 200) {
     token_out = if (is.na(s$token_out[i])) 0 else s$token_out[i],
     duration_ms = if (is.na(s$duration_ms[i])) 0 else s$duration_ms[i],
     status = hf_or(s$status[i], "success"),
+    result = hf_or(s$result[i], ""),
     started_at = if (is.na(s$started_at[i]) || is.null(s$started_at[i])) NULL else s$started_at[i],
     finished_at = if (is.na(s$finished_at[i]) || is.null(s$finished_at[i])) NULL else s$finished_at[i]
   ))

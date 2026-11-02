@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-10-31 14:14:07",
+  "updated_at": "2026-11-02 10:50:17",
   "tasks": [
     {
       "id": 1,
@@ -186,9 +186,57 @@
       "title": "CodeBuddy的元任务结果和数据要写入Agent Workflow Monitor",
       "payload": "CodeBuddy的元任务结果和数据要写入Agent Workflow Monitor \nHungFo 元任务自动执行器的\n【第5步：标记完成 + 上报元数据】\n对每个已完成任务运行：\nRscript D:/GitHub/SuperITOM2/Script/hungfo/hf_metatask_runner.r done <任务id> <结果摘要> --llm <LLM名称> --agent CodeBuddy --tin <输入token> --tout <输出token> --dur <耗时ms> --sid <会话ID>\n这会更新任务状态（有 cron 回 pending 并推进 next_run_at，无 cron 标记 done），把元数据写入 hf_metatask_queue 和 hf_task_sessions 表，并自动重新导出 MetaTasks.json 和 hungfo_sessions.js。\n\n这些数据要在Agent Workflow Monitor 的会话追踪列表展示，并且展示这些数据汇总。",
       "cron": "",
+      "status": "done",
+      "last_run_at": "2026-10-31 19:44:16",
+      "next_run_at": null,
+      "result": "会话追踪面板现展示元任务结果与汇总，导出含 result 及 success/failed/duration_ms",
+      "llm_name": "auto",
+      "agent": "CodeBuddy"
+    },
+    {
+      "id": 22,
+      "title": "增加模块：项目",
+      "payload": "增加模块：项目\n1、放在导航菜单“元任务”后面\n2、参照父项目SuperITOM2的需求模块、记事模块、总结模块、项目模板的功能，重新思考架构，关联要打通，集合在一个模块\n3、可以快速Tab切换，数据联动后能自动刷新",
+      "cron": "",
       "status": "pending",
       "last_run_at": null,
-      "next_run_at": "2026-10-31 14:14:07",
+      "next_run_at": "2026-11-02 10:38:07",
+      "result": "",
+      "llm_name": "",
+      "agent": ""
+    },
+    {
+      "id": 23,
+      "title": "开发权限体系模块",
+      "payload": "开发权限体系模块\n1、本地系统的权限体系，参照父项目的RBAC 授权管理\n2、本项目HungFo的各模块权限和登录要补充到位\n3、本地先创建2个组和2个账号\nadmins组 DaiSG / falwpa\nuser组 GodHat /falwpa\n4、要有完整的用户管理、角色、安全组 功能",
+      "cron": "",
+      "status": "pending",
+      "last_run_at": null,
+      "next_run_at": "2026-11-02 10:41:53",
+      "result": "",
+      "llm_name": "",
+      "agent": ""
+    },
+    {
+      "id": 24,
+      "title": "开发规则模块",
+      "payload": "开发规则模块\n1、增加规则类别的新增和编辑功能",
+      "cron": "",
+      "status": "pending",
+      "last_run_at": null,
+      "next_run_at": "2026-11-02 10:48:45",
+      "result": "",
+      "llm_name": "",
+      "agent": ""
+    },
+    {
+      "id": 25,
+      "title": "增加模块：配置",
+      "payload": "增加模块：配置\n1、放在导航栏最右边\n2、先做第一个可配置项：导航栏菜单名称、图标、位置、显示/隐藏，可自定义配置",
+      "cron": "",
+      "status": "pending",
+      "last_run_at": null,
+      "next_run_at": "2026-11-02 10:50:17",
       "result": "",
       "llm_name": "",
       "agent": ""

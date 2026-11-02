@@ -166,12 +166,13 @@ export_sessions <- function(limit = 200) {
   ensure_agent_cols(con)
   s <- tryCatch(dbGetQuery(con, sprintf("SELECT * FROM hf_task_sessions ORDER BY id DESC LIMIT %d", limit)),
                 error = function(e) data.frame())
-  # token 汇总
-  all_s <- tryCatch(dbGetQuery(con, "SELECT COALESCE(SUM(token_in),0) tin, COALESCE(SUM(token_out),0) tout, COUNT(*) n FROM hf_task_sessions"), error = function(e) data.frame(tin=0,tout=0,n=0))
-  day_s <- tryCatch(dbGetQuery(con, "SELECT COALESCE(SUM(token_in),0) tin, COALESCE(SUM(token_out),0) tout, COUNT(*) n FROM hf_task_sessions WHERE date(started_at)=date('now','localtime')"), error = function(e) data.frame(tin=0,tout=0,n=0))
-  summary <- list(
-    total = list(token_in = all_s$tin[1], token_out = all_s$tout[1], sessions = all_s$n[1]),
-    today = list(token_in = day_s$tin[1], token_out = day_s$tout[1], sessions = day_s$n[1]))
+  # 会话汇总（token / 会话数 / 成功失败 / 总耗时）
+  mk_sm <- function(s) list(
+    token_in = s$tin[1], token_out = s$tout[1], sessions = s$n[1],
+    success = s$succ[1], failed = max(0, s$n[1] - s$succ[1]), duration_ms = s$dur[1])
+  all_s <- tryCatch(dbGetQuery(con, "SELECT COALESCE(SUM(token_in),0) tin, COALESCE(SUM(token_out),0) tout, COUNT(*) n, COALESCE(SUM(duration_ms),0) dur, COALESCE(SUM(CASE WHEN status='success' THEN 1 ELSE 0 END),0) succ FROM hf_task_sessions"), error = function(e) data.frame(tin=0,tout=0,n=0,dur=0,succ=0))
+  day_s <- tryCatch(dbGetQuery(con, "SELECT COALESCE(SUM(token_in),0) tin, COALESCE(SUM(token_out),0) tout, COUNT(*) n, COALESCE(SUM(duration_ms),0) dur, COALESCE(SUM(CASE WHEN status='success' THEN 1 ELSE 0 END),0) succ FROM hf_task_sessions WHERE date(started_at)=date('now','localtime')"), error = function(e) data.frame(tin=0,tout=0,n=0,dur=0,succ=0))
+  summary <- list(total = mk_sm(all_s), today = mk_sm(day_s))
   sessions <- if (is.null(s) || nrow(s) == 0) list() else lapply(seq_len(nrow(s)), function(i) list(
     id = s$id[i], task_id = s$task_id[i], session_id = ifelse(is.na(s$session_id[i]), "", s$session_id[i]),
     title = ifelse(is.na(s$title[i]), "", s$title[i]), llm_name = ifelse(is.na(s$llm_name[i]), "", s$llm_name[i]),
@@ -179,6 +180,7 @@ export_sessions <- function(limit = 200) {
     token_in = ifelse(is.na(s$token_in[i]), 0, s$token_in[i]), token_out = ifelse(is.na(s$token_out[i]), 0, s$token_out[i]),
     duration_ms = ifelse(is.na(s$duration_ms[i]), 0, s$duration_ms[i]),
     status = ifelse(is.na(s$status[i]), "success", s$status[i]),
+    result = if ("result" %in% names(s)) ifelse(is.na(s$result[i]), "", s$result[i]) else "",
     started_at = if (is.na(s$started_at[i]) || is.null(s$started_at[i])) NULL else s$started_at[i],
     finished_at = if (is.na(s$finished_at[i]) || is.null(s$finished_at[i])) NULL else s$finished_at[i]))
   out <- list(updated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S"), summary = summary, sessions = sessions)

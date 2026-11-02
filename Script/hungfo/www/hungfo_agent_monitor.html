@@ -338,6 +338,10 @@
   .sp-item .sp-meta { color: var(--text-dim); font-size: 8px; margin-top: 2px; display: flex; gap: 8px; }
   .sp-item .sp-meta .tk { color: var(--neon-cyan); }
   .sp-item .sp-meta .dur { color: var(--neon-amber); }
+  .sp-item .sp-result { font-size: 8px; color: #94a3b8; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session-panel .sp-summary { font-family: var(--mono); font-size: 8px; color: var(--text-dim); margin-bottom: 4px; letter-spacing: 1px; }
+  .sp-summary .s-ok { color: var(--neon-green); }
+  .sp-summary .s-bad { color: #ff5d73; }
   .sp-empty { color: var(--text-dim); font-size: 10px; text-align: center; padding: 12px 0; font-family: var(--mono); }
 
   /* ===== 中间：连线画布 + 节点 ===== */
@@ -815,12 +819,13 @@
         <div class="tl-track" id="tlTrack"></div>
       </div>
     </div>
-    <!-- 会话追踪面板：真实元任务执行记录（LLM / Token / 耗时） -->
+    <!-- 会话追踪面板：真实元任务执行记录（LLM / Token / 耗时 / 结果） -->
     <div class="session-panel">
       <div class="sp-title">
         <span>Agent Sessions</span>
         <span id="spCount" style="color:var(--neon-purple);">0</span>
       </div>
+      <div class="sp-summary" id="spSummary">成功 0 · 失败 0 · 成功率 —</div>
       <div class="sp-viewport" id="spViewport">
         <div class="sp-track" id="spTrack"></div>
       </div>
@@ -1403,6 +1408,11 @@ function fmtTok(n) {
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
   return String(n);
 }
+function escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 function renderSessionPanel() {
   const track = document.getElementById('spTrack');
   const countEl = document.getElementById('spCount');
@@ -1423,6 +1433,18 @@ function renderSessionPanel() {
   document.getElementById('tkTodaySub').textContent = todaySess + ' 会话';
   document.getElementById('tkTotalSub').textContent = totalSess + ' 会话';
 
+  // 更新会话追踪汇总（成功 / 失败 / 成功率 / 总耗时）
+  const spSum = document.getElementById('spSummary');
+  if (spSum && summary) {
+    const t = summary.total || {};
+    const ok = t.success || 0, bad = t.failed || 0, tot = ok + bad;
+    const rate = tot > 0 ? Math.round(ok / tot * 100) : 0;
+    spSum.innerHTML = '成功 <span class="s-ok">' + ok + '</span> · ' +
+      '失败 <span class="s-bad">' + bad + '</span> · ' +
+      '成功率 <span class="s-ok">' + rate + '%</span> · ' +
+      '总耗时 <span>' + fmtDur(t.duration_ms) + '</span>';
+  }
+
   // 空状态
   if (sessions.length === 0) {
     track.innerHTML = '<div class="sp-empty">暂无执行会话</div>';
@@ -1434,16 +1456,18 @@ function renderSessionPanel() {
   const items = sessions.map(s => {
     const ok = s.status === 'success';
     const tok = (s.token_in || 0) + (s.token_out || 0);
+    const result = s.result || '';
     return `<div class="sp-item ${ok ? 'ok' : ''}">
       <div class="sp-top">
-        <span class="sp-llm">${s.llm_name || 'LLM'}</span>
+        <span class="sp-llm">${escHtml(s.llm_name || 'LLM')}</span>
         <span class="sp-time">${(s.finished_at || s.started_at || '').slice(11, 16) || ''}</span>
       </div>
-      <div class="sp-title">${s.title || '任务 #' + (s.task_id || s.id)}</div>
+      <div class="sp-title">${escHtml(s.title || '任务 #' + (s.task_id || s.id))}</div>
+      ${result ? `<div class="sp-result" title="${escHtml(result)}">${escHtml(result)}</div>` : ''}
       <div class="sp-meta">
         <span class="tk">${fmtTok(tok)} tok</span>
         <span class="dur">${fmtDur(s.duration_ms)}</span>
-        <span>${s.session_id ? '#' + s.session_id.slice(-6) : ''}</span>
+        <span>${s.session_id ? '#' + escHtml(s.session_id.slice(-6)) : ''}</span>
       </div>
     </div>`;
   }).join('');
