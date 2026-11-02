@@ -78,6 +78,22 @@
 - 四任务均写 devlog（HF-DEVLOG-20261102*）+ mark done，元数据（LLM=DeepSeek-V4-Pro, dur, sid）写入 hf_metatask_queue 与 hf_task_sessions。
 - 注意：本轮 sub-agent 为 team 模式（TaskOutput 不等待，靠轮询 status 判定完成）；PowerShell 下 Rscript 中文输出仍 GBK 乱码，但 log/done 传参用双引号+中文可正常写入 UTF-8（脚本内部已处理）。
 
+## 2026-11-02 12:41 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 22 个会话）。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-02 13:42 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 22 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-02 14:55 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 22 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-02 15:56 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
 ## 关键经验
 - PowerShell 下 `Rscript ... peek` 的中文会以 GBK 乱码显示，需用脚本 writeLines(useBytes=TRUE) 落盘 UTF-8 文件后再 Read 获取干净内容。
 - hf_metatask_runner.r 被 source() 时会执行尾部 CLI 入口（commandArgs + quit），不能直接 source 复用其函数；需把 write_log/mark_done 等函数复制进独立脚本，或改用 Rscript 子命令传参。

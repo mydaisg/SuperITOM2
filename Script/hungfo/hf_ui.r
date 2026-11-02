@@ -911,6 +911,7 @@ hf_project_page_server <- function(input, output, session, rv, m, trigger) {
         right_btn <- if (st == "pending" || st == "in_progress")
           sprintf('<button class="btn btn-xs btn-default hf-pnote-btn" data-id="%s" data-act="right" title="右移">→</button>', r$id) else ""
         del_btn <- sprintf('<button class="btn btn-xs btn-danger hf-pnote-btn" data-id="%s" data-act="del" title="删除">🗑</button>', r$id)
+        cmt_btn <- sprintf('<button class="btn btn-xs btn-info hf-pnote-btn" data-id="%s" data-act="comments" title="查看/添加评论">💬</button>', r$id)
         tags$div(style = "background:#fff;border:1px solid #e8ecf1;border-radius:8px;padding:10px 12px;margin-bottom:8px;",
           tags$div(style = "font-size:13px;font-weight:700;color:#1a2236;margin-bottom:4px;", hf_or(r$title, "")),
           tags$div(style = "font-size:12px;color:#596780;white-space:pre-wrap;max-height:120px;overflow-y:auto;",
@@ -918,7 +919,7 @@ hf_project_page_server <- function(input, output, session, rv, m, trigger) {
           tags$div(style = "font-size:10px;color:#a0aec0;margin-top:6px;",
             hf_or(r$note_no, ""), " · ", hf_project_prio_badge(r$priority)),
           tags$div(style = "margin-top:6px;display:flex;gap:4px;justify-content:flex-end;",
-            HTML(paste0(left_btn, right_btn, del_btn)))
+            HTML(paste0(left_btn, right_btn, cmt_btn, del_btn)))
         )
       })
       tagList(cards)
@@ -1156,6 +1157,20 @@ hf_project_page_server <- function(input, output, session, rv, m, trigger) {
     val <- input[[p("note_act")]]
     id <- val$id; act <- val$act
     if (is.null(id) || is.null(act)) return()
+    if (identical(act, "comments")) {
+      cmt_note_id(as.integer(id))
+      showModal(modalDialog(
+        title = paste0("记事评论 #", id),
+        uiOutput(p("note_cmt_list")),
+        textAreaInput(p("e_cmt_content"), "添加评论", rows = 2, width = "100%"),
+        footer = tagList(
+          actionButton(p("cmt_send"), "发送", class = "btn-primary"),
+          modalButton("关闭")
+        ),
+        size = "l", easyClose = TRUE
+      ))
+      return()
+    }
     if (identical(act, "del")) {
       r <- hf_project_note_delete(as.integer(id))
     } else {
@@ -1171,6 +1186,54 @@ hf_project_page_server <- function(input, output, session, rv, m, trigger) {
       r <- hf_project_note_move(as.integer(id), next_st)
     }
     showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error", duration = 1.5)
+    local_refresh()
+  })
+
+  # ═══════ 记事评论（查看/添加，parent_id 自关联按缩进显示层级）══
+  cmt_note_id <- reactiveVal(NULL)
+
+  output[[p("note_cmt_list")]] <- renderUI({
+    req(cmt_note_id())
+    df <- hf_project_note_comment_list(cmt_note_id())
+    if (is.null(df) || nrow(df) == 0) {
+      return(tags$div(style = "color:#999;padding:16px;text-align:center;font-size:13px;", "暂无评论"))
+    }
+    ids <- as.character(df$id)
+    pars <- as.character(df$parent_id)
+    pmap <- setNames(pars, ids)
+    depth_of <- function(cid, seen = 0L) {
+      if (seen > 50L) return(0L)
+      par <- pmap[[cid]]
+      if (is.null(par) || length(par) == 0 || is.na(par) || identical(par, cid)) return(0L)
+      1L + depth_of(par, seen + 1L)
+    }
+    items <- lapply(seq_len(nrow(df)), function(i) {
+      r <- df[i, , drop = FALSE]
+      d <- depth_of(ids[i])
+      author <- hf_or(r$created_by_name[1], "")
+      if (!nzchar(author)) {
+        author <- if (is.na(r$created_by[1]) || is.null(r$created_by[1])) "匿名" else paste0("用户#", r$created_by[1])
+      }
+      done_badge <- if (!is.na(r$status[1]) && identical(as.character(r$status[1]), "completed"))
+        tags$span(style = "font-size:10px;color:#0d7d3a;margin-left:6px;", "✓ 已完成") else NULL
+      reply_hint <- if (!is.na(r$parent_id[1]) && !is.null(r$parent_id[1]))
+        tags$span(style = "font-size:10px;color:#8b5cf6;margin-left:6px;", "↳ 回复") else NULL
+      tags$div(style = sprintf("margin-left:%dpx;padding:6px 10px;border-left:2px solid #e8ecf1;margin-bottom:6px;", min(d, 5) * 22),
+        tags$div(style = "font-size:11px;color:#90a4ae;",
+          author, " · ", hf_or(r$created_at[1], ""), done_badge, reply_hint),
+        tags$div(style = "font-size:13px;color:#2c3e50;white-space:pre-wrap;word-break:break-word;", hf_or(r$content[1], ""))
+      )
+    })
+    tagList(items)
+  })
+
+  observeEvent(input[[p("cmt_send")]], {
+    req(rv$logged_in)
+    content <- trimws(hf_or(input[[p("e_cmt_content")]], ""))
+    if (!nzchar(content)) { showNotification("请输入评论内容", type = "warning"); return() }
+    r <- hf_project_note_comment_add(cmt_note_id(), content, created_by = hf_current_uid(rv))
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (isTRUE(r$success)) updateTextAreaInput(session, p("e_cmt_content"), value = "")
     local_refresh()
   })
 

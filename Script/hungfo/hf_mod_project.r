@@ -10,7 +10,7 @@
 HF_MOD_PROJECT <- list(
   id = "hf081", key = "project", name = "项目", icon = "project-diagram",
   desc = "集合需求、记事、总结、项目模板于一体：快速 Tab 切换，按项目打通数据联动，增删改后自动刷新。",
-  api_desc = "list/get/add/update/delete 维护项目 · requirements/notes/summaries 维护子项 · summary_build(pid) 一键生成总结",
+  api_desc = "list/get/add/update/delete 维护项目 · requirements/notes/summaries 维护子项 · note_comment_* 维护记事评论 · summary_build(pid) 一键生成总结",
   status = "scaffold", version = "v0.1"
 )
 
@@ -73,6 +73,19 @@ hf_project_init <- function() {
       created_at TEXT DEFAULT (datetime('now','localtime')),
       updated_at TEXT DEFAULT (datetime('now','localtime'))
     )")
+    # 记事评论表（迁移父项目 note_comments；parent_id 自关联保留回复层级）
+    dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_project_note_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      note_id INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      created_by INTEGER,
+      created_by_name TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      status TEXT,
+      completed_at TEXT,
+      parent_id INTEGER
+    )")
+    dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_hf_note_comments_note ON hf_project_note_comments(note_id)")
     invisible(TRUE)
   }, error = function(e) {
     warning(paste("hf_project_init 建表失败:", e$message))
@@ -158,6 +171,9 @@ hf_project_delete <- function(id) {
   tryCatch({
     id <- as.character(as.integer(id))
     dbExecute(con, sprintf("DELETE FROM hf_project_requirements WHERE project_id=%s", id))
+    # 先删该项目下记事的评论，再删记事（避免孤儿评论）
+    dbExecute(con, sprintf(
+      "DELETE FROM hf_project_note_comments WHERE note_id IN (SELECT id FROM hf_project_notes WHERE project_id=%s)", id))
     dbExecute(con, sprintf("DELETE FROM hf_project_notes WHERE project_id=%s", id))
     dbExecute(con, sprintf("DELETE FROM hf_project_summaries WHERE project_id=%s", id))
     dbExecute(con, sprintf("DELETE FROM hf_projects WHERE id=%s", id))
@@ -320,8 +336,61 @@ hf_project_note_delete <- function(id) {
   con <- hf_db_connect()
   on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch({
-    dbExecute(con, sprintf("DELETE FROM hf_project_notes WHERE id=%s", as.character(as.integer(id))))
-    list(success = TRUE, message = "已删除记事")
+    id <- as.character(as.integer(id))
+    # 级联删除该记事下的评论，避免孤儿数据
+    dbExecute(con, sprintf("DELETE FROM hf_project_note_comments WHERE note_id=%s", id))
+    dbExecute(con, sprintf("DELETE FROM hf_project_notes WHERE id=%s", id))
+    list(success = TRUE, message = "已删除记事及其评论")
+  }, error = function(e) list(success = FALSE, message = e$message))
+}
+
+# ── 记事评论 CRUD（parent_id 自关联保留回复层级）──
+hf_project_note_comment_list <- function(note_id) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch(
+    dbGetQuery(con, sprintf(
+      "SELECT * FROM hf_project_note_comments WHERE note_id=%s ORDER BY id ASC",
+      as.character(as.integer(note_id)))),
+    error = function(e) data.frame())
+}
+
+hf_project_note_comment_count <- function(note_id) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch(
+    dbGetQuery(con, sprintf(
+      "SELECT COUNT(*) n FROM hf_project_note_comments WHERE note_id=%s",
+      as.character(as.integer(note_id))))$n[1],
+    error = function(e) 0)
+}
+
+hf_project_note_comment_add <- function(note_id, content, parent_id = NULL, created_by = NULL) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  if (is.null(content) || !nzchar(trimws(content))) return(list(success = FALSE, message = "评论内容不能为空"))
+  tryCatch({
+    dbExecute(con, sprintf(
+      "INSERT INTO hf_project_note_comments (note_id, content, created_by, parent_id)
+       VALUES (%s, '%s', %s, %s)",
+      as.character(as.integer(note_id)), hf_esc(content),
+      if (is.null(created_by)) "NULL" else as.character(as.integer(created_by)),
+      if (is.null(parent_id) || is.na(parent_id)) "NULL" else as.character(as.integer(parent_id))))
+    # 同步更新记事 updated_at
+    dbExecute(con, sprintf(
+      "UPDATE hf_project_notes SET updated_at=datetime('now','localtime') WHERE id=%s",
+      as.character(as.integer(note_id))))
+    list(success = TRUE, message = "已添加评论")
+  }, error = function(e) list(success = FALSE, message = e$message))
+}
+
+hf_project_note_comment_delete <- function(id) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    dbExecute(con, sprintf(
+      "DELETE FROM hf_project_note_comments WHERE id=%s", as.character(as.integer(id))))
+    list(success = TRUE, message = "已删除评论")
   }, error = function(e) list(success = FALSE, message = e$message))
 }
 
@@ -464,6 +533,11 @@ hf_project_note_api_add   <- function(project_id, title, content = "", status = 
 hf_project_note_api_move  <- function(id, status) hf_project_note_move(id, status)
 hf_project_note_api_delete <- function(id) hf_project_note_delete(id)
 
+hf_project_note_comment_api_list  <- function(note_id) hf_project_note_comment_list(note_id)
+hf_project_note_comment_api_add   <- function(note_id, content, parent_id = NULL, created_by = NULL)
+  hf_project_note_comment_add(note_id, content, parent_id, created_by)
+hf_project_note_comment_api_delete <- function(id) hf_project_note_comment_delete(id)
+
 hf_project_summary_api_list <- function(project_id = NULL) hf_project_summary_list(project_id)
 hf_project_summary_api_add  <- function(project_id, title, content = "", summary_date = NULL, created_by = NULL)
   hf_project_summary_add(project_id, title, content, summary_date, created_by)
@@ -485,6 +559,9 @@ hf_register(HF_MOD_PROJECT, hf_make_api(
   note_add = hf_project_note_api_add,
   note_move = hf_project_note_api_move,
   note_delete = hf_project_note_api_delete,
+  note_comment_list = hf_project_note_comment_api_list,
+  note_comment_add = hf_project_note_comment_api_add,
+  note_comment_delete = hf_project_note_comment_api_delete,
   summary_list = hf_project_summary_api_list,
   summary_add = hf_project_summary_api_add,
   summary_delete = hf_project_summary_api_delete,
