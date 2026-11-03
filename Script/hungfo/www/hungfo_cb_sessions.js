@@ -1,6 +1,6 @@
 // 由 HungFo 生成（export_cb_sessions），勿手改
 window.HF_CB_SESSIONS = {
-  "updated_at": "2026-11-02 15:56:11",
+  "updated_at": "2026-11-03 12:03:06",
   "summary": {
     "total_sessions": 23,
     "total_tokens": 1043002,
@@ -8,12 +8,12 @@ window.HF_CB_SESSIONS = {
   },
   "sessions": [
     {
-      "conversation_id": "b28bcb71aadb420084e6b035276fb014",
-      "title": "这个R文件是用于命令行下使用的，纯函数式，命令带参数，处理数据，先做架构。\n应用场景如输入\ngh-get(kb,100,22)是查询kb数据表的最新100条记录，字段22个",
-      "cwd": "d:/GitHub/SuperITOM2",
+      "conversation_id": "aa49ae0ef85a44a39831eb4c3880a6e0",
+      "title": "CodeBuddy用量采集与任务执行流程",
+      "cwd": "d:/GitHub/SuperITOM2/Script/hungfo",
       "status": "Working",
-      "created_at": "2026-11-02 15:17:58",
-      "updated_at": "2026-11-02 15:55:30",
+      "created_at": "2026-10-30 17:17:54",
+      "updated_at": "2026-11-03 12:02:16",
       "token_total": 0,
       "token_input": 0,
       "token_output": 0,
@@ -26,12 +26,12 @@ window.HF_CB_SESSIONS = {
       "token_updated_at": ""
     },
     {
-      "conversation_id": "aa49ae0ef85a44a39831eb4c3880a6e0",
-      "title": "CodeBuddy用量采集与任务执行流程",
-      "cwd": "d:/GitHub/SuperITOM2/Script/hungfo",
+      "conversation_id": "b28bcb71aadb420084e6b035276fb014",
+      "title": "这个R文件是用于命令行下使用的，纯函数式，命令带参数，处理数据，先做架构。\n应用场景如输入\ngh-get(kb,100,22)是查询kb数据表的最新100条记录，字段22个",
+      "cwd": "d:/GitHub/SuperITOM2",
       "status": "Completed",
-      "created_at": "2026-10-30 17:17:54",
-      "updated_at": "2026-11-02 14:05:21",
+      "created_at": "2026-11-02 15:17:58",
+      "updated_at": "2026-11-02 16:32:52",
       "token_total": 0,
       "token_input": 0,
       "token_output": 0,

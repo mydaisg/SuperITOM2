@@ -716,6 +716,47 @@ hf_project_note_status_label <- function(status) {
   switch(hf_or(status, "pending"), pending = "待处理", in_progress = "进行中", done = "已完成", status)
 }
 
+# 方案 HTML 净化：提取 <style> 为 CSS 并 scope 到 .hf-sol-detail，去 script/文档级标签，返回 list(styles, body)
+# 参照父项目 sol_sanitize_html，做精简版，避免方案内样式污染全局。
+hf_project_solution_sanitize <- function(raw) {
+  if (is.null(raw) || nchar(raw) == 0) return(list(styles = "", body = ""))
+  txt <- raw
+  css <- ""
+  m <- gregexpr("(?s)<style[^>]*>(.*?)</style>", txt, ignore.case = TRUE, perl = TRUE)
+  if (m[[1]][1] > 0) {
+    blocks <- regmatches(txt, m)[[1]]
+    for (s in blocks) css <- paste0(css, gsub("</?style[^>]*>", "", s, ignore.case = TRUE), "\n")
+    txt <- gsub("(?s)<style[^>]*>.*?</style>", "", txt, ignore.case = TRUE, perl = TRUE)
+  }
+  txt <- gsub("(?s)<script[^>]*>.*?</script>", "", txt, ignore.case = TRUE, perl = TRUE)
+  txt <- gsub("(?s)<head>.*?</head>", "", txt, ignore.case = TRUE, perl = TRUE)
+  txt <- gsub("<body[^>]*>|</body>|<html[^>]*>|</html>", "", txt, ignore.case = TRUE)
+  txt <- gsub("<!DOCTYPE[^>]*>|<meta[^>]*>|<title>.*?</title>|<link[^>]*>", "", txt, ignore.case = TRUE)
+  # scope CSS：每条规则选择器前加 .hf-sol-detail
+  if (nzchar(trimws(css))) {
+    rules <- strsplit(css, "}", fixed = FALSE)[[1]]
+    scoped <- c()
+    for (rule in rules) {
+      rule <- trimws(rule)
+      if (!nzchar(rule)) next
+      bp <- regexpr("\\{", rule)
+      if (bp < 0) { scoped <- c(scoped, rule); next }
+      sel <- trimws(substr(rule, 1, bp - 1))
+      body <- substr(rule, bp, nchar(rule))
+      if (grepl("^@|^/\\*|^$", sel)) { scoped <- c(scoped, paste0(sel, " ", body, "}")); next }
+      sels <- strsplit(sel, ",", fixed = FALSE)[[1]]
+      sels <- sapply(sels, function(s) {
+        s <- trimws(s)
+        if (!nzchar(s) || grepl("^\\.hf-sol-detail", s)) return(s)
+        paste(".hf-sol-detail", s)
+      }, USE.NAMES = FALSE)
+      scoped <- c(scoped, paste0(paste(sels, collapse = ", "), " ", body, "}"))
+    }
+    css <- paste(scoped, collapse = "\n")
+  }
+  list(styles = css, body = trimws(txt))
+}
+
 hf_project_page_ui <- function(m) {
   p <- function(x) paste0("hf_project_", x)
   tabPanel(
@@ -736,7 +777,7 @@ hf_project_page_ui <- function(m) {
         tags$span(style = "font-size:11px;background:#455a64;padding:2px 8px;border-radius:10px;margin-left:8px;", "HF-PROJECT"),
         tags$span(style = "font-size:11px;background:#00695c;padding:2px 8px;border-radius:10px;margin-left:6px;", hf_or(m$status, "scaffold")),
         tags$div(style = "font-size:12px;opacity:.88;margin-top:8px;",
-          "集合父项目「需求 / 记事 / 总结 / 项目模板」为一体：选择项目后，各 Tab 数据联动、增删改自动刷新。"),
+          "集合父项目「需求 / 方案 / 记事 / 总结 / 项目模板」为一体：选择项目后，各 Tab 数据联动、增删改自动刷新。"),
         tags$div(style = "font-size:11px;color:#b0bec5;margin-top:4px;", icon("plug"), " 接口：", m$api_desc)
       ),
       # 项目上下文选择器（联动需求/记事/总结三个 Tab）
@@ -744,7 +785,7 @@ hf_project_page_ui <- function(m) {
         div(style = "display:flex;align-items:center;gap:10px;flex-wrap:wrap;",
           tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;white-space:nowrap;", "✦ 当前项目"),
           uiOutput(p("ctx_selector"), inline = TRUE),
-          tags$span(style = "font-size:11px;color:#999;", "切换项目后，下方需求 / 记事 / 总结自动按项目过滤刷新。")
+          tags$span(style = "font-size:11px;color:#999;", "切换项目后，下方需求 / 方案 / 记事 / 总结自动按项目过滤刷新。")
         )
       ),
       # 内部快速 Tab 切换（项目 / 需求 / 记事 / 总结）
@@ -780,7 +821,22 @@ hf_project_page_ui <- function(m) {
           DTOutput(p("req_table"))
         ),
 
-        # ── Tab 3：记事（记事模块，Trello 看板三列）──
+        # ── Tab 3：方案（方案模块，参照父项目 solutions，HTML 文档）──
+        tabPanel("方案", icon = icon("lightbulb"),
+          br(),
+          div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
+            div(style = "display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;",
+              actionButton(p("sol_add"), "新增方案", icon = icon("plus"), class = "btn-success btn-sm"),
+              actionButton(p("sol_view"), "查看", icon = icon("eye"), class = "btn-primary btn-sm"),
+              actionButton(p("sol_edit"), "编辑", icon = icon("pen"), class = "btn-info btn-sm"),
+              actionButton(p("sol_del"), "删除", icon = icon("trash"), class = "btn-danger btn-sm"),
+              actionButton(p("sol_refresh"), "刷新", icon = icon("sync"), class = "btn-default btn-sm")
+            )
+          ),
+          DTOutput(p("sol_table"))
+        ),
+
+        # ── Tab 4：记事（记事模块，Trello 看板三列）──
         tabPanel("记事", icon = icon("sticky-note"),
           br(),
           div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
@@ -845,12 +901,14 @@ hf_project_page_server <- function(input, output, session, rv, m, trigger) {
     reqs <- hf_project_req_list(project_ctx())
     notes <- hf_project_note_list(project_ctx())
     sums <- hf_project_summary_list(project_ctx())
+    sols <- hf_project_solution_list(project_ctx())
     div(style = "font-size:12px;color:#555;margin:2px 0 8px;",
       tags$b("项目："), tags$span(style = "color:#1565c0;", paste0(np, " 个")),
       " · ", tags$span(style = "color:#2e7d32;", paste0("需求 ", if (is.null(reqs)) 0 else nrow(reqs), " 条")),
+      " · ", tags$span(style = "color:#f59e0b;", paste0("方案 ", if (is.null(sols)) 0 else nrow(sols), " 条")),
       " · ", tags$span(style = "color:#e65100;", paste0("记事 ", if (is.null(notes)) 0 else nrow(notes), " 条")),
       " · ", tags$span(style = "color:#6a1b9a;", paste0("总结 ", if (is.null(sums)) 0 else nrow(sums), " 条")),
-      " · 版本 ", hf_or(m$version, "v0.1"))
+      " · 版本 ", hf_or(m$version, "v0.2"))
   })
 
   # ── Tab 1：项目表 ──
@@ -1122,6 +1180,107 @@ hf_project_page_server <- function(input, output, session, rv, m, trigger) {
     id <- selected_id_of(p("req_table_rows_selected"), function() req_df())
     if (is.null(id)) { showNotification("请先在需求表选中一行", type = "warning"); return() }
     r <- hf_project_req_delete(id)
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    local_refresh()
+  })
+
+  # ── Tab 3：方案表 ──
+  output[[p("sol_table")]] <- DT::renderDT({
+    trigger(); local_trigger()
+    df <- hf_project_solution_list(project_ctx())
+    if (is.null(df) || nrow(df) == 0) {
+      empty <- if (is.null(hf_project_solution_list()) || nrow(hf_project_solution_list()) == 0) "no_data" else "no_match"
+      return(hf_datatable(df, empty = empty))
+    }
+    out <- data.frame(
+      ID = df$id,
+      编号 = hf_or(df$sol_no, ""),
+      标题 = hf_or(df$title, ""),
+      分类 = hf_or(df$category, ""),
+      关联项目 = ifelse(is.na(df$related_project) | df$related_project == "", "—", df$related_project),
+      创建时间 = ifelse(is.na(df$created_at) | df$created_at == "", "—", df$created_at),
+      stringsAsFactors = FALSE)
+    hf_datatable(out, selection = "single", page_size = 20)
+  })
+
+  # ═══════ 方案 Tab 操作 ═══════
+  observeEvent(input[[p("sol_refresh")]], local_refresh())
+  sol_df <- reactive({ trigger(); local_trigger(); hf_project_solution_list(project_ctx()) })
+  observeEvent(input[[p("sol_add")]], {
+    req(rv$logged_in)
+    editing_id(NULL)
+    showModal(modalDialog(
+      title = "新增方案",
+      textInput(p("e_sol_title"), "方案标题", width = "100%"),
+      selectInput(p("e_sol_cat"), "分类",
+        choices = c("技术方案", "企业方案", "产品", "工具", "子项目", "其它"),
+        selected = "技术方案", width = "100%"),
+      textInput(p("e_sol_rel"), "关联项目", width = "100%"),
+      textAreaInput(p("e_sol_content"), "方案内容（HTML，可含 <style> 样式块）", rows = 14, width = "100%"),
+      footer = tagList(actionButton(p("sol_save"), "保存", class = "btn-primary"), modalButton("取消")),
+      size = "l", easyClose = TRUE
+    ))
+  })
+  observeEvent(input[[p("sol_view")]], {
+    id <- selected_id_of(p("sol_table_rows_selected"), function() sol_df())
+    if (is.null(id)) { showNotification("请先在方案表选中一行", type = "warning"); return() }
+    r <- hf_project_solution_get(id)
+    if (is.null(r) || nrow(r) == 0) { showNotification("方案不存在，请刷新", type = "warning"); return() }
+    r <- r[1, ]
+    san <- hf_project_solution_sanitize(hf_or(r$content, ""))
+    showModal(modalDialog(
+      title = hf_or(r$title, ""),
+      div(style = "font-size:12px;color:#999;margin-bottom:8px;",
+        tags$span(hf_or(r$sol_no, "")), " · ", tags$span(hf_or(r$category, "")),
+        if (nzchar(hf_or(r$related_project, ""))) paste0(" · 关联：", r$related_project) else ""),
+      tags$div(class = "hf-sol-detail", style = "max-height:62vh;overflow-y:auto;padding:4px;",
+        if (nzchar(san$styles)) tags$style(HTML(san$styles)) else NULL,
+        HTML(san$body)),
+      footer = modalButton("关闭"),
+      size = "l", easyClose = TRUE
+    ))
+  })
+  observeEvent(input[[p("sol_edit")]], {
+    req(rv$logged_in)
+    id <- selected_id_of(p("sol_table_rows_selected"), function() sol_df())
+    if (is.null(id)) { showNotification("请先在方案表选中一行", type = "warning"); return() }
+    r <- hf_project_solution_get(id)
+    if (is.null(r) || nrow(r) == 0) { showNotification("方案不存在，请刷新", type = "warning"); return() }
+    r <- r[1, ]
+    editing_id(id)
+    showModal(modalDialog(
+      title = paste0("编辑方案 #", id),
+      textInput(p("e_sol_title"), "方案标题", value = hf_or(r$title, ""), width = "100%"),
+      selectInput(p("e_sol_cat"), "分类",
+        choices = c("技术方案", "企业方案", "产品", "工具", "子项目", "其它"),
+        selected = hf_or(r$category, "技术方案"), width = "100%"),
+      textInput(p("e_sol_rel"), "关联项目", value = hf_or(r$related_project, ""), width = "100%"),
+      textAreaInput(p("e_sol_content"), "方案内容（HTML，可含 <style> 样式块）", value = hf_or(r$content, ""), rows = 14, width = "100%"),
+      footer = tagList(actionButton(p("sol_save"), "保存修改", class = "btn-primary"), modalButton("取消")),
+      size = "l", easyClose = TRUE
+    ))
+  })
+  observeEvent(input[[p("sol_save")]], {
+    req(rv$logged_in)
+    title <- trimws(hf_or(input[[p("e_sol_title")]], ""))
+    if (!nzchar(title)) { showNotification("请输入方案标题", type = "warning"); return() }
+    id <- editing_id()
+    if (is.null(id)) {
+      r <- hf_project_solution_add(project_ctx(), title, input[[p("e_sol_content")]],
+        input[[p("e_sol_cat")]], input[[p("e_sol_rel")]], created_by = hf_current_uid(rv))
+    } else {
+      r <- hf_project_solution_update(id, title, input[[p("e_sol_content")]],
+        input[[p("e_sol_cat")]], input[[p("e_sol_rel")]])
+    }
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (isTRUE(r$success)) { removeModal(); editing_id(NULL) }
+    local_refresh()
+  })
+  observeEvent(input[[p("sol_del")]], {
+    req(rv$logged_in)
+    id <- selected_id_of(p("sol_table_rows_selected"), function() sol_df())
+    if (is.null(id)) { showNotification("请先在方案表选中一行", type = "warning"); return() }
+    r <- hf_project_solution_delete(id)
     showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
     local_refresh()
   })
@@ -2422,7 +2581,7 @@ hf_login_overlay <- function() {
       actionButton("hf_login_btn", "登录", class = "btn-primary btn-block", style = "width: 100%;"),
       br(),
       p(style = "text-align:center;color:#999;font-size:12px;margin-top:8px;",
-        "初始账号：DaiSG（admins） / GodHat（user），密码 falwpa")
+        "初始账号：DaiSG（admins） / GodHat（user）")
     )
   )
 }

@@ -9,9 +9,9 @@
 
 HF_MOD_PROJECT <- list(
   id = "hf081", key = "project", name = "项目", icon = "project-diagram",
-  desc = "集合需求、记事、总结、项目模板于一体：快速 Tab 切换，按项目打通数据联动，增删改后自动刷新。",
-  api_desc = "list/get/add/update/delete 维护项目 · requirements/notes/summaries 维护子项 · note_comment_* 维护记事评论 · summary_build(pid) 一键生成总结",
-  status = "scaffold", version = "v0.1"
+  desc = "集合需求、方案、记事、总结、项目模板于一体：快速 Tab 切换，按项目打通数据联动，增删改后自动刷新。",
+  api_desc = "list/get/add/update/delete 维护项目 · requirements/solutions/notes/summaries 维护子项 · note_comment_* 维护记事评论 · summary_build(pid) 一键生成总结",
+  status = "scaffold", version = "v0.2"
 )
 
 # ── 建表（自包含，供 hf_ui.r 初始化时调用；CREATE IF NOT EXISTS 幂等）──
@@ -69,6 +69,19 @@ hf_project_init <- function() {
       title TEXT NOT NULL,
       content TEXT DEFAULT '',
       summary_date TEXT DEFAULT (date('now','localtime')),
+      created_by INTEGER,
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      updated_at TEXT DEFAULT (datetime('now','localtime'))
+    )")
+    # 方案表（方案模块：技术/企业方案文档，content 存 HTML，关联 project_id，参照父项目 solutions）
+    dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_project_solutions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sol_no TEXT,
+      project_id INTEGER,
+      title TEXT NOT NULL,
+      content TEXT DEFAULT '',
+      category TEXT DEFAULT '技术方案',
+      related_project TEXT DEFAULT '',
       created_by INTEGER,
       created_at TEXT DEFAULT (datetime('now','localtime')),
       updated_at TEXT DEFAULT (datetime('now','localtime'))
@@ -171,13 +184,14 @@ hf_project_delete <- function(id) {
   tryCatch({
     id <- as.character(as.integer(id))
     dbExecute(con, sprintf("DELETE FROM hf_project_requirements WHERE project_id=%s", id))
+    dbExecute(con, sprintf("DELETE FROM hf_project_solutions WHERE project_id=%s", id))
     # 先删该项目下记事的评论，再删记事（避免孤儿评论）
     dbExecute(con, sprintf(
       "DELETE FROM hf_project_note_comments WHERE note_id IN (SELECT id FROM hf_project_notes WHERE project_id=%s)", id))
     dbExecute(con, sprintf("DELETE FROM hf_project_notes WHERE project_id=%s", id))
     dbExecute(con, sprintf("DELETE FROM hf_project_summaries WHERE project_id=%s", id))
     dbExecute(con, sprintf("DELETE FROM hf_projects WHERE id=%s", id))
-    list(success = TRUE, message = "已删除项目及其下需求/记事/总结")
+    list(success = TRUE, message = "已删除项目及其下需求/方案/记事/总结")
   }, error = function(e) list(success = FALSE, message = e$message))
 }
 
@@ -458,6 +472,70 @@ hf_project_summary_delete <- function(id) {
   }, error = function(e) list(success = FALSE, message = e$message))
 }
 
+# ══════════════════════════════════════════════════════════════════
+# 方案 CRUD（方案模块，按 project_id 联动；content 存 HTML 文档，参照父项目 solutions）
+# ══════════════════════════════════════════════════════════════════
+hf_project_solution_list <- function(project_id = NULL) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    sql <- "SELECT * FROM hf_project_solutions"
+    if (!is.null(project_id) && !is.na(project_id) && project_id != "") {
+      sql <- sprintf("%s WHERE project_id=%s", sql, as.character(as.integer(project_id)))
+    }
+    dbGetQuery(con, paste0(sql, " ORDER BY id DESC"))
+  }, error = function(e) data.frame())
+}
+
+hf_project_solution_get <- function(id) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch(
+    dbGetQuery(con, sprintf("SELECT * FROM hf_project_solutions WHERE id=%s", as.character(as.integer(id)))),
+    error = function(e) data.frame())
+}
+
+hf_project_solution_add <- function(project_id, title, content = "", category = "技术方案",
+                                    related_project = "", created_by = NULL) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  if (is.null(title) || !nzchar(trimws(title))) return(list(success = FALSE, message = "方案标题不能为空"))
+  no <- hf_project_generate_no("hf_project_solutions", "sol_no", "SOL")
+  tryCatch({
+    dbExecute(con, sprintf(
+      "INSERT INTO hf_project_solutions (sol_no,project_id,title,content,category,related_project,created_by)
+       VALUES ('%s',%s,'%s','%s','%s','%s',%s)",
+      hf_esc(no), if (is.null(project_id) || is.na(project_id) || project_id == "") "NULL" else as.character(as.integer(project_id)),
+      hf_esc(title), hf_esc(hf_or(content, "")), hf_esc(hf_or(category, "技术方案")),
+      hf_esc(hf_or(related_project, "")), if (is.null(created_by)) "NULL" else as.character(created_by)))
+    list(success = TRUE, sol_no = no, message = paste0("已新增方案：", no))
+  }, error = function(e) list(success = FALSE, message = e$message))
+}
+
+hf_project_solution_update <- function(id, title, content = "", category = "技术方案", related_project = "") {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  if (is.null(id) || is.na(id)) return(list(success = FALSE, message = "方案 id 无效"))
+  if (is.null(title) || !nzchar(trimws(title))) return(list(success = FALSE, message = "方案标题不能为空"))
+  tryCatch({
+    dbExecute(con, sprintf(
+      "UPDATE hf_project_solutions SET title='%s',content='%s',category='%s',related_project='%s',
+       updated_at=datetime('now','localtime') WHERE id=%s",
+      hf_esc(title), hf_esc(hf_or(content, "")), hf_esc(hf_or(category, "技术方案")),
+      hf_esc(hf_or(related_project, "")), as.character(as.integer(id))))
+    list(success = TRUE, message = paste0("已更新方案：", title))
+  }, error = function(e) list(success = FALSE, message = e$message))
+}
+
+hf_project_solution_delete <- function(id) {
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch({
+    dbExecute(con, sprintf("DELETE FROM hf_project_solutions WHERE id=%s", as.character(as.integer(id))))
+    list(success = TRUE, message = "已删除方案")
+  }, error = function(e) list(success = FALSE, message = e$message))
+}
+
 # 一键自动聚合：根据项目 id 聚合「项目信息 + 需求 + 记事」生成分段总结文本。
 # 返回分段文本（【项目】【需求】【记事】【结果】），供 UI 回填 / 直接入库。
 hf_project_summary_build <- function(project_id) {
@@ -544,6 +622,14 @@ hf_project_summary_api_add  <- function(project_id, title, content = "", summary
 hf_project_summary_api_delete <- function(id) hf_project_summary_delete(id)
 hf_project_summary_api_build  <- function(project_id) hf_project_summary_build(project_id)
 
+hf_project_solution_api_list   <- function(project_id = NULL) hf_project_solution_list(project_id)
+hf_project_solution_api_add    <- function(project_id, title, content = "", category = "技术方案",
+                                          related_project = "", created_by = NULL)
+  hf_project_solution_add(project_id, title, content, category, related_project, created_by)
+hf_project_solution_api_update <- function(id, title, content = "", category = "技术方案", related_project = "")
+  hf_project_solution_update(id, title, content, category, related_project)
+hf_project_solution_api_delete <- function(id) hf_project_solution_delete(id)
+
 hf_register(HF_MOD_PROJECT, hf_make_api(
   "project",
   list = hf_project_api_list,
@@ -565,5 +651,9 @@ hf_register(HF_MOD_PROJECT, hf_make_api(
   summary_list = hf_project_summary_api_list,
   summary_add = hf_project_summary_api_add,
   summary_delete = hf_project_summary_api_delete,
-  summary_build = hf_project_summary_api_build
+  summary_build = hf_project_summary_api_build,
+  solution_list = hf_project_solution_api_list,
+  solution_add = hf_project_solution_api_add,
+  solution_update = hf_project_solution_api_update,
+  solution_delete = hf_project_solution_api_delete
 ))

@@ -94,6 +94,70 @@
 - 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
 - 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
 
+## 2026-11-02 16:57 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-02 17:58 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-02 18:59 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-02 20:00 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-02 21:01 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-02 22:03 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-02 23:04 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-03 00:05 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-03 01:06 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-03 02:07 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-03 03:08 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-03 04:09 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-03 05:10 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-03 06:11 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-03 07:12 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
+## 2026-11-03 08:31 执行
+- 第0步采集 WorkBuddy 用量成功（1 个自动化任务 + 23 个会话），导出 hungfo_usage.js 与 hungfo_cb_sessions.js。
+- 队列 peek 返回 `due: []`，无到期任务，静默结束，未执行任何改动。
+
 ## 关键经验
 - PowerShell 下 `Rscript ... peek` 的中文会以 GBK 乱码显示，需用脚本 writeLines(useBytes=TRUE) 落盘 UTF-8 文件后再 Read 获取干净内容。
 - hf_metatask_runner.r 被 source() 时会执行尾部 CLI 入口（commandArgs + quit），不能直接 source 复用其函数；需把 write_log/mark_done 等函数复制进独立脚本，或改用 Rscript 子命令传参。
