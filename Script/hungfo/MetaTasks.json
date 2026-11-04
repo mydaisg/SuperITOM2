@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-04 14:18:36",
+  "updated_at": "2026-11-04 17:46:46",
   "tasks": [
     {
       "id": 1,
@@ -240,6 +240,18 @@
       "result": "完成配置模块，导航栏菜单可自定义配置",
       "llm_name": "DeepSeek-V4-Pro",
       "agent": ""
+    },
+    {
+      "id": 26,
+      "title": "这是WorkBuddy提供的一个方案，在HungFo上实现。",
+      "payload": "这是WorkBuddy提供的一个方案，在HungFo上实现。\n结论明确，一好一坏：\n\n## ❌ WorkBuddy：不能被外部调用\nWorkBuddy 没有对外的本地 API 或 CLI，网页无法向它提交任务、取回过程。它只有几个“被动触发”通道（对话、定时 automation、Agent Mail 异步邮件），都做不到“网页点一下 → 实时过程回传”。方向反过来倒可以：你的 Web 起一个 MCP server，让 WorkBuddy 来调你的服务——但那是 WorkBuddy 指挥你的网页，不是你要的。\n\n## ✅ CodeBuddy：可以，官方就支持\nCodeBuddy Code 有无头模式（Headless），就是为“被程序调用”设计的：\n\n```bash\nnpm install -g @tencent-ai/codebuddy-code   # 你机器目前没装，先装这个\ncodebuddy login                              # 扫码登录一次\n\n# 非交互提交任务，stream-json 逐行吐出过程事件\ncodebuddy -p \"修复 xx 模块的 bug\" -y --output-format stream-json\n```\n\n| 能力 | 对应参数 |\n|---|---|\n| 提交任务、拿最终结果 | `-p \"任务\"` |\n| **实时过程流**（思考/工具调用/输出） | `--output-format stream-json`（每行一个 JSON 事件） |\n| 只读问答（不碰文件） | 不加 `-y`，安全 |\n| 让它真改文件/跑命令 | 加 `-y`（跳过授权，信任环境用），可用 `--allowedTools` 收窄权限 |\n| 多轮续聊 | `--resume <sessionId>` |\n\n## 🔌 本地 Web 怎么接（就 3 件事）\n\n```\n浏览器网页 ──提交任务──▶ 本地后端(1个文件) ──spawn──▶ codebuddy -p --output-format stream-json\n   ▲                                                    │ 逐行 JSON 事件\n   └──────────── SSE 实时推过程 + 最终结果 ◀──────────────┘\n```\n\n1. **后端**（FastAPI 或 Node，一个文件）：收到任务 → 起子进程跑 `codebuddy -p` → 逐行解析 stream-json → 通过 SSE 推给网页；\n2. **网页**：一个输入框 + 过程日志区 + 结果区，`EventSource` 接收即显示；\n3. **会话续聊**：后端记住 sessionId，网页“继续追问”就走 `--resume`。\n\n这就是一个极简的“网页工作台”：**你的界面 + CodeBuddy 干活 + 过程结果都回到你的网页**。总共 100 行左右的代码，不增加你的操作复杂度——浏览器打开就是全部。\n\n要不要我现在就把它写出来？写好后你只需：① 装 CLI 并 `codebuddy login`，② 运行一个 `python server.py`，③ 浏览器打开本地页面即可。",
+      "cron": "",
+      "status": "done",
+      "last_run_at": "2026-11-04 17:23:17",
+      "next_run_at": null,
+      "result": "新增网页工作台环节：网页提交任务给 CodeBuddy CLI 实时回传过程与结果",
+      "llm_name": "auto",
+      "agent": "CodeBuddy"
     }
   ]
 }

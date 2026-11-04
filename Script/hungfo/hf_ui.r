@@ -27,6 +27,8 @@ hf_module_page_ui <- function(m) {
   if (identical(key, "permission")) return(hf_permission_page_ui(m))
   # 配置环节：特殊页面（导航栏菜单配置中心）
   if (identical(key, "config")) return(hf_config_page_ui(m))
+  # 网页工作台环节：特殊页面（提交任务给 CodeBuddy CLI，实时回传过程/结果）
+  if (identical(key, "workbench")) return(hf_workbench_page_ui(m))
   tabPanel(
     m$name, icon = icon(m$icon),
     div(style = "padding:4px 2px;",
@@ -1485,6 +1487,8 @@ hf_module_page_server <- function(input, output, session, rv, m, trigger) {
   if (identical(key, "permission")) return(hf_permission_page_server(input, output, session, rv, m, trigger))
   # 配置环节：专属 Server（导航栏菜单配置）
   if (identical(key, "config")) return(hf_config_page_server(input, output, session, rv, m, trigger))
+  # 网页工作台环节：专属 Server（派发 CodeBuddy CLI + 实时日志轮询）
+  if (identical(key, "workbench")) return(hf_workbench_page_server(input, output, session, rv, m, trigger))
   local_trigger <- reactiveVal(0)
   local_refresh <- function() local_trigger(local_trigger() + 1)
 
@@ -2688,6 +2692,7 @@ hungfo_server <- function(input, output, session, rv) {
     req(rv$logged_in)
     hf_db_init()
     hf_project_init()          # 项目模块建表（需求/记事/总结/项目模板）
+    hf_workbench_init()        # 网页工作台建表（运行记录）
     hf_sync_registry()
     hf_task_seed_sample()       # 首次播种示例任务
     hf_write_tasks_js()         # 导出任务到监控页前端
@@ -2724,4 +2729,310 @@ hungfo_server <- function(input, output, session, rv) {
 
   # Agent Workflow Monitor 面板（原始记录及来源）
   hf_agent_monitor_page_server(input, output, session, rv, hf_trigger)
+}
+
+# ── 网页工作台环节专属页面（提交任务给 CodeBuddy CLI，实时回传过程/结果）──
+hf_workbench_page_ui <- function(m) {
+  p <- function(x) paste0("hf_workbench_", x)
+  tabPanel(
+    m$name, icon = icon(m$icon),
+    div(style = "padding:4px 2px;",
+      # 顶部横幅
+      div(style = "background:linear-gradient(135deg,#263238,#37474f);color:#fff;border-radius:8px;padding:14px 18px;margin-bottom:12px;",
+        tags$span(style = "font-size:16px;font-weight:bold;", icon(m$icon), " ", m$name),
+        tags$span(style = "font-size:11px;background:#455a64;padding:2px 8px;border-radius:10px;margin-left:8px;", "HF-WORKBENCH"),
+        tags$span(style = "font-size:11px;background:#00695c;padding:2px 8px;border-radius:10px;margin-left:6px;", hf_or(m$status, "scaffold")),
+        tags$div(style = "font-size:12px;opacity:.88;margin-top:8px;", m$desc),
+        tags$div(style = "font-size:11px;color:#b0bec5;margin-top:4px;", icon("plug"), " 接口：", m$api_desc)
+      ),
+      # 会话 Token 消耗概览（工作台 CLI 会话 + 本机 CodeBuddy 会话清单）
+      div(style = "background:#fff;border-radius:8px;padding:12px;margin:8px 0;border:1px solid #e8ecf1;",
+        tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:8px;", "✦ 会话 Token 消耗"),
+        uiOutput(p("token_kpi"))
+      ),
+      # 任务输入区
+      div(style = "background:#fff;border-radius:8px;padding:12px;margin:8px 0;border:1px solid #e8ecf1;",
+        tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:6px;", "✦ 提交任务给 CodeBuddy"),
+        textAreaInput(p("task_in"), NULL, rows = 3, width = "100%",
+          placeholder = "例如：修复 xx 模块的 bug / 帮我写一个 xx 功能…"),
+        div(style = "display:flex;gap:8px;justify-content:flex-end;margin-top:4px;",
+          actionButton(p("run_btn"), "运行", icon = icon("play"), class = "btn-success btn-sm"),
+          actionButton(p("refresh_btn"), "刷新", icon = icon("sync"), class = "btn-default btn-sm")
+        )
+      ),
+      # 实时日志区
+      div(style = "background:#fff;border-radius:8px;padding:12px;margin:8px 0;border:1px solid #e8ecf1;",
+        uiOutput(p("log_status")),
+        uiOutput(p("log_out"))
+      ),
+      # 历史运行记录（含每次会话 Token 消耗）
+      div(style = "background:#fff;border-radius:8px;padding:12px;margin:8px 0;border:1px solid #e8ecf1;",
+        tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:6px;", "✦ 运行记录 / 会话 Token（点击查看日志）"),
+        DTOutput(p("runs_table"))
+      ),
+      # 本机 CodeBuddy 会话清单 Token 明细
+      div(style = "background:#fff;border-radius:8px;padding:12px;margin:8px 0;border:1px solid #e8ecf1;",
+        tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:6px;", "✦ CodeBuddy 会话清单 Token 明细"),
+        tags$div(style = "font-size:11px;color:#999;margin-bottom:6px;", "来源：本机 codebuddy-sessions 采集（hf_cb_sessions）"),
+        DTOutput(p("cb_sessions_table"))
+      )
+    )
+  )
+}
+
+# ── CodeBuddy 执行过程 → 结构化时间线卡片 ──
+# 原始 stream-json 是逐行 JSON 纯文本，无法阅读；这里按事件类型拆成卡片：
+# 思考(默认折叠) / 回复 / 工具调用+结果(折叠代码块) / 最终结果汇总 / 会话元信息。
+# ★ 所有日志内容一律走 tags$* 文本节点，由 Shiny 自动 HTML 转义，禁止拼接 HTML(日志)。
+hf_workbench_event_ui <- function(rid) {
+  ev <- hf_workbench_events(rid)
+  if (length(ev$events) == 0) {
+    return(tags$div(style = "color:#bbb;font-size:12px;text-align:center;padding:20px;",
+      "等待 CodeBuddy 输出…"))
+  }
+
+  # 颜色统一在 www/hungfo.css 的 .hf-wb-* 类，仅动态色（徽标/左边框）走 inline style
+  badge <- function(label, bg) tags$span(class = "hf-wb-badge", style = paste0("background:", bg, ";"), label)
+  card <- function(color, head, body) tags$div(
+    class = "hf-wb-card", style = paste0("border-left:3px solid ", color, ";"),
+    tags$div(class = "hf-wb-card-head", head), body)
+  code <- function(x) tags$pre(class = "hf-wb-code", x)
+  body_text <- function(cp) tags$div(
+    tags$div(class = "hf-wb-body", cp$text),
+    if (cp$omitted > 0) tags$div(class = "hf-wb-omit",
+      sprintf("… 已省略 %d 字，完整内容见原始日志", cp$omitted)) else NULL)
+
+  render_event <- function(e) {
+    if (identical(e$kind, "meta")) {
+      card("#90a4ae",
+        list(badge("会话", "#607d8b"), icon("info-circle")),
+        tags$div(class = "hf-wb-meta",
+          paste0("模型 ", hf_or(e$model, "—"), " · 工作目录 ", hf_or(e$cwd, "—"),
+                 " · 权限 ", hf_or(e$permission, "—"))))
+    } else if (identical(e$kind, "thinking")) {
+      card("#6c3bbf",
+        list(badge("思考", "#6c3bbf"), icon("lightbulb"),
+             tags$span(class = "hf-wb-hint", sprintf("%d 字", nchar(e$text$text)))),
+        tags$details(tags$summary(class = "hf-wb-summary-purple", "展开思考过程"),
+                     body_text(e$text)))
+    } else if (e$kind %in% c("text", "user_text")) {
+      is_reply <- identical(e$kind, "text")
+      card("#2563eb",
+        list(badge(if (is_reply) "回复" else "输入", "#2563eb"),
+             icon(if (is_reply) "comment" else "user")),
+        body_text(e$text))
+    } else if (identical(e$kind, "tool")) {
+      res <- e$result
+      card("#00695c",
+        list(badge("工具", "#00695c"), icon("terminal"),
+             tags$strong(class = "hf-wb-name", hf_or(e$name, "tool")),
+             if (!is.null(res)) badge(if (isTRUE(res$is_error)) "失败" else "成功",
+               if (isTRUE(res$is_error)) "#d9534f" else "#5cb85c") else NULL),
+        tags$div(
+          if (nzchar(hf_or(e$brief, ""))) tags$div(class = "hf-wb-brief", e$brief) else NULL,
+          tags$details(tags$summary(class = "hf-wb-summary", "调用参数"), code(e$input$text)),
+          if (!is.null(res))
+            tags$details(
+              tags$summary(class = "hf-wb-summary", "执行结果"),
+              code(res$text$text),
+              if (res$text$omitted > 0) tags$div(class = "hf-wb-omit",
+                sprintf("… 已省略 %d 字，完整内容见原始日志", res$text$omitted)) else NULL) else NULL))
+    } else if (identical(e$kind, "orphan_result")) {
+      card("#f59e0b", list(badge("工具结果", "#f59e0b"), icon("reply")), code(e$text$text))
+    } else if (identical(e$kind, "result")) {
+      col <- if (isTRUE(e$ok)) "#0d7d3a" else "#d9534f"
+      card(col,
+        list(badge(if (isTRUE(e$ok)) "完成" else "出错", col), icon("check-circle"),
+             tags$span(class = "hf-wb-hint",
+               sprintf("耗时 %.1fs · %d 轮 · 费用 %s", e$duration_ms / 1000,
+                       as.integer(e$num_turns),
+                       if (nzchar(hf_or(e$cost, ""))) paste0("$", e$cost) else "—"))),
+        tags$div(class = "hf-wb-result", body_text(e$text)))
+    } else {
+      NULL
+    }
+  }
+
+  kinds <- vapply(ev$events, function(x) x$kind, character(1))
+  stat <- tags$div(class = "hf-wb-stat",
+    tags$strong(sprintf("共 %d 步", length(ev$events))),
+    tags$span(paste0("思考 ", sum(kinds == "thinking"))),
+    tags$span(paste0("回复 ", sum(kinds == "text" | kinds == "user_text"))),
+    tags$span(paste0("工具 ", sum(kinds == "tool"))),
+    tags$span(paste0("结果 ", sum(kinds == "result"))),
+    if (ev$dropped > 0) tags$span(style = "color:#d9534f;",
+      sprintf("仅显示最近 %d 步（省略 %d 步）", length(ev$events), ev$dropped)) else NULL)
+
+  raw <- tags$details(class = "hf-wb-raw",
+    tags$summary("查看原始 stream-json 日志"),
+    tags$div(
+      sprintf("日志共 %d 行", ev$total_lines),
+      if (ev$nonjson > 0) sprintf("（另有 %d 行非 JSON 输出）", ev$nonjson) else "",
+      " · ",
+      tags$a(href = ev$log_url, target = "_blank", rel = "noopener", "在新标签页打开完整日志")))
+
+  tags$div(id = "hf_workbench_stream", class = "hf-wb-stream",
+    stat,
+    do.call(tagList, lapply(ev$events, render_event)),
+    raw,
+    tags$script(HTML(paste0(
+      "(function(){var e=document.getElementById('hf_workbench_stream');",
+      "if(!e)return;if(e.scrollHeight-e.scrollTop-e.clientHeight<100)",
+      "e.scrollTop=e.scrollHeight;})();"))))
+}
+
+hf_workbench_page_server <- function(input, output, session, rv, m, trigger) {
+  p <- function(x) paste0("hf_workbench_", x)
+  local_trigger <- reactiveVal(0)
+  local_refresh <- function() local_trigger(local_trigger() + 1)
+  current_run <- reactiveVal(NULL)
+
+  # run_state() 提供实时失效；同步日志中的 Token 消耗后再读运行记录
+  runs_df <- reactive({
+    trigger(); local_trigger(); run_state()
+    hf_workbench_refresh_status()
+    hf_workbench_list()
+  })
+
+  # 运行记录表
+  output[[p("runs_table")]] <- DT::renderDT({
+    df <- runs_df()
+    if (is.null(df) || nrow(df) == 0) return(hf_datatable(df, empty = "no_data"))
+    st_badge <- function(s) {
+      s <- hf_or(s, "running")
+      switch(s,
+        running = '<span style="color:#2563eb;">● 运行中</span>',
+        done = '<span style="color:#0d7d3a;">● 已完成</span>',
+        error = '<span style="color:#d9534f;">● 出错</span>',
+        sprintf('<span>%s</span>', s))
+    }
+    tk <- function(x) ifelse(is.na(x), "0", format(as.numeric(x), big.mark = ",", scientific = FALSE, trim = TRUE))
+    col <- function(nm) if (is.null(df[[nm]])) rep(0, nrow(df)) else df[[nm]]
+    out <- data.frame(
+      ID = df$id,
+      任务 = vapply(seq_len(nrow(df)), function(i) {
+        one <- gsub("\\s+", " ", hf_or(df$task[i], ""))
+        if (nchar(one) > 40) paste0(substr(one, 1, 40), "…") else one
+      }, character(1)),
+      状态 = vapply(df$status, st_badge, character(1)),
+      Token合计 = tk(col("token_total")),
+      输入 = tk(col("token_in")),
+      输出 = tk(col("token_out")),
+      缓存命中 = tk(col("token_cache_read")),
+      创建时间 = ifelse(is.na(df$created_at) | df$created_at == "", "—", df$created_at),
+      结束时间 = ifelse(is.na(df$finished_at) | df$finished_at == "", "—", df$finished_at),
+      stringsAsFactors = FALSE)
+    hf_datatable(out, selection = "single", page_size = 10, escape = FALSE)
+  })
+
+  # 会话 Token 消耗 KPI（工作台 CLI 会话 + 本机 CodeBuddy 会话清单）
+  output[[p("token_kpi")]] <- renderUI({
+    trigger(); local_trigger(); runs_df()   # 依赖 runs_df 确保 Token 已同步
+    sm <- hf_workbench_summary()
+    cb <- hf_cb_sessions_summary()
+    fmt <- function(x) format(as.numeric(hf_or(x, 0)), big.mark = ",", scientific = FALSE, trim = TRUE)
+    tile <- function(label, value, color) {
+      tags$div(style = "flex:1;min-width:118px;background:#f8f9fc;border:1px solid #e8ecf1;border-radius:8px;padding:8px 10px;",
+        tags$div(style = "font-size:11px;color:#888;", label),
+        tags$div(style = paste0("font-size:18px;font-weight:700;color:", color, ";"), value))
+    }
+    tags$div(style = "display:flex;flex-wrap:wrap;gap:8px;",
+      tile("工作台会话数", fmt(sm$total$sessions), "#37474f"),
+      tile("Token 合计", fmt(sm$total$token_total), "#6c3bbf"),
+      tile("输入 Token", fmt(sm$total$token_in), "#0d47a1"),
+      tile("输出 Token", fmt(sm$total$token_out), "#00695c"),
+      tile("缓存命中", fmt(sm$total$token_cache_read), "#f59e0b"),
+      tile("今日 Token", fmt(sm$today$token_total), "#d9534f"),
+      tile("CodeBuddy 会话", fmt(cb$total_sessions), "#37474f"),
+      tile("清单 Token 总计", fmt(cb$total_tokens), "#6c3bbf")
+    )
+  })
+
+  # 本机 CodeBuddy 会话清单 Token 明细
+  output[[p("cb_sessions_table")]] <- DT::renderDT({
+    trigger(); local_trigger()
+    df <- hf_cb_sessions_list(50)
+    if (is.null(df) || nrow(df) == 0) return(hf_datatable(df, empty = "no_data"))
+    tk <- function(x) ifelse(is.na(x), "0", format(as.numeric(x), big.mark = ",", scientific = FALSE, trim = TRUE))
+    out <- data.frame(
+      会话 = vapply(seq_len(nrow(df)), function(i) {
+        t <- gsub("\\s+", " ", hf_or(df$title[i], ""))
+        if (!nzchar(t)) t <- hf_or(df$conversation_id[i], "")
+        if (nchar(t) > 36) paste0(substr(t, 1, 36), "…") else t
+      }, character(1)),
+      Token总计 = tk(df$token_total),
+      输入 = tk(df$token_input),
+      输出 = tk(df$token_output),
+      缓存命中 = tk(df$token_cache_hit),
+      思考 = tk(df$token_thinking),
+      命中率 = ifelse(is.na(df$token_cache_hit_rate), "—", paste0(df$token_cache_hit_rate, "%")),
+      更新时间 = ifelse(is.na(df$updated_at) | df$updated_at == "", "—", df$updated_at),
+      stringsAsFactors = FALSE)
+    hf_datatable(out, selection = "none", page_size = 10, escape = FALSE)
+  })
+
+  # 点击运行记录 → 查看日志
+  observeEvent(input[[p("runs_table_rows_selected")]], {
+    idx <- input[[p("runs_table_rows_selected")]]
+    df <- runs_df()
+    if (is.null(idx) || length(idx) == 0 || is.null(df) || nrow(df) == 0) return()
+    current_run(df$run_id[idx[1]])
+    local_refresh()
+  })
+
+  # 运行按钮
+  observeEvent(input[[p("run_btn")]], {
+    req(rv$logged_in)
+    task <- trimws(hf_or(input[[p("task_in")]], ""))
+    if (!nzchar(task)) { showNotification("请输入任务内容", type = "warning"); return() }
+    r <- hf_workbench_run(task, created_by = hf_current_uid(rv))
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (isTRUE(r$success)) {
+      current_run(r$run_id)
+      updateTextAreaInput(session, p("task_in"), value = "")
+    }
+    local_refresh()
+  })
+
+  observeEvent(input[[p("refresh_btn")]], local_refresh())
+
+  # 实时状态 + 日志（reactivePoll 每 1.5 秒轮询）
+  run_state <- reactivePoll(1500, session,
+    checkFunc = function() {
+      rid <- current_run()
+      if (is.null(rid)) return("")
+      st <- hf_workbench_status(rid)
+      lp <- hf_workbench_logfile(rid)
+      sig <- paste0(st, "|")
+      if (!is.null(lp) && file.exists(lp)) sig <- paste0(sig, as.numeric(file.info(lp)$mtime), "|", file.info(lp)$size)
+      sig
+    },
+    valueFunc = function() {
+      rid <- current_run()
+      if (is.null(rid)) return(list(status = ""))
+      hf_workbench_refresh_status()
+      # 日志不再整段回传：由 hf_workbench_event_ui() 按需解析结构化事件（带缓存）
+      list(status = hf_workbench_status(rid))
+    }
+  )
+
+  output[[p("log_status")]] <- renderUI({
+    rid <- current_run()
+    st <- run_state()$status
+    if (is.null(rid)) return(tags$div(style = "color:#999;font-size:12px;", "尚未运行任务。"))
+    lbl <- switch(hf_or(st, ""), running = "运行中", done = "已完成", error = "出错", "—")
+    col <- switch(hf_or(st, ""), running = "#2563eb", done = "#0d7d3a", error = "#d9534f", "#999")
+    tags$div(style = paste0("font-size:12px;font-weight:700;color:", col, ";margin-bottom:6px;"),
+      "● ", lbl, " · ", rid)
+  })
+
+  output[[p("log_out")]] <- renderUI({
+    run_state()   # 依赖 reactivePoll：日志文件增长时重新渲染结构化时间线
+    rid <- current_run()
+    if (is.null(rid)) {
+      return(tags$div(style = "color:#bbb;font-size:12px;text-align:center;padding:20px;",
+        "提交任务后，这里将实时显示 CodeBuddy 的执行过程与结果"))
+    }
+    hf_workbench_event_ui(rid)
+  })
 }

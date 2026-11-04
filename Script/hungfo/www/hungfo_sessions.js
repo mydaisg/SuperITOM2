@@ -1,25 +1,40 @@
 // 由 HungFo 生成（hf_sessions_export），勿手改
 window.HF_SESSIONS = {
-  "updated_at": "2026-11-02 11:40:21",
+  "updated_at": "2026-11-04 17:23:17",
   "summary": {
     "total": {
       "token_in": 26500,
       "token_out": 8400,
-      "sessions": 20,
-      "success": 20,
+      "sessions": 21,
+      "success": 21,
       "failed": 0,
-      "duration_ms": 8845980
+      "duration_ms": 9485980
     },
     "today": {
       "token_in": 0,
       "token_out": 0,
-      "sessions": 4,
-      "success": 4,
+      "sessions": 1,
+      "success": 1,
       "failed": 0,
-      "duration_ms": 2802000
+      "duration_ms": 640000
     }
   },
   "sessions": [
+    {
+      "id": 23,
+      "task_id": 26,
+      "session_id": "mt26-20261104171228",
+      "title": "这是WorkBuddy提供的一个方案，在HungFo上实现。",
+      "llm_name": "auto",
+      "agent": "CodeBuddy",
+      "token_in": 0,
+      "token_out": 0,
+      "duration_ms": 640000,
+      "status": "success",
+      "result": "新增网页工作台环节：网页提交任务给 CodeBuddy CLI 实时回传过程与结果",
+      "started_at": "2026-11-04 17:23:17",
+      "finished_at": "2026-11-04 17:23:17"
+    },
     {
       "id": 22,
       "task_id": 23,

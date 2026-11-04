@@ -4,3 +4,24 @@
   text-align: center;
   padding: 24px 0;
 }
+
+/* CodeBuddy 工作台：执行过程结构化时间线（颜色统一在此，禁止在 R 里硬编码） */
+.hf-wb-stream { max-height:520px; overflow:auto; padding-right:4px; }
+.hf-wb-stat { display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:11px; color:#78909c; background:#f8f9fc; border:1px solid #e8ecf1; border-radius:8px; padding:6px 10px; margin-bottom:8px; }
+.hf-wb-stat strong { color:#37474f; }
+.hf-wb-card { background:#fff; border:1px solid #e8ecf1; border-radius:8px; padding:8px 10px; margin:6px 0; }
+.hf-wb-card-head { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px; }
+.hf-wb-badge { font-size:10px; color:#fff; padding:1px 8px; border-radius:10px; white-space:nowrap; }
+.hf-wb-name { font-size:12px; color:#00695c; }
+.hf-wb-hint { font-size:11px; color:#999; }
+.hf-wb-summary { cursor:pointer; font-size:11px; color:#607d8b; }
+.hf-wb-summary-purple { cursor:pointer; font-size:12px; color:#6c3bbf; }
+.hf-wb-body { white-space:pre-wrap; word-break:break-word; font-size:12px; line-height:1.6; color:#2b2b29; }
+.hf-wb-omit { font-size:11px; color:#999; margin-top:4px; }
+.hf-wb-code { background:#1e1e1e; color:#d1e3ff; border-radius:6px; padding:8px 10px; margin:4px 0 0; font-size:11px; line-height:1.5; max-height:260px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
+.hf-wb-meta { font-size:11px; color:#607d8b; line-height:1.6; }
+.hf-wb-brief { font-size:11px; color:#546e7a; word-break:break-word; margin-bottom:4px; }
+.hf-wb-result { background:#f7faf8; border-radius:6px; padding:8px 10px; }
+.hf-wb-raw { margin-top:8px; }
+.hf-wb-raw summary { cursor:pointer; font-size:11px; color:#90a4ae; }
+.hf-wb-raw > div { font-size:11px; color:#78909c; padding:6px 2px; }

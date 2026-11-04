@@ -1,8 +1,8 @@
 // 由 HungFo 生成（export_cb_sessions），勿手改
 window.HF_CB_SESSIONS = {
-  "updated_at": "2026-11-04 12:02:22",
+  "updated_at": "2026-11-04 17:12:27",
   "summary": {
-    "total_sessions": 23,
+    "total_sessions": 24,
     "total_tokens": 1043002,
     "token_sessions": 1
   },
@@ -13,7 +13,25 @@ window.HF_CB_SESSIONS = {
       "cwd": "d:/GitHub/SuperITOM2/Script/hungfo",
       "status": "Working",
       "created_at": "2026-10-30 17:17:54",
-      "updated_at": "2026-11-04 12:02:05",
+      "updated_at": "2026-11-04 17:12:13",
+      "token_total": 0,
+      "token_input": 0,
+      "token_output": 0,
+      "token_cache_hit": 0,
+      "token_cache_miss": 0,
+      "token_cache_write": 0,
+      "token_thinking": 0,
+      "token_response": 0,
+      "token_cache_hit_rate": 0,
+      "token_updated_at": ""
+    },
+    {
+      "conversation_id": "5632e83fee264256ac20c2c0fc4f647f",
+      "title": "CodeBuddy侧栏添加快捷记事",
+      "cwd": "d:/GitHub/SuperITOM2",
+      "status": "Completed",
+      "created_at": "2026-11-04 15:50:13",
+      "updated_at": "2026-11-04 16:00:56",
       "token_total": 0,
       "token_input": 0,
       "token_output": 0,
