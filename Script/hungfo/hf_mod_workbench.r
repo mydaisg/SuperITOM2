@@ -207,6 +207,7 @@ hf_workbench_events <- function(run_id, max_events = 100, text_limit = 600) {
   }
   clip <- function(s, n = text_limit) {
     s <- as.character(hf_or(s, ""))
+    if (is.null(n)) return(list(text = s, omitted = 0))   # NULL = 全文直显，不截断
     k <- nchar(s)
     if (k > n) list(text = substr(s, 1, n), omitted = k - n) else list(text = s, omitted = 0)
   }
@@ -262,7 +263,8 @@ hf_workbench_events <- function(run_id, max_events = 100, text_limit = 600) {
         if (!is.list(b)) next
         bt <- str1(b$type)
         if (identical(bt, "thinking")) {
-          add(list(kind = "thinking", text = clip(str1(b$thinking))))
+          # 思考过程全文直显：不折叠、不截断，无需再「查看详细日志」
+          add(list(kind = "thinking", text = clip(str1(b$thinking), n = NULL)))
         } else if (identical(bt, "text")) {
           add(list(kind = if (identical(typ, "user")) "user_text" else "text",
                    text = clip(str1(b$text))))

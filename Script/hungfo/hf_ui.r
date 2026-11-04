@@ -2760,14 +2760,26 @@ hf_workbench_page_ui <- function(m) {
           actionButton(p("refresh_btn"), "刷新", icon = icon("sync"), class = "btn-default btn-sm")
         )
       ),
-      # 实时日志区
+      # 执行过程区（带收缩按键；再次点击任务清单同一行自动切换收缩/展开）
       div(style = "background:#fff;border-radius:8px;padding:12px;margin:8px 0;border:1px solid #e8ecf1;",
-        uiOutput(p("log_status")),
-        uiOutput(p("log_out"))
+        div(style = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;",
+          tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;", "✦ 执行过程（按步编号）"),
+          uiOutput(p("log_status"), inline = TRUE),
+          div(style = "margin-left:auto;",
+            tags$button(id = p("stream_toggle"), type = "button",
+              class = "btn btn-default btn-xs", onclick = "hfWbToggleStream()",
+              "▾ 收缩过程"))
+        ),
+        div(id = p("stream_wrap"), class = "hf-wb-wrap",
+          tags$div(class = "hf-wb-collapsed-hint",
+            "执行过程已收缩 · 点击右上「展开过程」，或再次点击任务清单中的同一行查看"),
+          div(class = "hf-wb-body-wrap", uiOutput(p("log_out")))
+        )
       ),
       # 历史运行记录（含每次会话 Token 消耗）
       div(style = "background:#fff;border-radius:8px;padding:12px;margin:8px 0;border:1px solid #e8ecf1;",
-        tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:6px;", "✦ 运行记录 / 会话 Token（点击查看日志）"),
+        tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:6px;",
+          "✦ 任务清单 / 运行记录（点击查看执行过程 · 再次点击同一行自动收缩）"),
         DTOutput(p("runs_table"))
       ),
       # 本机 CodeBuddy 会话清单 Token 明细
@@ -2775,14 +2787,45 @@ hf_workbench_page_ui <- function(m) {
         tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:6px;", "✦ CodeBuddy 会话清单 Token 明细"),
         tags$div(style = "font-size:11px;color:#999;margin-bottom:6px;", "来源：本机 codebuddy-sessions 采集（hf_cb_sessions）"),
         DTOutput(p("cb_sessions_table"))
-      )
+      ),
+      # 收缩/展开交互：状态挂在静态包裹层上，日志轮询重渲染不会丢失
+      tags$script(HTML("
+(function(){
+  window.hfWbSetCollapsed = function(v){
+    var w=document.getElementById('hf_workbench_stream_wrap');
+    var b=document.getElementById('hf_workbench_stream_toggle');
+    if(w){ if(v) w.classList.add('hf-wb-collapsed'); else w.classList.remove('hf-wb-collapsed'); }
+    if(b) b.textContent = v ? '▸ 展开过程' : '▾ 收缩过程';
+  };
+  window.hfWbToggleStream = function(){
+    var w=document.getElementById('hf_workbench_stream_wrap');
+    if(!w) return;
+    window.hfWbSetCollapsed(!w.classList.contains('hf-wb-collapsed'));
+  };
+  if(window.__hfWbBound) return;
+  window.__hfWbBound = true;
+  window.HF_WB_LAST_ROW = null;
+  Shiny.addCustomMessageHandler('hfWbSetCollapsed', function(msg){
+    window.hfWbSetCollapsed(!!msg.collapsed);
+    if(!msg.collapsed) window.HF_WB_LAST_ROW = null;
+  });
+  $(document).on('click', '#hf_workbench_runs_table tbody tr', function(){
+    var key = $('td', this).first().text().trim();
+    if(!key) return;
+    if(window.HF_WB_LAST_ROW === key) window.hfWbToggleStream();
+    else window.hfWbSetCollapsed(false);
+    window.HF_WB_LAST_ROW = key;
+  });
+})();
+"))
     )
   )
 }
 
 # ── CodeBuddy 执行过程 → 结构化时间线卡片 ──
 # 原始 stream-json 是逐行 JSON 纯文本，无法阅读；这里按事件类型拆成卡片：
-# 思考(默认折叠) / 回复 / 工具调用+结果(折叠代码块) / 最终结果汇总 / 会话元信息。
+# 思考(全文直显) / 回复 / 工具调用+结果(可展开代码块) / 最终结果汇总 / 会话元信息。
+# ★ 每张卡带真实步骤序号（内容太长便于定位），并用「● 全文直显 / ▸ 可展开」标签明显区分是否可展开。
 # ★ 所有日志内容一律走 tags$* 文本节点，由 Shiny 自动 HTML 转义，禁止拼接 HTML(日志)。
 hf_workbench_event_ui <- function(rid) {
   ev <- hf_workbench_events(rid)
@@ -2793,34 +2836,43 @@ hf_workbench_event_ui <- function(rid) {
 
   # 颜色统一在 www/hungfo.css 的 .hf-wb-* 类，仅动态色（徽标/左边框）走 inline style
   badge <- function(label, bg) tags$span(class = "hf-wb-badge", style = paste0("background:", bg, ";"), label)
-  card <- function(color, head, body) tags$div(
+  tag_static <- tags$span(class = "hf-wb-tag hf-wb-tag-static", "● 全文直显")
+  tag_expand <- tags$span(class = "hf-wb-tag hf-wb-tag-expand", "▸ 可展开")
+  # no = 真实步骤序号（含被省略的前序步骤）；tag = 可展开 / 不可展开标识
+  card <- function(color, head, body, no, tag) tags$div(
     class = "hf-wb-card", style = paste0("border-left:3px solid ", color, ";"),
-    tags$div(class = "hf-wb-card-head", head), body)
+    tags$div(class = "hf-wb-card-head",
+      tags$span(class = "hf-wb-no", sprintf("%02d", no)), head, tag),
+    body)
   code <- function(x) tags$pre(class = "hf-wb-code", x)
   body_text <- function(cp) tags$div(
     tags$div(class = "hf-wb-body", cp$text),
     if (cp$omitted > 0) tags$div(class = "hf-wb-omit",
-      sprintf("… 已省略 %d 字，完整内容见原始日志", cp$omitted)) else NULL)
+      sprintf("… 已省略 %d 字，完整内容见下方「查看原始 stream-json 日志」（可展开）", cp$omitted)) else NULL)
+  # 可展开区块：统一箭头 + 「点击展开/收起」提示（样式在 .hf-wb-details）
+  details_block <- function(label, ...) tags$details(class = "hf-wb-details",
+    tags$summary(label), ...)
 
-  render_event <- function(e) {
+  render_event <- function(e, i) {
+    no <- ev$dropped + i
     if (identical(e$kind, "meta")) {
       card("#90a4ae",
         list(badge("会话", "#607d8b"), icon("info-circle")),
         tags$div(class = "hf-wb-meta",
           paste0("模型 ", hf_or(e$model, "—"), " · 工作目录 ", hf_or(e$cwd, "—"),
-                 " · 权限 ", hf_or(e$permission, "—"))))
+                 " · 权限 ", hf_or(e$permission, "—"))), no, tag_static)
     } else if (identical(e$kind, "thinking")) {
+      # 思考过程：全文直显（不折叠、不截断），无需再查看详细日志
       card("#6c3bbf",
         list(badge("思考", "#6c3bbf"), icon("lightbulb"),
              tags$span(class = "hf-wb-hint", sprintf("%d 字", nchar(e$text$text)))),
-        tags$details(tags$summary(class = "hf-wb-summary-purple", "展开思考过程"),
-                     body_text(e$text)))
+        body_text(e$text), no, tag_static)
     } else if (e$kind %in% c("text", "user_text")) {
       is_reply <- identical(e$kind, "text")
       card("#2563eb",
         list(badge(if (is_reply) "回复" else "输入", "#2563eb"),
              icon(if (is_reply) "comment" else "user")),
-        body_text(e$text))
+        body_text(e$text), no, tag_static)
     } else if (identical(e$kind, "tool")) {
       res <- e$result
       card("#00695c",
@@ -2830,15 +2882,16 @@ hf_workbench_event_ui <- function(rid) {
                if (isTRUE(res$is_error)) "#d9534f" else "#5cb85c") else NULL),
         tags$div(
           if (nzchar(hf_or(e$brief, ""))) tags$div(class = "hf-wb-brief", e$brief) else NULL,
-          tags$details(tags$summary(class = "hf-wb-summary", "调用参数"), code(e$input$text)),
+          details_block("调用参数", code(e$input$text)),
           if (!is.null(res))
-            tags$details(
-              tags$summary(class = "hf-wb-summary", "执行结果"),
+            details_block("执行结果",
               code(res$text$text),
               if (res$text$omitted > 0) tags$div(class = "hf-wb-omit",
-                sprintf("… 已省略 %d 字，完整内容见原始日志", res$text$omitted)) else NULL) else NULL))
+                sprintf("… 已省略 %d 字，完整内容见下方原始日志", res$text$omitted)) else NULL) else NULL),
+        no, tag_expand)
     } else if (identical(e$kind, "orphan_result")) {
-      card("#f59e0b", list(badge("工具结果", "#f59e0b"), icon("reply")), code(e$text$text))
+      card("#f59e0b", list(badge("工具结果", "#f59e0b"), icon("reply")),
+        code(e$text$text), no, tag_static)
     } else if (identical(e$kind, "result")) {
       col <- if (isTRUE(e$ok)) "#0d7d3a" else "#d9534f"
       card(col,
@@ -2847,7 +2900,7 @@ hf_workbench_event_ui <- function(rid) {
                sprintf("耗时 %.1fs · %d 轮 · 费用 %s", e$duration_ms / 1000,
                        as.integer(e$num_turns),
                        if (nzchar(hf_or(e$cost, ""))) paste0("$", e$cost) else "—"))),
-        tags$div(class = "hf-wb-result", body_text(e$text)))
+        tags$div(class = "hf-wb-result", body_text(e$text)), no, tag_static)
     } else {
       NULL
     }
@@ -2855,16 +2908,17 @@ hf_workbench_event_ui <- function(rid) {
 
   kinds <- vapply(ev$events, function(x) x$kind, character(1))
   stat <- tags$div(class = "hf-wb-stat",
-    tags$strong(sprintf("共 %d 步", length(ev$events))),
+    tags$strong(sprintf("共 %d 步", length(ev$events) + ev$dropped)),
     tags$span(paste0("思考 ", sum(kinds == "thinking"))),
     tags$span(paste0("回复 ", sum(kinds == "text" | kinds == "user_text"))),
     tags$span(paste0("工具 ", sum(kinds == "tool"))),
     tags$span(paste0("结果 ", sum(kinds == "result"))),
     if (ev$dropped > 0) tags$span(style = "color:#d9534f;",
-      sprintf("仅显示最近 %d 步（省略 %d 步）", length(ev$events), ev$dropped)) else NULL)
+      sprintf("仅显示最近 %d 步（省略 %d 步）", length(ev$events), ev$dropped)) else NULL,
+    tags$span(class = "hf-wb-legend", "● 全文直显 · ▸ 可展开"))
 
-  raw <- tags$details(class = "hf-wb-raw",
-    tags$summary("查看原始 stream-json 日志"),
+  raw <- tags$details(class = "hf-wb-details hf-wb-raw",
+    tags$summary("查看原始 stream-json 日志（可展开）"),
     tags$div(
       sprintf("日志共 %d 行", ev$total_lines),
       if (ev$nonjson > 0) sprintf("（另有 %d 行非 JSON 输出）", ev$nonjson) else "",
@@ -2873,7 +2927,7 @@ hf_workbench_event_ui <- function(rid) {
 
   tags$div(id = "hf_workbench_stream", class = "hf-wb-stream",
     stat,
-    do.call(tagList, lapply(ev$events, render_event)),
+    do.call(tagList, lapply(seq_along(ev$events), function(i) render_event(ev$events[[i]], i))),
     raw,
     tags$script(HTML(paste0(
       "(function(){var e=document.getElementById('hf_workbench_stream');",
@@ -2989,6 +3043,7 @@ hf_workbench_page_server <- function(input, output, session, rv, m, trigger) {
     showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
     if (isTRUE(r$success)) {
       current_run(r$run_id)
+      session$sendCustomMessage("hfWbSetCollapsed", list(collapsed = FALSE))
       updateTextAreaInput(session, p("task_in"), value = "")
     }
     local_refresh()
@@ -3019,10 +3074,10 @@ hf_workbench_page_server <- function(input, output, session, rv, m, trigger) {
   output[[p("log_status")]] <- renderUI({
     rid <- current_run()
     st <- run_state()$status
-    if (is.null(rid)) return(tags$div(style = "color:#999;font-size:12px;", "尚未运行任务。"))
+    if (is.null(rid)) return(tags$span(style = "color:#999;font-size:12px;", "尚未运行任务。"))
     lbl <- switch(hf_or(st, ""), running = "运行中", done = "已完成", error = "出错", "—")
     col <- switch(hf_or(st, ""), running = "#2563eb", done = "#0d7d3a", error = "#d9534f", "#999")
-    tags$div(style = paste0("font-size:12px;font-weight:700;color:", col, ";margin-bottom:6px;"),
+    tags$span(style = paste0("font-size:12px;font-weight:700;color:", col, ";"),
       "● ", lbl, " · ", rid)
   })
 
