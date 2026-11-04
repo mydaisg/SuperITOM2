@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>HungFo 开发日志</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:#f5f7fa;color:#1f2937}
+  header{background:#0d47a1;color:#fff;padding:16px 24px}
+  header h1{margin:0;font-size:18px;font-weight:600}
+  header .sub{margin-top:4px;font-size:12px;opacity:.85}
+  .wrap{padding:16px 24px}
+  .bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+  .bar input,.bar select,.bar button{padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;background:#fff}
+  .bar input[type=search]{flex:1;min-width:220px}
+  .bar button{cursor:pointer}
+  .bar .count{margin-left:auto;font-size:12px;color:#64748b}
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  th{background:#eef2f7;text-align:left;padding:10px 12px;font-size:12px;color:#475569;font-weight:600;border-bottom:1px solid #e2e8f0}
+  td{padding:10px 12px;font-size:13px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+  tr:hover td{background:#f8fafc;cursor:pointer}
+  .no{font-family:Consolas,monospace;font-size:11px;color:#64748b;white-space:nowrap}
+  .title{font-weight:500}
+  .date{color:#64748b;font-size:12px;white-space:nowrap}
+  .tag{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px}
+  .tag.draft{background:#fef3c7;color:#92400e}
+  .tag.other{background:#e0e7ff;color:#3730a3}
+  mark{background:#fde68a;padding:0 2px;border-radius:2px}
+  #detail{position:fixed;inset:0;background:rgba(15,23,42,.5);display:none;align-items:center;justify-content:center;padding:24px;z-index:50}
+  #detail.open{display:flex}
+  #detail .box{background:#fff;border-radius:10px;max-width:820px;width:100%;max-height:82vh;display:flex;flex-direction:column;overflow:hidden}
+  #detail .hd{padding:16px 20px;border-bottom:1px solid #e2e8f0}
+  #detail .hd h2{margin:0 0 6px;font-size:16px}
+  #detail .hd .meta{font-size:12px;color:#64748b;font-family:Consolas,monospace}
+  #detail .bd{padding:16px 20px;overflow:auto;white-space:pre-wrap;font-size:13px;line-height:1.7}
+  #detail .ft{padding:12px 20px;border-top:1px solid #e2e8f0;text-align:right}
+  #detail button{padding:7px 16px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;font-size:13px}
+  .empty{text-align:center;padding:40px;color:#94a3b8;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>HungFo 开发日志</h1>
+  <div class="sub">开发库 HF_HungFo_DSH.DB · 共 42 条 · 生成时间 2026-11-04 11:51</div>
+</header>
+<div class="wrap">
+  <div class="bar">
+    <input type="search" id="q" placeholder="搜索标题 / 正文 / 编号…">
+    <select id="month"><option value="">全部月份</option><option value="2026-11">2026-11</option><option value="2026-10">2026-10</option></select>
+    <select id="status">
+      <option value="">全部状态</option>
+      <option value="draft">draft</option>
+      <option value="正式">正式</option>
+    </select>
+    <button id="reset">重置</button>
+    <span class="count" id="count"></span>
+  </div>
+  <table>
+    <thead><tr><th style="width:190px">编号</th><th>标题</th><th style="width:130px">日期</th><th style="width:80px">状态</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+<div id="detail"><div class="box">
+  <div class="hd"><h2 id="d-title"></h2><div class="meta" id="d-meta"></div></div>
+  <div class="bd" id="d-body"></div>
+  <div class="ft"><button id="d-close">关闭</button></div>
+</div></div>
+<script>
+var RECORDS = [{"id":48,"no":"HF-DEVLOG-20261102114015","title":"开发权限体系模块","payload":"【需求】开发权限体系模块，参照父项目 RBAC 授权管理，补充 HungFo 各模块权限与登录，本地创建 2 个组和 2 个账号（admins组: DaiSG/falwpa，user组: GodHat/falwpa），具备完整用户管理、角色、安全组功能。\n【分析】现有 hf_mod_permission.r 为 scaffold 占位（仅 hf_perm_check 占位），无真实用户/角色/组数据与登录鉴权，各模块权限未落地。\n【方案】将权限体系从占位升级为完整实现：在 hf_core.r 迁移逻辑末尾新增用户/角色/安全组表，实现三层 RBAC 鉴权数据层与登录校验，初始化 2 组 2 账号，在 hf_mod_permission.r 补充完整 API，在 hf_ui.r 接入登录态与各模块权限判断。\n【结果】完成权限体系（用户管理/角色/安全组 + 登录鉴权 + 初始化数据），涉及 hf_mod_permission.r、hf_core.r、hf_ui.r，语法验证通过。","status":"draft","module":"devlog","date":"2026-11-02 11:40"},{"id":47,"no":"HF-DEVLOG-20261102113601","title":"增加模块：项目","payload":"【需求】新增项目模块，放在导航菜单元任务后面，集合父项目 SuperITOM2 的需求、记事、总结、项目模板功能为一体，支持快速 Tab 切换与数据联动自动刷新。\n【分析】现有 HungFo 无项目模块，需求/记事/总结/项目模板功能分散在父项目中未整合，缺少统一入口与关联打通。\n【方案】新建 hf_mod_project.r，采用多子 Tab 结构（需求/记事/总结/模板），复用 reactive 触发器模式实现数据联动自动刷新，数据层走 hf_db_connect/hf_db_disconnect + SQL 参数绑定，在 hf_ui.r 导航菜单中把项目模块置于元任务之后。\n【结果】完成项目模块并打通关联，涉及新增 hf_mod_project.r + 改 hf_core.r + hf_ui.r，语法验证通过。","status":"draft","module":"devlog","date":"2026-11-02 11:36"},{"id":46,"no":"HF-DEVLOG-20261102113542","title":"增加模块：配置","payload":"【需求】新增配置模块，放在导航栏最右边，先实现导航栏菜单名称、图标、位置、显示/隐藏的可自定义配置。\n【分析】现有 HungFo 无独立配置模块，导航菜单固定写死在 hf_ui.r，缺少运行时自定义能力。\n【方案】新建 hf_mod_config.r 配置模块，数据持久化到 HF_HungFo.DB（配置表），实现导航菜单元数据（名称/图标/位置/显示隐藏）的增删改查，并在 hf_ui.r 中让导航栏读取配置动态渲染、位置固定最右、修改后实时刷新。\n【结果】完成配置模块，导航栏菜单可自定义配置并实时生效，涉及新增 hf_mod_config.r + 改 hf_core.r + hf_ui.r，语法验证通过。","status":"draft","module":"devlog","date":"2026-11-02 11:35"},{"id":45,"no":"HF-DEVLOG-20261102113325","title":"开发规则模块","payload":"【需求】开发规则模块，增加规则类别的新增和编辑功能。\n【分析】现有规则模块 hf_mod_rules.r 为 scaffold 占位，hf_core.r 已有规则数据层函数但缺少独立的规则类别管理（类别的新增/编辑）能力，UI 层无类别管理交互入口。\n【方案】在 hf_core.r 完善规则类别数据层（建表 + 新增/编辑/列表函数），在 hf_mod_rules.r 补充类别透传 API，在 hf_ui.r 增加规则类别管理界面（新增/编辑按钮 + 数据表），保持 HF_MOD_XXX + hf_register 风格与 SQL 参数绑定。\n【结果】完成规则类别新增/编辑功能，涉及 hf_mod_rules.r、hf_core.r、hf_ui.r，语法验证通过。","status":"draft","module":"devlog","date":"2026-11-02 11:33"},{"id":44,"no":"HF-DEVLOG-20261031194409","title":"CodeBuddy的元任务结果和数据要写入Agent Workflow Monitor","payload":"【需求】CodeBuddy 元任务自动执行器第5步 done 会把结果摘要、LLM、Token、耗时等元数据写入 hf_metatask_queue 和 hf_task_sessions 表并导出 hungfo_sessions.js，这些数据需在 Agent Workflow Monitor 的会话追踪列表展示，并展示汇总。 \n【分析】现状：hungfo_sessions.js 的 sessions 导出缺少 result 字段（元任务结果摘要），summary 仅有 token 与会话数，缺成功/失败/总耗时；前端 hungfo_agent_monitor.html 的会话追踪面板 renderSessionPanel 只展示 LLM/标题/Token/耗时，未展示 result 也无汇总行。 \n【方案】1) hf_core.r 的 hf_token_summary 增加 success/failed/duration_ms 汇总，hf_sessions_export 的 sessions 增加 result 字段；2) hf_metatask_runner.r 的 export_sessions 同步增加 result 字段与增强 summary（保持两份导出一致）；3) hungfo_agent_monitor.html 会话面板新增 spSummary 汇总行（成功/失败/成功率/总耗时），每条会话项新增 sp-result 展示结果摘要（单行省略+title 悬浮全文），并新增 escHtml 转义防 XSS。 \n【结果】会话追踪面板现展示元任务结果与汇总，重新导出 hungfo_sessions.js 含 result 及 success/failed/duration_ms，R 与 JS 语法均通过。","status":"draft","module":"devlog","date":"2026-10-31 19:44"},{"id":43,"no":"HF-DEVLOG-20261030183507","title":"Fix开发日志的机制","payload":"【需求】修复 HungFo 开发日志分段机制：最后三条日志（HF-DEVLOG-20261030172955、HF-DEVLOG-20261030172947、HF-DEVLOG-20261029125331）各段挤在同一行导致展示错乱，需恢复参照 HF-DEVLOG-20261029122346 的严格分段样式。 \n【分析】hf_ui.r 的 hf_devlog_sections 解析函数按换行分行、仅在行首识别段标签，无法处理同行多标签；三条坏日志是内容用空格或句号分隔写在同一行所致，需从展示解析、写入源头、历史数据三层修复。 \n【方案】1) hf_ui.r 重写 hf_devlog_sections，改用正则按段标签边界切分，兼容换行与同行两种写法；2) hf_metatask_runner.r 的 write_log 写入前规范化，在非行首的段标签前插入换行，保证写入即严格分段；3) 用 R 脚本修复三条历史日志 payload 为四段独立成行。 \n【结果】三条日志已恢复四段换行样式，解析函数兼容两种格式，写入自动规范化，语法与 lint 均通过。","status":"draft","module":"devlog","date":"2026-10-30 18:35"},{"id":42,"no":"HF-DEVLOG-20261030172955","title":"自动架构及自动架构规则","payload":"【需求】参照父项目管理模块的系统架构，为 HungFo 子项目实现自动架构；任何开发只要涉及架构变动都要自动更新。\n【分析】父项目 system_architecture.r 是纯手工维护的静态 HTML 文档（ARCH 常量加 tags 拼装，无 DB 无 server，不自动更新）；HungFo 采用注册表加总线模式（hf_register/hf_bus），可据 hf_modules 自动枚举环节、据磁盘文件与数据库自动采集，实现真正的数据驱动自动更新。\n【方案】1) hf_core.r 新增 hf_arch_scan 函数，自动采集环节注册表/模块文件/数据库表/对外接口四类信息；2) hf_mod_arch.r 重构，hf_arch_build 真正调用扫描返回快照；3) hf_ui.r 新增 hf_arch_page_ui/server（色块加箭头拓扑+环节明细表+模块文件+数据表+接口映射，重建/刷新按钮）并加 arch 分发。\n【结果】自动架构模块实现数据驱动，hf_arch_scan 实测采集到 8 张数据表与 12 个模块文件，刷新即自动反映架构变动，语法校验通过。","status":"draft","module":"devlog","date":"2026-10-30 17:29"},{"id":41,"no":"HF-DEVLOG-20261030172947","title":"规则模块继续开发及数据表格规则","payload":"【需求】规则模块继续开发：去掉无用的运行接口；规则列表增加分类字段；增加查看和编辑；为本项目编写统一数据表格规则。\n【分析】规则模块原为占位 scaffold，数据走通用 hf_records 表（无分类字段）；通用环节页对非特殊模块统一渲染了运行接口按钮，对规则类 scaffold 模块无用；项目中无统一数据表格契约。\n【方案】1) hf_core.r 新增 hf_rules 表（含 category 字段）及规则数据层 hf_rules_list/get/add/update/delete/count/categories/generate_no；2) hf_mod_rules.r 重构为模块定义加透传接口；3) hf_ui.r 去掉通用页运行接口按钮及对应 observeEvent，新增 hf_datatable 通用表格函数（三态排序/分页20-50-100及全部/显示全部隐藏分页器/超50行滚动虚拟化/空态区分/颜色走CSS），新增 hf_rules_page_ui/server（分类筛选+查看/编辑/删除弹窗）并加 rules 分发；4) 新增 www/hungfo.css 空态样式。\n【结果】规则模块完成分类、查看编辑与数据表格规范，hf_rules 表与数据层经实测增删改查全部通过，三个文件 R 语法校验通过。","status":"draft","module":"devlog","date":"2026-10-30 17:29"},{"id":39,"no":"HF-DEVLOG-20261029125331","title":"接管 WorkBuddy 自动任务到 CodeBuddy，并新增会话清单采集与 Token 录入","payload":"【需求】把本次对话（WorkBuddy 自动任务接管到 CodeBuddy + 用量采集切换 + Token 记录）归档到元任务与开发日志。\n【分析】CodeBuddy 的 Token 明细在云端不落地，本地只能采会话元信息；\n【方案】创建 CodeBuddy automation 接管执行器；采集自动任务运行统计 + 会话清单；Token 手动录入；\n【结果】automation 每小时执行，usage 采 1 自动任务 + 20 会话，token 录入当前会话命中率 97.1%。","status":"draft","module":"devlog","date":"2026-10-29 12:53"},{"id":38,"no":"HF-DEVLOG-20261029122346","title":"优化 Agent Workflow Monitor配置项","payload":"【需求】CONFIG增加节点名称自定义、任务类型改名并可自定义、INPUT/OUTPUT侧边可隐藏\n【分析】节点名硬编码AGENTS.name，任务切换文案写死示例/正式任务，.main三栏grid固定无折叠能力。\n【方案】引入nodeNames与envNames映射抽离显示层，CONFIG动态生成文本框，data-type键不变；.main.hide-left/hide-right类切换grid列宽；均写localStorage持久化。\n【结果】仅改hungfo_agent_monitor.html：topbar改名测试环境/生产环境并加INPUT/OUTPUT侧边按钮；CONFIG新增环境与节点名称自定义两分组；JS新增nodeNames/envNames/sideHidden及saveCfg/loadCfg。node语法检查通过。","status":"draft","module":"devlog","date":"2026-10-29 12:23"},{"id":37,"no":"HF-DEVLOG-20261029122345","title":"优化 Agent Workflow Monitor","payload":"【需求】优化工作流连线连接点改为节点边框中点、调整节点布局让线条更美\n【分析】连线nodeCenter返回节点中心，曲线穿进节点内部不美观；planner单独占最左列入口与router相距远线条挤；hitl/deployer与validator错落不够舒展。\n【方案】新增nodePort函数沿连线方向用椭圆边界公式收缩落点到节点边框，edgePath/ghostPath/drawLinks统一改用端口计算；planner移到router正上方减一列，hitl上移deployer下移形成舒展扇形。\n【结果】仅改hungfo_agent_monitor.html：新增nodePort端口函数连线不穿节点；planner移至x0.24y0.24、hitl至y0.22、deployer至y0.78；LINKS与节点id未动，node --check语法通过。","status":"draft","module":"devlog","date":"2026-10-29 12:23"},{"id":36,"no":"HF-DEVLOG-20261029111610","title":"元任务-需求队列","payload":"【需求】优化需求队列界面：缩小字段字体、支持待开发与开发异常状态编辑、移除无用按键、检查刷新、提交需求按键左移。\n【分析】队列界面由 hf_metatask_page_ui/hf_metatask_page_server 实现；字体默认过大，服务端无编辑逻辑，删除选中与立即执行按键无用，刷新已正确绑定有效。\n【方案】加 CSS 压字号到 12px；hf_core.r 新增 hf_metatask_update 仅允许 pending/error/failed 编辑；移除 mt_del/mt_run；刷新核实有效；操作区改左对齐。\n【结果】改 Script/hungfo/hf_ui.r 与 hf_core.r；parse() 语法通过，临时库跑通新增编辑删除流程，grep 无残留引用。","status":"draft","module":"devlog","date":"2026-10-29 11:16"},{"id":35,"no":"HF-DEVLOG-20261029111556","title":"Agent","payload":"WorkFlow Monitor模块 【需求】在 Agent Workflow Monitor 模块页面下方增加 Monitor 的原始记录及来源信息，并把原有打开监控面板按键移到页面右上角。\n【分析】监控展示页为 Shiny Tab hf_agent_monitor_tab()，三类展示数据分别来自三张原始表，并导出为 JS 镜像，hf_core.r 已有读取函数可复用。\n【方案】重构 hf_agent_monitor_tab()：顶部 flex 头部，下方新增原始记录及来源区块，复用读取函数渲染三张原始记录表。\n【结果】仅改 Script/hungfo/hf_ui.r：重构 hf_agent_monitor_tab()、新增辅助函数、挂载 server；parse() 语法检查通过。","status":"draft","module":"devlog","date":"2026-10-29 11:15"},{"id":34,"no":"HF-DEVLOG-20261029094447","title":"元任务模块的需求队列展示问题","payload":"【需求】修复 HungFo 元任务模块需求队列展示缺陷：队列只有标题没 payload 内容；不同状态用颜色块标记(待开发黄/已完成绿/异常红)；增加每个任务的完成LLM与Agent(WorkBuddy/CodeBuddy)展示。\n【分析】hf_ui.r 的 hf_metatask_page_server 中 mt_table 仅渲染 ID/标题/文本状态/时间，未读 payload；状态用 ifelse 拼文本无颜色；hf_task_sessions 表缺 agent 字段(只有 llm_name)，runner 的 done 命令无 agent 入参，LLM/Agent 信息无处存也无处显。\n【方案】hf_core.r 给 hf_task_sessions 与 hf_metatask_queue 增加 agent 字段(CREATE 内联+旧表 ALTER 兼容)；session_record/mark_done 增加 agent 参数并写回；新增 hf_metatask_session_meta() JOIN+MAX(id) 取最近会话 LLM/Agent；runner done 支持 --agent，写库前 ensure_agent_cols 自动迁移；hf_ui.r 新增 escape/status_badge/payload_cell/agent_badge 四函数，mt_table 加内容列(payload 摘要+tooltip 全文)、完成LLM列、Agent列(WorkBuddy紫/CodeBuddy橙徽章)，状态列改圆角彩色 badge。\n【结果】改 hf_core.r/hf_metatask_runner.r/hf_ui.r；三文件 parse 语法全 OK；临时库完整链路验证 agent 列与元数据正确；真实库 HF_HungFo.DB 幂等 ALTER 迁移成功，历史数据无损；四种状态颜色块齐全，异常兼容 error/failed。","status":"draft","module":"devlog","date":"2026-10-29 09:44"},{"id":33,"no":"HF-DEVLOG-20261029094437","title":"独立数据库出来","payload":"【需求】将 HungFo 子项目数据库从父项目 GH_ITOM.db 独立出来：用已有 sqlite3.exe 创建独立库 HF_HungFo.DB，移植本子项目表结构与数据，改写数据库连接代码默认导向独立库，并配置专用 WEB 端口 8999，逐步解耦且不破坏父项目。\n【分析】hf_core.r/hf_ui.r 全程调用 db_connect()/db_disconnect()；独立运行时 hf_config.r 兜底指向 hungfo.db，父项目内嵌时则用 global.R 的 db_connect 指向 GH_ITOM.db，导致 HungFo 数据落父库。父库实际有 6 张 hf_* 表(12/27/4/7/6/27 行)。app.R 未设端口。\n【方案】sqlite3.exe+init_hungfo_db.sql 建库(6表)，ATTACH 父库 INSERT...SELECT 二进制复制数据(规避中文乱码,幂等)；hf_core.r 新增 hf_db_file/hf_db_connect/hf_db_disconnect 默认指向 hungfo/DB/HF_HungFo.DB 支持 HUNGFO_DB 覆盖,22 处调用改 hf_ 前缀；hf_config.r 改向后兼容别名；runner DB_PATH 固定独立库；app.R 加 options(shiny.port=8999)。\n【结果】新增 Script/hungfo/DB/HF_HungFo.DB(6表齐全)与 init_hungfo_db.sql；改 hf_core.r/hf_config.r/hf_ui.r/hf_metatask_runner.r/app.R；验证 6 表行数与父库一致、独立库可连、中文正常、12 模块可 source、父库未改动。","status":"draft","module":"devlog","date":"2026-10-29 09:44"},{"id":32,"no":"HF-DEVLOG-20261029084903","title":"WorkBuddy用量自动采集接入","payload":"新增用量采集：读本机workbuddy.db的session_usage表，采集每个对话的积分(credit)与估算token(credit×500)，写入hf_wb_usage表并导出hungfo_usage.js；hf_metatask_runner.r新增usage命令；监控页hungfo_agent_monitor.html新增WorkBuddy用量面板(今日积分+token)。实测采集26个会话，今日积分313/总计1281.93。","status":"draft","module":"devlog","date":"2026-10-29 08:49"},{"id":31,"no":"HF-DEVLOG-20261028175734","title":"子项目剥离成独立的R+Shiny+SQLite","payload":"【需求】把 Script/hungfo 剥离为可整体拷出独立运行的 R+Shiny+SQLite 应用，不移动文件。\n【分析】存在5类父项目硬依赖：DB访问层/依赖库/%||%/rv登录态/硬编码相对路径。\n【方案】hf_core 新增 hf_home() 根目录双模式解析；路径改 file.path(hf_home(),...)；runner 双模式DB；新增 hf_config.r 独立配置层与 app.R 独立启动入口。\n【结果】新增 app.R、hf_config.r，改 hf_core.r/hf_ui.r/hf_metatask_runner.r，17个.r parse通过，独立/内嵌双模式验证均成功。","status":"draft","module":"devlog","date":"2026-10-28 17:57"},{"id":30,"no":"HF-DEVLOG-20261028175734","title":"优化hungfo_agent_monitor.html","payload":"【需求】修复 monitor 弧线扇形不对称、线条越界，替换节点文案为流水线节点。\n【分析】ghostPath 摆动幅度与弦长无关且远大于弦长，叠加恒正基准弯曲导致单侧扇形越界；节点改为新流水线后旧路径引用失效。\n【方案】重写 ghostPath 弧高按弦长比例约束、摆动围绕基准弧高变化；新增 mapLegacyPath 兼容旧路径；节点重构为8节点+分组标签。\n【结果】仅改 hungfo_agent_monitor.html，node --check 通过，4条旧路径映射验证全部正确。","status":"draft","module":"devlog","date":"2026-10-28 17:57"},{"id":29,"no":"HF-DEVLOG-20261028175734","title":"优化日志界面","payload":"【需求】优化 HungFo 子项目的开发日志界面，使其不再简陋，参照父项目 dev_log_server.r 风格。\n【分析】数据层 hf_records() 只返回 payload 前 60 字，多段结构化长文本被截断；界面仅单列卡片平铺，无统计/分组/分段着色/搜索高亮。\n【方案】新增 hf_records_full()/hf_records_stats()；重写 hf_devlog_page_ui/server：头部统计徽章+搜索+刷新，按日期分组+双列卡片，payload 按【需求/分析/方案/结果】分段着色渲染。\n【结果】改动 hf_core.r、hf_ui.r 两文件，parse 语法通过，分段解析单测通过，真实 DB 返回完整 483 字符。","status":"draft","module":"devlog","date":"2026-10-28 17:57"},{"id":28,"no":"HF-DEVLOG-20261028170044","title":"优化hungfo_agent_monitor.html","payload":"【需求】优化监控页：线条晃动上限扩大10倍、节点拉开展示线条为主。\n【分析】晃动幅度默认20、滑块上限仅60，且ghostPath基础弯曲被Math.min(26,dist*0.10)卡死，线体偏直；节点坐标挤在x0.06~0.82区间，连线过短，风筝线晃动效果展示不出来。\n【方案】1)晃动幅度整体放大10倍：滑块max 60→600、默认200，VISUAL.wobbleAmp 20→200；2)舒展基础弯曲：ghostPath的Math.min(26,dist*0.10)→Math.min(120,dist*0.2)；3)节点坐标拉开：左区x0.05~0.07、中区x0.34~0.60、右区x0.90~0.95，左右跨度约0.05→0.95。\n【结果】已改hungfo_agent_monitor.html共4处：滑块vWobbleAmp(60→600,默认200)、VISUAL.wobbleAmp(20→200)、ghostPath弯曲(Math.min 26→120、系数0.10→0.2)、AGENTS坐标整体拉开。node内联JS语法验证通过。","status":"draft","module":"devlog","date":"2026-10-28 17:00"},{"id":26,"no":"HF-DEVLOG-20261028162800","title":"实现元任务闭环：WorkBuddy 定时任务 + 开发日志查看界面","payload":"【需求】以后不再对话，改在 HungFo 元任务里添加任务记录，WorkBuddy 定时任务每5分钟读取并执行，结果写入开发日志；同时开发日志缺查看界面，参照父项目样式。\n【分析】元任务原为占位实现，存 hf_records 无执行状态。需建专用队列表 + 状态机 + 本地镜像 MetaTasks.json 供定时任务读取。\n【方案】新建 hf_metatask_queue 表(status/cron/next_run_at/last_run_at/result)；cron 循环 + 一次性两种；hf_metatask_export 导出 MetaTasks.json 镜像；开发日志环节做卡片式查看界面(统计/搜索/刷新)；定时任务每5分钟读镜像执行并回写。\n【结果】完成。文件：hf_core.r(数据层+cron解析)、hf_mod_metatask.r(接口)、hf_ui.r(元任务/开发日志专属页)、MetaTasks.json(镜像)。开发日志查看界面已上线。","status":"draft","module":"devlog","date":"2026-10-28 16:28"},{"id":24,"no":"HF-RULES-021","title":"自省与进化规则（R-60 系列）","payload":"| 编号 | 规则 | 说明 |\n|------|------|------|\n| R-60 | 周期性自省 | 每完成 N 个元任务（默认 N=5），Agent 须回读日志，产出「规则适配性报告」 |\n| R-61 | 规则缺口登记 | 自省中发现规则未覆盖场景，须登记为「规则缺口」，不得自行造规则执行 |\n| R-62 | 版本化 | 本清单每次变更升级版本号（v1.0 → v1.1…），变更记录附于文末 |","status":"正式","module":"rules","date":"2026-10-22 18:57"},{"id":23,"no":"HF-RULES-020","title":"安全与边界规则（R-50 系列）","payload":"| 编号 | 规则 | 说明 |\n|------|------|------|\n| R-50 | 数据不出域 | 项目数据仅存于本项目工作区，不外传 |\n| R-51 | 凭据不入日志 | 密钥、Token、个人信息禁止写入日志与代码 |\n| R-52 | 依赖白名单 | 引入外部库须在设计段登记理由与版本，未登记不得使用 |\n| R-53 | 人工否决权 | 用户可随时中止任何元任务，Agent 须立即停止并记录中止点 |","status":"正式","module":"rules","date":"2026-10-22 18:57"},{"id":22,"no":"HF-RULES-019","title":"质量与验收规则（R-40 系列）","payload":"| 编号 | 规则 | 说明 |\n|------|------|------|\n| R-40 | 每个元任务必须有验收标准 | 设计阶段未定义验收标准的任务不得执行 |\n| R-41 | 结果须可验证 | 结果段须附验证方式（测试、运行输出、截图、日志片段） |\n| R-42 | 闭环判定 | 四段齐全 + 验收通过 + 日志完整 = 闭环完成，否则标记 未闭环 |\n| R-43 | 未闭环任务不得归档 | 未闭环任务保留在待办队列，禁止关闭 |","status":"正式","module":"rules","date":"2026-10-22 18:57"},{"id":21,"no":"HF-RULES-018","title":"开发日志规则（R-30 系列）","payload":"| 编号 | 规则 | 说明 |\n|------|------|------|\n| R-30 | 日志是唯一事实来源 | 未写入日志的动作视为未发生；日志与代码不一致时以日志为准并触发审计 |\n| R-31 | 四段式日志结构 | 每条元任务日志必须含：分析段、设计段、执行段、结果段 |\n| R-32 | 日志实时追加 | 每阶段完成后立即写入，禁止事后补写整段 |\n| R-33 | 日志字段规范 | 必含：任务ID、时间戳、阶段、输入、动作、输出、自检结果、遗留问题 |\n| R-34 | 日志只追加不改写 | 更正以追加「勘误条目」方式实现，保留原记录 |\n| R-35 | 日志可机器解析 | 采用结构化格式（如 Markdown 表格 + 固定标题），便于 Agent 后续检索与自省 |","status":"正式","module":"rules","date":"2026-10-22 18:57"},{"id":20,"no":"HF-RULES-017","title":"Agent 识别与执行规则（R-20 系列）","payload":"| 编号 | 规则 | 说明 |\n|------|------|------|\n| R-20 | 四阶段强制流水线 | 分析 → 设计 → 执行 → 结果，四阶段缺一不可，顺序不可颠倒 |\n| R-21 | 阶段闸门（Gate） | 每阶段结束须产出交付物并自检通过，才能进入下一阶段 |\n| R-22 | 执行前必须存在设计 | 无设计文档不得进入执行阶段；设计须包含输入、输出、验收标准、风险 |\n| R-23 | 最小可行执行 | Agent 优先产出最小可运行实现，再迭代；禁止一次性大重构 |\n| R-24 | 可逆优先 | 执行动作须可回滚；不可逆操作（删库、覆盖、外发）须先登记风险并显式确认 |\n| R-25 | Agent 不得越权 | Agent 只能读写本项目工作区；不得访问外部系统、不得安装未经登记的依赖 |\n| R-26 | 失败必须留痕 | 执行失败须记录失败原因、尝试次数、回退动作，禁止静默重试超过 3 次 |\n| R-27 | 自检清单 | 每阶段产出后 Agent 须对照本规则清单自检，自检结果写入日志 |","status":"正式","module":"rules","date":"2026-10-22 18:57"},{"id":19,"no":"HF-RULES-016","title":"元任务提交规则（R-10 系列）","payload":"| 编号 | 规则 | 说明 |\n|------|------|------|\n| R-10 | 想法即提交 | 用户以自然语言提交想法，无需格式化；Agent 负责结构化 |\n| R-11 | 元任务必须可原子化 | 一个元任务 = 一个可独立验收的闭环；过大想法须由 Agent 拆分为子任务队列 |\n| R-12 | 每个元任务必须有唯一 ID | 格式 MT-YYYYMMDD-NNN，创建即登记，不可复用 |\n| R-13 | 提交即冻结意图 | 想法原文必须原样存档，Agent 的解读另存，不得覆盖原文 |\n| R-14 | 模糊想法须显式澄清 | Agent 识别到歧义时，必须产出「澄清清单」并等待确认，不得自行假设后执行 |","status":"正式","module":"rules","date":"2026-10-22 18:57"},{"id":18,"no":"HF-RULES-015","title":"项目定位规则（R-00 系列）","payload":"# HungFo 元任务自我闭环系统规则 v1.0\n\n| 编号 | 规则 | 说明 |\n|------|------|------|\n| R-00 | 本项目是元任务自我闭环系统 | 输入=想法，输出=可运行结果+开发日志，中间由 AI Agent 自动完成分析→设计→执行→记录 |\n| R-01 | 四模块固定架构 | ①规则模块 ②元任务模块 ③Agent 执行模块 ④开发日志模块。不得增删顶层模块，只能在模块内扩展 |\n| R-02 | 规则优先于一切 | 元任务、Agent、日志的任何行为都受本清单约束；Agent 不得自行解释规则以放宽约束 |\n| R-03 | 规则只能追加，不可静默删除 | 修改规则须新增版本条目并注明理由；旧规则标记 deprecated 而非删除 |","status":"正式","module":"rules","date":"2026-10-22 18:57"},{"id":17,"no":"HF-RULES-014","title":"快速工单解析格式","payload":"示例格式：\nIT服务请求 20260512 1110：\n用户：谢芳材-供应链中心-副总经理\n内容：两栋楼的&quot;监控角度需要修正&quot;...\n@韩荣昌-IT部-IT工程师(Sky)\n说明：用于快速从一段文本解析出工单的标题/用户/内容/指派人等字段","status":"正式","module":"rules","date":"2026-10-22 18:47"},{"id":16,"no":"HF-RULES-013","title":"元任务与补录流程","payload":"元任务机制：查询跟踪记事（如 NTE20260606002）未完成评论（status != 'completed'），逐条分析、执行、标记完成\n处理步骤：\n  1. 查询未完成评论\n  2. 分析每条评论判断是优化（实现）还是排障（排查）\n  3. 执行任务\n  4. 标记完成 UPDATE note_comments SET status='completed', completed_at=... WHERE id=?\n  5. 写开发日志（含中英文描述和 commit_msg）\nIdea 补录：评论以「Idea」开头时，解析标题/原始日期/版本(v1,v2...)/正文，调用 idea_add / idea_add_version 写入 Idea 模块（ideas + idea_versions，保留原始日期），写开发日志（module=行业），标记评论 completed","status":"正式","module":"rules","date":"2026-10-22 18:47"},{"id":15,"no":"HF-RULES-012","title":"开发日志规范","payload":"任何代码变更（新增/修复/重构）必须写开发日志，缺一不可\n函数：dev_log_add(module, title, requirement, solution, result, requirement_en, solution_en, result_en, commit_msg, files_changed, code_snippet=NULL, operator=NULL, source_text=NULL)\n编号：DL+YYYYMMDD+3位流水（自动生成）\n英文字段规范（参照 DL20260702007）：\n  requirement_en 1-2 句英文重述需求\n  solution_en 1-2 句英文方案\n  result_en ~6 词总结\n  commit_msg ~50 字符，带 feat:/fix: 前缀（用于 git commit）\n多条元任务各自独立写一条，不合并\n需求/方案/结果中多条有序号内容要换行显示","status":"正式","module":"rules","date":"2026-10-22 18:47"},{"id":14,"no":"HF-RULES-011","title":"新增功能步骤","payload":"1. Script/ 下创建 *_ui.r 和 *_server.r\n2. server.R 末尾添加 source() 加载新文件\n3. main_ui.r 对应位置加 if (can_access(&quot;模块名&quot;)) tabPanel(...)\n4. 同步更新 Script/module_inventory.r（基本信息/权限码/关键函数）\n5. 在 rbac_permissions 表 INSERT 新权限码\n6. 用 reactiveVal 触发器控制刷新\n7. 保存/添加按钮用灰化模式 tags$button(disabled=NA) + observe({toggle_btn(...)})\n8. 所有变更必须写开发日志 dev_log_add(...)","status":"正式","module":"rules","date":"2026-10-22 18:47"},{"id":13,"no":"HF-RULES-010","title":"编程禁区","payload":"1. server.R 的 output$app_ui &lt;- renderUI() 登录/主界面切换逻辑（不可改）\n2. ui.R 核心结构（fluidPage + uiOutput，不可改）\n3. config/config_loader.r 配置加载器（不可改）\n4. global.R 的 migrate_database() 自动建表逻辑（不可改）\n5. 不允许在 renderUI 中修改 rv（触发响应式循环）\n另：run_app.R 启动入口不可修改","status":"正式","module":"rules","date":"2026-10-22 18:47"},{"id":12,"no":"HF-RULES-009","title":"UI 风格与交互","payload":"主题：shinytheme(&quot;cosmo&quot;)\n导航栏选中态：蓝色背景 #337ab7\n网络测试结果：暗色背景 #1e1e1e，成功绿色加粗、失败红色加粗\n状态标签：圆角彩色 badge 样式\n工单状态颜色：待处理#f0ad4e → 已派发#5bc0de → 处理中#ff9800 → 已完成#5cb85c → 已关闭#d9534f\n记事评论：彩虹色分级（二级/三级不一色，避免单调）+ 收缩/展开交互","status":"正式","module":"rules","date":"2026-10-22 18:47"},{"id":11,"no":"HF-RULES-008","title":"用户角色与权限","payload":"admin - 管理员（全部权限）\nit_desk - IT 服务台（可派发工单）\nit_engineer - IT 工程师（可接收工单）\nsys_engineer - 系统工程师\nuser - 普通用户\nAdmin 权限检查：is_admin &lt;- !is.null(rv$current_user) &amp;&amp; nrow(rv$current_user)&gt;0 &amp;&amp; rv$current_user$role[1]==&quot;admin&quot;\nAdmin 菜单默认隐藏（.admin-menu-item display:none），JS 通过 session$sendCustomMessage 控制显示","status":"正式","module":"rules","date":"2026-10-22 18:47"},{"id":10,"no":"HF-RULES-007","title":"编号生成规范","payload":"工单号：ITS+YYYYMMDD+3位流水（防并发重试）\n项目号：PRJ+YYYYMMDD+3位流水\n任务号：TSK+YYYYMMDD+3位流水\n巡检计划号：INS-PLAN-YYYYMMDD-3位流水\n巡检任务号：INS-TSK-YYYYMMDD-3位流水\n记事编号：NTE+YYYYMMDD+3位流水\n开发日志编号：DL+YYYYMMDD+3位流水（今日已有记录则递增）","status":"正式","module":"rules","date":"2026-10-22 18:47"},{"id":9,"no":"HF-RULES-006","title":"关键设计原则","payload":"动态 UI：ui.R 仅 uiOutput(&quot;app_ui&quot;)，server.R 用 renderUI 切换 login_ui()/main_ui()\n响应式刷新：reactiveVal 触发器模式（rv$xxx &lt;- rv$xxx + 1），在 renderDT/renderUI 中依赖触发器刷新\n数据库连接规范：con &lt;- db_connect() → tryCatch{...} finally{db_disconnect(con)}（必须断开）\n日志：log_user_operation(operation, target, operator, details) 写入 Logs/user_operations.log\n编码处理：Windows 命令输出 iconv(result, from=&quot;GBK&quot;, to=&quot;UTF-8&quot;, sub=&quot;&quot;)\n条件渲染：output$xxx &lt;- reactive({...}) + outputOptions(output, &quot;xxx&quot;, suspendWhenHidden=FALSE)\n按钮灰化：tags$button(disabled=NA) + observe({ toggle_btn(...) })\n禁止在 renderUI 中修改 rv（会触发响应式循环）","status":"正式","module":"rules","date":"2026-10-22 18:47"},{"id":8,"no":"HF-RULES-005","title":"数据库表结构","payload":"由 global.R migrate_database() 自动创建/迁移\n用户与系统：users / system_config / config_options\n工单：work_orders / work_order_comments\n项目（4 层）：projects / project_phases / project_work_packages / project_tasks / project_task_logs\n巡检：inspection_plans / inspection_items / inspection_item_templates / inspection_tasks / inspection_records / inspection_issues / inspection_plan_comments\n记事：notes / note_comments（含 status/completed_at/parent_id）/ note_dispatches / note_kw_stats\n知识：dev_logs / ideas / idea_versions / solutions\n其他：std_hosts / itom_data / models / information_collectors\nHungFo 自包含表：hf_modules / hf_records","status":"正式","module":"rules","date":"2026-10-22 18:47"},{"id":7,"no":"HF-RULES-004","title":"包依赖与模块加载","payload":"核心包：shiny / shinythemes(cosmo) / DT / RSQLite / DBI / ggplot2 / plotly / jsonlite / DiagrammeR\nserver.R 按顺序 source 18 个核心文件（auth → data_management → model_training → visualization → user_management → system_settings → work_order → project_management → project_server → information_collector → inspection_patrol → inspection_management → inspection_server → login_ui → main_ui → github_autosubmit → std_computer → data_center_server）\nmain_ui.r 内部额外 source：std_computer / network_test / project_ui / daily_report / data_center_ui\nHungFo 子项目：server.R 末尾 source Script/hungfo/hf_*.r（12 环节骨架）","status":"正式","module":"rules","date":"2026-10-22 18:47"},{"id":6,"no":"HF-RULES-003","title":"启动与运行","payload":"启动：run_app.R（端口 80）或 start_app.bat（端口 3838）\n配置文件 config/init.json 关键段：app / server / database / features / security\n  例如 server.port、database.relative_path=DB、features.auto_migrate_db=true\n快捷函数：get_db_path() / get_logs_dir() / get_std_dir() / get_git_cmd() / get_ping_cmd() / get_powershell_cmd() / get_os()","status":"正式","module":"rules","date":"2026-10-22 18:47"},{"id":5,"no":"HF-RULES-002","title":"目录结构","payload":"run_app.R 启动入口（端口 80，勿改）\nstart_app.bat 批处理启动（端口 3838）\nglobal.R 全局配置 + 数据库迁移（勿轻易改 migrate_database）\nui.R / server.R 入口（ui.R 核心 3 行结构勿改）\nconfig/ init.json 主配置 + config_loader.r 配置加载器（勿改）\nScript/ R 模块脚本（约 140 个 .r）\nSTD/ PowerShell 运维脚本；DB/ 数据库文件\ndocs/ Test/ Log/ Logs/ 文档与测试日志\nSuperITOM_TS/ TypeScript 重构子项目；SuperITOM_RS/ Rust 子项目\n约束：不在根目录创建新 .r（统一放 Script/）；不创建空目录；不修改 run_app.R / ui.R / config_loader.r","status":"正式","module":"rules","date":"2026-10-22 18:47"},{"id":4,"no":"HF-RULES-001","title":"项目概述","payload":"名称：SuperITOM2（IT运维管理系统 V2）\n技术栈：R + Shiny（Web 框架），R 4.6.x\n数据库：SQLite（GH_ITOM.db），路径从 config/init.json 读取\n主界面：navbarPage + 动态 UI（ui.R 三行 uiOutput(&quot;app_ui&quot;)，实际 UI 由 server.R 的 renderUI 根据登录状态动态生成）\n导航栏结构：13 项（首页/项目/巡检/工单/标准化/测试/日报/收集器/数据/模型/可视化/管理/退出）","status":"正式","module":"rules","date":"2026-10-22 18:47"}];
+var tbody = document.getElementById('tbody');
+var qEl = document.getElementById('q');
+var monthEl = document.getElementById('month');
+var statusEl = document.getElementById('status');
+var countEl = document.getElementById('count');
+
+function hl(text, kw) {
+  if (!kw) return text;
+  var lower = String(text).toLowerCase();
+  var k = kw.toLowerCase();
+  var i = lower.indexOf(k);
+  if (i < 0) return text;
+  return text.slice(0, i) + '<mark>' + text.slice(i, i + k.length) + '</mark>' + text.slice(i + k.length);
+}
+
+function render() {
+  var kw = qEl.value.trim();
+  var m = monthEl.value;
+  var st = statusEl.value;
+  var rows = RECORDS.filter(function (r) {
+    if (m && r.date.slice(0, 7) !== m) return false;
+    if (st && r.status !== st) return false;
+    if (kw) {
+      var hay = (r.title + ' ' + r.payload + ' ' + r.no).toLowerCase();
+      if (hay.indexOf(kw.toLowerCase()) < 0) return false;
+    }
+    return true;
+  });
+  countEl.textContent = '显示 ' + rows.length + ' / ' + RECORDS.length + ' 条';
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">没有匹配的记录</td></tr>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var cls = r.status === 'draft' ? 'draft' : 'other';
+    html += '<tr data-id="' + r.id + '">' +
+      '<td class="no">' + hl(r.no, kw) + '</td>' +
+      '<td class="title">' + hl(r.title, kw) + '</td>' +
+      '<td class="date">' + r.date + '</td>' +
+      '<td><span class="tag ' + cls + '">' + r.status + '</span></td>' +
+      '</tr>';
+  }
+  tbody.innerHTML = html;
+}
+
+tbody.addEventListener('click', function (e) {
+  var tr = e.target.closest ? e.target.closest('tr[data-id]') : null;
+  if (!tr) return;
+  var id = tr.getAttribute('data-id');
+  var r = null;
+  for (var i = 0; i < RECORDS.length; i++) { if (String(RECORDS[i].id) === String(id)) { r = RECORDS[i]; break; } }
+  if (!r) return;
+  document.getElementById('d-title').textContent = r.title;
+  document.getElementById('d-meta').textContent = r.no + ' · ' + r.date + ' · ' + r.status + ' · ' + r.module;
+  document.getElementById('d-body').textContent = r.payload || '（无正文）';
+  document.getElementById('detail').classList.add('open');
+});
+
+document.getElementById('d-close').addEventListener('click', function () {
+  document.getElementById('detail').classList.remove('open');
+});
+document.getElementById('detail').addEventListener('click', function (e) {
+  if (e.target.id === 'detail') document.getElementById('detail').classList.remove('open');
+});
+document.getElementById('reset').addEventListener('click', function () {
+  qEl.value = ''; monthEl.value = ''; statusEl.value = ''; render();
+});
+qEl.addEventListener('input', render);
+monthEl.addEventListener('change', render);
+statusEl.addEventListener('change', render);
+render();
+</script>
+</body>
+</html>

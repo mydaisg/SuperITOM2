@@ -1,0 +1,29 @@
+# ── HungFo 子项目 .gitignore ──
+# 目的：DSH 开发期产物、数据库二进制、运行日志不进 Git。
+# 说明：父项目 .gitignore 未排除 *.DB，数据库曾被反复提交进仓库（GH_ITOM.db 达 50MB）。
+#       本文件只约束 Script/hungfo/ 及其子目录。
+
+# ── 数据库（二进制，绝不用 Git 同步）──
+DB/*.DB
+DB/*.db
+DB/*.DB.bak*
+DB/*.db.bak*
+DB/*.DB.bak_*
+DB/hg_*
+
+# ── 运行日志 ──
+Log/
+*.log
+
+# ── DSH 开发期临时产物 ──
+.dsh/tmp/
+.dsh/state/
+
+# ── 编辑器 / 系统 ──
+.Rhistory
+.RData
+.Rproj.user/
+*.tmp
+*~
+Thumbs.db
+desktop.ini
