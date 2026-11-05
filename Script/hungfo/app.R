@@ -31,8 +31,12 @@ for (f in sort(list.files(".", pattern = "^hf_mod_.*\\.r$"))) source(f)
 source("hf_ui.r")
 
 # 独立运行：默认未登录，由 hungfo_ui 的登录遮罩 + hungfo_server 的登录/登出逻辑完成鉴权
-rv <- reactiveValues(logged_in = FALSE, current_user = NULL, app_view = "hungfo")
+# hungfo_standalone 标记用于让 renderUI 不渲染「回 ITOM」页签（独立运行无 ITOM 可回）
+rv <- reactiveValues(logged_in = FALSE, current_user = NULL, app_view = "hungfo",
+                     hungfo_standalone = TRUE)
 
+# 登录遮罩 / 主导航由 Server 端 uiOutput("hf_auth_view") 动态渲染，
+# 每个新会话都会重新读取导航配置，刷新即生效；此处保持静态 UI 对象即可。
 ui <- hungfo_standalone_ui(show_back = FALSE)
 
 server <- function(input, output, session) {

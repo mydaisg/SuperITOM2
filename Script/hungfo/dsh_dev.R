@@ -75,8 +75,10 @@ source("hf_config.r")                   # 独立配置层（依赖库 + DB 访�
 for (f in sort(list.files(".", pattern = "^hf_mod_.*\\.r$"))) source(f)  # 12 个环节
 source("hf_ui.r")                       # 聚合 UI + Server
 
-rv <- reactiveValues(logged_in = FALSE, current_user = NULL, app_view = "hungfo")
+rv <- reactiveValues(logged_in = FALSE, current_user = NULL, app_view = "hungfo",
+                     hungfo_standalone = TRUE)
 
+# 登录遮罩 / 主导航由 Server 端 uiOutput("hf_auth_view") 动态渲染，刷新即生效
 ui <- hungfo_standalone_ui(show_back = FALSE)
 
 server <- function(input, output, session) {

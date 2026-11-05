@@ -267,15 +267,18 @@ hf_db_init <- function() {
     permission_id INTEGER NOT NULL,
     PRIMARY KEY (role_id, permission_id)
   )")
-  # 导航栏配置表（配置模块专属：导航菜单的名称/图标/位置/显示隐藏可自定义）
+  # 导航栏配置表（配置模块专属：名称/名称全称/图标/位置/显示隐藏可自定义）
   dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_nav_config (
     nav_key TEXT PRIMARY KEY,
     name TEXT,
     icon TEXT,
     position INTEGER DEFAULT 0,
     visible INTEGER DEFAULT 1,
+    full_name TEXT,
     updated_at TEXT DEFAULT (datetime('now','localtime'))
   )")
+  # 旧库兼容：自动补 full_name 列（幂等，可重复调用）
+  hf_nav_ensure_cols(con)
   # 规则分类表（规则分类可独立新增 / 编辑，与 hf_rules.category 关联）
   dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_rules_categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1268,25 +1271,36 @@ hf_cb_sessions_export <- function(limit = 200) {
 
 # ══════════════════════════════════════════════════════════════════
 # 导航栏配置数据层（配置模块专属）
-# 首个可配置项：导航栏菜单的名称 / 图标 / 位置 / 显示隐藏。
+# 可配置项：导航栏菜单的名称 / 名称全称（悬停提示） / 图标 / 位置 / 显示隐藏。
 # 默认值来自运行时注册表（总览 + 各环节 + Agent 监控），
-# 用户自定义覆盖写 hf_nav_config，读取时「默认 + 覆盖」合并，配置保存后导航栏实时刷新。
+# 用户自定义覆盖写 hf_nav_config，读取时「默认 + 覆盖」合并，配置保存后刷新即生效。
 # ══════════════════════════════════════════════════════════════════
 
+# 旧库兼容：hf_nav_config 缺 full_name 列时自动 ALTER 追加（幂等，可重复调用）
+hf_nav_ensure_cols <- function(con) {
+  has <- dbGetQuery(con, "PRAGMA table_info(hf_nav_config)")
+  if (!("full_name" %in% has$name)) {
+    dbExecute(con, "ALTER TABLE hf_nav_config ADD COLUMN full_name TEXT")
+  }
+  invisible(TRUE)
+}
+
 # 导航项类型：overview=总览 / module=环节页 / agent_monitor=Agent 监控面板
-# 返回 data.frame: nav_key, kind, name, icon, position, visible（默认值，position 决定导航栏顺序）
+# 返回 data.frame: nav_key, kind, name, icon, position, visible, full_name（position 决定导航栏顺序）
 hf_nav_defaults <- function() {
   mods <- hf_modules()   # 已按 id 排序，配置环节(hf20)排最后
   rows <- lapply(seq_along(mods), function(i) {
     m <- mods[[i]]
+    nm <- hf_or(m$name, m$key)
     data.frame(nav_key = hf_or(m$key, ""), kind = "module",
-               name = hf_or(m$name, m$key), icon = hf_or(m$icon, "circle"),
-               position = as.integer(i + 1), visible = 1L, stringsAsFactors = FALSE)
+               name = nm, icon = hf_or(m$icon, "circle"),
+               position = as.integer(i + 1), visible = 1L,
+               full_name = nm, stringsAsFactors = FALSE)
   })
   df <- if (length(rows) > 0) do.call(rbind, rows) else
     data.frame(nav_key = character(0), kind = character(0), name = character(0),
                icon = character(0), position = integer(0), visible = integer(0),
-               stringsAsFactors = FALSE)
+               full_name = character(0), stringsAsFactors = FALSE)
   n <- nrow(df)
   # 固定导航项：总览（最左，position=1）+ Agent 监控（环节之后，position=n+1）
   fixed <- data.frame(
@@ -1296,6 +1310,7 @@ hf_nav_defaults <- function() {
     icon     = c("home", "network-wired"),
     position = c(1L, as.integer(n + 1)),
     visible  = c(1L, 1L),
+    full_name = c("总览", "Agent Workflow Monitor"),
     stringsAsFactors = FALSE)
   # 「配置」环节固定放导航栏最右（Agent 监控之后）
   if ("config" %in% df$nav_key) {
@@ -1309,10 +1324,15 @@ hf_nav_config_list <- function() {
   defaults <- hf_nav_defaults()
   con <- hf_db_connect()
   on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  try(hf_nav_ensure_cols(con), silent = TRUE)   # 旧库自动补 full_name 列
+  # 兼容尚未补列的旧库：优先读 full_name，缺列时退回旧列
   ovr <- tryCatch(
-    dbGetQuery(con, "SELECT nav_key,name,icon,position,visible FROM hf_nav_config"),
-    error = function(e) data.frame())
+    dbGetQuery(con, "SELECT nav_key,name,icon,position,visible,full_name FROM hf_nav_config"),
+    error = function(e) tryCatch(
+      dbGetQuery(con, "SELECT nav_key,name,icon,position,visible FROM hf_nav_config"),
+      error = function(e2) data.frame()))
   if (is.null(ovr) || nrow(ovr) == 0) return(defaults)
+  has_full <- !is.null(ovr$full_name)
   for (i in seq_len(nrow(ovr))) {
     k <- ovr$nav_key[i]
     if (!(k %in% defaults$nav_key)) next
@@ -1321,12 +1341,19 @@ hf_nav_config_list <- function() {
     defaults$icon[idx]     <- hf_or(ovr$icon[i], defaults$icon[idx])
     defaults$position[idx] <- as.integer(hf_or(ovr$position[i], defaults$position[idx]))
     defaults$visible[idx]  <- as.integer(hf_or(ovr$visible[i], 1L))
+    if (has_full) {
+      fn <- ovr$full_name[i]
+      if (!is.null(fn) && !is.na(fn) && nzchar(trimws(as.character(fn)))) {
+        defaults$full_name[idx] <- as.character(fn)
+      }
+    }
   }
   defaults
 }
 
 # 保存单条导航配置（upsert 风格：先查后插/改）
-hf_nav_config_save <- function(nav_key, name = NULL, icon = NULL, position = NULL, visible = NULL) {
+hf_nav_config_save <- function(nav_key, name = NULL, icon = NULL, position = NULL,
+                               visible = NULL, full_name = NULL) {
   con <- hf_db_connect()
   on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   if (is.null(nav_key) || !nzchar(trimws(nav_key))) {
@@ -1334,18 +1361,20 @@ hf_nav_config_save <- function(nav_key, name = NULL, icon = NULL, position = NUL
   }
   nm  <- hf_or(name, "")
   ic  <- hf_or(icon, "")
+  fn  <- hf_or(full_name, "")
   pos <- as.integer(hf_or(position, 0))
   vis <- as.integer(hf_or(visible, 1))
   tryCatch({
+    try(hf_nav_ensure_cols(con), silent = TRUE)   # 旧库自动补 full_name 列
     ex <- dbGetQuery(con, sprintf("SELECT nav_key FROM hf_nav_config WHERE nav_key='%s'", hf_esc(nav_key)))
     if (nrow(ex) == 0) {
       dbExecute(con, sprintf(
-        "INSERT INTO hf_nav_config (nav_key,name,icon,position,visible) VALUES ('%s','%s','%s',%d,%d)",
-        hf_esc(nav_key), hf_esc(nm), hf_esc(ic), pos, vis))
+        "INSERT INTO hf_nav_config (nav_key,name,icon,position,visible,full_name) VALUES ('%s','%s','%s',%d,%d,'%s')",
+        hf_esc(nav_key), hf_esc(nm), hf_esc(ic), pos, vis, hf_esc(fn)))
     } else {
       dbExecute(con, sprintf(
-        "UPDATE hf_nav_config SET name='%s',icon='%s',position=%d,visible=%d,updated_at=datetime('now','localtime') WHERE nav_key='%s'",
-        hf_esc(nm), hf_esc(ic), pos, vis, hf_esc(nav_key)))
+        "UPDATE hf_nav_config SET name='%s',icon='%s',position=%d,visible=%d,full_name='%s',updated_at=datetime('now','localtime') WHERE nav_key='%s'",
+        hf_esc(nm), hf_esc(ic), pos, vis, hf_esc(fn), hf_esc(nav_key)))
     }
     list(success = TRUE, message = paste0("已保存导航配置：", if (nzchar(nm)) nm else nav_key))
   }, error = function(e) list(success = FALSE, message = e$message))

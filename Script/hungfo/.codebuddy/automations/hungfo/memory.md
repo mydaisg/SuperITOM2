@@ -1,5 +1,16 @@
 # HungFo 元任务自动执行器 — 执行记录
 
+## 2026-11-05 10:58（第33次执行）
+
+- 第0步采集用量：成功（2 个自动任务、25 个会话）。
+- 到期任务：3 个（id=27 优化导航栏；id=28 优化元任务的列表；id=29 优化CB模块），均为无 cron 的一次性任务，按 id 顺序逐个独立子代理会话执行。
+- 执行结果：
+  - 任务27：完成。app.R / dsh_dev.R 的 ui 改为函数形式，修复导航自定义配置刷新不生效；hf_core.r 为 hf_nav_config 增 full_name 列与幂等补列、改造导航数据层；hf_ui.r 登出改纯图标、移除顶部当前用户、hf_nav_tab 写全称 title、登出 reload；hf_mod_config.r 下沉当前用户并打通表格/编辑弹窗/API 的 full_name；新增 www/hungfo_nav_tooltip.js；www/hungfo.css 对齐图标尺寸。开发日志 HF-DEVLOG-20261105103442，dur=881042ms，sid=mt27-20261105102001。
+  - 任务28：完成。hf_ui.r 新增 mt_rows 倒序单一数据源、DT 锁定服务端行序、双击全字段可编辑卡片（DT callback + 公共写库函数 hf_metatask_save_edit）、编辑选中与刷新按钮置左、invalidateLater 20 秒自动刷新且弹窗期间冻结。开发日志 HF-DEVLOG-20261105104402，dur=552688ms，sid=mt28-20261105103450。
+  - 任务29：完成。CB 工作台七项优化——按钮与标题文案、刷新按钮迁到运行记录栏、单击展开与再次单击收缩（默认全展开）、双击原任务描述卡片、Token KPI 今日/本周/本月/历史全部四组（hf_mod_workbench.r 的 hf_workbench_summary 扩展 total/today/week/month）。开发日志 HF-DEVLOG-20261105105744，dur=814908ms，sid=mt29-20261105104410。
+  - 三个任务均标记 done，元数据写入 hf_task_sessions（llm=auto，agent=CodeBuddy，tin/tout=0）；peek 复核 due 已空。
+- 校验：8 个 R 文件 parse 通过；冒烟验证 hf_nav_config_list 返回 17 行含 full_name、hf_workbench_summary 返回四组、hf_nav_tabs 带 title、工作台 UI 构建正常。
+
 ## 2026-11-04 17:24（第32次执行）
 
 - 第0步采集用量：成功（1 个自动任务、24 个会话）。

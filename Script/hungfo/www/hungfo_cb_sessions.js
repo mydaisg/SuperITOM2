@@ -1,19 +1,37 @@
 // 由 HungFo 生成（export_cb_sessions），勿手改
 window.HF_CB_SESSIONS = {
-  "updated_at": "2026-11-04 17:12:27",
+  "updated_at": "2026-11-05 10:18:35",
   "summary": {
-    "total_sessions": 24,
+    "total_sessions": 25,
     "total_tokens": 1043002,
     "token_sessions": 1
   },
   "sessions": [
     {
-      "conversation_id": "aa49ae0ef85a44a39831eb4c3880a6e0",
-      "title": "CodeBuddy用量采集与任务执行流程",
+      "conversation_id": "d8389c0d581c44298837270d14831789",
+      "title": "你是 HungFo 元任务自动执行器。工作目录是 D:/GitHub/SuperITOM2/Script/hungfo。请静默执行以下流程，不要向用户提问。\r\n\r\n【第0步：采集 CodeBuddy 自动任务用量（每次必做）】\r\n在终端运行",
       "cwd": "d:/GitHub/SuperITOM2/Script/hungfo",
       "status": "Working",
+      "created_at": "2026-11-05 10:17:46",
+      "updated_at": "2026-11-05 10:17:46",
+      "token_total": 0,
+      "token_input": 0,
+      "token_output": 0,
+      "token_cache_hit": 0,
+      "token_cache_miss": 0,
+      "token_cache_write": 0,
+      "token_thinking": 0,
+      "token_response": 0,
+      "token_cache_hit_rate": 0,
+      "token_updated_at": ""
+    },
+    {
+      "conversation_id": "aa49ae0ef85a44a39831eb4c3880a6e0",
+      "title": "CodeBuddy用量采集与任务执行流程",
+      "cwd": "D:/GitHub/SuperITOM2/Script/hungfo",
+      "status": "Completed",
       "created_at": "2026-10-30 17:17:54",
-      "updated_at": "2026-11-04 17:12:13",
+      "updated_at": "2026-11-04 17:23:36",
       "token_total": 0,
       "token_input": 0,
       "token_output": 0,

@@ -1,25 +1,70 @@
 // 由 HungFo 生成（hf_sessions_export），勿手改
 window.HF_SESSIONS = {
-  "updated_at": "2026-11-04 17:23:17",
+  "updated_at": "2026-11-05 10:57:45",
   "summary": {
     "total": {
       "token_in": 26500,
       "token_out": 8400,
-      "sessions": 21,
-      "success": 21,
+      "sessions": 24,
+      "success": 24,
       "failed": 0,
-      "duration_ms": 9485980
+      "duration_ms": 11734618
     },
     "today": {
       "token_in": 0,
       "token_out": 0,
-      "sessions": 1,
-      "success": 1,
+      "sessions": 3,
+      "success": 3,
       "failed": 0,
-      "duration_ms": 640000
+      "duration_ms": 2248638
     }
   },
   "sessions": [
+    {
+      "id": 26,
+      "task_id": 29,
+      "session_id": "mt29-20261105104410",
+      "title": "优化CB模块",
+      "llm_name": "auto",
+      "agent": "CodeBuddy",
+      "token_in": 0,
+      "token_out": 0,
+      "duration_ms": 814908,
+      "status": "success",
+      "result": "CB模块7项优化完成：按钮与标题文案、刷新迁移运行记录栏、单击展开与再点收缩默认全展开、双击原任务卡片、Token四组统计；改2个文件，语法与冒烟校验通过",
+      "started_at": "2026-11-05 10:57:45",
+      "finished_at": "2026-11-05 10:57:45"
+    },
+    {
+      "id": 25,
+      "task_id": 28,
+      "session_id": "mt28-20261105103450",
+      "title": "优化元任务的列表",
+      "llm_name": "auto",
+      "agent": "CodeBuddy",
+      "token_in": 0,
+      "token_out": 0,
+      "duration_ms": 552688,
+      "status": "success",
+      "result": "元任务列表四项优化完成：倒序置顶、双击全字段可编辑卡片、编辑选中与刷新置左、20秒自动刷新；仅改 hf_ui.r，语法校验通过",
+      "started_at": "2026-11-05 10:44:03",
+      "finished_at": "2026-11-05 10:44:03"
+    },
+    {
+      "id": 24,
+      "task_id": 27,
+      "session_id": "mt27-20261105102001",
+      "title": "优化导航栏",
+      "llm_name": "auto",
+      "agent": "CodeBuddy",
+      "token_in": 0,
+      "token_out": 0,
+      "duration_ms": 881042,
+      "status": "success",
+      "result": "导航栏四项优化完成：登出纯图标、当前用户下沉配置页、UI函数化刷新即生效、菜单名称全称悬停；改动7个文件，R语法校验通过",
+      "started_at": "2026-11-05 10:34:42",
+      "finished_at": "2026-11-05 10:34:42"
+    },
     {
       "id": 23,
       "task_id": 26,

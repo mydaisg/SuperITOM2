@@ -140,15 +140,18 @@ hf_metatask_page_ui <- function(m) {
         )
       ),
 
-      # 任务队列（待开发 / 开发异常可编辑，编辑按钮在左）
+      # 任务队列（待开发 / 开发异常可编辑；编辑选中 / 刷新按钮置左侧）
       div(style = "background:#fff;border-radius:8px;padding:12px;margin:8px 0;border:1px solid #e8ecf1;",
         tags$style("#hf_metatask_mt_table table.dataTable, #hf_metatask_mt_table table.dataTable td, #hf_metatask_mt_table table.dataTable th { font-size:12px; }"),
-        div(style = "display:flex;align-items:center;gap:10px;margin-bottom:8px;",
-          tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;", "✦ 需求队列"),
-          div(style = "margin-left:auto;display:flex;gap:6px;",
+        div(style = "display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;",
+          # 「编辑选中」「刷新」置于最左侧（去掉原 margin-left:auto 的右推容器）
+          div(style = "display:flex;gap:6px;",
             actionButton(p("mt_edit"), "编辑选中", icon = icon("pen"), class = "btn-primary btn-xs"),
             actionButton(p("mt_refresh"), "刷新", icon = icon("sync"), class = "btn-info btn-xs")
-          )
+          ),
+          tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;", "✦ 需求队列"),
+          tags$span(style = "margin-left:auto;font-size:11px;color:#999;",
+            "双击行查看全部内容并编辑 · 最新在最上 · 每 20 秒自动刷新")
         ),
         DTOutput(p("mt_table"))
       ),
@@ -1679,12 +1682,95 @@ hf_metatask_agent_badge <- function(agent) {
   sprintf('<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;background:#f5f5f5;color:#555;white-space:nowrap;">%s</span>', hf_html_escape(agt))
 }
 
+# ── 元任务列表：编辑内容归一化 / 公共写库 / 全字段详情（表单与双击卡片共用）──
+# 标题缺省时取 payload 首行；内容内部换行原样保留
+hf_metatask_edit_values <- function(title, payload) {
+  p0 <- as.character(hf_or(payload, "")); if (length(p0) == 0) p0 <- ""
+  t0 <- as.character(hf_or(title, ""));   if (length(t0) == 0) t0 <- ""
+  payload <- trimws(paste(p0, collapse = "\n"))
+  title   <- trimws(paste(t0, collapse = "\n"))
+  if (!nzchar(title)) {
+    lines <- strsplit(payload, "\n", fixed = TRUE)[[1]]
+    title <- if (length(lines) > 0) trimws(lines[1]) else ""
+  }
+  if (!nzchar(title)) title <- "未命名需求"
+  if (!nzchar(trimws(payload))) return(list(ok = FALSE, message = "请输入需求说明"))
+  list(ok = TRUE, title = title, payload = payload)
+}
+
+# 编辑写库唯一入口：「编辑选中」表单与「双击卡片」共用，避免两套保存逻辑
+# 数据层 hf_metatask_update(id, title, payload) 内部已约束仅 pending / error / failed 可改
+hf_metatask_save_edit <- function(id, title, payload) {
+  if (is.null(id) || (length(id) == 1 && is.na(id))) {
+    return(list(success = FALSE, message = "任务 id 无效"))
+  }
+  v <- hf_metatask_edit_values(title, payload)
+  if (!isTRUE(v$ok)) return(list(success = FALSE, message = v$message))
+  hf_metatask_update(id, v$title, v$payload)
+}
+
+# 双击卡片：把一行记录的全部字段拼成可换行阅读的纯文本（payload 换行原样保留）
+hf_metatask_row_text <- function(row) {
+  if (is.null(row) || nrow(row) == 0) return("（无记录）")
+  labels <- list(
+    id = "ID", title = "标题", payload = "需求内容 payload（全文）",
+    cron = "cron 循环表达式（空=只跑一次）", status = "状态",
+    last_run_at = "上次执行 last_run_at", next_run_at = "下次执行 next_run_at",
+    result = "执行结果 result", created_by = "创建人 created_by",
+    created_at = "创建时间 created_at", updated_at = "更新时间 updated_at",
+    session_id = "执行会话 session_id", llm_name = "完成 LLM llm_name",
+    agent = "执行 Agent", token_in = "token_in", token_out = "token_out",
+    duration_ms = "耗时 duration_ms", started_at = "开始 started_at",
+    finished_at = "结束 finished_at")
+  parts <- character(0)
+  for (nm in names(row)) {
+    v <- row[[nm]][1]
+    if (is.null(v) || length(v) == 0 || is.na(v)) v <- "—" else v <- as.character(v)
+    if (!nzchar(trimws(v))) v <- "—"
+    lab <- labels[[nm]]
+    if (is.null(lab)) lab <- nm
+    parts <- c(parts, sprintf("%s：%s", lab, v))
+  }
+  paste(parts, collapse = "\n")
+}
+
+# 双击卡片：全字段只读视图（tags$pre 文本节点由 Shiny 自动 HTML 转义，安全）
+hf_metatask_detail_pre <- function(row) {
+  tags$pre(
+    style = paste0("white-space:pre-wrap;word-break:break-word;background:#f8f9fa;",
+                   "border:1px solid #e8ecf1;border-radius:6px;padding:10px;",
+                   "font-size:12px;line-height:1.6;color:#333;margin:0;",
+                   "max-height:300px;overflow:auto;"),
+    hf_metatask_row_text(row))
+}
+
 # ── 元任务环节专属 Server ──
 hf_metatask_page_server <- function(input, output, session, rv, m, trigger) {
   p <- function(x) paste0("hf_metatask_", x)
   local_trigger <- reactiveVal(0)
   local_refresh <- function() local_trigger(local_trigger() + 1)
-  editing_id <- reactiveVal(NULL)   # NULL=新增模式；非空=编辑该 id 需求
+  editing_id <- reactiveVal(NULL)    # NULL=新增模式；非空=编辑该 id 需求
+  modal_task_id <- reactiveVal(NULL) # 双击卡片当前打开的任务 id（NULL=未打开，用于冻结自动刷新）
+
+  # 队列数据（单一数据源）：倒序（最新在最上）
+  # 表格 / 选中 / 编辑选中 / 双击卡片全部复用本 reactive，保证行序与行号严格一致
+  mt_rows <- reactive({
+    trigger(); local_trigger()
+    q <- hf_metatask_list()
+    if (!is.null(q) && nrow(q) > 0) {
+      q <- q[order(-as.integer(q$id)), , drop = FALSE]   # id 自增 == 创建顺序，倒序即最新在最上
+      rownames(q) <- NULL
+    }
+    q
+  })
+
+  # 20 秒自动刷新列表：invalidateLater → local_trigger → mt_rows → mt_table / status 重绘
+  # 与手动「刷新」按钮共用 local_trigger（都是计数 +1），故二者不冲突，手动仍立即生效
+  # 编辑卡片打开期间跳过刷新，避免表格重绘 / 选中态重置打断用户正在进行的编辑
+  observe({
+    invalidateLater(20000, session)
+    if (is.null(modal_task_id())) local_refresh()
+  })
 
   # 表单标题（新增 / 编辑态切换）
   output[[p("mt_form_title")]] <- renderUI({
@@ -1707,24 +1793,34 @@ hf_metatask_page_server <- function(input, output, session, rv, m, trigger) {
   })
 
   output[[p("status")]] <- renderUI({
-    trigger(); local_trigger()
-    q <- hf_metatask_list()
+    q <- mt_rows()
     n <- if (is.null(q)) 0 else nrow(q)
     pend <- if (is.null(q) || nrow(q) == 0) 0 else sum(q$status == "pending")
     div(style = "font-size:12px;color:#555;margin:2px 0 8px;",
       tags$b("需求："), tags$span(style = "color:#1565c0;", paste0(n, " 条")),
       " · ", tags$span(style = "color:#e65100;", paste0("待开发 ", pend, " 条")),
-      " · ", tags$span(style = "color:#888;", "执行完成自动写入开发日志"))
+      " · ", tags$span(style = "color:#888;", "执行完成自动写入开发日志 · 每 20 秒自动刷新"))
   })
 
+  # 双击任务行 → 把行 id 回传给 Shiny（本页非 module，直接用固定 input id）
+  # 取 d[0]（ID 列）而非行号，故不受分页 / 倒序影响；priority:'event' 保证连点同一行也触发
+  dblclick_callback <- DT::JS(
+    "table.on('dblclick', 'tbody tr', function() {",
+    "  var d = table.row(this).data();",
+    "  if (!d || d.length === 0) return;",
+    "  var v = parseInt(d[0], 10);",
+    "  if (isNaN(v)) return;",
+    "  Shiny.setInputValue('hf_metatask_dblclick_id', v, {priority: 'event'});",
+    "});")
+
   # 任务队列表（含 payload 内容、状态颜色块、完成 LLM / Agent）
+  # ordering=FALSE + order=list() 固定服务端倒序行序，避免 DT 默认排序覆盖
   output[[p("mt_table")]] <- DT::renderDT({
-    trigger(); local_trigger()
-    q <- hf_metatask_list()
+    q <- mt_rows()
     if (is.null(q) || nrow(q) == 0) {
       return(DT::datatable(
         data.frame(提示 = "暂无需求，在上方提交一条需求说明", stringsAsFactors = FALSE),
-        options = list(dom = "t"), rownames = FALSE))
+        options = list(dom = "t", ordering = FALSE), rownames = FALSE))
     }
     meta <- hf_metatask_session_meta()   # task_id, llm_name, agent（每个任务最近一次执行会话）
     has_meta <- !is.null(meta) && nrow(meta) > 0
@@ -1760,14 +1856,17 @@ hf_metatask_page_server <- function(input, output, session, rv, m, trigger) {
       完成时间 = ifelse(is.na(q$last_run_at) | q$last_run_at == "", "—", q$last_run_at),
       stringsAsFactors = FALSE)
     DT::datatable(out, rownames = FALSE, selection = "single", escape = FALSE,
-      options = list(pageLength = 15, dom = "ltip"))
+      callback = dblclick_callback,
+      options = list(pageLength = 15, dom = "ltip", ordering = FALSE, order = list()))
   })
 
+  # 选中行 → 任务 id（与表格共用 mt_rows，倒序后行号与 id 严格对应）
   selected_id <- reactive({
     idx <- input[[p("mt_table_rows_selected")]]
     if (is.null(idx) || length(idx) == 0) return(NULL)
-    q <- hf_metatask_list()
+    q <- mt_rows()
     if (is.null(q) || nrow(q) == 0) return(NULL)
+    if (idx[1] < 1 || idx[1] > nrow(q)) return(NULL)
     q$id[idx[1]]
   })
 
@@ -1793,7 +1892,7 @@ hf_metatask_page_server <- function(input, output, session, rv, m, trigger) {
   observeEvent(input[[p("mt_edit")]], {
     id <- selected_id()
     if (is.null(id)) { showNotification("请先在列表选中一条需求", type = "warning"); return() }
-    q <- hf_metatask_list()
+    q <- mt_rows()
     row <- q[q$id == id, , drop = FALSE]
     if (nrow(row) == 0) { showNotification("需求不存在，请刷新后重试", type = "warning"); return() }
     st <- hf_or(row$status[1], "pending")
@@ -1811,12 +1910,7 @@ hf_metatask_page_server <- function(input, output, session, rv, m, trigger) {
     if (!hf_perm_guard_admin(rv)) return()
     id <- editing_id()
     if (is.null(id)) return()
-    req_text <- trimws(hf_or(input[[p("mt_req")]], ""))
-    if (!nzchar(req_text)) { showNotification("请输入需求说明", type = "warning"); return() }
-    lines <- strsplit(req_text, "\n")[[1]]
-    title <- trimws(lines[1])
-    if (!nzchar(title)) title <- "未命名需求"
-    r <- hf_metatask_update(id, title, req_text)
+    r <- hf_metatask_save_edit(id, "", input[[p("mt_req")]])
     showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
     if (isTRUE(r$success)) {
       editing_id(NULL)
@@ -1831,8 +1925,84 @@ hf_metatask_page_server <- function(input, output, session, rv, m, trigger) {
     updateTextAreaInput(session, p("mt_req"), value = "")
   })
 
-  # 刷新：重读数据库并重渲染队列（local_trigger 为 mt_table / status 的响应式依赖）
+  # 刷新：手动立即重读（与 20 秒自动刷新共用 local_trigger，互不冲突）
   observeEvent(input[[p("mt_refresh")]], local_refresh())
+
+  # ── 双击任务行 → 弹出卡片：显示全部字段 + 卡片内可编辑 ──
+  observeEvent(input[["hf_metatask_dblclick_id"]], {
+    id <- suppressWarnings(as.integer(input[["hf_metatask_dblclick_id"]]))
+    if (length(id) == 0 || is.na(id)) return()
+    q <- mt_rows()
+    row <- if (is.null(q) || nrow(q) == 0) NULL else q[q$id == id, , drop = FALSE]
+    if (is.null(row) || nrow(row) == 0) {
+      showNotification("需求不存在，请刷新后重试", type = "warning"); return()
+    }
+    st <- hf_or(row$status[1], "pending")
+    editable <- st %in% c("pending", "error", "failed")
+    modal_task_id(id)   # 标记卡片已打开 → 冻结 20 秒自动刷新
+
+    footer <- if (editable) {
+      tagList(
+        tags$span(style = "margin-right:auto;font-size:12px;color:#888;",
+          "保存后重置为「待开发」，等待 CodeBuddy 重新执行"),
+        actionButton(p("dlg_save"), "保存修改", icon = icon("check"), class = "btn-success btn-sm"),
+        actionButton(p("dlg_close"), "关闭", class = "btn-default btn-sm")
+      )
+    } else {
+      tagList(
+        tags$span(style = "margin-right:auto;font-size:12px;color:#d9534f;",
+          "当前状态（执行中 / 已完成）不可编辑，仅「待开发 / 开发异常」可修改"),
+        tags$button(type = "button", class = "btn btn-default btn-sm disabled",
+          disabled = "disabled", "保存修改"),
+        actionButton(p("dlg_close"), "关闭", class = "btn-default btn-sm")
+      )
+    }
+
+    showModal(modalDialog(
+      title = tagList("元任务详情 #", id, " ", HTML(hf_metatask_status_badge(st))),
+      size = "l", easyClose = TRUE, footer = footer,
+      # ESC / 点击遮罩关闭时也要解除自动刷新冻结
+      tags$script(HTML(
+        "$(document).off('hidden.bs.modal.hfmt').on('hidden.bs.modal.hfmt', '#shiny-modal', function(){",
+        "  Shiny.setInputValue('hf_metatask_modal_closed', Date.now(), {priority:'event'});",
+        "});")),
+      tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:6px;",
+        "全部字段（只读，payload 换行原样保留）"),
+      hf_metatask_detail_pre(row),
+      tags$hr(style = "margin:12px 0;"),
+      tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:6px;",
+        "编辑区（标题 / 需求内容）"),
+      textInput(p("dlg_title"), "标题", value = hf_or(row$title[1], ""), width = "100%"),
+      textAreaInput(p("dlg_payload"), "需求内容 payload（换行保留）",
+        value = hf_or(row$payload[1], ""), rows = 10, width = "100%"),
+      if (!editable) tags$div(style = "font-size:12px;color:#d9534f;margin-top:4px;",
+        "当前状态不可编辑，保存按钮已禁用；可复制上方内容查看。") else NULL
+    ))
+  }, ignoreInit = TRUE)
+
+  # 卡片「保存修改」：复用公共写库函数，成功后关闭弹窗并刷新列表
+  observeEvent(input[[p("dlg_save")]], {
+    req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
+    id <- modal_task_id()
+    if (is.null(id)) return()
+    r <- hf_metatask_save_edit(id, input[[p("dlg_title")]], input[[p("dlg_payload")]])
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (isTRUE(r$success)) {
+      modal_task_id(NULL)
+      removeModal()
+    }
+    local_refresh()
+  })
+
+  # 关闭卡片 / ESC / 遮罩关闭：解除自动刷新冻结
+  observeEvent(input[[p("dlg_close")]], {
+    modal_task_id(NULL)
+    removeModal()
+  })
+  observeEvent(input[["hf_metatask_modal_closed"]], {
+    modal_task_id(NULL)
+  }, ignoreInit = TRUE)
 }
 
 # ── 开发日志环节专属 Server（查看界面，参照父项目开发日志样式）──
@@ -2523,21 +2693,35 @@ hf_nav_entries <- function() {
 }
 
 # 单个导航项 → tabPanel（overview / 环节 / Agent 监控）
+# 用自定义属性携带「名称全称」，前端脚本同步到导航 <a> 做悬停提示。
+# 注意：绝不能覆盖 tabPanel 自带的 title 属性——它是导航标签文本，覆盖会破坏标签构建。
 hf_nav_tab <- function(entry) {
   key  <- entry$nav_key[1]
   name <- hf_or(entry$name[1], key)
   ic   <- hf_or(entry$icon[1], "circle")
-  if (identical(key, "overview")) {
-    return(tabPanel(name, value = "overview", icon = icon(ic), br(), uiOutput("hf_overview")))
+  full <- hf_or(entry$full_name[1], name)
+  if (is.null(full) || !nzchar(trimws(as.character(full)))) full <- name
+  tp <- if (identical(key, "overview")) {
+    # 项目说明条只在「总览」模块保留，其它模块不再重复这行
+    tabPanel(name, value = "overview", icon = icon(ic),
+      div(style = "background:linear-gradient(135deg,#0d47a1,#1976d2);color:#fff;border-radius:8px;padding:10px 16px;margin:8px 0 10px;",
+        tags$span(style = "font-size:15px;font-weight:bold;", icon("cubes"), " HungFo 子项目"),
+        tags$span(style = "font-size:12px;opacity:.85;margin-left:10px;",
+          "独立子项目（R + Shiny + SQLite）· 12 个环节各自独立、互相提供接口")),
+      uiOutput("hf_overview"))
+  } else if (identical(key, "agent_monitor")) {
+    hf_agent_monitor_tab(name = name, ic = ic)
+  } else {
+    m <- hf_module(key)
+    if (is.null(m)) return(NULL)
+    m$name <- name   # 用配置的名称/图标覆盖模块默认值
+    m$icon <- ic
+    hf_module_page_ui(m)
   }
-  if (identical(key, "agent_monitor")) {
-    return(hf_agent_monitor_tab(name = name, ic = ic))
-  }
-  m <- hf_module(key)
-  if (is.null(m)) return(NULL)
-  m$name <- name   # 用配置的名称/图标覆盖模块默认值
-  m$icon <- ic
-  hf_module_page_ui(m)
+  # 名称全称走自定义 data 属性（不碰 tabPanel 的 title），前端据此设置 <a> 的 title
+  htmltools::tagAppendAttributes(tp,
+    `data-hf-nav-full` = as.character(full),
+    `data-hf-nav-name` = as.character(name))
 }
 
 # 全部导航项 → tabPanel 列表（过滤未知 key 产生的 NULL）
@@ -2552,16 +2736,10 @@ hf_nav_tabs <- function() {
 hungfo_ui <- function() {
   tagList(
     # 引入数据表格规范样式（空态提示颜色统一在此，禁止在 R 里硬编码）
-    tags$head(tags$link(rel = "stylesheet", href = "hungfo/hungfo.css")),
-    fluidRow(
-      column(12,
-        div(style = "background:linear-gradient(135deg,#0d47a1,#1976d2);color:#fff;border-radius:10px;padding:16px 20px;margin-bottom:12px;",
-          h3(style = "margin:0;color:#fff;", icon("cubes"), " HungFo 子项目"),
-          p(style = "margin:6px 0 0;opacity:.9;font-size:13px;",
-            "独立子项目（R + Shiny + SQLite）· 12 个环节各自独立、互相提供接口 · 骨架版 v0.1")
-        )
-      )
-    ),
+    tags$head(tags$link(rel = "stylesheet", href = "/hungfo/hungfo.css")),
+    # 导航菜单悬停显示「名称全称」：把 data-hf-nav-full 同步到导航 <a> 标签
+    tags$script(src = "/hungfo/hungfo_nav_tooltip.js"),
+    # 项目说明条已下沉到「总览」Tab，此处不再在每个模块顶部重复
     do.call(tabsetPanel, c(
       list(id = "hf_main_tabs", type = "pills"),
       hf_nav_tabs()
@@ -2590,14 +2768,13 @@ hf_login_overlay <- function() {
   )
 }
 
-# ── HungFo 独立界面（独立 navbarPage，不挂 ITOM 主导航栏，含「回 ITOM」导航）──
-# 进入方式：server.R 检测 rv$app_view == "hungfo" 时渲染本函数
-# show_back = FALSE 时去掉「回 ITOM」页签，用于完全独立运行（脱离父项目后无 ITOM 可回）。
-hungfo_standalone_ui <- function(show_back = TRUE) {
+# ── 导航栏构建（由配置驱动；每次调用都重新从 DB 读取配置，刷新即生效）──
+# show_back = TRUE 时追加「回 ITOM」页签（父项目内嵌使用）；独立运行时为 FALSE。
+hf_navbar_ui <- function(show_back = TRUE) {
   # 总览 + 各环节 + Agent 监控 + 配置，全部由导航配置驱动（含「回 ITOM」除外）
   tabs <- hf_nav_tabs()
   if (isTRUE(show_back)) {
-    # 回 ITOM 导航（始终放最右，作为「返回链接」，不参与导航配置）
+    # 回 ITOM 导航（作为「返回链接」，不参与导航配置）
     tabs <- c(tabs, list(
       tabPanel("回 ITOM", value = "back", icon = icon("arrow-left"),
         div(style = "padding:60px;text-align:center;color:#888;",
@@ -2605,33 +2782,42 @@ hungfo_standalone_ui <- function(show_back = TRUE) {
       )
     ))
   }
-  navbar <- do.call(navbarPage, c(
+  # 右侧：仅退出登录图标按钮（当前用户已移至「配置」模块页面显示）
+  tabs <- c(tabs, list(
+    bslib::nav_spacer(),
+    bslib::nav_item(
+      actionButton("hf_logout_btn", label = NULL, icon = icon("sign-out-alt"),
+        class = "btn-sm btn-default",
+        # 去掉文字只留图标；font-size 与导航栏菜单图标一致（btn-sm 默认 12px 偏小）
+        style = "font-size:14px;line-height:1.25;padding:5px 9px;margin:7px 4px 0 6px;",
+        title = "退出登录")
+    )
+  ))
+  do.call(navbarPage, c(
     list(
       id = "hf_navbar",
       title = "HungFo",
       theme = shinytheme("cosmo"),
-      collapsible = TRUE,
-      # 顶部说明条（保留与嵌入式版本一致的品牌感）
-      header = div(
-        tags$head(tags$link(rel = "stylesheet", href = "hungfo/hungfo.css")),
-        style = "background:linear-gradient(135deg,#0d47a1,#1976d2);color:#fff;border-radius:8px;padding:12px 18px;margin:8px 12px 4px;",
-        tags$span(style = "font-size:16px;font-weight:bold;", icon("cubes"), " HungFo 子项目"),
-        tags$span(style = "font-size:12px;opacity:.85;margin-left:10px;",
-          "独立子项目（R + Shiny + SQLite）· 12 个环节各自独立、互相提供接口"),
-        tags$span(style = "float:right;font-size:12px;opacity:.9;",
-          textOutput("hf_nav_user", inline = TRUE)),
-        tags$span(style = "float:right;margin-left:10px;",
-          actionButton("hf_logout_btn", "退出登录", icon = icon("sign-out-alt"),
-            class = "btn-sm btn-default", style = "font-size:12px;padding:2px 8px;"))
-      )
+      collapsible = TRUE
     ),
     tabs
   ))
+}
+
+# ── HungFo 独立界面（登录遮罩 / 主导航由 Server 端 renderUI 驱动）──
+# 进入方式：server.R 检测 rv$app_view == "hungfo" 时渲染本函数。
+# 早期版本用 conditionalPanel + 隐式 output.hungfo_login_state 桥接登录态，
+# 该桥接依赖客户端隐藏 output 绑定，重启 / 会话重建后容易失效，导致「点击登录没反应」。
+# 现改为 uiOutput("hf_auth_view")，由 hungfo_server 的 renderUI 直接依赖 rv$logged_in，
+# 状态切换可靠；且每个新会话都会重新执行 hf_navbar_ui() 读取导航配置，刷新即生效。
+hungfo_standalone_ui <- function(show_back = TRUE) {
   tagList(
-    # 登录遮罩：未登录时覆盖，登录后隐藏
-    conditionalPanel(condition = "output.hungfo_login_state != '1'", hf_login_overlay()),
-    # 主导航：登录后显示
-    conditionalPanel(condition = "output.hungfo_login_state == '1'", navbar)
+    # 工作台样式（绝对资源路径，避免相对路径 / 浏览器缓存导致样式丢失）
+    tags$head(tags$link(rel = "stylesheet", href = "/hungfo/hungfo.css")),
+    # 导航菜单悬停显示「名称全称」：把 data-hf-nav-full 同步到导航 <a> 标签
+    tags$script(src = "/hungfo/hungfo_nav_tooltip.js"),
+    # 登录遮罩 / 主导航统一由 Server 端按登录态渲染
+    uiOutput("hf_auth_view")
   )
 }
 
@@ -2639,29 +2825,33 @@ hungfo_standalone_ui <- function(show_back = TRUE) {
 hungfo_server <- function(input, output, session, rv) {
   hf_trigger <- reactiveVal(0)
 
-  # 登录状态桥：供 UI 的 conditionalPanel 使用（'1'=已登录）
-  output$hungfo_login_state <- renderText({
-    if (isTRUE(rv$logged_in)) "1" else "0"
+  # 登录视图：直接依赖 rv$logged_in 渲染登录遮罩 / 主导航。
+  # 替代原 conditionalPanel + 隐式 output.hungfo_login_state 桥接（该桥接在重启 / 会话
+  # 重建时会失效，表现为「点击登录没反应且无报错」）；renderUI 的响应式依赖明确可靠。
+  # 每个新会话都会重新执行 → hf_navbar_ui() 重新读 DB 导航配置，刷新即生效。
+  output$hf_auth_view <- renderUI({
+    if (!isTRUE(rv$logged_in)) return(hf_login_overlay())
+    # 独立运行时不显示「回 ITOM」；父项目内嵌时显示（rv 无 hungfo_standalone 字段）
+    hf_navbar_ui(show_back = !isTRUE(rv$hungfo_standalone))
   })
-  outputOptions(output, "hungfo_login_state", suspendWhenHidden = FALSE)
 
-  # 顶部导航显示当前用户
-  output$hf_nav_user <- renderText({
-    req(rv$logged_in)
-    u <- rv$current_user
-    if (is.null(u) || nrow(u) == 0) return("")
-    dn <- if (!is.null(u$display_name) && length(u$display_name) > 0 &&
-              !is.na(u$display_name[1]) && nzchar(u$display_name[1])) u$display_name[1] else u$username[1]
-    grp <- if (!is.null(u$group_names) && length(u$group_names) > 0 &&
-               !is.na(u$group_names[1]) && nzchar(u$group_names[1])) paste0("（", u$group_names[1], "）") else ""
-    paste0("当前用户：", dn, grp)
-  })
+  # 当前用户显示已下沉到「配置」模块页面（hf_mod_config.r），导航栏不再展示
 
   # 登录（独立运行：先确保建表播种，再校验凭据）
+  # 不使用 req() 静默阻断：空输入 / 初始化异常都要给出可见反馈，避免「点击没反应也没报错」
   observeEvent(input$hf_login_btn, {
-    req(input$hf_login_username, input$hf_login_password)
-    hf_db_init()
-    res <- hf_auth_login(input$hf_login_username, input$hf_login_password)
+    user <- trimws(hf_or(input$hf_login_username, ""))
+    pwd  <- hf_or(input$hf_login_password, "")
+    if (!nzchar(user) || !nzchar(pwd)) {
+      showNotification("请输入用户名和密码", type = "warning")
+      return()
+    }
+    res <- tryCatch({
+      hf_db_init()
+      hf_auth_login(user, pwd)
+    }, error = function(e) {
+      list(success = FALSE, message = paste0("登录初始化失败：", conditionMessage(e)))
+    })
     if (isTRUE(res$success)) {
       rv$logged_in <- TRUE
       rv$current_user <- res$user
@@ -2669,16 +2859,17 @@ hungfo_server <- function(input, output, session, rv) {
                 !is.na(res$user$display_name[1]) && nzchar(res$user$display_name[1])) res$user$display_name[1] else res$user$username[1]
       showNotification(sprintf("欢迎回来，%s！", dn), type = "message")
     } else {
-      showNotification(res$message, type = "error")
+      showNotification(hf_or(res$message, "用户名或密码错误"), type = "error")
     }
   })
 
   # 退出登录（HungFo 自身登出，仅清空 HungFo 登录态）
+  # renderUI 会自动响应 rv$logged_in 变化重新渲染登录遮罩，无需 session$reload()
   observeEvent(input$hf_logout_btn, {
     rv$logged_in <- FALSE
     rv$current_user <- NULL
     showNotification("已退出登录", type = "message")
-  })
+  }, ignoreInit = TRUE)
 
   # 返回 ITOM：独立导航栏点击「回 ITOM」时切回主应用
   observeEvent(input$hf_navbar, {
@@ -2750,36 +2941,59 @@ hf_workbench_page_ui <- function(m) {
         tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:8px;", "✦ 会话 Token 消耗"),
         uiOutput(p("token_kpi"))
       ),
-      # 任务输入区
+      # 任务输入区（按钮文案改为「提交给CodeBuddy」；刷新按钮迁至真正起作用的「任务清单 / 运行记录」栏）
       div(style = "background:#fff;border-radius:8px;padding:12px;margin:8px 0;border:1px solid #e8ecf1;",
-        tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:6px;", "✦ 提交任务给 CodeBuddy"),
+        tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:6px;", "✦ 提交任务给CodeBuddy立即执行"),
         textAreaInput(p("task_in"), NULL, rows = 3, width = "100%",
           placeholder = "例如：修复 xx 模块的 bug / 帮我写一个 xx 功能…"),
         div(style = "display:flex;gap:8px;justify-content:flex-end;margin-top:4px;",
-          actionButton(p("run_btn"), "运行", icon = icon("play"), class = "btn-success btn-sm"),
-          actionButton(p("refresh_btn"), "刷新", icon = icon("sync"), class = "btn-default btn-sm")
+          actionButton(p("run_btn"), "提交给CodeBuddy", icon = icon("play"), class = "btn-success btn-sm")
         )
       ),
-      # 执行过程区（带收缩按键；再次点击任务清单同一行自动切换收缩/展开）
+      # 执行过程区：紧凑日志窗（固定 50 行高度、自动下滚、末尾显示结果/状态、可收缩）
       div(style = "background:#fff;border-radius:8px;padding:12px;margin:8px 0;border:1px solid #e8ecf1;",
+        # 样式内联在本页：动态 UI / 浏览器缓存都不会让执行过程样式失效
+        tags$style(HTML("
+          .hf-wb-stream{height:420px;max-height:56vh;overflow-y:auto;padding:6px 8px;background:#fbfcfe;border:1px solid #e8ecf1;border-radius:6px;font-size:11px;line-height:1.5;}
+          .hf-wb-stat{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:10px;color:#78909c;margin-bottom:6px;}
+          .hf-wb-stat strong{color:#37474f;}
+          .hf-wb-line{display:flex;gap:6px;align-items:flex-start;padding:2px 2px;border-bottom:1px solid #f0f2f6;}
+          .hf-wb-line:last-of-type{border-bottom:none;}
+          .hf-wb-no{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:18px;padding:0 4px;border-radius:5px;background:#eceff1;color:#455a64;font-size:10px;font-weight:700;font-family:Consolas,monospace;flex-shrink:0;}
+          .hf-wb-badge{font-size:10px;color:#fff;padding:0 6px;border-radius:8px;white-space:nowrap;flex-shrink:0;line-height:18px;}
+          .hf-wb-one{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#2b2b29;font-size:11px;line-height:18px;}
+          .hf-wb-details{margin:2px 0 4px 28px;font-size:10px;}
+          .hf-wb-details>summary{cursor:pointer;color:#1565c0;}
+          .hf-wb-code{background:#1e1e1e;color:#d1e3ff;border-radius:5px;padding:6px 8px;margin:3px 0 0;font-size:10px;line-height:1.45;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-word;}
+          .hf-wb-footer{margin-top:6px;padding:7px 9px;border-radius:6px;background:#f7faf8;font-size:11px;line-height:1.5;color:#37474f;word-break:break-word;}
+        ")),
         div(style = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;",
-          tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;", "✦ 执行过程（按步编号）"),
+          tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;", "✦ 执行过程（最近 50 步 · 自动下滚）"),
           uiOutput(p("log_status"), inline = TRUE),
           div(style = "margin-left:auto;",
             tags$button(id = p("stream_toggle"), type = "button",
               class = "btn btn-default btn-xs", onclick = "hfWbToggleStream()",
               "▾ 收缩过程"))
         ),
-        div(id = p("stream_wrap"), class = "hf-wb-wrap",
-          tags$div(class = "hf-wb-collapsed-hint",
-            "执行过程已收缩 · 点击右上「展开过程」，或再次点击任务清单中的同一行查看"),
-          div(class = "hf-wb-body-wrap", uiOutput(p("log_out")))
+        div(
+          div(id = p("stream_hint"),
+            style = "display:none;padding:14px;text-align:center;color:#90a4ae;font-size:12px;background:#f8f9fc;border:1px dashed #cfd8dc;border-radius:8px;",
+            "执行过程已收缩 · 点击右上「▸ 展开过程」，或单击任务清单中的任一任务展开全部过程"),
+          div(id = p("stream_body"), class = "hf-wb-body-wrap", uiOutput(p("log_out")))
         )
       ),
       # 历史运行记录（含每次会话 Token 消耗）
+      # 刷新按钮移到此栏右侧：local_refresh() 实际刷新运行记录表 / Token KPI / 会话清单表 + 状态同步，
+      # 执行过程由 reactivePoll 1.5 秒轮询自动刷新，与该按钮无关
       div(style = "background:#fff;border-radius:8px;padding:12px;margin:8px 0;border:1px solid #e8ecf1;",
-        tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:6px;",
-          "✦ 任务清单 / 运行记录（点击查看执行过程 · 再次点击同一行自动收缩）"),
+        div(style = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;",
+          tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;",
+            "✦ 任务清单 / 运行记录（单击展开全部过程 · 再次单击同一行收缩 · 双击查看原任务描述）"),
+          div(style = "margin-left:auto;",
+            actionButton(p("refresh_btn"), "刷新", icon = icon("sync"),
+              class = "btn-default btn-sm",
+              title = "刷新运行记录、Token 消耗与状态（执行过程由 1.5 秒轮询自动刷新）"))
+        ),
         DTOutput(p("runs_table"))
       ),
       # 本机 CodeBuddy 会话清单 Token 明细
@@ -2788,33 +3002,71 @@ hf_workbench_page_ui <- function(m) {
         tags$div(style = "font-size:11px;color:#999;margin-bottom:6px;", "来源：本机 codebuddy-sessions 采集（hf_cb_sessions）"),
         DTOutput(p("cb_sessions_table"))
       ),
-      # 收缩/展开交互：状态挂在静态包裹层上，日志轮询重渲染不会丢失
+      # 收缩/展开交互：直接改 DOM 的 display（不依赖外部 CSS），日志轮询重渲染也不会丢失
+      # 行为约定：默认全部展开；单击行 = 展开该任务全部过程；再次单击同一行 = 收缩；
+      #           「▾ 收缩过程」按钮手动切换；双击行 = 弹卡片看原任务描述（抑制两次单击的切换）。
+      # 事件一律 $(document) 委托 + __hfWbBound 防重复绑定；不注册 hidden.bs.modal，
+      # 避免与元任务卡片的 hidden.bs.modal.hfmt 命名空间绑定冲突。
       tags$script(HTML("
 (function(){
+  var H='hf_workbench_stream_hint', B='hf_workbench_stream_body',
+      T='hf_workbench_stream_toggle';
+  // 从行内隐藏 span 取 run_id（见 runs_table 的「状态」列）；空表 / 无数据行返回 ''
+  window.hfWbRowRunId = function(tr){
+    var s = $(tr).find('.hf-wb-rid').first();
+    if(s.length){ var r = s.text().trim(); if(r) return r; }
+    return '';
+  };
   window.hfWbSetCollapsed = function(v){
-    var w=document.getElementById('hf_workbench_stream_wrap');
-    var b=document.getElementById('hf_workbench_stream_toggle');
-    if(w){ if(v) w.classList.add('hf-wb-collapsed'); else w.classList.remove('hf-wb-collapsed'); }
-    if(b) b.textContent = v ? '▸ 展开过程' : '▾ 收缩过程';
+    var h=document.getElementById(H), b=document.getElementById(B), t=document.getElementById(T);
+    v = !!v;
+    if(b) b.style.display = v ? 'none' : '';
+    if(h) h.style.display = v ? 'block' : 'none';
+    if(t) t.textContent = v ? '▸ 展开过程' : '▾ 收缩过程';
+    window.HF_WB_COLLAPSED = v;
+    // 折叠状态回传 Server（预留联动；折叠本身是纯 DOM 操作，日志重渲染不会重置 display）
+    try { if(window.Shiny && Shiny.setInputValue)
+      Shiny.setInputValue('hf_workbench_stream_collapsed', v); } catch(e){}
   };
   window.hfWbToggleStream = function(){
-    var w=document.getElementById('hf_workbench_stream_wrap');
-    if(!w) return;
-    window.hfWbSetCollapsed(!w.classList.contains('hf-wb-collapsed'));
+    window.hfWbSetCollapsed(!window.HF_WB_COLLAPSED);
   };
   if(window.__hfWbBound) return;
   window.__hfWbBound = true;
   window.HF_WB_LAST_ROW = null;
+  window.HF_WB_COLLAPSED = false;
+  var clickTimer = null;
+  // 页面就绪即强制「全部展开」，防止 Shiny 重渲染后样式回到中间态
+  $(document).ready(function(){ window.hfWbSetCollapsed(false); });
   Shiny.addCustomMessageHandler('hfWbSetCollapsed', function(msg){
     window.hfWbSetCollapsed(!!msg.collapsed);
-    if(!msg.collapsed) window.HF_WB_LAST_ROW = null;
+    if(!msg.collapsed) window.HF_WB_LAST_ROW = null;   // 提交新任务成功后视为全新开始
   });
+  // 单击：延迟 260ms 执行，给 dblclick 留出取消窗口（浏览器事件顺序 click → click → dblclick）
+  //       不同行 → 回传 run_id 选中该 run + 展开全部过程；再次单击同一行 → 切换为收缩
   $(document).on('click', '#hf_workbench_runs_table tbody tr', function(){
-    var key = $('td', this).first().text().trim();
+    var tr = this;
+    if(clickTimer) clearTimeout(clickTimer);
+    clickTimer = setTimeout(function(){
+      clickTimer = null;
+      var key = window.hfWbRowRunId(tr);
+      if(!key) return;
+      if(window.HF_WB_LAST_ROW === key){
+        window.hfWbToggleStream();
+      } else {
+        Shiny.setInputValue('hf_workbench_row_run', key, {priority:'event'});
+        window.hfWbSetCollapsed(false);
+      }
+      window.HF_WB_LAST_ROW = key;
+    }, 260);
+  });
+  // 双击：取消挂起的单击（两次 click 全部作废，不会误触发展开/收缩），回传 run_id 弹卡片；
+  //       刻意不改动 HF_WB_LAST_ROW，保证双击前后「再次单击同一行 = 收缩」的语义连续
+  $(document).on('dblclick', '#hf_workbench_runs_table tbody tr', function(){
+    if(clickTimer){ clearTimeout(clickTimer); clickTimer = null; }
+    var key = window.hfWbRowRunId(this);
     if(!key) return;
-    if(window.HF_WB_LAST_ROW === key) window.hfWbToggleStream();
-    else window.hfWbSetCollapsed(false);
-    window.HF_WB_LAST_ROW = key;
+    Shiny.setInputValue('hf_workbench_dbl_run', key, {priority:'event'});
   });
 })();
 "))
@@ -2822,88 +3074,70 @@ hf_workbench_page_ui <- function(m) {
   )
 }
 
-# ── CodeBuddy 执行过程 → 结构化时间线卡片 ──
-# 原始 stream-json 是逐行 JSON 纯文本，无法阅读；这里按事件类型拆成卡片：
-# 思考(全文直显) / 回复 / 工具调用+结果(可展开代码块) / 最终结果汇总 / 会话元信息。
-# ★ 每张卡带真实步骤序号（内容太长便于定位），并用「● 全文直显 / ▸ 可展开」标签明显区分是否可展开。
+# ── CodeBuddy 执行过程 → 紧凑单行日志（类似 CodeBuddy 对话框）──
+# 只保留最近 50 步，按时间从上往下排列；固定 50 行窗口自动下滚，末尾显示执行结果和状态。
+# 长文本用原生 <details> 按需展开，不把窗体整体撑开。
 # ★ 所有日志内容一律走 tags$* 文本节点，由 Shiny 自动 HTML 转义，禁止拼接 HTML(日志)。
 hf_workbench_event_ui <- function(rid) {
-  ev <- hf_workbench_events(rid)
+  ev <- hf_workbench_events(rid, max_events = 50, text_limit = 240)
+  st <- hf_workbench_status(rid)
+  st_lbl <- switch(hf_or(st, ""), running = "运行中", done = "已完成", error = "出错", "—")
+  st_col <- switch(hf_or(st, ""), running = "#2563eb", done = "#0d7d3a", error = "#d9534f", "#999")
   if (length(ev$events) == 0) {
-    return(tags$div(style = "color:#bbb;font-size:12px;text-align:center;padding:20px;",
-      "等待 CodeBuddy 输出…"))
+    return(tags$div(
+      tags$div(style = "color:#bbb;font-size:11px;text-align:center;padding:20px;",
+        "等待 CodeBuddy 输出…"),
+      tags$div(class = "hf-wb-footer",
+        tags$strong(style = paste0("color:", st_col, ";"), "● ", st_lbl),
+        "  ·  执行结果：等待任务输出…")))
   }
 
-  # 颜色统一在 www/hungfo.css 的 .hf-wb-* 类，仅动态色（徽标/左边框）走 inline style
   badge <- function(label, bg) tags$span(class = "hf-wb-badge", style = paste0("background:", bg, ";"), label)
-  tag_static <- tags$span(class = "hf-wb-tag hf-wb-tag-static", "● 全文直显")
-  tag_expand <- tags$span(class = "hf-wb-tag hf-wb-tag-expand", "▸ 可展开")
-  # no = 真实步骤序号（含被省略的前序步骤）；tag = 可展开 / 不可展开标识
-  card <- function(color, head, body, no, tag) tags$div(
-    class = "hf-wb-card", style = paste0("border-left:3px solid ", color, ";"),
-    tags$div(class = "hf-wb-card-head",
-      tags$span(class = "hf-wb-no", sprintf("%02d", no)), head, tag),
-    body)
-  code <- function(x) tags$pre(class = "hf-wb-code", x)
-  body_text <- function(cp) tags$div(
-    tags$div(class = "hf-wb-body", cp$text),
-    if (cp$omitted > 0) tags$div(class = "hf-wb-omit",
-      sprintf("… 已省略 %d 字，完整内容见下方「查看原始 stream-json 日志」（可展开）", cp$omitted)) else NULL)
-  # 可展开区块：统一箭头 + 「点击展开/收起」提示（样式在 .hf-wb-details）
-  details_block <- function(label, ...) tags$details(class = "hf-wb-details",
-    tags$summary(label), ...)
+  one <- function(s) gsub("\\s+", " ", hf_or(s, ""))
+  brief <- function(s) substr(one(s), 1, 120)
+  # 一行一步：序号 + 类型徽标 + 单行摘要；超长内容才出现「展开全文」
+  line <- function(color, label, no, summary, full = NULL) {
+    s <- one(summary)
+    f <- if (is.null(full)) "" else one(full)
+    tags$div(class = "hf-wb-line",
+      tags$span(class = "hf-wb-no", sprintf("%02d", no)),
+      badge(label, color),
+      tags$div(style = "flex:1;min-width:0;",
+        tags$div(class = "hf-wb-one", title = if (nzchar(f)) f else s, s),
+        if (nzchar(f) && nchar(f) > nchar(s))
+          tags$details(class = "hf-wb-details",
+            tags$summary("展开全文"), tags$pre(class = "hf-wb-code", full)) else NULL))
+  }
 
   render_event <- function(e, i) {
     no <- ev$dropped + i
     if (identical(e$kind, "meta")) {
-      card("#90a4ae",
-        list(badge("会话", "#607d8b"), icon("info-circle")),
-        tags$div(class = "hf-wb-meta",
-          paste0("模型 ", hf_or(e$model, "—"), " · 工作目录 ", hf_or(e$cwd, "—"),
-                 " · 权限 ", hf_or(e$permission, "—"))), no, tag_static)
+      line("#607d8b", "会话", no,
+        paste0("模型 ", hf_or(e$model, "—"), " · 工作目录 ", hf_or(e$cwd, "—"),
+               " · 权限 ", hf_or(e$permission, "—")))
     } else if (identical(e$kind, "thinking")) {
-      # 思考过程：全文直显（不折叠、不截断），无需再查看详细日志
-      card("#6c3bbf",
-        list(badge("思考", "#6c3bbf"), icon("lightbulb"),
-             tags$span(class = "hf-wb-hint", sprintf("%d 字", nchar(e$text$text)))),
-        body_text(e$text), no, tag_static)
+      line("#6c3bbf", "思考", no, brief(e$text$text), e$text$text)
     } else if (e$kind %in% c("text", "user_text")) {
-      is_reply <- identical(e$kind, "text")
-      card("#2563eb",
-        list(badge(if (is_reply) "回复" else "输入", "#2563eb"),
-             icon(if (is_reply) "comment" else "user")),
-        body_text(e$text), no, tag_static)
+      line("#2563eb", if (identical(e$kind, "text")) "回复" else "输入",
+           no, brief(e$text$text), e$text$text)
     } else if (identical(e$kind, "tool")) {
       res <- e$result
-      card("#00695c",
-        list(badge("工具", "#00695c"), icon("terminal"),
-             tags$strong(class = "hf-wb-name", hf_or(e$name, "tool")),
-             if (!is.null(res)) badge(if (isTRUE(res$is_error)) "失败" else "成功",
-               if (isTRUE(res$is_error)) "#d9534f" else "#5cb85c") else NULL),
-        tags$div(
-          if (nzchar(hf_or(e$brief, ""))) tags$div(class = "hf-wb-brief", e$brief) else NULL,
-          details_block("调用参数", code(e$input$text)),
-          if (!is.null(res))
-            details_block("执行结果",
-              code(res$text$text),
-              if (res$text$omitted > 0) tags$div(class = "hf-wb-omit",
-                sprintf("… 已省略 %d 字，完整内容见下方原始日志", res$text$omitted)) else NULL) else NULL),
-        no, tag_expand)
+      head <- paste0(hf_or(e$name, "tool"),
+        if (!is.null(res)) if (isTRUE(res$is_error)) " · 失败" else " · 成功" else "",
+        if (nzchar(hf_or(e$brief, ""))) paste0(" · ", one(e$brief)) else "")
+      full <- paste0("调用参数：\n", e$input$text,
+        if (!is.null(res)) paste0("\n\n执行结果：\n", res$text$text) else "")
+      line("#00695c", "工具", no, head, full)
     } else if (identical(e$kind, "orphan_result")) {
-      card("#f59e0b", list(badge("工具结果", "#f59e0b"), icon("reply")),
-        code(e$text$text), no, tag_static)
+      line("#f59e0b", "工具结果", no, brief(e$text$text), e$text$text)
     } else if (identical(e$kind, "result")) {
       col <- if (isTRUE(e$ok)) "#0d7d3a" else "#d9534f"
-      card(col,
-        list(badge(if (isTRUE(e$ok)) "完成" else "出错", col), icon("check-circle"),
-             tags$span(class = "hf-wb-hint",
-               sprintf("耗时 %.1fs · %d 轮 · 费用 %s", e$duration_ms / 1000,
-                       as.integer(e$num_turns),
-                       if (nzchar(hf_or(e$cost, ""))) paste0("$", e$cost) else "—"))),
-        tags$div(class = "hf-wb-result", body_text(e$text)), no, tag_static)
-    } else {
-      NULL
-    }
+      line(col, if (isTRUE(e$ok)) "完成" else "出错", no,
+        sprintf("%s · 耗时 %.1fs · %d 轮 · 费用 %s", brief(e$text$text),
+                e$duration_ms / 1000, as.integer(e$num_turns),
+                if (nzchar(hf_or(e$cost, ""))) paste0("$", e$cost) else "—"),
+        e$text$text)
+    } else NULL
   }
 
   kinds <- vapply(ev$events, function(x) x$kind, character(1))
@@ -2912,27 +3146,28 @@ hf_workbench_event_ui <- function(rid) {
     tags$span(paste0("思考 ", sum(kinds == "thinking"))),
     tags$span(paste0("回复 ", sum(kinds == "text" | kinds == "user_text"))),
     tags$span(paste0("工具 ", sum(kinds == "tool"))),
-    tags$span(paste0("结果 ", sum(kinds == "result"))),
     if (ev$dropped > 0) tags$span(style = "color:#d9534f;",
       sprintf("仅显示最近 %d 步（省略 %d 步）", length(ev$events), ev$dropped)) else NULL,
-    tags$span(class = "hf-wb-legend", "● 全文直显 · ▸ 可展开"))
+    tags$a(href = ev$log_url, target = "_blank", rel = "noopener",
+      style = "margin-left:auto;color:#1565c0;", "完整日志 ↗"))
 
-  raw <- tags$details(class = "hf-wb-details hf-wb-raw",
-    tags$summary("查看原始 stream-json 日志（可展开）"),
-    tags$div(
-      sprintf("日志共 %d 行", ev$total_lines),
-      if (ev$nonjson > 0) sprintf("（另有 %d 行非 JSON 输出）", ev$nonjson) else "",
-      " · ",
-      tags$a(href = ev$log_url, target = "_blank", rel = "noopener", "在新标签页打开完整日志")))
+  # 末尾固定显示：执行结果 + 状态
+  res_ev <- NULL
+  for (e in ev$events) if (identical(e$kind, "result")) res_ev <- e
+  footer <- tags$div(class = "hf-wb-footer",
+    tags$strong(style = paste0("color:", st_col, ";"), "● ", st_lbl),
+    "  ·  执行结果：",
+    if (!is.null(res_ev)) one(res_ev$text$text) else "等待任务完成…",
+    if (!is.null(res_ev)) sprintf("  ·  耗时 %.1fs · %d 轮",
+      res_ev$duration_ms / 1000, as.integer(res_ev$num_turns)) else NULL)
 
-  tags$div(id = "hf_workbench_stream", class = "hf-wb-stream",
-    stat,
-    do.call(tagList, lapply(seq_along(ev$events), function(i) render_event(ev$events[[i]], i))),
-    raw,
-    tags$script(HTML(paste0(
-      "(function(){var e=document.getElementById('hf_workbench_stream');",
-      "if(!e)return;if(e.scrollHeight-e.scrollTop-e.clientHeight<100)",
-      "e.scrollTop=e.scrollHeight;})();"))))
+  tags$div(
+    tags$div(id = "hf_workbench_stream", class = "hf-wb-stream",
+      stat,
+      do.call(tagList, lapply(seq_along(ev$events), function(i) render_event(ev$events[[i]], i))),
+      # 每次重渲染都滚到最底：日志从上往下，末尾的结果/状态始终可见
+      tags$script(HTML("(function(){var e=document.getElementById('hf_workbench_stream');if(e)e.scrollTop=e.scrollHeight;})();"))),
+    footer)
 }
 
 hf_workbench_page_server <- function(input, output, session, rv, m, trigger) {
@@ -2968,7 +3203,13 @@ hf_workbench_page_server <- function(input, output, session, rv, m, trigger) {
         one <- gsub("\\s+", " ", hf_or(df$task[i], ""))
         if (nchar(one) > 40) paste0(substr(one, 1, 40), "…") else one
       }, character(1)),
-      状态 = vapply(df$status, st_badge, character(1)),
+      状态 = vapply(seq_len(nrow(df)), function(i) {
+        # 复用本已含 HTML 徽标的列承载 run_id（本表 escape = FALSE 已开启）：
+        # 前端单击行据此选中 run、双击行据此查看原任务描述；run_id 为纯字母数字，无需额外转义
+        paste0('<span class="hf-wb-rid" style="display:none">',
+               hf_or(df$run_id[i], ""), '</span>',
+               st_badge(df$status[i]))
+      }, character(1)),
       Token合计 = tk(col("token_total")),
       输入 = tk(col("token_in")),
       输出 = tk(col("token_out")),
@@ -2979,26 +3220,47 @@ hf_workbench_page_server <- function(input, output, session, rv, m, trigger) {
     hf_datatable(out, selection = "single", page_size = 10, escape = FALSE)
   })
 
-  # 会话 Token 消耗 KPI（工作台 CLI 会话 + 本机 CodeBuddy 会话清单）
+  # 会话 Token 消耗 KPI（今日 / 本周 / 本月 / 历史全部 + 工作台分项 + 本机 CodeBuddy 会话清单）
   output[[p("token_kpi")]] <- renderUI({
     trigger(); local_trigger(); runs_df()   # 依赖 runs_df 确保 Token 已同步
     sm <- hf_workbench_summary()
     cb <- hf_cb_sessions_summary()
     fmt <- function(x) format(as.numeric(hf_or(x, 0)), big.mark = ",", scientific = FALSE, trim = TRUE)
     tile <- function(label, value, color) {
-      tags$div(style = "flex:1;min-width:118px;background:#f8f9fc;border:1px solid #e8ecf1;border-radius:8px;padding:8px 10px;",
+      tags$div(style = "flex:1;min-width:92px;background:#f8f9fc;border:1px solid #e8ecf1;border-radius:8px;padding:8px 10px;",
         tags$div(style = "font-size:11px;color:#888;", label),
         tags$div(style = paste0("font-size:18px;font-weight:700;color:", color, ";"), value))
     }
-    tags$div(style = "display:flex;flex-wrap:wrap;gap:8px;",
-      tile("工作台会话数", fmt(sm$total$sessions), "#37474f"),
-      tile("Token 合计", fmt(sm$total$token_total), "#6c3bbf"),
-      tile("输入 Token", fmt(sm$total$token_in), "#0d47a1"),
-      tile("输出 Token", fmt(sm$total$token_out), "#00695c"),
-      tile("缓存命中", fmt(sm$total$token_cache_read), "#f59e0b"),
-      tile("今日 Token", fmt(sm$today$token_total), "#d9534f"),
-      tile("CodeBuddy 会话", fmt(cb$total_sessions), "#37474f"),
-      tile("清单 Token 总计", fmt(cb$total_tokens), "#6c3bbf")
+    # 四组统计：每组「Token 合计 + 会话数」，沿用原有 tile 风格
+    grp <- function(label, s, color) {
+      tags$div(style = "flex:1;min-width:210px;background:#fff;border:1px solid #e8ecf1;border-radius:8px;padding:8px;",
+        tags$div(style = paste0("font-size:11px;font-weight:700;color:", color, ";margin-bottom:6px;"), label),
+        tags$div(style = "display:flex;flex-wrap:wrap;gap:6px;",
+          tile("Token 合计", fmt(s$token_total), color),
+          tile("会话数", fmt(s$sessions), "#37474f")))
+    }
+    z <- list(token_in = 0, token_out = 0, token_cache_read = 0,
+              token_cache_write = 0, token_total = 0, sessions = 0)
+    tdy <- if (is.list(sm$today)) sm$today else z
+    wk  <- if (is.list(sm$week))  sm$week  else z
+    mo  <- if (is.list(sm$month)) sm$month else z
+    all <- if (is.list(sm$total)) sm$total else z
+    tags$div(
+      tags$div(style = "display:flex;flex-wrap:wrap;gap:8px;",
+        grp("今日", tdy, "#d9534f"),
+        grp("本周（近 7 天）", wk, "#f59e0b"),
+        grp("本月", mo, "#0d47a1"),
+        grp("历史全部", all, "#6c3bbf")
+      ),
+      tags$div(style = "font-size:11px;color:#999;margin:8px 0 6px;",
+        "口径：今日=本地当天；本周=近 7 天含今日；本月=当前自然月；历史全部=全部运行记录（数据源 hf_workbench_runs.created_at）。下方为工作台 Token 分项与本机 CodeBuddy 会话清单概览。"),
+      tags$div(style = "display:flex;flex-wrap:wrap;gap:8px;",
+        tile("工作台输入 Token", fmt(all$token_in), "#0d47a1"),
+        tile("工作台输出 Token", fmt(all$token_out), "#00695c"),
+        tile("工作台缓存命中", fmt(all$token_cache_read), "#f59e0b"),
+        tile("CodeBuddy 会话", fmt(cb$total_sessions), "#37474f"),
+        tile("清单 Token 总计", fmt(cb$total_tokens), "#6c3bbf")
+      )
     )
   })
 
@@ -3032,6 +3294,57 @@ hf_workbench_page_server <- function(input, output, session, rv, m, trigger) {
     if (is.null(idx) || length(idx) == 0 || is.null(df) || nrow(df) == 0) return()
     current_run(df$run_id[idx[1]])
     local_refresh()
+  })
+
+  # 前端单击行回传 run_id：选中该 run（与 DT rows_selected 兜底并存，值相同则不再重复刷新）
+  # 注意：此处刻意不发送 hfWbSetCollapsed 自定义消息，否则 handler 会清空 HF_WB_LAST_ROW，
+  #       破坏「再次单击同一行 = 收缩」；展开动作由前端 hfWbSetCollapsed(false) 完成
+  observeEvent(input[["hf_workbench_row_run"]], {
+    rid <- hf_or(input[["hf_workbench_row_run"]], "")
+    if (!nzchar(rid)) return()
+    df <- runs_df()
+    if (is.null(df) || nrow(df) == 0 || !(rid %in% df$run_id)) return()
+    if (identical(current_run(), rid)) return()
+    current_run(rid)
+    local_refresh()
+  })
+
+  # 前端折叠状态回传（预留联动；折叠本身由前端纯 DOM 控制，日志重渲染不会重置 display）
+  stream_collapsed <- reactiveVal(FALSE)
+  observeEvent(input[["hf_workbench_stream_collapsed"]], {
+    stream_collapsed(isTRUE(input[["hf_workbench_stream_collapsed"]]))
+  }, ignoreNULL = FALSE)
+
+  # 双击清单行 → 弹出卡片查看「原任务描述」（run_id 由前端隐藏 span 回传，固定 input id）
+  observeEvent(input[["hf_workbench_dbl_run"]], {
+    rid <- hf_or(input[["hf_workbench_dbl_run"]], "")
+    if (!nzchar(rid)) return()
+    r <- hf_workbench_get(rid)
+    if (is.null(r) || nrow(r) == 0) {
+      showNotification("未找到该任务的原始记录", type = "warning"); return()
+    }
+    r <- r[1, ]
+    st_lbl <- switch(hf_or(r$status, ""),
+      running = "运行中", done = "已完成", error = "出错", "—")
+    fmtk <- function(x) format(as.numeric(hf_or(x, 0)), big.mark = ",", scientific = FALSE, trim = TRUE)
+    meta <- function(label, value) tags$span(tags$b(paste0(label, "：")), value)
+    showModal(modalDialog(
+      title = tagList(icon("eye"), " 原任务描述 · ", hf_or(r$run_id, "")),
+      size = "l", easyClose = TRUE, footer = modalButton("关闭"),
+      tags$div(style = "display:flex;flex-wrap:wrap;gap:6px 16px;font-size:11px;color:#607d8b;margin-bottom:8px;",
+        meta("run_id", hf_or(r$run_id, "—")),
+        meta("状态", st_lbl),
+        meta("创建时间", hf_or(r$created_at, "—")),
+        meta("结束时间", hf_or(r$finished_at, "—")),
+        meta("Token 合计", fmtk(r$token_total)),
+        meta("输入 / 输出", paste0(fmtk(r$token_in), " / ", fmtk(r$token_out))),
+        meta("缓存命中", fmtk(r$token_cache_read))),
+      tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin:6px 0;",
+        "任务原文（换行原样保留）"),
+      # tags$pre 走文本节点由 Shiny 自动转义，white-space:pre-wrap 保留原文换行
+      tags$pre(style = "white-space:pre-wrap;word-break:break-word;background:#fbfcfe;border:1px solid #e8ecf1;border-radius:6px;padding:10px;font-size:12px;line-height:1.6;max-height:55vh;overflow:auto;margin:0;",
+        hf_or(r$task, ""))
+    ))
   })
 
   # 运行按钮

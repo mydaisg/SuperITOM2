@@ -369,7 +369,17 @@ hf_workbench_usage <- function(logfile) {
   u
 }
 
-# ── 会话 Token 汇总（全部 / 今日），供页面 KPI 展示 ──
+# ── 会话 Token 汇总（历史全部 / 今日 / 本周 / 本月），供页面 KPI 展示 ──
+# 口径说明（created_at 为 TEXT，写入值形如 'YYYY-MM-DD HH:MM:SS'，SQLite date()/strftime() 可直接解析）：
+#   total = 历史全部：不加时间过滤（与旧版一致）
+#   today = 今日：date(created_at)=date('now','localtime')（与旧版一致）
+#   week  = 本周：采用「近 7 天含今日」口径 date(created_at) >= date('now','localtime','-6 day')
+#           （若需改为自然周周一起算，把该条件换成
+#             date(created_at) >= date('now','localtime','weekday 1','-7 day') 即可，其余不动）
+#   month = 本月：strftime('%Y-%m', created_at) = strftime('%Y-%m','now','localtime')
+# 返回 list(total, today, week, month)；每组均为
+#   list(token_in, token_out, token_cache_read, token_cache_write, token_total, sessions)
+# 保持 total / today 原有结构与字段不变，其它调用点（含 API 透传）不会崩。
 hf_workbench_summary <- function() {
   con <- hf_db_connect()
   on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
@@ -378,11 +388,14 @@ hf_workbench_summary <- function() {
     token_cache_write = s$tcw[1], token_total = s$tt[1], sessions = s$n[1])
   zero <- list(token_in = 0, token_out = 0, token_cache_read = 0,
                token_cache_write = 0, token_total = 0, sessions = 0)
+  base <- "SELECT COALESCE(SUM(token_in),0) tin, COALESCE(SUM(token_out),0) tout, COALESCE(SUM(token_cache_read),0) tcr, COALESCE(SUM(token_cache_write),0) tcw, COALESCE(SUM(token_total),0) tt, COUNT(*) n FROM hf_workbench_runs"
   tryCatch({
-    a <- dbGetQuery(con, "SELECT COALESCE(SUM(token_in),0) tin, COALESCE(SUM(token_out),0) tout, COALESCE(SUM(token_cache_read),0) tcr, COALESCE(SUM(token_cache_write),0) tcw, COALESCE(SUM(token_total),0) tt, COUNT(*) n FROM hf_workbench_runs")
-    d <- dbGetQuery(con, "SELECT COALESCE(SUM(token_in),0) tin, COALESCE(SUM(token_out),0) tout, COALESCE(SUM(token_cache_read),0) tcr, COALESCE(SUM(token_cache_write),0) tcw, COALESCE(SUM(token_total),0) tt, COUNT(*) n FROM hf_workbench_runs WHERE date(created_at)=date('now','localtime')")
-    list(total = mk(a), today = mk(d))
-  }, error = function(e) list(total = zero, today = zero))
+    a  <- dbGetQuery(con, base)
+    d  <- dbGetQuery(con, paste(base, "WHERE date(created_at)=date('now','localtime')"))
+    w  <- dbGetQuery(con, paste(base, "WHERE date(created_at) >= date('now','localtime','-6 day')"))
+    mo <- dbGetQuery(con, paste(base, "WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m','now','localtime')"))
+    list(total = mk(a), today = mk(d), week = mk(w), month = mk(mo))
+  }, error = function(e) list(total = zero, today = zero, week = zero, month = zero))
 }
 
 # ── 刷新运行状态：同步 Token 消耗 + 检查 running 进程是否结束 ──
