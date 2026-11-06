@@ -48,3 +48,7 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 *.mp4
+
+# ── HungFo 已于 2026-11-06 拆分为独立仓库 D:/GitHub/HungFo ──
+# 残留目录只含运行期产物（旧 8999 实例占用），不再纳入本仓库跟踪
+Script/hungfo/

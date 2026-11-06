@@ -446,17 +446,18 @@ tools_menu_ui <- function(can_access = function(x) TRUE) {
       data_import_ui()
     ),
 
-    # ── 15. HungFo 独立子项目（独立界面入口，放在工具模块最下面）──
+    # ── 15. HungFo（2026-11-06 已拆分为独立仓库，独立端口 8999）──
     tabPanel("HungFo",
       icon = icon("cubes"),
       div(style = "padding:60px 20px;text-align:center;",
         div(style = "background:linear-gradient(135deg,#0d47a1,#1976d2);color:#fff;border-radius:10px;padding:24px;display:inline-block;min-width:440px;",
           tags$div(style = "font-size:36px;", icon("cubes")),
-          h4(style = "color:#fff;margin-top:10px;", "HungFo 独立子项目"),
+          h4(style = "color:#fff;margin-top:10px;", "HungFo 独立应用"),
           tags$p(style = "color:#e3f2fd;margin:6px 0 16px;",
-            "R + Shiny + SQLite · 12 个环节各自独立、互相提供接口"),
-          actionButton("hungfo_enter_btn", "进入 HungFo 独立界面", icon = icon("external-link-alt"),
-            class = "btn-success btn-lg", style = "width:100%;")
+            "已独立为 D:/GitHub/HungFo，请先运行 Rscript app.R 启动 8999 端口"),
+          tags$a(href = "http://localhost:8999", target = "_blank",
+            class = "btn btn-success btn-lg", style = "width:100%;display:block;",
+            icon("external-link-alt"), "打开 HungFo（新窗口）")
         )
       )
     )

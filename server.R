@@ -98,25 +98,9 @@ source("Script/mini_program_management.r")      # 小程序用户 + VIP 模块�
 source("Script/mini_program_server.r")          # 小程序用户 + VIP 模块服务端
 source("Script/message_management.r")           # 消息机制数据层（消息中心 + 动作流模板）
 source("Script/message_server.r")               # 消息机制服务端
-# HungFo 独立子项目（14 环节骨架：规则/爬取/数据/算法/展示/自动任务/回测/元任务/项目/开发日志/自动架构/对外集成/权限体系/配置）
-source("Script/hungfo/hf_core.r")               # 核心层：环节注册表 + 数据库（自包含）
-source("Script/hungfo/hf_ai_context.r")         # AI 上下文层：规则修订/记忆/模型路由/按分类装配（只提供函数）
-source("Script/hungfo/hf_mod_rules.r")          # 环节01 规则
-source("Script/hungfo/hf_mod_crawl.r")          # 环节02 爬取
-source("Script/hungfo/hf_mod_data.r")           # 环节03 数据
-source("Script/hungfo/hf_mod_algorithm.r")      # 环节04 算法
-source("Script/hungfo/hf_mod_display.r")        # 环节05 展示
-source("Script/hungfo/hf_mod_autotask.r")       # 环节06 自动任务
-source("Script/hungfo/hf_mod_backtest.r")       # 环节07 回测
-source("Script/hungfo/hf_mod_metatask.r")       # 环节08 元任务
-source("Script/hungfo/hf_mod_project.r")         # 环节(08后) 项目（需求/记事/总结/项目模板）
-source("Script/hungfo/hf_mod_devlog.r")         # 环节09 开发日志
-source("Script/hungfo/hf_mod_arch.r")           # 环节10 自动架构
-source("Script/hungfo/hf_mod_integration.r")    # 环节11 对外集成
-source("Script/hungfo/hf_mod_permission.r")     # 环节12 权限体系
-source("Script/hungfo/hf_mod_config.r")         # 环节13 配置（导航菜单 / 规则分类 / 模型路由）
-source("Script/hungfo/hf_mod_workbench.r")      # 环节13 CodeBuddy 工作台（内嵌模式必须加载，否则 hf_workbench_init 未定义）
-source("Script/hungfo/hf_ui.r")                 # 聚合 UI + Server
+  # ── HungFo 已于 2026-11-06 拆分为独立仓库 D:/GitHub/HungFo（独立端口 8999）──
+  # 原内嵌的 18 行 source("Script/hungfo/*.r") 与 hungfo_server() 挂载已移除；
+  # 工具菜单保留一个指向 http://localhost:8999 的外链入口。
 
 
 # 注册静态资源路径（www 目录下的文件可通过 /www/ 访问）
@@ -164,7 +148,7 @@ server <- function(input, output, session) {
   rv <- reactiveValues(
     logged_in = FALSE,  # 登录状态，默认为未登录
     current_user = NULL, # 当前用户信息，默认为空
-    app_view = "itom",   # 视图状态：itom(主应用) / hungfo(独立子项目界面)
+    app_view = "itom",   # 视图状态：itom(主应用)；HungFo 已拆分为独立应用
     daily_report_refresh = 0,  # 日报刷新触发器
     home_dev_refresh = 0L,  # 首页开发日志刷新
     di_refresh = 0  # 通用数据导入刷新触发器
@@ -192,25 +176,16 @@ server <- function(input, output, session) {
     }
   }
 
-  # OLD 架构：renderUI 直接返回 login_ui() / main_ui() / hungfo_standalone_ui()
+  # OLD 架构：renderUI 直接返回 login_ui() / main_ui()
   output$app_ui <- renderUI({
     if (!rv$logged_in) {
       login_ui()
-    } else if (identical(rv$app_view, "hungfo")) {
-      # HungFo 独立子项目界面（自有导航栏，含「回 ITOM」）
-      hungfo_standalone_ui()
     } else {
       # message("[RENDER] 调用 main_ui()")  # debug only
       is_admin <- !is.null(rv$current_user) && nrow(rv$current_user) > 0 && rv$current_user$role[1] == "admin"
       user_modules <- rbac_get_user_modules(rv$current_user)
       main_ui(is_admin = is_admin, user_modules = user_modules, current_user = rv$current_user)
     }
-  })
-
-  # 进入 HungFo 独立界面（主应用工具菜单 → HungFo 入口按钮）
-  observeEvent(input$hungfo_enter_btn, {
-    req(rv$logged_in)
-    rv$app_view <- "hungfo"
   })
 
   # 模块数据刷新辅助函数
@@ -3971,8 +3946,7 @@ server <- function(input, output, session) {
   # 消息机制（消息中心 + 动作流模板）
   message_server(input, output, session, rv)
 
-  # HungFo 独立子项目（12 环节骨架）
-  hungfo_server(input, output, session, rv)
+  # HungFo 已拆分：见独立仓库 D:/GitHub/HungFo（端口 8999）
 
   # 通用数据导入模块
   data_import_server(input, output, session, rv)

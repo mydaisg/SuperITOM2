@@ -740,24 +740,17 @@ MODULE_INVENTORY <- list(
     )
   ),
   list(
-    module = "HungFo", icon = "cubes",
-    frontend = "工具下拉菜单 → HungFo（第15项，最下面）→ 点击「进入 HungFo 独立界面」→ 独立导航栏（总览 + 12 环节 Tab + 回 ITOM）→ hungfo_standalone_ui()",
-    source = c("Script/hungfo/hf_core.r", "Script/hungfo/hf_mod_rules.r", "Script/hungfo/hf_mod_crawl.r",
-               "Script/hungfo/hf_mod_data.r", "Script/hungfo/hf_mod_algorithm.r", "Script/hungfo/hf_mod_display.r",
-               "Script/hungfo/hf_mod_autotask.r", "Script/hungfo/hf_mod_backtest.r", "Script/hungfo/hf_mod_metatask.r",
-               "Script/hungfo/hf_mod_devlog.r", "Script/hungfo/hf_mod_arch.r", "Script/hungfo/hf_mod_integration.r",
-               "Script/hungfo/hf_mod_permission.r", "Script/hungfo/hf_ui.r", "server.R"),
-    tables = "hf_modules, hf_records",
+    module = "HungFo（已拆仓）", icon = "external-link-alt",
+    frontend = "工具下拉菜单 → HungFo → 打开 http://localhost:8999（独立仓库 D:/GitHub/HungFo）",
+    source = c("D:/GitHub/HungFo/app.R", "D:/GitHub/HungFo/hf_core.r", "D:/GitHub/HungFo/hf_ui.r"),
+    tables = "独立库 DB/HF_HungFo.DB（不在本项目）",
     perms = list(
       list(code="hungfo_view", name="查看 HungFo 子项目")
     ),
     key_funcs = c(
-      "hf_register() / hf_modules() / hf_call() — 环节注册表与跨环节接口总线",
-      "hf_db_init() / hf_sync_registry() — 自包含建表 + 注册表落库",
-      "hf_record_add() / hf_records() — 各环节通用记录通道",
-      "12 环节：规则(rules)/爬取(crawl)/数据(data)/算法(algorithm)/展示(display)/自动任务(autotask)",
-      "12 环节：回测(backtest)/元任务(metatask)/开发日志(devlog)/自动架构(arch)/对外集成(integration)/权限体系(permission)",
-      "hungfo_ui() / hungfo_standalone_ui() / hungfo_server() — 聚合 UI + 独立界面 + Server（由注册表自动生成）"
+      "2026-11-06 已从 SuperITOM2 剪切为独立 repository",
+      "父项目 server.R 不再 source Script/hungfo/*.r，也不再调用 hungfo_server()",
+      "启动：cd /d/GitHub/HungFo && Rscript app.R（默认端口 8999）"
     )
   )
 )
