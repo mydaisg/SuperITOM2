@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-05 11:58:48",
+  "updated_at": "2026-11-05 15:17:38",
   "tasks": [
     {
       "id": 1,
@@ -11,7 +11,10 @@
       "next_run_at": null,
       "result": "已完成：给 HungFo 开发日志环节实现查看界面（参照父项目开发日志卡片样式，含统计/搜索/刷新）。",
       "llm_name": "",
-      "agent": ""
+      "agent": "",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 6,
@@ -23,7 +26,10 @@
       "next_run_at": null,
       "result": "监控页优化完成：晃动上限×10、节点拉开",
       "llm_name": "DeepSeek-V4-Pro",
-      "agent": ""
+      "agent": "",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 8,
@@ -35,7 +41,10 @@
       "next_run_at": null,
       "result": "日志界面重构完成：完整payload+分段着色+日期分组+搜索高亮",
       "llm_name": "DeepSeek-V4-Pro",
-      "agent": ""
+      "agent": "",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 9,
@@ -47,7 +56,10 @@
       "next_run_at": null,
       "result": "monitor弧线对称修复+节点文案替换完成",
       "llm_name": "DeepSeek-V4-Pro",
-      "agent": ""
+      "agent": "",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 10,
@@ -59,7 +71,10 @@
       "next_run_at": null,
       "result": "HungFo剥离完成：独立app.R+hf_config.r，双模式验证通过",
       "llm_name": "DeepSeek-V4-Pro",
-      "agent": ""
+      "agent": "",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 11,
@@ -71,7 +86,10 @@
       "next_run_at": null,
       "result": "HungFo子项目数据库独立：创建HF_HungFo.DB并移植6表数据，改写连接代码默认导向独立库，端口8999，验证行数一致父库未动",
       "llm_name": "DeepSeek-V4-Pro",
-      "agent": ""
+      "agent": "",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 12,
@@ -83,7 +101,10 @@
       "next_run_at": null,
       "result": "元任务需求队列展示优化：增加payload内容展示、状态颜色块标记(黄/绿/红)、完成LLM与Agent(WorkBuddy/CodeBuddy)列，agent字段落库",
       "llm_name": "DeepSeek-V4-Pro",
-      "agent": ""
+      "agent": "",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 13,
@@ -95,7 +116,10 @@
       "next_run_at": null,
       "result": "Monitor页下方新增原始记录及来源，打开按钮移至右上角，语法通过",
       "llm_name": "DeepSeek-V4-Pro",
-      "agent": "WorkBuddy"
+      "agent": "WorkBuddy",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 14,
@@ -107,7 +131,10 @@
       "next_run_at": null,
       "result": "需求队列字体缩小、支持编辑、去无用键、提交键左移，语法通过",
       "llm_name": "DeepSeek-V4-Pro",
-      "agent": "WorkBuddy"
+      "agent": "WorkBuddy",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 15,
@@ -119,7 +146,10 @@
       "next_run_at": null,
       "result": "优化工作流连线端口改为节点边框中点、调整节点布局",
       "llm_name": "DeepSeek-V4-Pro",
-      "agent": ""
+      "agent": "",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 16,
@@ -131,7 +161,10 @@
       "next_run_at": null,
       "result": "CONFIG节点名称自定义、任务类型改名、INPUT/OUTPUT侧边可隐藏",
       "llm_name": "DeepSeek-V4-Pro",
-      "agent": ""
+      "agent": "",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 17,
@@ -143,7 +176,10 @@
       "next_run_at": null,
       "result": "已完成：创建 CodeBuddy automation（id=hungfo，FREQ=HOURLY;INTERVAL=1）；改造 hf_metatask_runner.r / hf_core.r / hf_ui.r；usage 命令成功采集 1 个自动任务 + 20 个会话；token 命令录入当前会话明细（总计 1043002，命中率 97.1%）；开发日志 DL20261029001 / DL20261029002。",
       "llm_name": "deepseek-v4-pro",
-      "agent": "CodeBuddy"
+      "agent": "CodeBuddy",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 18,
@@ -155,7 +191,10 @@
       "next_run_at": null,
       "result": "规则模块完成分类字段、查看编辑与数据表格规范",
       "llm_name": "auto",
-      "agent": "CodeBuddy"
+      "agent": "CodeBuddy",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 19,
@@ -167,7 +206,10 @@
       "next_run_at": null,
       "result": "自动架构模块实现数据驱动自动更新",
       "llm_name": "auto",
-      "agent": "CodeBuddy"
+      "agent": "CodeBuddy",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 20,
@@ -179,7 +221,10 @@
       "next_run_at": null,
       "result": "开发日志分段机制已修复：解析兼容两种格式、写入自动规范化、三条历史日志已恢复四段样式",
       "llm_name": "auto",
-      "agent": "CodeBuddy"
+      "agent": "CodeBuddy",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 21,
@@ -191,7 +236,10 @@
       "next_run_at": null,
       "result": "会话追踪面板现展示元任务结果与汇总，导出含 result 及 success/failed/duration_ms",
       "llm_name": "auto",
-      "agent": "CodeBuddy"
+      "agent": "CodeBuddy",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 22,
@@ -203,7 +251,10 @@
       "next_run_at": null,
       "result": "完成项目模块（需求/记事/总结/模板整合）",
       "llm_name": "DeepSeek-V4-Pro",
-      "agent": ""
+      "agent": "",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 23,
@@ -215,7 +266,10 @@
       "next_run_at": null,
       "result": "完成权限体系（RBAC用户/角色/安全组+登录）",
       "llm_name": "DeepSeek-V4-Pro",
-      "agent": ""
+      "agent": "",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 24,
@@ -227,7 +281,10 @@
       "next_run_at": null,
       "result": "完成规则类别新增/编辑功能",
       "llm_name": "DeepSeek-V4-Pro",
-      "agent": ""
+      "agent": "",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 25,
@@ -239,7 +296,10 @@
       "next_run_at": null,
       "result": "完成配置模块，导航栏菜单可自定义配置",
       "llm_name": "DeepSeek-V4-Pro",
-      "agent": ""
+      "agent": "",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 26,
@@ -251,7 +311,10 @@
       "next_run_at": null,
       "result": "新增网页工作台环节：网页提交任务给 CodeBuddy CLI 实时回传过程与结果",
       "llm_name": "auto",
-      "agent": "CodeBuddy"
+      "agent": "CodeBuddy",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 27,
@@ -263,7 +326,10 @@
       "next_run_at": null,
       "result": "导航栏四项优化完成：登出纯图标、当前用户下沉配置页、UI函数化刷新即生效、菜单名称全称悬停；改动7个文件，R语法校验通过",
       "llm_name": "auto",
-      "agent": "CodeBuddy"
+      "agent": "CodeBuddy",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 28,
@@ -275,7 +341,10 @@
       "next_run_at": null,
       "result": "元任务列表四项优化完成：倒序置顶、双击全字段可编辑卡片、编辑选中与刷新置左、20秒自动刷新；仅改 hf_ui.r，语法校验通过",
       "llm_name": "auto",
-      "agent": "CodeBuddy"
+      "agent": "CodeBuddy",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     },
     {
       "id": 29,
@@ -287,7 +356,10 @@
       "next_run_at": null,
       "result": "CB模块7项优化完成：按钮与标题文案、刷新迁移运行记录栏、单击展开与再点收缩默认全展开、双击原任务卡片、Token四组统计；改2个文件，语法与冒烟校验通过",
       "llm_name": "auto",
-      "agent": "CodeBuddy"
+      "agent": "CodeBuddy",
+      "model": "",
+      "task_type": "",
+      "source": "web"
     }
   ]
 }

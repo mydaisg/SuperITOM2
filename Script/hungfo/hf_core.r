@@ -152,7 +152,11 @@ hf_db_init <- function() {
     c("token_out",  "INTEGER DEFAULT 0"),
     c("duration_ms","INTEGER DEFAULT 0"),
     c("started_at", "TEXT"),
-    c("finished_at","TEXT"))) {
+    c("finished_at","TEXT"),
+    c("model",      "TEXT DEFAULT ''"),       # 该元任务指定执行的 LLM（空=用默认）
+    c("task_type",  "TEXT DEFAULT ''"),       # 任务类型（用于按分类装配规则/记忆）
+    c("source",     "TEXT DEFAULT 'web'"))) { # 入口来源：web / wecom / cron / cb
+
     has <- dbGetQuery(con, sprintf("PRAGMA table_info(hf_metatask_queue)"))
     if (!(col[1] %in% has$name)) {
       dbExecute(con, sprintf("ALTER TABLE hf_metatask_queue ADD COLUMN %s %s", col[1], col[2]))
@@ -179,6 +183,9 @@ hf_db_init <- function() {
   has_sess <- dbGetQuery(con, "PRAGMA table_info(hf_task_sessions)")
   if (!("agent" %in% has_sess$name)) {
     dbExecute(con, "ALTER TABLE hf_task_sessions ADD COLUMN agent TEXT")
+  }
+  if (!("model" %in% has_sess$name)) {
+    dbExecute(con, "ALTER TABLE hf_task_sessions ADD COLUMN model TEXT DEFAULT ''")
   }
   # CodeBuddy 自动任务运行统计采集表：从本机 automations.db 采到的每个自动任务运行次数/成功率/耗时
   dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_cb_usage (
@@ -296,6 +303,63 @@ hf_db_init <- function() {
         hf_esc(HF_RULES_CATEGORIES[i]), i))
     }
   }
+  # ══════════════════════════════════════════════════════════════════
+  # AI 上下文层：规则修订 / 记忆 / 通用可配置项 / 分类路由（全部幂等）
+  # 只做 CREATE IF NOT EXISTS 与逐列 ALTER，绝不改写或删除已有数据行。
+  # ══════════════════════════════════════════════════════════════════
+  # 规则修订条目：append-only，像记事评论一样可不断追加/修订，parent_id 自关联
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_rule_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id INTEGER NOT NULL,
+    parent_id INTEGER DEFAULT 0,
+    content TEXT NOT NULL,
+    version_no INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'effective',
+    created_by INTEGER,
+    created_by_name TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+  )")
+  dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_hf_rule_items_rule ON hf_rule_items(rule_id)")
+  # 项目与 AI 记忆：同样 append-only，parent_id 保留修订链，便于导出移植
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_memory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    topic TEXT NOT NULL,
+    category TEXT DEFAULT '项目事实',
+    content TEXT,
+    source TEXT DEFAULT '',
+    tags TEXT DEFAULT '',
+    parent_id INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'effective',
+    created_by INTEGER,
+    created_by_name TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+  )")
+  dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_hf_memory_cat ON hf_memory(category)")
+  # 通用可配置项（key → JSON value）：模型路由、CLI 默认参数等，避免每加一项就建一张表
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_config_kv (
+    cfg_key TEXT PRIMARY KEY,
+    cfg_value TEXT,
+    cfg_desc TEXT DEFAULT '',
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+  )")
+  # 规则分类扩展列：适用任务类型 / 默认模型 / 推理强度 / 轮数 / 启停 / 是否常驻注入
+  cat_cols <- list(
+    applies_to   = "TEXT DEFAULT ''",
+    model        = "TEXT DEFAULT ''",
+    effort       = "TEXT DEFAULT ''",
+    max_turns    = "INTEGER DEFAULT 0",
+    enabled      = "INTEGER DEFAULT 1",
+    always_apply = "INTEGER DEFAULT 0",
+    description  = "TEXT DEFAULT ''")
+  have_cat <- dbGetQuery(con, "PRAGMA table_info(hf_rules_categories)")$name
+  for (nm in names(cat_cols)) {
+    if (!nm %in% have_cat)
+      dbExecute(con, sprintf("ALTER TABLE hf_rules_categories ADD COLUMN %s %s", nm, cat_cols[[nm]]))
+  }
+  # 规则扩展列：父节点（分类下的规则树）与任务类型标签
+  have_rules <- dbGetQuery(con, "PRAGMA table_info(hf_rules)")$name
+  if (!("parent_id" %in% have_rules)) dbExecute(con, "ALTER TABLE hf_rules ADD COLUMN parent_id INTEGER DEFAULT 0")
+  if (!("task_type" %in% have_rules)) dbExecute(con, "ALTER TABLE hf_rules ADD COLUMN task_type TEXT DEFAULT ''")
   hf_perm_seed(con)
   invisible(TRUE)
 }
@@ -492,11 +556,9 @@ hf_rules_categories_df <- function() {
   on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch(
     dbGetQuery(con,
-      "SELECT c.id, c.name, c.sort_order, c.created_at, c.updated_at,
-              COUNT(r.id) AS rule_count
+      "SELECT c.*,
+              (SELECT COUNT(*) FROM hf_rules r WHERE r.category = c.name) AS rule_count
        FROM hf_rules_categories c
-       LEFT JOIN hf_rules r ON r.category = c.name
-       GROUP BY c.id, c.name, c.sort_order, c.created_at, c.updated_at
        ORDER BY c.sort_order ASC, c.id ASC"),
     error = function(e) data.frame())
 }
@@ -825,17 +887,32 @@ hf_metatask_list <- function() {
 }
 
 # ── 新增元任务（含 cron，自动计算 next_run_at）──
-hf_metatask_add <- function(title, payload = "", cron = "") {
+# 统一入队：Web 提交也带 source/model/task_type，与 runner 的 enqueue 保持一致。
+# 新增参数都有默认值，旧调用 hf_metatask_add(title, payload, cron) 行为不变。
+hf_metatask_add <- function(title, payload = "", cron = "", source = "web",
+                            model = "", task_type = "") {
   con <- hf_db_connect()
   on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   if (is.null(title) || !nzchar(trimws(title))) return(list(success = FALSE, message = "任务标题不能为空"))
   nxt <- if (nzchar(trimws(cron))) hf_cron_next(cron) else Sys.time()
   nxt_str <- if (is.null(nxt)) NULL else format(nxt, "%Y-%m-%d %H:%M:%S")
-  tryCatch({
+  nxt_sql <- if (is.null(nxt_str)) "NULL" else sprintf("'%s'", nxt_str)
+  ok <- tryCatch({
     dbExecute(con, sprintf(
+      "INSERT INTO hf_metatask_queue (title,payload,cron,status,next_run_at,source,model,task_type)
+       VALUES ('%s','%s','%s','pending',%s,'%s','%s','%s')",
+      hf_esc(title), hf_esc(payload), hf_esc(cron), nxt_sql,
+      hf_esc(hf_or(source, "web")), hf_esc(hf_or(model, "")), hf_esc(hf_or(task_type, ""))))
+    TRUE
+  }, error = function(e) FALSE)
+  if (!isTRUE(ok)) {
+    # 极端旧库（尚无新列）回退，保证提交需求不被阻断
+    tryCatch(dbExecute(con, sprintf(
       "INSERT INTO hf_metatask_queue (title,payload,cron,status,next_run_at) VALUES ('%s','%s','%s','pending',%s)",
-      hf_esc(title), hf_esc(payload), hf_esc(cron),
-      if (is.null(nxt_str)) "NULL" else sprintf("'%s'", nxt_str)))
+      hf_esc(title), hf_esc(payload), hf_esc(cron), nxt_sql)),
+      error = function(e) NULL)
+  }
+  tryCatch({
     hf_metatask_export()
     list(success = TRUE, message = paste0("已新增元任务：", title))
   }, error = function(e) list(success = FALSE, message = e$message))
@@ -947,7 +1024,10 @@ hf_metatask_export <- function() {
       next_run_at = if (is.na(q$next_run_at[i]) || is.null(q$next_run_at[i])) NULL else q$next_run_at[i],
       result = hf_or(q$result[i], ""),
       llm_name = if (is.null(q$llm_name) || length(q$llm_name) == 0 || is.na(q$llm_name[i])) "" else hf_or(q$llm_name[i], ""),
-      agent = if (is.null(q$agent) || length(q$agent) == 0 || is.na(q$agent[i])) "" else hf_or(q$agent[i], "")
+      agent = if (is.null(q$agent) || length(q$agent) == 0 || is.na(q$agent[i])) "" else hf_or(q$agent[i], ""),
+      model = if (is.null(q$model) || length(q$model) == 0 || is.na(q$model[i])) "" else hf_or(q$model[i], ""),
+      task_type = if (is.null(q$task_type) || length(q$task_type) == 0 || is.na(q$task_type[i])) "" else hf_or(q$task_type[i], ""),
+      source = if (is.null(q$source) || length(q$source) == 0 || is.na(q$source[i])) "web" else hf_or(q$source[i], "web")
     )
   })
   out <- list(

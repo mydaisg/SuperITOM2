@@ -1,0 +1,31 @@
+【需求】
+修复用户反馈的「重启 HungFo 后点击登录无反应、后台无任何报错」，定位真实根因并根治；补齐验证盲区，加入防复发断言，确保已有功能与数据不受影响。
+
+【分析】
+- 现象：用户以 rscript D:\GitHub\SuperITOM2\Script\hungfo\app.R 启动，控制台仅输出 Listening on http://127.0.0.1:8999，点击登录按钮无任何响应、后台无报错。
+- 关键实测：8999 的 Rscript 进程 2 秒采样 CPU 增量 1.984s，即 99% 单核持续满载，且无子进程；curl 首页 HTTP=000 完全无响应；headless Chrome 的 CDP 连 Runtime.enable 与 1+1 求值都超时，说明 Shiny 事件循环被 R 端死循环占满，而非登录 observer 未注册或前端 JS 报错。
+- Rprof 稳态（后 60% 采样）显示 hf_ 业务函数出现 0 次，热点全部落在 Shiny 内部：make.unique 25%、rbind 合计 40%、anyDuplicated 5.8%，完整调用栈为 flushReact → ctx$executeFlushCallbacks → observe → invalidateLater → scheduler → scheduleTask → timerCallbacks$schedule → rbind → make.unique。
+- 定位到元任务页 20 秒自动刷新的裸 observe 内调用 local_refresh()，其定义为 local_trigger(local_trigger() + 1)，在 observer 内既读又写同一个 reactiveVal：读使 observe 订阅该值，写立即令自身失效，于是每轮 flush 无限重跑并重复注册 timer，Shiny 用 rbind 维护的 timerCallbacks 表无限膨胀，CPU 打满且 Shiny 不抛错。
+- 判定实验：全局屏蔽 invalidateLater 的实例仍 100% CPU、屏蔽 reactivePoll 的实例仍 100% CPU，而屏蔽 hf_metatask_page_server 的实例降到 0.3%，一锤定音证明自激源在元任务模块且与定时器本身无关。
+- 验证盲区复盘：上一轮交付只做了 curl 静态首页冒烟，从未用真实浏览器建立 Shiny 会话，因此恰好漏掉「会话初始化后才触发」的自激路径；历史 devlog 第 55 条也曾记录同类「重启后点击登录无响应」，当时以改登录遮罩方案绕过，未触及 reactive 自激根因。
+
+【方案】
+- 核心修复：元任务页 20 秒 observe 改为 invalidateLater 之后整体 isolate({...})，使该 observe 不订阅 modal_task_id 与 local_trigger，只由定时器驱动；并注明事故根因防止改回。
+- 防御加固：全项目 14 处 refresh 助手函数（hf_ui.r 11 处、hf_mod_config.r 3 处）统一改为 xxx_trigger(isolate(xxx_trigger()) + 1)，杜绝任何裸 observe 内调用时产生同类自激。
+- 验证补强：新增 Test/hf_login_diag.R（登录后初始化链路诊断）、Test/hf_login_cdp.js / Test/hf_login_verify_cdp.js（真实 Chrome CDP 点击登录）、Test/hf_nav_probe.js（条件面板 DOM 检视）、Test/hf_cdp_probe.js 与 Test/hf_cdp_stack.js（主线程卡死探测）；在 Test/hf_verify.R 追加 4 条防复发断言（20s observe 必须 isolate、两文件无未隔离 trigger 自增、refresh 均 isolate 读）。
+- 诊断副产物保留在 Script/hungfo/DB/test_tmp/，均为临时库副本与日志，不污染正式库。
+
+【结果】
+- 真实浏览器全链验证 8/8 通过：BEFORE 为 ready=complete、Shiny 已连接、登录遮罩 VISIBLE、hf_login_flag=0、主导航条件面板 display:none；填入 DaiSG / falwpa 点击登录后 AFTER 为遮罩 HIDDEN、hf_login_flag=1、主导航条件面板 display:block、5 个 tab 已渲染、出现「欢迎回来，DaiSG！」通知、JS 错误 0 条。
+- CPU 对比：修复后 5 个新实例（9060/9061/9062/9063/9064）5 秒采样 CPU 增量均为 0（0%），用户旧 8999 进程仍 99.7%（其内存加载的是修复前代码，重启即恢复）。
+- 回归：全量 24 个 R 文件语法 0 错；stage1/2/3 各 110/110、真实 CLI E2E 12/12、全链脚本 47/47，合计 389 项断言 0 失败；正式库业务数据未改动（hf_records 49、devlog 29、hf_rules 3、hf_rules_categories 6、hf_metatask_queue 24、hf_users 2、hf_modules 15 均保持）。
+- 真实 Token 台账（PROD hf_workbench_runs，4 次历史运行，非估算）：token_in 合计 62,264,134；token_out 合计 495,766；cache_read 合计 60,997,376；token_total 合计 123,757,276。本次修复为本地诊断与回归验证，未派发新的 CB CLI 计数任务，故台账数值与修复前一致；诊断进程 CPU 采样耗时约 20 秒，无新增模型调用费用。
+- 交付结论：根因已根治且经真实浏览器验证；用户只需重启 HungFo 应用（关闭当前 8999 旧进程后重新执行 rscript ...\app.R）即可正常登录。
+
+【记忆】
+- Shiny 铁律：裸 observe 内禁止「读+写同一个 reactiveVal」。形如 x(x() + 1) 的刷新助手必须写成 x(isolate(x()) + 1)，或把调用整体包进 isolate()，否则会 reactive 自激：CPU 100%、页面点击无响应、后台无任何报错，且 curl 首页也会 HTTP=000。
+- 带 invalidateLater 的 observe 尤其危险：自激时每轮 flush 重复注册 timer，Shiny 的 timerCallbacks 用 rbind 维护会无限膨胀，Rprof 热点表现为 make.unique / rbind / anyDuplicated / timerCallbacks$schedule，稳态栈中业务函数反而 0 次。
+- 排查手法固化：进程 CPU 增量采样区分死循环与 I/O 等待；curl 走系统代理会误判 HTTP=000，须加 --noproxy；Rprof 分时统计稳态栈顶；模块级屏蔽实验（把某 page_server 替换为 no-op 后对比 CPU）是定位自激模块最快的一锤定音手段。
+- 验证纪律：只做 curl 静态首页不等于全链验证。Shiny 应用必须用真实浏览器建立 websocket 会话并实际点击关键按钮（本项目用 headless Chrome + CDP），否则会漏掉「会话初始化后才触发」的响应式故障。
+- app.R 的 rv 定义在全局，同一进程内多个浏览器会话共享登录态；做干净登录验证必须启动全新进程，否则 BEFORE 已是已登录状态。
+- 用户 8999 端口的历史兄弟进程（10/29 启动的 run_app.R）属既有服务，非本次测试产物，不误杀。

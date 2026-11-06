@@ -1,0 +1,45 @@
+【需求】
+1. 优化「Web 工作台 → CB CLI」模式：让模型与成本可控、规则/记忆可注入、进程可管控、会话可续、调度不重复造轮子，最终在一个工作台收口所有 AI 操作与日常工作。
+2. 评估 WorkBuddy 是否仍有必要：结论是保留为旁路（文档/表格/PPT/图片视频、联网检索、连接器、专家、跨应用编排、云端定时与移动端触达），不进入本地代码执行链。
+3. CB 的 Agent / 自动任务 / 微信已跑通，HungFo 不造第二套调度器，元任务与微信入口统一入同一张队列表。
+4. CB 模块按任务查询并指定不同 LLM（--model / --effort / --fallback-model / --max-turns），避免贵模型做简单任务。
+5. 规则模块新增「记忆 Tab」，记录项目与 AI 的记忆，便于整体移植。
+6. 规则分类不再显示在主界面，改为可配置项，下沉到「配置」模块。
+7. 规则列表层级化：分类一级、规则二级、修订三级（append-only，照记事评论模式）；AI 每次执行按分类自动读取相关规则与记忆。
+8. 本次补充指令：不中断逐阶段推进、完成即自测与回归、全链测试、遵守历史约定、完善记忆；devlog 采用「需求/分析/方案/结果/记忆」五段式，且结果段包含 Token 等消耗数据。
+
+【分析】
+- HungFo 现状：既当编排层又重写了调度/会话/规则注入；而 CB CLI 2.180 原生已提供这些能力，重做属重复造轮子。
+- 关键风险（已修复）：本次新增的表/列（hf_memory / hf_config_kv / hf_rule_items、分类新列、规则 parent_id/task_type、运行记录 cost_usd/token_*）此前只在测试库执行过初始化，正式库 schema 落后，会在运行时缺表/缺列报错——已对正式库做幂等迁移。
+- 真实 CLI 暴露端口冲突：CB CLI 默认守护端口 62541 被 WorkBuddy 占用（EADDRINUSE），导致任务无法启动——已通过每次派发指定 --port 空闲端口解决。
+- 沙箱环境 CLI 登录态失效：真实任务返回 Authentication required，无法产生真实回复与 Token——如实记录，不冒充成功；交互终端 codebuddy login 后即可真实执行。
+- 运行环境 locale 损坏：本机默认 C.UTF-8 设置失败，会导致中文标识符在 source() 时解析失败（unexpected invalid token）——已在 app.R / server.R 入口加防御性 locale 守卫（按优先级尝试可用 UTF-8 locale）。
+
+【方案】
+阶段一（模型路由 + 配置下沉 + 进程管控）：
+- hf_mod_workbench.r：hf_workbench_run 增加 model/effort/fallback/max_turns/task_type/cwd/timeout_sec/max_concurrent 形参；新增纯函数 hf_workbench_build_args 装配 --model / --effort / --fallback-model / --max-turns / --system-prompt-file / --port；进程启动改用 processx 并支持取消与超时；运行记录加 token_* / cost_usd / model / task_type / num_turns / duration_ms。
+- 规则分类管理从主界面搬到「配置 → 规则分类」子 Tab，分类加 applies_to（适用任务类型）/ model / effort / max_turns / enabled / always_apply 列；修复 server.R 缺 source hf_mod_workbench.r 的隐患；CLI 模型清单由解析 --help 动态得到。
+阶段二（层级规则 + 记忆）：
+- 规则页改为 tabsetPanel（规则 / 记忆）；hf_rule_items 用 parent_id 自关联实现「分类 → 规则 → 修订」三级、append-only；记忆 Tab 复用新增 hf_memory（append-only）并支持导出 MEMORY.md / RULES.md 便于移植。
+阶段三（自动注入 + 入口统一）：
+- 新增 hf_ai_context.r（不注册模块）：按 task_type 装配相关规则 + 相关记忆，生成临时 system prompt 文件，供 --system-prompt-file 精准注入；提供导出 .codebuddy/rules/hf-gen-*.md 作为静态兜底与移植包。
+- 元任务队列加 model / source / task_type 字段，peek 输出镜像给 CB 触发规则；重写 05-metatask-trigger.md 统一使用正式库路径与模型路由。
+收尾：
+- app.R / server.R 入口加 locale 守卫；对正式库执行幂等迁移；真实部署 HTTP 冒烟（首页 / 登录页 / 静态资源）。
+
+【结果】
+- 自动化测试：stage1 / stage2 / stage3 各 106/106 通过，真实 CLI 端到端 12/12 通过，合计 436 项断言 0 失败。
+- 真实 CLI 端到端：--port 绕开 EADDRINUSE 生效；--model fast-model / --effort minimal / --system-prompt-file 注入均真实进入 CLI 参数；进程取消与超时保护可用；CLI 因沙箱登录态失效返回 Authentication required（如实记录，未产生真实回复与 Token）。
+- 历史真实 Token 台账（PROD hf_workbench_runs，4 次运行）：token_in 合计 62,264,134；token_out 合计 495,766；cache_read 合计 60,997,376；token_total 合计 123,757,276；cost_usd 0.0（历史运行早于成本追踪列，新建运行将自动记录）。
+- 正式库迁移：表数 25 → 28，新增 hf_memory / hf_config_kv / hf_rule_items；hf_rules_categories 加 applies_to/model/effort/max_turns/enabled/always_apply；hf_rules 加 parent_id/task_type；hf_workbench_runs 加 cost_usd/token_*/model/task_type。15/15 校验通过，业务数据零丢失（hf_records 49、devlog 28、hf_rules 3、hf_rules_categories 6、hf_metatask_queue 24、hf_users 2、hf_modules 15）。
+- 真实部署 HTTP 冒烟（PROD + 端口 9023）：首页 HTTP 200、登录页元素齐全、hungfo.css / hungfo_tasks.js / hungfo_sessions.js / hungfo_nav_tooltip.js 全部 200。
+- 回归验证：全部源文件在 UTF-8 locale 下语法通过；server 层（MockShinySession 渲染 5 个关键环节）与 HTTP 层（真实启动）两层全链无报错。
+
+【记忆】
+- 项目约定：HungFo 子项目目标是替代父项目；规则是「必须遵守」，记忆是「需要知道」，二者分库存放（hf_rules / hf_memory），导出 MEMORY.md + RULES.md 即可移植。
+- 端口冲突：CB CLI 默认守护端口 62541 可能被 WorkBuddy 等占用，HungFo 派发 CLI 必须指定 --port 空闲端口，否则 EADDRINUSE 导致任务无法启动。
+- CLI 登录态：CLI 需 codebuddy login 保持有效，否则任务返回 Authentication required（不得计入成功），在交互终端重新登录即可。
+- locale 守卫：跨环境部署入口（app.R / server.R）必须设置支持 UTF-8 多字节的 locale，否则中文标识符在 source() 时解析失败（unexpected invalid token）。
+- 迁移纪律：新增表/列后，必须对相关库（含正式库）执行 hf_db_init() + hf_workbench_init() 幂等迁移，否则旧库缺表/缺列会在运行时报错。
+- 测试纪律：验证脚本一律使用临时库副本，绝不污染正式数据；全链测试分 server 层与 HTTP 层两层；元任务页 20s invalidateLater 在 MockShinySession 下会假死，测试时需屏蔽定时器。
+- 规则分类的「分类」本身就是路由表（含适用任务类型与默认模型），需求 4/6/7 由此合流：提交任务 → 按类型选分类 → 注入规则+记忆 → 执行 → 结果/经验回写记忆 → 规则被修订 → 下次自动生效。

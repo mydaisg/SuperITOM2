@@ -6,14 +6,18 @@
 # 用法：
 #   Rscript hf_metatask_runner.r peek              # 输出到期待执行任务(JSON)到 stdout
 #   Rscript hf_metatask_runner.r done <id> "<结果>"  # 标记任务完成(写库+更新镜像)
-#   Rscript hf_metatask_runner.r log "<标题>" "<内容>"  # 写一条开发日志(devlog)
+#   Rscript hf_metatask_runner.r log "<标题>" "<内容>"  # 写五段式开发日志（缺段自动补齐并标注）
+#   Rscript hf_metatask_runner.r log5 "<标题>" "<需求>" "<分析>" "<方案>" "<结果>" "<记忆>"  # 显式五段式
+#   Rscript hf_metatask_runner.r enqueue "<标题>" "<内容>" --source wecom --model fast-model --tasktype ui
+#                                                 # 统一入队（web / wecom / cron / cb 走同一张表）
+#   Rscript hf_metatask_runner.r context bugfix   # 按分类装配规则+记忆，输出 system prompt 文件路径
 #   Rscript hf_metatask_runner.r sessions          # 重新导出 hungfo_sessions.js
 #   Rscript hf_metatask_runner.r usage             # 采集 CodeBuddy 自动任务运行统计 + 会话清单并导出
 #   Rscript hf_metatask_runner.r token <cid> <total> <input> <output> <cacheHit> <cacheMiss> <cacheWrite> <thinking> <response>  # 手动录入某会话 Token 明细
 #   Rscript hf_metatask_runner.r cron "<expr>"     # 测试 cron 表达式的下一个触发时间
 ##################
 
-Sys.setlocale("LC_ALL", "en_US.UTF-8")
+invisible(Sys.setlocale("LC_ALL", "en_US.UTF-8"))
 suppressMessages({ library(DBI); library(RSQLite); library(jsonlite) })
 
 # ── HungFo 根目录解析（独立运行 / 父项目内嵌 通用）──
@@ -41,14 +45,40 @@ db <- function() {
 esc <- function(x) gsub("'", "''", as.character(ifelse(is.na(x), "", x)))
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || is.na(a)) b else a
 
-# 确保 agent 列存在（旧库兼容：列不存在则 ALTER 追加）
+# 确保 AI 上下文相关列 / 表存在（旧库兼容；独立 Rscript 可能先于 Shiny 启动）
+# 与 hf_core.r::hf_db_init() 的 DDL 保持同构，全部幂等，不改写已有数据。
 ensure_agent_cols <- function(con) {
-  for (tbl in c("hf_metatask_queue", "hf_task_sessions")) {
+  add_col <- function(tbl, nm, ddl) {
     cols <- tryCatch(dbGetQuery(con, sprintf("PRAGMA table_info(%s)", tbl)), error = function(e) data.frame())
-    if (nrow(cols) > 0 && !("agent" %in% cols$name)) {
-      dbExecute(con, sprintf("ALTER TABLE %s ADD COLUMN agent TEXT", tbl))
-    }
+    if (nrow(cols) > 0 && !(nm %in% cols$name))
+      dbExecute(con, sprintf("ALTER TABLE %s ADD COLUMN %s %s", tbl, nm, ddl))
   }
+  for (tbl in c("hf_metatask_queue", "hf_task_sessions")) add_col(tbl, "agent", "TEXT")
+  add_col("hf_metatask_queue", "model",      "TEXT DEFAULT ''")
+  add_col("hf_metatask_queue", "task_type",  "TEXT DEFAULT ''")
+  add_col("hf_metatask_queue", "source",     "TEXT DEFAULT 'web'")
+  add_col("hf_task_sessions",  "model",      "TEXT DEFAULT ''")
+  # 分类路由列
+  for (cc in list(c("applies_to","TEXT DEFAULT ''"), c("model","TEXT DEFAULT ''"),
+                  c("effort","TEXT DEFAULT ''"), c("max_turns","INTEGER DEFAULT 0"),
+                  c("enabled","INTEGER DEFAULT 1"), c("always_apply","INTEGER DEFAULT 0"),
+                  c("description","TEXT DEFAULT ''")))
+    add_col("hf_rules_categories", cc[1], cc[2])
+  add_col("hf_rules", "parent_id", "INTEGER DEFAULT 0")
+  add_col("hf_rules", "task_type", "TEXT DEFAULT ''")
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_rule_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, rule_id INTEGER NOT NULL,
+    parent_id INTEGER DEFAULT 0, content TEXT NOT NULL, version_no INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'effective', created_by INTEGER, created_by_name TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now','localtime')))")
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_memory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, topic TEXT NOT NULL,
+    category TEXT DEFAULT '项目事实', content TEXT, source TEXT DEFAULT '', tags TEXT DEFAULT '',
+    parent_id INTEGER DEFAULT 0, status TEXT DEFAULT 'effective', created_by INTEGER,
+    created_by_name TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime')))")
+  dbExecute(con, "CREATE TABLE IF NOT EXISTS hf_config_kv (
+    cfg_key TEXT PRIMARY KEY, cfg_value TEXT, cfg_desc TEXT DEFAULT '',
+    updated_at TEXT DEFAULT (datetime('now','localtime')))")
   invisible(TRUE)
 }
 
@@ -100,23 +130,38 @@ export <- function() {
     next_run_at = if (is.na(q$next_run_at[i]) || is.null(q$next_run_at[i])) NULL else q$next_run_at[i],
     result = ifelse(is.na(q$result[i]), "", q$result[i]),
     llm_name = if ("llm_name" %in% names(q)) ifelse(is.na(q$llm_name[i]), "", q$llm_name[i]) else "",
-    agent = if ("agent" %in% names(q)) ifelse(is.na(q$agent[i]), "", q$agent[i]) else ""))
+    agent = if ("agent" %in% names(q)) ifelse(is.na(q$agent[i]), "", q$agent[i]) else "",
+    model = row_val(q[i, , drop = FALSE], "model"),
+    task_type = row_val(q[i, , drop = FALSE], "task_type"),
+    source = row_val(q[i, , drop = FALSE], "source", "web")))
   out <- list(updated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S"), tasks = tasks)
   writeLines(toJSON(out, auto_unbox = TRUE, pretty = TRUE, null = "null"), META_JSON, useBytes = TRUE)
   invisible(out)
 }
 
-# ── peek：返回到期待执行任务 ──
+# 取一行的某列（旧库可能缺列，缺列时回退默认值）
+row_val <- function(r, nm, def = "") {
+  if (!(nm %in% names(r))) return(def)
+  v <- r[[nm]][1]
+  if (is.null(v) || is.na(v)) def else as.character(v)
+}
+
+# ── peek：返回到期待执行任务（含 model / task_type / source，供按模型路由与统一入口使用）──
 peek <- function() {
   con <- db(); on.exit(dbDisconnect(con))
+  ensure_agent_cols(con)
   q <- dbGetQuery(con, "SELECT * FROM hf_metatask_queue WHERE status='pending' ORDER BY id ASC")
   now <- Sys.time()
   due <- if (nrow(q) == 0) list() else lapply(seq_len(nrow(q)), function(i) {
     r <- q[i, , drop = FALSE]
     nxt <- r$next_run_at[1]
     due_flag <- if (is.na(nxt) || nxt == "") TRUE else (as.POSIXct(nxt, tz = "Asia/Shanghai") <= now)
-    if (due_flag) list(id = r$id[1], title = r$title[1], payload = ifelse(is.na(r$payload[1]), "", r$payload[1]),
-                       cron = ifelse(is.na(r$cron[1]), "", r$cron[1])) else NULL
+    if (due_flag) list(
+      id = r$id[1], title = r$title[1],
+      payload = ifelse(is.na(r$payload[1]), "", r$payload[1]),
+      cron = ifelse(is.na(r$cron[1]), "", r$cron[1]),
+      model = row_val(r, "model"), task_type = row_val(r, "task_type"),
+      source = row_val(r, "source", "web")) else NULL
   })
   due <- Filter(Negate(is.null), due)
   cat(toJSON(list(now = format(now, "%Y-%m-%d %H:%M:%S"), due = due), auto_unbox = TRUE, pretty = TRUE))
@@ -129,16 +174,24 @@ mark_done <- function(id, result = "", meta = list()) {
   con <- db(); on.exit(dbDisconnect(con))
   ensure_agent_cols(con)
   row <- dbGetQuery(con, sprintf("SELECT * FROM hf_metatask_queue WHERE id=%s", id))
-  if (nrow(row) == 0) { cat(toJSON(list(success = FALSE, message = "任务不存在"))); return(invisible(FALSE)) }
+  if (nrow(row) == 0) {
+    cat(toJSON(list(success = FALSE, message = "任务不存在"), auto_unbox = TRUE))
+    return(invisible(FALSE))
+  }
   now_str <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
   cron <- ifelse(is.na(row$cron[1]), "", row$cron[1])
   nxt_str <- NULL
   llm <- meta$llm %||% ""; agt <- meta$agent %||% ""
+  mdl <- meta$model %||% ""
+  # 未显式上报 model 时，用队列里任务指定的模型回填（保证台账是「实际指定」而非事后猜测）
+  if (!nzchar(mdl)) mdl <- row_val(row, "model")
+  # 未显式上报 llm 但已指定模型时，用模型名回填
+  if (!nzchar(llm) && nzchar(mdl)) llm <- mdl
   tin <- as.integer(meta$tin %||% 0); tout <- as.integer(meta$tout %||% 0)
   dur <- as.integer(meta$dur %||% 0); sid <- meta$sid %||% ""
   meta_sql <- sprintf(
-    "session_id='%s', llm_name='%s', agent='%s', token_in=%d, token_out=%d, duration_ms=%d, started_at='%s', finished_at='%s'",
-    esc(sid), esc(llm), esc(agt), tin, tout, dur, now_str, now_str)
+    "session_id='%s', llm_name='%s', agent='%s', model='%s', token_in=%d, token_out=%d, duration_ms=%d, started_at='%s', finished_at='%s'",
+    esc(sid), esc(llm), esc(agt), esc(mdl), tin, tout, dur, now_str, now_str)
   if (nzchar(trimws(cron))) {
     nxt <- cron_next(cron)
     nxt_str <- if (is.null(nxt)) NULL else format(nxt, "%Y-%m-%d %H:%M:%S")
@@ -152,11 +205,13 @@ mark_done <- function(id, result = "", meta = list()) {
   }
   # 写执行会话明细
   dbExecute(con, sprintf(
-    "INSERT INTO hf_task_sessions (task_id,session_id,title,llm_name,agent,token_in,token_out,duration_ms,status,result,started_at,finished_at)
-     VALUES (%s,'%s','%s','%s','%s',%d,%d,%d,'success','%s','%s','%s')",
-    as.character(id), esc(sid), esc(row$title[1]), esc(llm), esc(agt), tin, tout, dur, esc(result), now_str, now_str))
+    "INSERT INTO hf_task_sessions (task_id,session_id,title,llm_name,agent,model,token_in,token_out,duration_ms,status,result,started_at,finished_at)
+     VALUES (%s,'%s','%s','%s','%s','%s',%d,%d,%d,'success','%s','%s','%s')",
+    as.character(id), esc(sid), esc(row$title[1]), esc(llm), esc(agt), esc(mdl),
+    tin, tout, dur, esc(result), now_str, now_str))
   export(); export_sessions()
-  cat(toJSON(list(success = TRUE, message = "已更新任务状态", next_run_at = nxt_str)))
+  cat(toJSON(list(success = TRUE, message = "已更新任务状态", next_run_at = nxt_str),
+             auto_unbox = TRUE, null = "null"))
   invisible(TRUE)
 }
 
@@ -387,7 +442,8 @@ mark_token <- function(cid, vals) {
   invisible(TRUE)
 }
 
-# ── log：写一条开发日志 ──
+# ── log：写一条五段式开发日志【需求】【分析】【方案】【结果】【记忆】──
+# 缺少的段落会补一条明确标注的占位行（不是编造内容），保证新日志一律五段式。
 write_log <- function(title, content) {
   con <- db(); on.exit(dbDisconnect(con))
   no <- sprintf("HF-DEVLOG-%s", format(Sys.time(), "%Y%m%d%H%M%S"))
@@ -395,16 +451,142 @@ write_log <- function(title, content) {
   # 与父项目开发日志的严格样式一致（避免内容挤在一行导致分段解析错乱）。
   content <- gsub("(?<!\n)(?=\u3010[^\u3011]*\u3011)", "\n", content, perl = TRUE)
   content <- trimws(content)
+  need <- c("需求", "分析", "方案", "结果", "记忆")
+  missing <- need[!vapply(need, function(s) grepl(paste0("【", s, "】"), content, fixed = TRUE), logical(1))]
+  if (length(missing) > 0)
+    content <- paste(c(content, vapply(missing, function(s)
+      sprintf("【%s】（本段由 log 命令补齐，调用方未单独提供内容）", s), character(1))),
+      collapse = "\n")
   dbExecute(con, sprintf(
     "INSERT INTO hf_records (module_key, rec_no, title, payload, status) VALUES ('devlog','%s','%s','%s','draft')",
     esc(no), esc(title), esc(content)))
-  cat(toJSON(list(success = TRUE, message = paste0("已写开发日志 ", no))))
+  cat(toJSON(list(success = TRUE, message = paste0("已写开发日志 ", no), rec_no = no,
+                  sections = length(need), auto_filled = missing), auto_unbox = TRUE))
   invisible(TRUE)
+}
+
+# ── log5：显式五段式写入（推荐给 AI 使用，避免占位段）──
+# 用法：log5 "<标题>" "<需求>" "<分析>" "<方案>" "<结果>" "<记忆>"
+write_log5 <- function(title, req, ana, plan, res, mem) {
+  content <- paste(sprintf("【%s】%s", c("需求","分析","方案","结果","记忆"),
+                           c(req, ana, plan, res, mem)), collapse = "\n")
+  write_log(title, content)
+}
+
+# ── enqueue：统一入口入队（web / wecom / cron / cb 都写同一张队列表）──
+# 用法：enqueue "<标题>" "<任务内容>" --source wecom --model fast-model --tasktype ui --cron "<expr>"
+enqueue <- function(title, payload, meta = list()) {
+  if (is.null(title) || !nzchar(trimws(title))) {
+    cat(toJSON(list(success = FALSE, message = "任务标题不能为空"))); return(invisible(FALSE))
+  }
+  con <- db(); on.exit(dbDisconnect(con))
+  ensure_agent_cols(con)
+  src <- as.character(meta$source %||% "web")
+  mdl <- as.character(meta$model %||% "")
+  tt  <- as.character(meta$tasktype %||% "")
+  cr  <- as.character(meta$cron %||% "")
+  now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+  nxt <- if (nzchar(trimws(cr))) {
+    x <- cron_next(cr); if (is.null(x)) now else format(x, "%Y-%m-%d %H:%M:%S")
+  } else now
+  dbExecute(con, sprintf(
+    "INSERT INTO hf_metatask_queue (title,payload,cron,status,next_run_at,created_at,updated_at,model,task_type,source)
+     VALUES ('%s','%s','%s','pending','%s','%s','%s','%s','%s','%s')",
+    esc(title), esc(payload), esc(cr), esc(nxt), now, now, esc(mdl), esc(tt), esc(src)))
+  id <- dbGetQuery(con, "SELECT last_insert_rowid() id")$id[1]
+  export()
+  cat(toJSON(list(success = TRUE, id = id, message = sprintf("已从 %s 入口入队任务 #%s", src, id),
+                  source = src, model = mdl, task_type = tt, next_run_at = nxt), auto_unbox = TRUE))
+  invisible(TRUE)
+}
+
+# ── context：按任务类型/分类装配规则 + 记忆，生成 CLI 可直接用的 system prompt 文件 ──
+# 这是「AI 每次执行自动分类读取」的落地：定时任务 / 微信入口拿到路径后
+# 用 --system-prompt-file <path> 注入，只读取相关的规则与记忆。
+build_context <- function(task_type = "default", category = "") {
+  con <- db(); on.exit(dbDisconnect(con))
+  ensure_agent_cols(con)
+  tt <- if (is.null(task_type) || !nzchar(task_type)) "default" else task_type
+  cats <- tryCatch(dbGetQuery(con, "SELECT * FROM hf_rules_categories"), error = function(e) data.frame())
+  # 路由表（hf_config_kv.ai_model_routes）里的分类
+  route_cats <- character(0)
+  cfg <- tryCatch(dbGetQuery(con, "SELECT cfg_value FROM hf_config_kv WHERE cfg_key='ai_model_routes'"),
+                  error = function(e) data.frame())
+  if (nrow(cfg) > 0 && nzchar(cfg$cfg_value[1])) {
+    rs <- tryCatch(fromJSON(cfg$cfg_value[1], simplifyVector = FALSE), error = function(e) NULL)
+    if (!is.null(rs)) {
+      if (!is.null(names(rs)) && "task_type" %in% names(rs)) rs <- list(rs)
+      for (r in rs) if (identical(as.character(r$task_type %||% ""), tt))
+        route_cats <- trimws(strsplit(as.character(r$categories %||% ""), "[,，;；]")[[1]])
+    }
+  }
+  wanted <- character(0)
+  if (nzchar(trimws(category))) wanted <- trimws(strsplit(category, "[,，;；]")[[1]])
+  wanted <- c(wanted, route_cats)
+  if (nrow(cats) > 0) for (i in seq_len(nrow(cats))) {
+    aa <- as.integer(cats$always_apply[i] %||% 0); if (!is.na(aa) && aa == 1) wanted <- c(wanted, as.character(cats$name[i]))
+    ap <- as.character(cats$applies_to[i] %||% ""); if (nzchar(ap) && grepl(tt, ap, fixed = TRUE)) wanted <- c(wanted, as.character(cats$name[i]))
+  }
+  wanted <- unique(wanted[nzchar(wanted)])
+
+  lines <- c("# HungFo AI 执行上下文（元任务/外部入口自动生成）",
+             sprintf("生成时间：%s", format(Sys.time(), "%Y-%m-%d %H:%M:%S")),
+             sprintf("任务类型：%s", tt),
+             sprintf("匹配分类：%s", if (length(wanted)) paste(wanted, collapse = "、") else "（无）"),
+             "", "## 一、必须遵守的规则（按分类自动装配）", "")
+  nr <- 0L
+  rules <- tryCatch(dbGetQuery(con, "SELECT * FROM hf_rules ORDER BY id DESC LIMIT 200"), error = function(e) data.frame())
+  if (nrow(rules) > 0 && length(wanted) > 0) {
+    sel <- rules[as.character(rules$category) %in% wanted, , drop = FALSE]
+    for (i in seq_len(nrow(sel))) {
+      rid <- sel$id[i]
+      items <- tryCatch(dbGetQuery(con, sprintf(
+        "SELECT * FROM hf_rule_items WHERE rule_id=%s ORDER BY id ASC", as.character(as.integer(rid)))),
+        error = function(e) data.frame())
+      body <- as.character(sel$payload[i] %||% "")
+      ver <- 0L
+      if (nrow(items) > 0) {
+        eff <- items[!is.na(items$status) & items$status == "effective", , drop = FALSE]
+        if (nrow(eff) == 0) eff <- items
+        body <- as.character(eff$content[nrow(eff)]); ver <- as.integer(eff$version_no[nrow(eff)] %||% nrow(items))
+      }
+      nr <- nr + 1L
+      lines <- c(lines, sprintf("### %s %s（当前生效 v%d）",
+        as.character(sel$rule_no[i] %||% ""), as.character(sel$title[i] %||% ""), ver), "",
+        gsub("\r", "", body), "")
+    }
+  }
+  if (nr == 0) lines <- c(lines, "（本次任务无匹配规则）", "")
+
+  lines <- c(lines, "## 二、项目与 AI 记忆", "")
+  mem <- tryCatch(dbGetQuery(con,
+    "SELECT * FROM hf_memory WHERE status='effective' ORDER BY id DESC LIMIT 20"),
+    error = function(e) data.frame())
+  nm <- 0L
+  if (nrow(mem) > 0) for (i in seq_len(nrow(mem))) {
+    nm <- nm + 1L
+    lines <- c(lines, sprintf("- **[%s] %s**", as.character(mem$category[i] %||% ""),
+                              as.character(mem$topic[i] %||% "")),
+               paste0("  ", gsub("\n", "\n  ", as.character(mem$content[i] %||% ""))), "")
+  }
+  if (nm == 0) lines <- c(lines, "（暂无记忆）", "")
+  lines <- c(lines, "## 三、执行纪律", "",
+    "- 只改与任务直接相关的文件，不破坏已有功能与数据。",
+    "- 完成后写五段式开发日志：【需求】【分析】【方案】【结果】【记忆】，结果段含 Token 等消耗数据。",
+    "- 规则冲突以最新修订版本为准。", "")
+
+  d <- file.path(hungfo_home(), "ai_context")
+  dir.create(d, showWarnings = FALSE, recursive = TRUE)
+  f <- file.path(d, sprintf("ctx_mt_%s.md", format(Sys.time(), "%Y%m%d%H%M%S")))
+  writeLines(paste(lines, collapse = "\n"), f, useBytes = TRUE)
+  cat(toJSON(list(success = TRUE, path = f, task_type = tt, categories = wanted,
+                  rules = nr, memory = nm), auto_unbox = TRUE))
+  invisible(f)
 }
 
 # ── 主入口 ──
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) == 0) { cat("用法: peek | done <id> <result> [--llm n --agent a --tin n --tout n --dur ms --sid s] | log <title> <content> | export | sessions | usage | token <cid> <total> <input> <output> <cacheHit> <cacheMiss> <cacheWrite> <thinking> <response> | cron <expr>\n"); quit(status = 0) }
+if (length(args) == 0) { cat("用法: peek | done <id> <result> [--llm n --agent a --model m --tin n --tout n --dur ms --sid s] | log <title> <content> | log5 <title> <需求> <分析> <方案> <结果> <记忆> | enqueue <title> <payload> [--source web|wecom|cron|cb --model m --tasktype t --cron expr] | context <task_type> [--category c] | export | sessions | usage | token ... | cron <expr>\n"); quit(status = 0) }
 
 # 解析 --key value 形式的名值参数（从 args 中提取）
 parse_flags <- function(a) {
@@ -432,6 +614,17 @@ if (cmd == "peek") {
   } else cat(toJSON(list(success = FALSE, message = "缺少任务 id")))
 } else if (cmd == "log" && length(args) >= 3) {
   write_log(args[2], paste(args[-(1:2)], collapse = " "))
+} else if (cmd == "log5" && length(args) >= 7) {
+  write_log5(args[2], args[3], args[4], args[5], args[6], paste(args[-(1:6)], collapse = " "))
+} else if (cmd == "enqueue" && length(args) >= 3) {
+  pf <- parse_flags(args[-1])
+  ttl <- pf$rest[1]
+  pld <- if (length(pf$rest) >= 2) paste(pf$rest[-1], collapse = " ") else ""
+  enqueue(ttl, pld, pf$meta)
+} else if (cmd == "context") {
+  pf <- parse_flags(args[-1])
+  tt <- if (length(pf$rest) >= 1) pf$rest[1] else "default"
+  build_context(tt, as.character(pf$meta$category %||% ""))
 } else if (cmd == "export") {
   export(); cat(toJSON(list(success = TRUE, message = "镜像已导出")))
 } else if (cmd == "sessions") {

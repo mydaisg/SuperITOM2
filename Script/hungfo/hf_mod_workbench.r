@@ -36,7 +36,16 @@ hf_workbench_init <- function() {
     token_cols <- list(
       token_in = "INTEGER DEFAULT 0", token_out = "INTEGER DEFAULT 0",
       token_cache_read = "INTEGER DEFAULT 0", token_cache_write = "INTEGER DEFAULT 0",
-      token_total = "INTEGER DEFAULT 0")
+      token_total = "INTEGER DEFAULT 0",
+      # 模型 / 成本 / 进程管控字段（旧库逐列 ALTER，不影响已有运行记录）
+      model = "TEXT DEFAULT ''", effort = "TEXT DEFAULT ''",
+      fallback_model = "TEXT DEFAULT ''", max_turns = "INTEGER DEFAULT 0",
+      task_type = "TEXT DEFAULT ''", matched_categories = "TEXT DEFAULT ''",
+      context_file = "TEXT DEFAULT ''", context_rules = "INTEGER DEFAULT 0",
+      context_memory = "INTEGER DEFAULT 0", cwd = "TEXT DEFAULT ''",
+      timeout_sec = "INTEGER DEFAULT 0", exit_code = "INTEGER",
+      cost_usd = "REAL DEFAULT 0", num_turns = "INTEGER DEFAULT 0",
+      duration_ms = "INTEGER DEFAULT 0")
     for (nm in names(token_cols)) {
       if (!nm %in% have)
         dbExecute(con, sprintf("ALTER TABLE hf_workbench_runs ADD COLUMN %s %s", nm, token_cols[[nm]]))
@@ -78,6 +87,83 @@ hf_workbench_cli <- function() {
   paste(c(spec$command, spec$pre), collapse = " ")
 }
 
+# ── CLI 可用模型清单 ──
+# 说明：CodeBuddy CLI 没有 list-models 命令；`config get model` 在本机会因守护进程
+# 端口占用（127.0.0.1:62541）报 EADDRINUSE，因此改为解析 `--help` 中 `--model` 一行的
+# "Currently supported: (...)" 列表，随 CLI 版本自动更新；解析失败才回退到静态清单。
+HF_FALLBACK_MODELS <- c(
+  "fast-model", "balanced-model", "deep-model", "hy4free", "hy4std", "hy3", "hy3-x",
+  "deepseek-v4.1-flash", "glm-5.3", "glm-5.3-flash", "glm-5.3-flashx", "glm-5.2",
+  "space-bunny", "minimax-m3.1-flash", "minimax-m3-pay", "kimi-k3.1-pro-highspeed",
+  "kimi-k3.1-pro", "kimi-k3-2", "kimi-k2.8-preview", "deepseek-v4-pro",
+  "step-5-preview", "mimo-v2.6-pro",
+  "custom-local:Tai_Qwen3_Coder_30B-A3B", "custom-local:Tai_DeepSeek-r1:1.5b")
+
+hf_workbench_models <- function(force = FALSE) {
+  if (!isTRUE(force) && !is.null(hf_bus$wb_models) && length(hf_bus$wb_models) > 0)
+    return(hf_bus$wb_models)
+  spec <- hf_workbench_cli_spec()
+  ids <- character(0)
+  if (!is.null(spec)) {
+    call_args <- c(if (nzchar(spec$pre)) spec$pre else character(0), "--help")
+    out <- tryCatch(
+      suppressWarnings(system2(spec$command, call_args, stdout = TRUE, stderr = TRUE)),
+      error = function(e) character(0))
+    txt <- paste(as.character(out), collapse = "\n")
+    hit <- regmatches(txt, regexpr("Currently supported:\\s*\\(([^)]*)\\)", txt, perl = TRUE))
+    if (length(hit) > 0) {
+      inner <- sub("\\)$", "", sub("^Currently supported:\\s*\\(", "", hit[1]))
+      ids <- trimws(strsplit(inner, ",")[[1]])
+      ids <- ids[nzchar(ids)]
+    }
+  }
+  if (length(ids) == 0) ids <- HF_FALLBACK_MODELS
+  hf_bus$wb_models <- ids
+  ids
+}
+
+hf_workbench_model_choices <- function() {
+  ids <- hf_workbench_models()
+  c("跟随路由 / CLI 默认" = "", "（强制账号默认，不传 --model）" = "__none__",
+    stats::setNames(ids, ids))
+}
+
+# ── 挑一个空闲本地端口 ──
+# 背景：CodeBuddy CLI 与 WorkBuddy 共用一个守护进程端口（本机 127.0.0.1:62541）。
+# 只要 WorkBuddy 在跑，新 spawn 的 headless CLI 就会报 EADDRINUSE 直接退出。
+# CLI 的 --port 可为该进程单独指定端口，绕开冲突（已用真实 CLI 验证）。
+hf_workbench_free_port <- function() {
+  for (k in seq_len(40)) {
+    p <- 63000L + sample.int(2000L, 1)
+    busy <- tryCatch({
+      sc <- socketConnection("127.0.0.1", port = p, blocking = FALSE, open = "a+b", timeout = 1)
+      close(sc); TRUE
+    }, error = function(e) FALSE, warning = function(w) FALSE)
+    if (!isTRUE(busy)) return(as.integer(p))
+  }
+  as.integer(63000L + sample.int(2000L, 1))
+}
+
+# ── 纯函数：拼装 CLI 参数（便于不启动进程也能做参数级验证）──
+hf_workbench_build_args <- function(spec, task, opts = list()) {
+  pre <- character(0)
+  add <- function(flag, val) {
+    v <- hf_or(val, "")
+    if (nzchar(as.character(v))) pre <<- c(pre, flag, as.character(v))
+  }
+  # --port 必须放在 -p 之前（commander 在子命令上下文里不认全局选项）
+  pv <- suppressWarnings(as.integer(hf_or(opts$port, 0)))
+  if (!is.na(pv) && pv > 0) pre <- c(pre, "--port", as.character(pv))
+  add("--model", opts$model)
+  add("--fallback-model", opts$fallback_model)
+  add("--effort", opts$effort)
+  mt <- suppressWarnings(as.integer(hf_or(opts$max_turns, 0)))
+  if (!is.na(mt) && mt > 0) pre <- c(pre, "--max-turns", as.character(mt))
+  add("--system-prompt-file", opts$system_prompt_file)
+  args <- c(spec$pre, pre, "-p", as.character(task), "-y", "--output-format", "stream-json")
+  args[nzchar(args)]
+}
+
 # ── 运行日志目录（挂在 www 下，便于监控页/调试直接访问）──
 hf_workbench_logdir <- function() {
   d <- file.path(hf_home(), "www", "workbench_logs")
@@ -87,34 +173,122 @@ hf_workbench_logdir <- function() {
 
 # ── 进程句柄表（run_id -> processx 进程对象，跨 reactive 轮询状态）──
 if (is.null(hf_bus$workbench_procs)) hf_bus$workbench_procs <- list()
+if (is.null(hf_bus$workbench_meta))  hf_bus$workbench_meta  <- list()
 
 # ── 派发任务：异步启动 CodeBuddy CLI，输出落日志文件 ──
-hf_workbench_run <- function(task, created_by = NULL) {
+# 新增能力：按任务类型路由模型/effort/降级模型/最大轮数、按分类装配规则+记忆
+#   （--system-prompt-file）、显式 cwd、超时与取消、并发上限、运行记录成本留痕。
+# 所有新参数均有默认值，旧调用 hf_workbench_run(task, created_by) 行为保持不变。
+hf_workbench_run <- function(task, created_by = NULL, model = NULL, effort = NULL,
+                             fallback_model = NULL, max_turns = NULL, task_type = NULL,
+                             category = NULL, timeout_sec = NULL, cwd = NULL,
+                             inject_context = NULL) {
   if (is.null(task) || !nzchar(trimws(task))) return(list(success = FALSE, message = "任务内容不能为空"))
   spec <- hf_workbench_cli_spec()
   if (is.null(spec)) {
     return(list(success = FALSE,
       message = "未检测到 codebuddy CLI，请先执行 npm install -g @tencent-ai/codebuddy-code 并 codebuddy login"))
   }
+  hf_workbench_init()   # 幂等：确保新增列在旧库上存在
+
+  # 1) 路由表补齐默认值（模型 / effort / 轮数 / 分类）
+  tt <- hf_or(task_type, "default")
+  if (!nzchar(tt)) tt <- "default"
+  route <- tryCatch(hf_model_route_get(tt), error = function(e) NULL)
+  dflt  <- tryCatch(hf_cb_defaults(), error = function(e)
+    list(cwd = "", timeout_sec = 1800, max_concurrent = 3,
+         inject_context = TRUE, include_memory = TRUE))
+  if (is.null(route)) route <- list(model = "", effort = "", max_turns = 0, fallback_model = "")
+  pick <- function(explicit, fallback) if (is.null(explicit)) hf_or(fallback, "") else as.character(explicit)
+  model          <- pick(model, route$model)
+  effort         <- pick(effort, route$effort)
+  fallback_model <- pick(fallback_model, route$fallback_model)
+  max_turns <- if (is.null(max_turns)) suppressWarnings(as.integer(hf_or(route$max_turns, 0)))
+               else suppressWarnings(as.integer(max_turns))
+  if (is.na(max_turns)) max_turns <- 0L
+  timeout_sec <- if (is.null(timeout_sec)) as.integer(dflt$timeout_sec) else as.integer(timeout_sec)
+  if (is.na(timeout_sec) || timeout_sec < 0) timeout_sec <- 0L
+  workdir <- if (!is.null(cwd) && nzchar(cwd)) cwd else hf_or(dflt$cwd, "")
+  if (!nzchar(workdir) || !dir.exists(workdir)) workdir <- getwd()
+  do_ctx <- if (is.null(inject_context)) isTRUE(dflt$inject_context) else isTRUE(inject_context)
+
+  # 2) 并发上限：避免多个 CLI 进程互相抢占守护端口 / 打爆机器
+  con0 <- hf_db_connect()
+  running_n <- tryCatch(dbGetQuery(con0,
+    "SELECT COUNT(*) n FROM hf_workbench_runs WHERE status='running'")$n[1],
+    error = function(e) 0)
+  try(hf_db_disconnect(con0), silent = TRUE)
+  lim <- suppressWarnings(as.integer(hf_or(dflt$max_concurrent, 3)))
+  if (is.na(lim) || lim < 1) lim <- 3L
+  if (!is.na(running_n) && running_n >= lim)
+    return(list(success = FALSE,
+      message = sprintf("当前已有 %d 个运行中任务（上限 %d），请先取消或等待完成", running_n, lim)))
+
+  # 3) 按分类装配规则 + 记忆，写成 system prompt 文件精准注入
+  ctx <- NULL; ctx_file <- ""; cats <- ""
+  if (isTRUE(do_ctx)) {
+    ctx <- tryCatch(
+      hf_ai_context_text(task_type = tt, category = category,
+                         include_memory = isTRUE(dflt$include_memory)),
+      error = function(e) NULL)
+    if (!is.null(ctx)) {
+      cats <- paste(ctx$categories, collapse = "、")
+      run_id_tmp <- sprintf("wb%s%03d", format(Sys.time(), "%Y%m%d%H%M%S"), sample.int(999, 1))
+      ctx_file <- tryCatch(hf_ai_context_write(ctx$text, run_id_tmp), error = function(e) NULL)
+      if (is.null(ctx_file)) ctx_file <- ""
+    }
+  }
+
   cli_desc <- paste(c(spec$command, spec$pre), collapse = " ")
-  run_id <- sprintf("wb%s", format(Sys.time(), "%Y%m%d%H%M%S"))
+  run_id <- if (exists("run_id_tmp", inherits = FALSE)) run_id_tmp else
+    sprintf("wb%s%03d", format(Sys.time(), "%Y%m%d%H%M%S"), sample.int(999, 1))
+  if (nzchar(ctx_file) && !grepl(run_id, basename(ctx_file), fixed = TRUE)) {
+    # 上下文文件与 run_id 对齐（便于追溯）
+    newp <- tryCatch(hf_ai_context_write(hf_or(ctx$text, ""), run_id), error = function(e) NULL)
+    if (!is.null(newp)) ctx_file <- newp
+  }
   logfile <- file.path(hf_workbench_logdir(), paste0(run_id, ".log"))
+
+  # 4) 参数拼装（纯函数，便于测试）；auto 模式每次挑空闲端口避开守护端口冲突
+  cli_port <- if (identical(as.character(hf_or(dflt$port_mode, "auto")), "auto"))
+    hf_workbench_free_port() else 0L
+  args <- hf_workbench_build_args(spec, task, list(
+    port = cli_port, model = model, effort = effort, fallback_model = fallback_model,
+    max_turns = max_turns, system_prompt_file = ctx_file))
+
+  # 5) 落运行记录（所有字段留痕，便于成本/模型台账）
   con <- hf_db_connect()
   on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
-  tryCatch({
+  ins <- tryCatch({
     dbExecute(con, sprintf(
-      "INSERT INTO hf_workbench_runs (run_id, task, status, cli, log_path, created_by)
+      "INSERT INTO hf_workbench_runs
+       (run_id,task,status,cli,log_path,created_by,model,effort,fallback_model,max_turns,
+        task_type,matched_categories,context_file,context_rules,context_memory,cwd,timeout_sec)
+       VALUES ('%s','%s','running','%s','%s',%s,'%s','%s','%s',%d,'%s','%s','%s',%d,%d,'%s',%d)",
+      run_id, hf_esc(task), hf_esc(cli_desc), hf_esc(logfile),
+      if (is.null(created_by)) "NULL" else as.character(as.integer(created_by)),
+      hf_esc(model), hf_esc(effort), hf_esc(fallback_model), as.integer(max_turns),
+      hf_esc(tt), hf_esc(cats), hf_esc(ctx_file),
+      if (is.null(ctx)) 0L else as.integer(ctx$rules_n),
+      if (is.null(ctx)) 0L else as.integer(ctx$memory_n),
+      hf_esc(workdir), as.integer(timeout_sec)))
+    TRUE
+  }, error = function(e) FALSE)
+  if (!isTRUE(ins)) {
+    # 旧库极端情况（列仍不存在）回退为最小 INSERT，不让派发中断
+    tryCatch(dbExecute(con, sprintf(
+      "INSERT INTO hf_workbench_runs (run_id,task,status,cli,log_path,created_by)
        VALUES ('%s','%s','running','%s','%s',%s)",
       run_id, hf_esc(task), hf_esc(cli_desc), hf_esc(logfile),
-      if (is.null(created_by)) "NULL" else as.character(as.integer(created_by))))
-  }, error = function(e) return(list(success = FALSE, message = e$message)))
-  # 异步启动 CodeBuddy CLI（processx 后台进程，stdout/stderr 落日志文件）
+      if (is.null(created_by)) "NULL" else as.character(as.integer(created_by)))),
+      error = function(e) NULL)
+  }
+
+  # 6) 异步启动（显式 wd，避免规则加载依赖进程继承目录）
   pr <- tryCatch({
-    args <- c(spec$pre, "-p", task, "-y", "--output-format", "stream-json")
-    args <- args[nzchar(args)]
     if (requireNamespace("processx", quietly = TRUE)) {
       processx::process$new(spec$command, args,
-        stdout = logfile, stderr = logfile, cleanup = FALSE)
+        stdout = logfile, stderr = logfile, cleanup = FALSE, wd = workdir)
     } else {
       system2(spec$command, args, stdout = logfile, stderr = logfile, wait = FALSE)
       NULL
@@ -127,7 +301,58 @@ hf_workbench_run <- function(task, created_by = NULL) {
     return(list(success = FALSE, message = "启动 CodeBuddy 进程失败，请确认 CLI 已安装并登录"))
   }
   hf_bus$workbench_procs[[run_id]] <- pr
-  list(success = TRUE, run_id = run_id, message = paste0("已派发任务 ", run_id))
+  hf_bus$workbench_meta[[run_id]] <- list(
+    started = as.numeric(Sys.time()), timeout_sec = as.integer(timeout_sec),
+    model = model, task_type = tt, args = args, port = as.integer(cli_port))
+  list(success = TRUE, run_id = run_id, message = paste0("已派发任务 ", run_id),
+       model = model, task_type = tt, categories = cats,
+       context_rules = if (is.null(ctx)) 0L else ctx$rules_n,
+       context_memory = if (is.null(ctx)) 0L else ctx$memory_n,
+       args = args)
+}
+
+# ── 取消运行中的任务（按钮调用；进程可能已结束，做幂等处理）──
+hf_workbench_cancel <- function(run_id) {
+  if (is.null(run_id) || !nzchar(run_id)) return(list(success = FALSE, message = "缺少 run_id"))
+  p <- hf_bus$workbench_procs[[run_id]]
+  killed <- FALSE
+  if (!is.null(p)) {
+    killed <- tryCatch({ p$kill(); TRUE }, error = function(e) FALSE)
+  }
+  con <- hf_db_connect()
+  on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
+  tryCatch(dbExecute(con, sprintf(
+    "UPDATE hf_workbench_runs SET status='cancelled', finished_at=datetime('now','localtime')
+     WHERE run_id='%s' AND status='running'", hf_esc(run_id))), error = function(e) NULL)
+  hf_bus$workbench_procs[[run_id]] <- NULL
+  hf_bus$workbench_meta[[run_id]] <- NULL
+  list(success = TRUE, message = if (killed) "已终止该任务" else "任务已结束或进程句柄不可用，状态已更新")
+}
+
+# ── 从 stream-json 的 result 事件读取成本 / 轮数 / 耗时（真实数据，不估算）──
+hf_workbench_result_meta <- function(logfile) {
+  empty <- list(cost_usd = 0, num_turns = 0, duration_ms = 0, model = "")
+  if (is.null(logfile) || is.na(logfile) || !nzchar(logfile) || !file.exists(logfile)) return(empty)
+  lines <- tryCatch(readLines(logfile, warn = FALSE, encoding = "UTF-8"),
+                    error = function(e) character(0))
+  if (length(lines) == 0) return(empty)
+  res <- empty
+  for (ln in lines) {
+    if (!nzchar(ln) || substr(ln, 1, 1) != "{") next
+    obj <- tryCatch(jsonlite::fromJSON(ln, simplifyVector = FALSE), error = function(e) NULL)
+    if (!is.list(obj)) next
+    typ <- if (is.null(obj$type)) "" else as.character(obj$type)[1]
+    if (identical(typ, "system") && identical(as.character(hf_or(obj$subtype, "")), "init")) {
+      res$model <- as.character(hf_or(obj$model, ""))
+    }
+    if (identical(typ, "result")) {
+      num <- function(x) { v <- suppressWarnings(as.numeric(hf_or(x, 0))); if (is.na(v)) 0 else v }
+      res$cost_usd    <- num(obj$total_cost_usd)
+      res$num_turns   <- num(obj$num_turns)
+      res$duration_ms <- num(obj$duration_ms)
+    }
+  }
+  res
 }
 
 # ── 查询运行记录（最近 50 条）──
@@ -403,8 +628,9 @@ hf_workbench_refresh_status <- function() {
   con <- hf_db_connect()
   on.exit(try(hf_db_disconnect(con), silent = TRUE), add = TRUE)
   tryCatch({
-    runs <- dbGetQuery(con, "SELECT run_id, status, log_path, token_total FROM hf_workbench_runs")
+    runs <- dbGetQuery(con, "SELECT * FROM hf_workbench_runs")
     if (is.null(runs) || nrow(runs) == 0) return(invisible(NULL))
+    now_num <- as.numeric(Sys.time())
     for (i in seq_len(nrow(runs))) {
       rid <- runs$run_id[i]
       lp <- runs$log_path[i]
@@ -412,36 +638,70 @@ hf_workbench_refresh_status <- function() {
       u <- hf_workbench_usage(lp)
       if (u$token_total != hf_or(runs$token_total[i], 0)) {
         dbExecute(con, sprintf(
-          "UPDATE hf_workbench_runs SET token_in=%d, token_out=%d, token_cache_read=%d, token_cache_write=%d, token_total=%d WHERE run_id='%s'",
-          as.integer(u$token_in), as.integer(u$token_out), as.integer(u$token_cache_read),
-          as.integer(u$token_cache_write), as.integer(u$token_total), hf_esc(rid)))
+          "UPDATE hf_workbench_runs SET token_in=%.0f, token_out=%.0f, token_cache_read=%.0f, token_cache_write=%.0f, token_total=%.0f WHERE run_id='%s'",
+          u$token_in, u$token_out, u$token_cache_read, u$token_cache_write,
+          u$token_total, hf_esc(rid)))
       }
-      # 2) 结束检测
+      # 2) 从 result 事件同步真实成本 / 轮数 / 耗时 / 实际模型
+      rm <- hf_workbench_result_meta(lp)
+      if (rm$num_turns > 0 || rm$cost_usd > 0 || rm$duration_ms > 0 || nzchar(rm$model)) {
+        dbExecute(con, sprintf(
+          "UPDATE hf_workbench_runs SET cost_usd=%.6f, num_turns=%d, duration_ms=%d,
+           model=CASE WHEN model IS NULL OR model='' THEN '%s' ELSE model END WHERE run_id='%s'",
+          rm$cost_usd, as.integer(rm$num_turns), as.integer(rm$duration_ms),
+          hf_esc(rm$model), hf_esc(rid)))
+      }
+      # 3) 超时保护：超时即终止进程并标记 timeout，避免僵尸任务长期占并发额度
+      meta <- hf_bus$workbench_meta[[rid]]
+      if (identical(runs$status[i], "running") && !is.null(meta) &&
+          is.numeric(meta$timeout_sec) && meta$timeout_sec > 0 &&
+          (now_num - meta$started) > meta$timeout_sec) {
+        p <- hf_bus$workbench_procs[[rid]]
+        if (!is.null(p)) tryCatch(p$kill(), error = function(e) NULL)
+        dbExecute(con, sprintf(
+          "UPDATE hf_workbench_runs SET status='timeout', finished_at=datetime('now','localtime') WHERE run_id='%s'",
+          hf_esc(rid)))
+        hf_bus$workbench_procs[[rid]] <- NULL
+        hf_bus$workbench_meta[[rid]] <- NULL
+        next
+      }
+      # 4) 结束检测
       if (!identical(runs$status[i], "running")) next
       p <- hf_bus$workbench_procs[[rid]]
       alive <- if (!is.null(p)) tryCatch(isTRUE(p$is_alive()), error = function(e) TRUE) else FALSE
       if (alive) next
       has_log <- !is.na(lp) && nzchar(lp) && file.exists(lp) && file.info(lp)$size > 0
       st <- if (has_log) "done" else "error"
+      ec <- if (!is.null(p)) tryCatch(p$get_exit_status(), error = function(e) NULL) else NULL
       dbExecute(con, sprintf(
-        "UPDATE hf_workbench_runs SET status='%s', finished_at=datetime('now','localtime') WHERE run_id='%s'",
-        st, hf_esc(rid)))
+        "UPDATE hf_workbench_runs SET status='%s', exit_code=%s, finished_at=datetime('now','localtime') WHERE run_id='%s'",
+        st, if (is.null(ec) || is.na(ec)) "NULL" else as.character(as.integer(ec)), hf_esc(rid)))
       hf_bus$workbench_procs[[rid]] <- NULL
+      hf_bus$workbench_meta[[rid]] <- NULL
     }
     invisible(NULL)
   }, error = function(e) NULL)
 }
 
 # ── 对外接口透传 ──
-hf_workbench_api_run_task <- function(task, created_by = NULL) hf_workbench_run(task, created_by)
+hf_workbench_api_run_task <- function(task, created_by = NULL, ...) hf_workbench_run(task, created_by, ...)
 hf_workbench_api_list_runs <- function(limit = 50) hf_workbench_list(limit)
 hf_workbench_api_read_log <- function(run_id) hf_workbench_log(run_id)
 hf_workbench_api_token_summary <- function() hf_workbench_summary()
+hf_workbench_api_models <- function(force = FALSE) hf_workbench_models(force)
+hf_workbench_api_cancel <- function(run_id) hf_workbench_cancel(run_id)
+hf_workbench_api_routes <- function() hf_model_routes()
+hf_workbench_api_context <- function(task_type = NULL, category = NULL)
+  hf_ai_context_text(task_type = task_type, category = category)
 
 hf_register(HF_MOD_WORKBENCH, hf_make_api(
   "workbench",
   run_task = hf_workbench_api_run_task,
   list_runs = hf_workbench_api_list_runs,
   read_log = hf_workbench_api_read_log,
-  token_summary = hf_workbench_api_token_summary
+  token_summary = hf_workbench_api_token_summary,
+  models = hf_workbench_api_models,
+  cancel = hf_workbench_api_cancel,
+  routes = hf_workbench_api_routes,
+  context = hf_workbench_api_context
 ))

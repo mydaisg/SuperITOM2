@@ -234,7 +234,8 @@ hf_datatable <- function(df, page_size = 20, virtualize_threshold = 50, scroll_y
   DT::datatable(df, rownames = FALSE, options = opts, ...)
 }
 
-# ── 规则环节专属页面：分类 + 查看/编辑（参照父项目合规模块）──
+# ── 规则环节专属页面：模块内两个子 Tab（层级规则 / 记忆），不新增导航项 ──
+# 层级：分类（一级）→ 规则（二级）→ 修订条目（三级，append-only，照记事评论模式）
 hf_rules_page_ui <- function(m) {
   p <- function(x) paste0("hf_rules_", x)
   tabPanel(
@@ -247,35 +248,63 @@ hf_rules_page_ui <- function(m) {
         tags$div(style = "font-size:12px;opacity:.88;margin-top:8px;", m$desc),
         tags$div(style = "font-size:11px;color:#b0bec5;margin-top:4px;", icon("plug"), " 接口：", m$api_desc)
       ),
-      # 工具栏：分类筛选 + 搜索 + 操作按钮
-      div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
-        fluidRow(
-          column(3, selectInput(p("filter_cat"), "分类",
-            choices = c("全部分类" = "", hf_rules_categories()), width = "100%")),
-          column(3, textInput(p("search"), NULL, width = "100%", placeholder = "搜索规则…")),
-          column(6, div(style = "display:flex;gap:6px;justify-content:flex-end;margin-top:24px;",
-            actionButton(p("add_btn"), "新增规则", icon = icon("plus"), class = "btn-success btn-sm"),
-            actionButton(p("view_btn"), "查看", icon = icon("eye"), class = "btn-info btn-sm"),
-            actionButton(p("edit_btn"), "编辑", icon = icon("pen"), class = "btn-primary btn-sm"),
-            actionButton(p("del_btn"), "删除", icon = icon("trash"), class = "btn-danger btn-sm"),
-            actionButton(p("refresh_btn"), "刷新", icon = icon("sync"), class = "btn-default btn-sm")
-          ))
-        )
-      ),
-      # 规则分类管理（分类可独立新增 / 编辑，与规则关联）
-      div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
-        div(style = "display:flex;align-items:center;gap:10px;margin-bottom:8px;",
-          tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;", "✦ 规则分类管理"),
-          div(style = "margin-left:auto;display:flex;gap:6px;",
-            actionButton(p("cat_add_btn"), "新增分类", icon = icon("plus"), class = "btn-success btn-xs"),
-            actionButton(p("cat_edit_btn"), "编辑分类", icon = icon("pen"), class = "btn-primary btn-xs"),
-            actionButton(p("cat_refresh_btn"), "刷新", icon = icon("sync"), class = "btn-info btn-xs")
-          )
+      tabsetPanel(id = p("tabs"),
+        # ── 子 Tab 1：层级规则 ──
+        tabPanel("规则", value = "rules",
+          div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
+            fluidRow(
+              column(3, selectInput(p("filter_cat"), "分类",
+                choices = c("全部分类" = "", hf_rules_categories()), width = "100%")),
+              column(3, textInput(p("search"), NULL, width = "100%", placeholder = "搜索规则…")),
+              column(6, div(style = "display:flex;gap:6px;justify-content:flex-end;margin-top:24px;flex-wrap:wrap;",
+                actionButton(p("add_btn"), "新增规则", icon = icon("plus"), class = "btn-success btn-sm"),
+                actionButton(p("revise_btn"), "追加修订", icon = icon("history"), class = "btn-info btn-sm"),
+                actionButton(p("view_btn"), "查看", icon = icon("eye"), class = "btn-info btn-sm"),
+                actionButton(p("edit_btn"), "编辑", icon = icon("pen"), class = "btn-primary btn-sm"),
+                actionButton(p("del_btn"), "删除", icon = icon("trash"), class = "btn-danger btn-sm"),
+                actionButton(p("export_btn"), "导出规则", icon = icon("download"), class = "btn-default btn-sm"),
+                actionButton(p("refresh_btn"), "刷新", icon = icon("sync"), class = "btn-default btn-sm")
+              ))
+            )
+          ),
+          tags$div(style = "font-size:11px;color:#999;margin:0 0 6px;",
+            icon("cog"), " 分类的增删改、适用任务类型与默认模型在「配置 → 规则分类」维护；分类为一级，规则为二级，修订条目为三级。"),
+          uiOutput(p("status")),
+          tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin:8px 0 6px;",
+            "✦ 层级视图（点击展开：分类 → 规则 → 修订链）"),
+          uiOutput(p("tree")),
+          tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin:12px 0 6px;",
+            "✦ 平表（选中后进行查看 / 编辑 / 删除 / 追加修订）"),
+          DTOutput(p("table"))
         ),
-        DTOutput(p("cat_table"))
-      ),
-      uiOutput(p("status")),
-      DTOutput(p("table"))
+        # ── 子 Tab 2：项目与 AI 记忆 ──
+        tabPanel("记忆", value = "memory",
+          div(style = "background:#fff;border-radius:8px;padding:10px;margin:8px 0;border:1px solid #e8ecf1;",
+            fluidRow(
+              column(3, selectInput(p("mem_filter_cat"), "记忆分类",
+                choices = c("全部分类" = "", HF_MEMORY_CATEGORIES), width = "100%")),
+              column(3, textInput(p("mem_search"), NULL, width = "100%", placeholder = "搜索主题 / 内容 / 标签…")),
+              column(6, div(style = "display:flex;gap:6px;justify-content:flex-end;margin-top:24px;flex-wrap:wrap;",
+                actionButton(p("mem_add_btn"), "新增记忆", icon = icon("plus"), class = "btn-success btn-sm"),
+                actionButton(p("mem_revise_btn"), "追加修订", icon = icon("history"), class = "btn-info btn-sm"),
+                actionButton(p("mem_hist_btn"), "修订链", icon = icon("eye"), class = "btn-default btn-sm"),
+                actionButton(p("mem_del_btn"), "停用", icon = icon("trash"), class = "btn-danger btn-sm"),
+                actionButton(p("mem_export_btn"), "导出记忆/移植包", icon = icon("download"), class = "btn-default btn-sm"),
+                actionButton(p("mem_refresh_btn"), "刷新", icon = icon("sync"), class = "btn-default btn-sm")
+              ))
+            )
+          ),
+          tags$div(style = "font-size:11px;color:#999;margin:0 0 6px;",
+            "记忆是「需要知道」的事实 / 决策 / 经验，规则是「必须遵守」的约束；两者都按 append-only 追加修订，导出 MEMORY.md 即可移植。"),
+          uiOutput(p("mem_status")),
+          tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin:8px 0 6px;",
+            "✦ 记忆卡片（按分类分组，显示当前生效版本）"),
+          uiOutput(p("mem_list")),
+          tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin:12px 0 6px;",
+            "✦ 平表（选中后进行修订 / 查看修订链 / 停用）"),
+          DTOutput(p("mem_table"))
+        )
+      )
     )
   )
 }
@@ -284,13 +313,10 @@ hf_rules_page_ui <- function(m) {
 hf_rules_page_server <- function(input, output, session, rv, m, trigger) {
   p <- function(x) paste0("hf_rules_", x)
   local_trigger <- reactiveVal(0)
-  local_refresh <- function() local_trigger(local_trigger() + 1)
+  local_refresh <- function() local_trigger(isolate(local_trigger()) + 1)
   filter_cat <- reactiveVal(NULL)
   search_term <- reactiveVal("")
   editing_id <- reactiveVal(NULL)   # NULL=新增；非空=编辑该 id
-  cat_trigger <- reactiveVal(0)
-  cat_refresh <- function() cat_trigger(cat_trigger() + 1)
-  cat_editing_id <- reactiveVal(NULL)   # NULL=新增分类；非空=编辑该分类 id
 
   observeEvent(input[[p("filter_cat")]], {
     v <- trimws(hf_or(input[[p("filter_cat")]], ""))
@@ -299,9 +325,9 @@ hf_rules_page_server <- function(input, output, session, rv, m, trigger) {
   observeEvent(input[[p("search")]], search_term(trimws(hf_or(input[[p("search")]], ""))))
   observeEvent(input[[p("refresh_btn")]], local_refresh())
 
-  # 分类下拉动态同步（分类新增/重命名后，筛选下拉自动更新）
+  # 分类下拉动态同步（配置模块新增/重命名分类后会主动 updateSelectInput，此处兜底刷新）
   observe({
-    trigger(); local_trigger(); cat_trigger()
+    trigger(); local_trigger()
     cats <- hf_rules_categories()
     cur <- isolate(filter_cat())
     if (!is.null(cur) && !(cur %in% cats)) cur <- ""
@@ -434,6 +460,8 @@ hf_rules_page_server <- function(input, output, session, rv, m, trigger) {
     }
     showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
     if (isTRUE(r$success)) { removeModal(); editing_id(NULL) }
+    try(hf_rules_export_md(), silent = TRUE)   # 规则变更后立刻重导，保证 CLI 下次执行读到最新
+    tree_refresh()
     local_refresh()
   })
 
@@ -445,85 +473,295 @@ hf_rules_page_server <- function(input, output, session, rv, m, trigger) {
     if (is.null(id)) { showNotification("请先在列表选中一条规则", type = "warning"); return() }
     r <- hf_rules_delete(id)
     showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    try(hf_rules_export_md(), silent = TRUE)
+    tree_refresh()
     local_refresh()
   })
 
-  # ── 规则分类管理（独立新增 / 编辑，与规则关联）──
-  cat_selected_id <- reactive({
-    idx <- input[[p("cat_table_rows_selected")]]
-    if (is.null(idx) || length(idx) == 0) return(NULL)
-    df <- hf_rules_categories_df()
-    if (is.null(df) || nrow(df) == 0) return(NULL)
-    df$id[idx[1]]
+  # 规则分类的增删改已整体迁移到「配置 → 规则分类」子 Tab（hf_mod_config.r），
+  # 本页保留规则 CRUD，并新增层级树、append-only 修订与记忆子 Tab。
+
+  # ══════════════ 层级树：分类（一级）→ 规则（二级）→ 修订（三级）══════════════
+  tree_trigger <- reactiveVal(0)
+  tree_refresh <- function() tree_trigger(isolate(tree_trigger()) + 1)
+
+  output[[p("tree")]] <- renderUI({
+    trigger(); local_trigger(); tree_trigger()
+    tr <- tryCatch(hf_rule_tree(), error = function(e) NULL)
+    if (is.null(tr) || length(tr) == 0)
+      return(tags$div(style = "color:#999;font-size:12px;padding:14px;text-align:center;background:#f8f9fc;border:1px dashed #cfd8dc;border-radius:8px;",
+        "暂无分类与规则，请先在「配置 → 规则分类」新增分类，再新增规则。"))
+    lapply(tr, function(ct) {
+      ap <- if (nzchar(as.character(ct$applies_to))) ct$applies_to else "通用"
+      rules_ui <- if (ct$rule_count == 0) {
+        tags$div(style = "color:#999;font-size:11px;padding:6px 10px;", "（该分类下暂无规则）")
+      } else lapply(ct$rules, function(r) {
+        items <- r$items
+        rev_ui <- if (!is.null(items) && nrow(items) > 0) {
+          lapply(seq_len(nrow(items)), function(i) {
+            it <- items[i, , drop = FALSE]
+            tags$div(style = "margin:4px 0 4px 14px;padding:6px 9px;background:#fff;border-left:3px solid #90caf9;border-radius:0 5px 5px 0;font-size:11px;",
+              tags$div(style = "color:#1565c0;font-weight:700;",
+                sprintf("v%s · %s · %s", hf_or(it$version_no[1], "?"),
+                        hf_or(it$status[1], "effective"), hf_or(it$created_at[1], ""))),
+              tags$div(style = "white-space:pre-wrap;color:#444;margin-top:3px;", hf_or(it$content[1], "")))
+          })
+        } else tags$div(style = "color:#999;font-size:11px;padding:4px 10px;", "（无修订记录，使用原始规则内容）")
+        tags$details(style = "margin:6px 0 6px 16px;border:1px solid #e8ecf1;border-radius:6px;background:#fbfcfe;",
+          tags$summary(style = "cursor:pointer;padding:7px 10px;font-size:12px;color:#37474f;",
+            tags$span(style = "display:inline-block;min-width:118px;font-family:Consolas,monospace;color:#6c3bbf;",
+              hf_or(r$rule_no, "")),
+            tags$b(hf_or(r$title, "")),
+            tags$span(style = "margin-left:8px;font-size:10px;color:#0d7d3a;",
+              sprintf("当前生效 v%d", as.integer(r$version_no))),
+            tags$span(style = "margin-left:6px;font-size:10px;color:#999;",
+              sprintf("· %d 条修订 · %s", as.integer(r$revisions), hf_or(r$status, "draft")))),
+          tags$div(style = "padding:0 10px 8px;",
+            tags$div(style = "font-size:11px;color:#607d8b;margin-bottom:4px;", "当前生效内容："),
+            tags$div(style = "white-space:pre-wrap;font-size:12px;color:#333;background:#fff;border:1px solid #eceff1;border-radius:5px;padding:8px;",
+              hf_or(r$current, "（空）")),
+            tags$div(style = "font-size:11px;color:#607d8b;margin:8px 0 2px;", "修订链（append-only，不覆盖历史）："),
+            rev_ui)
+        )
+      })
+      tags$details(open = "open",
+        style = "margin:6px 0;border:1px solid #d7c4f5;border-radius:8px;background:#faf7ff;",
+        tags$summary(style = "cursor:pointer;padding:9px 12px;font-size:13px;font-weight:700;color:#5b21b6;",
+          icon("folder-open"), " ", ct$name,
+          tags$span(style = "font-size:11px;font-weight:400;color:#7e57c2;margin-left:8px;",
+            sprintf("· %d 条规则 · 适用任务类型：%s",
+              as.integer(ct$rule_count), ap))),
+        tags$div(style = "padding:0 8px 8px;", rules_ui))
+    })
   })
 
-  output[[p("cat_table")]] <- DT::renderDT({
-    trigger(); local_trigger(); cat_trigger()
-    df <- hf_rules_categories_df()
-    if (is.null(df) || nrow(df) == 0) return(hf_datatable(df, empty = "no_data"))
+  # ══════════════ 追加规则修订（append-only，不覆盖历史）══════════════
+  observeEvent(input[[p("revise_btn")]], {
+    req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
+    id <- selected_id()
+    if (is.null(id)) { showNotification("请先在平表中选中一条规则", type = "warning"); return() }
+    r <- hf_rules_get(id)
+    if (is.null(r) || nrow(r) == 0) { showNotification("规则不存在", type = "warning"); return() }
+    cur <- hf_rule_current(id, r$payload[1])
+    showModal(modalDialog(
+      title = paste0("追加修订：", hf_or(r$title[1], "")),
+      tags$div(style = "font-size:11px;color:#607d8b;margin-bottom:6px;",
+        sprintf("当前生效 v%d，共 %d 条修订。新内容会追加为新版本，历史版本完整保留。",
+          as.integer(cur$version_no), as.integer(cur$revisions))),
+      textAreaInput(p("revise_content"), "新版本规则内容", value = cur$content,
+                    rows = 8, width = "100%"),
+      footer = tagList(
+        actionButton(p("revise_save_btn"), "保存新版本", class = "btn-primary"),
+        modalButton("取消")
+      ), size = "l", easyClose = TRUE
+    ))
+  })
+
+  observeEvent(input[[p("revise_save_btn")]], {
+    req(rv$logged_in)
+    id <- selected_id()
+    if (is.null(id)) return()
+    r <- hf_rule_item_add(id, hf_or(input[[p("revise_content")]], ""),
+                          created_by = hf_current_uid(rv))
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (isTRUE(r$success)) { removeModal(); try(hf_rules_export_md(), silent = TRUE) }
+    tree_refresh(); local_refresh()
+  })
+
+  observeEvent(input[[p("export_btn")]], {
+    req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
+    ex <- tryCatch(hf_rules_export_md(), error = function(e) NULL)
+    if (is.null(ex)) { showNotification("导出失败", type = "error"); return() }
+    showNotification(sprintf("已导出 %d 个分类的规则到 .codebuddy/rules/hf-gen-*.md",
+      as.integer(ex$categories)), type = "message")
+    tree_refresh()
+  })
+
+  # ══════════════ 子 Tab 2：项目与 AI 记忆 ══════════════
+  mem_trigger <- reactiveVal(0)
+  mem_refresh <- function() mem_trigger(isolate(mem_trigger()) + 1)
+  mem_cat <- reactiveVal("")
+  mem_kw <- reactiveVal("")
+
+  observeEvent(input[[p("mem_filter_cat")]], mem_cat(trimws(hf_or(input[[p("mem_filter_cat")]], ""))))
+  observeEvent(input[[p("mem_search")]], mem_kw(trimws(hf_or(input[[p("mem_search")]], ""))))
+  observeEvent(input[[p("mem_refresh_btn")]], mem_refresh())
+
+  mem_df <- reactive({
+    trigger(); mem_trigger()
+    hf_memory_list(if (nzchar(mem_cat())) mem_cat() else NULL, mem_kw(), 500)
+  })
+
+  mem_selected_id <- reactive({
+    idx <- input[[p("mem_table_rows_selected")]]
+    if (is.null(idx) || length(idx) == 0) return(NULL)
+    d <- mem_df()
+    if (is.null(d) || nrow(d) == 0) return(NULL)
+    d$id[idx[1]]
+  })
+
+  output[[p("mem_status")]] <- renderUI({
+    d <- mem_df()
+    st <- tryCatch(hf_memory_stats(), error = function(e) list(total = 0))
+    tags$div(style = "font-size:12px;color:#555;margin:2px 0 8px;",
+      tags$b("记忆："), tags$span(style = "color:#1565c0;", paste0(st$total, " 条（全部）")),
+      " · 当前筛选 ", tags$span(style = "color:#2e7d32;",
+        paste0(if (is.null(d)) 0 else nrow(d), " 条")),
+      " · 追加修订只 INSERT 新版本，旧版本可回溯")
+  })
+
+  output[[p("mem_table")]] <- DT::renderDT({
+    d <- mem_df()
+    if (is.null(d) || nrow(d) == 0) return(hf_datatable(NULL, empty = "no_data"))
     out <- data.frame(
-      ID = df$id,
-      分类名称 = hf_or(df$name, ""),
-      关联规则数 = ifelse(is.na(df$rule_count), 0, df$rule_count),
-      排序 = ifelse(is.na(df$sort_order), 0, df$sort_order),
-      创建时间 = ifelse(is.na(df$created_at) | df$created_at == "", "—", df$created_at),
+      ID = d$id,
+      主题 = d$topic,
+      分类 = d$category,
+      内容摘要 = vapply(seq_len(nrow(d)), function(i) {
+        s <- gsub("\\s+", " ", hf_or(d$content[i], ""))
+        if (nchar(s) > 40) paste0(substr(s, 1, 40), "…") else s
+      }, character(1)),
+      标签 = ifelse(is.na(d$tags) | d$tags == "", "—", d$tags),
+      版本链 = ifelse(is.na(d$parent_id) | d$parent_id == 0, "根", paste0("修订@", d$parent_id)),
+      创建时间 = ifelse(is.na(d$created_at) | d$created_at == "", "—", d$created_at),
       stringsAsFactors = FALSE)
     hf_datatable(out, selection = "single", page_size = 20)
   })
 
-  observeEvent(input[[p("cat_refresh_btn")]], cat_refresh())
+  output[[p("mem_list")]] <- renderUI({
+    d <- mem_df()
+    if (is.null(d) || nrow(d) == 0)
+      return(tags$div(style = "color:#999;font-size:12px;padding:20px;text-align:center;background:#f8f9fc;border:1px dashed #cfd8dc;border-radius:8px;",
+        "暂无记忆，点击「新增记忆」记录项目事实 / 决策约定 / AI 协作经验。"))
+    cats <- c(HF_MEMORY_CATEGORIES, setdiff(unique(as.character(d$category)), HF_MEMORY_CATEGORIES))
+    lapply(cats, function(ct) {
+      one <- d[as.character(d$category) == ct, , drop = FALSE]
+      if (nrow(one) == 0) return(NULL)
+      tags$details(open = "open",
+        style = "margin:6px 0;border:1px solid #b2dfdb;border-radius:8px;background:#f6fbfb;",
+        tags$summary(style = "cursor:pointer;padding:9px 12px;font-size:13px;font-weight:700;color:#00695c;",
+          icon("book"), " ", ct,
+          tags$span(style = "font-size:11px;font-weight:400;color:#4db6ac;margin-left:8px;",
+            sprintf("· %d 条", nrow(one)))),
+        tags$div(style = "padding:0 8px 8px;",
+          lapply(seq_len(nrow(one)), function(i) {
+            tags$div(style = "background:#fff;border:1px solid #e0f2f1;border-radius:6px;padding:9px 11px;margin:6px 0;",
+              tags$div(style = "display:flex;gap:8px;align-items:center;flex-wrap:wrap;",
+                tags$b(style = "font-size:13px;color:#333;", hf_or(one$topic[i], "")),
+                tags$span(style = "font-size:10px;color:#888;", hf_or(one$created_at[i], "")),
+                if (!is.na(one$source[i]) && nzchar(one$source[i]))
+                  tags$span(style = "font-size:10px;background:#e8f5e9;color:#2e7d32;padding:1px 7px;border-radius:9px;", one$source[i]) else NULL),
+              tags$div(style = "white-space:pre-wrap;font-size:12px;color:#444;margin-top:5px;line-height:1.5;",
+                hf_or(one$content[i], "")))
+          })))
+    })
+  })
 
-  # 新增分类
-  observeEvent(input[[p("cat_add_btn")]], {
+  observeEvent(input[[p("mem_add_btn")]], {
     req(rv$logged_in)
     if (!hf_perm_guard_admin(rv)) return()
-    cat_editing_id(NULL)
     showModal(modalDialog(
-      title = "新增规则分类",
-      textInput(p("cat_name"), "分类名称", width = "100%", placeholder = "如：告警策略"),
+      title = "新增项目与 AI 记忆",
+      textInput(p("mem_topic"), "主题", width = "100%", placeholder = "如：HungFo 与父项目解耦"),
+      selectInput(p("mem_cat"), "分类", choices = HF_MEMORY_CATEGORIES, width = "100%"),
+      textAreaInput(p("mem_content"), "内容", rows = 6, width = "100%"),
+      fluidRow(
+        column(6, textInput(p("mem_source"), "来源", width = "100%", placeholder = "如：本次开发 / 对话结论")),
+        column(6, textInput(p("mem_tags"), "标签（逗号分隔）", width = "100%", placeholder = "如：bugfix,ui"))),
       footer = tagList(
-        actionButton(p("cat_save_btn"), "保存", class = "btn-primary"),
+        actionButton(p("mem_save_btn"), "保存", class = "btn-primary"),
         modalButton("取消")
-      ), size = "s", easyClose = TRUE
+      ), size = "m", easyClose = TRUE
     ))
   })
 
-  # 编辑（重命名）分类
-  observeEvent(input[[p("cat_edit_btn")]], {
+  observeEvent(input[[p("mem_save_btn")]], {
     req(rv$logged_in)
-    if (!hf_perm_guard_admin(rv)) return()
-    id <- cat_selected_id()
-    if (is.null(id)) { showNotification("请先在分类列表选中一条分类", type = "warning"); return() }
-    df <- hf_rules_categories_df()
-    row <- df[df$id == id, , drop = FALSE]
-    if (nrow(row) == 0) { showNotification("分类不存在，请刷新后重试", type = "warning"); return() }
-    cat_editing_id(id)
-    showModal(modalDialog(
-      title = paste0("编辑分类 #", id),
-      textInput(p("cat_name"), "分类名称", value = hf_or(row$name[1], ""), width = "100%"),
-      footer = tagList(
-        actionButton(p("cat_save_btn"), "保存修改", class = "btn-primary"),
-        modalButton("取消")
-      ), size = "s", easyClose = TRUE
-    ))
-  })
-
-  # 保存分类（新增 / 重命名）
-  observeEvent(input[[p("cat_save_btn")]], {
-    req(rv$logged_in)
-    if (!hf_perm_guard_admin(rv)) return()
-    name <- trimws(hf_or(input[[p("cat_name")]], ""))
-    if (!nzchar(name)) { showNotification("请输入分类名称", type = "warning"); return() }
-    id <- cat_editing_id()
-    if (is.null(id)) {
-      r <- hf_rules_category_add(name)
-    } else {
-      r <- hf_rules_category_update(id, name)
-    }
+    r <- hf_memory_add(hf_or(input[[p("mem_topic")]], ""),
+                       hf_or(input[[p("mem_cat")]], "项目事实"),
+                       hf_or(input[[p("mem_content")]], ""),
+                       hf_or(input[[p("mem_source")]], ""),
+                       hf_or(input[[p("mem_tags")]], ""),
+                       created_by = hf_current_uid(rv))
     showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
-    if (isTRUE(r$success)) { removeModal(); cat_editing_id(NULL) }
-    cat_refresh()
-    local_refresh()
+    if (isTRUE(r$success)) { removeModal(); try(hf_memory_export_md(), silent = TRUE) }
+    mem_refresh()
+  })
+
+  observeEvent(input[[p("mem_revise_btn")]], {
+    req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
+    id <- mem_selected_id()
+    if (is.null(id)) { showNotification("请先在平表中选中一条记忆", type = "warning"); return() }
+    r <- hf_memory_get(id)
+    if (is.null(r) || nrow(r) == 0) { showNotification("记忆不存在", type = "warning"); return() }
+    showModal(modalDialog(
+      title = paste0("追加修订：", hf_or(r$topic[1], "")),
+      tags$div(style = "font-size:11px;color:#607d8b;margin-bottom:6px;",
+        "新内容作为新版本 INSERT，旧版本标记为 history 后可回溯，不会被覆盖。"),
+      textAreaInput(p("mem_revise_content"), "新版本内容", value = hf_or(r$content[1], ""),
+                    rows = 7, width = "100%"),
+      footer = tagList(
+        actionButton(p("mem_revise_save_btn"), "保存新版本", class = "btn-primary"),
+        modalButton("取消")
+      ), size = "l", easyClose = TRUE
+    ))
+  })
+
+  observeEvent(input[[p("mem_revise_save_btn")]], {
+    req(rv$logged_in)
+    id <- mem_selected_id()
+    if (is.null(id)) return()
+    r <- hf_memory_revise(id, hf_or(input[[p("mem_revise_content")]], ""),
+                          created_by = hf_current_uid(rv))
+    showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
+    if (isTRUE(r$success)) { removeModal(); try(hf_memory_export_md(), silent = TRUE) }
+    mem_refresh()
+  })
+
+  observeEvent(input[[p("mem_hist_btn")]], {
+    id <- mem_selected_id()
+    if (is.null(id)) { showNotification("请先选中一条记忆", type = "warning"); return() }
+    r <- hf_memory_get(id)
+    if (is.null(r) || nrow(r) == 0) return()
+    root <- if (is.na(r$parent_id[1]) || r$parent_id[1] == 0) r$id[1] else r$parent_id[1]
+    all <- hf_memory_list(limit = 10000)
+    chain <- if (!is.null(all) && nrow(all) > 0)
+      all[all$id == root | (!is.na(all$parent_id) & all$parent_id == root), , drop = FALSE] else data.frame()
+    if (!is.null(chain) && nrow(chain) > 0) chain <- chain[order(chain$id), , drop = FALSE]
+    blocks <- if (is.null(chain) || nrow(chain) == 0) {
+      tags$div("暂无修订记录")
+    } else lapply(seq_len(nrow(chain)), function(i)
+      tags$div(style = "margin:6px 0;padding:9px 11px;background:#fbfcfe;border-left:3px solid #4db6ac;border-radius:0 5px 5px 0;",
+        tags$div(style = "font-size:11px;color:#00695c;font-weight:700;",
+          sprintf("#%s · %s · %s", chain$id[i], chain$status[i], chain$created_at[i])),
+        tags$div(style = "white-space:pre-wrap;font-size:12px;color:#333;margin-top:4px;",
+          hf_or(chain$content[i], ""))))
+    showModal(modalDialog(title = paste0("修订链：", hf_or(r$topic[1], "")),
+      size = "l", easyClose = TRUE, footer = modalButton("关闭"), blocks))
+  })
+
+  observeEvent(input[[p("mem_del_btn")]], {
+    req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
+    id <- mem_selected_id()
+    if (is.null(id)) { showNotification("请先选中一条记忆", type = "warning"); return() }
+    r <- hf_memory_deprecate(id)
+    showNotification(r$message, type = "message")
+    try(hf_memory_export_md(), silent = TRUE)
+    mem_refresh()
+  })
+
+  observeEvent(input[[p("mem_export_btn")]], {
+    req(rv$logged_in)
+    if (!hf_perm_guard_admin(rv)) return()
+    ex <- tryCatch(hf_ai_export_all(), error = function(e) NULL)
+    if (is.null(ex)) { showNotification("导出失败", type = "error"); return() }
+    showNotification(sprintf("已导出 MEMORY.md（%d 条）、RULES.md 与 hf-gen-* 规则文件，可直接移植",
+      as.integer(hf_or(ex$memory$items, 0))), type = "message")
+    mem_refresh(); tree_refresh()
   })
 }
 
@@ -561,7 +799,7 @@ hf_arch_page_ui <- function(m) {
 hf_arch_page_server <- function(input, output, session, rv, m, trigger) {
   p <- function(x) paste0("hf_arch_", x)
   local_trigger <- reactiveVal(0)
-  local_refresh <- function() local_trigger(local_trigger() + 1)
+  local_refresh <- function() local_trigger(isolate(local_trigger()) + 1)
 
   # 当前架构快照（触发重扫）
   snapshot <- reactive({
@@ -877,7 +1115,7 @@ hf_project_page_ui <- function(m) {
 hf_project_page_server <- function(input, output, session, rv, m, trigger) {
   p <- function(x) paste0("hf_project_", x)
   local_trigger <- reactiveVal(0)
-  local_refresh <- function() local_trigger(local_trigger() + 1)
+  local_refresh <- function() local_trigger(isolate(local_trigger()) + 1)
   project_ctx <- reactiveVal(NULL)      # 当前项目 id；NULL=全部
   editing_id <- reactiveVal(NULL)       # 弹窗编辑目标 id（NULL=新增）
 
@@ -1493,7 +1731,7 @@ hf_module_page_server <- function(input, output, session, rv, m, trigger) {
   # 网页工作台环节：专属 Server（派发 CodeBuddy CLI + 实时日志轮询）
   if (identical(key, "workbench")) return(hf_workbench_page_server(input, output, session, rv, m, trigger))
   local_trigger <- reactiveVal(0)
-  local_refresh <- function() local_trigger(local_trigger() + 1)
+  local_refresh <- function() local_trigger(isolate(local_trigger()) + 1)
 
   output[[p("status")]] <- renderUI({
     trigger(); local_trigger()
@@ -1538,7 +1776,7 @@ hf_autotask_page_server <- function(input, output, session, rv, m, trigger) {
   p <- function(x) paste0("hf_autotask_", x)
   task_filter <- reactiveVal(NULL)      # NULL=全部 / sample / formal
   local_trigger <- reactiveVal(0)
-  local_refresh <- function() local_trigger(local_trigger() + 1)
+  local_refresh <- function() local_trigger(isolate(local_trigger()) + 1)
 
   output[[p("status")]] <- renderUI({
     trigger(); local_trigger()
@@ -1748,7 +1986,7 @@ hf_metatask_detail_pre <- function(row) {
 hf_metatask_page_server <- function(input, output, session, rv, m, trigger) {
   p <- function(x) paste0("hf_metatask_", x)
   local_trigger <- reactiveVal(0)
-  local_refresh <- function() local_trigger(local_trigger() + 1)
+  local_refresh <- function() local_trigger(isolate(local_trigger()) + 1)
   editing_id <- reactiveVal(NULL)    # NULL=新增模式；非空=编辑该 id 需求
   modal_task_id <- reactiveVal(NULL) # 双击卡片当前打开的任务 id（NULL=未打开，用于冻结自动刷新）
 
@@ -1767,9 +2005,15 @@ hf_metatask_page_server <- function(input, output, session, rv, m, trigger) {
   # 20 秒自动刷新列表：invalidateLater → local_trigger → mt_rows → mt_table / status 重绘
   # 与手动「刷新」按钮共用 local_trigger（都是计数 +1），故二者不冲突，手动仍立即生效
   # 编辑卡片打开期间跳过刷新，避免表格重绘 / 选中态重置打断用户正在进行的编辑
+  # ⚠ 必须 isolate：local_refresh() 内部会「读+写」local_trigger，若不隔离，本 observe 会
+  #   订阅自己写入的 reactiveVal → 每轮 flush 立即失效重跑 → reactive 自激死循环。
+  #   表现为 CPU 100%、页面点击无响应、后台无任何报错（历史上「重启后登录无响应」的根因）。
+  #   这里只由 invalidateLater 驱动，不订阅 modal_task_id / local_trigger。
   observe({
     invalidateLater(20000, session)
-    if (is.null(modal_task_id())) local_refresh()
+    isolate({
+      if (is.null(modal_task_id())) local_refresh()
+    })
   })
 
   # 表单标题（新增 / 编辑态切换）
@@ -1833,6 +2077,17 @@ hf_metatask_page_server <- function(input, output, session, rv, m, trigger) {
       需求 = vapply(seq_len(n), function(i) hf_html_escape(hf_or(q$title[i], "")), character(1)),
       内容 = vapply(seq_len(n), function(i) hf_metatask_payload_cell(hf_or(q$payload[i], "")), character(1)),
       状态 = vapply(seq_len(n), function(i) hf_metatask_status_badge(hf_or(q$status[i], "pending")), character(1)),
+      来源 = vapply(seq_len(n), function(i) {
+        s <- if (is.null(q$source)) "web" else hf_or(q$source[i], "web")
+        if (is.na(s) || !nzchar(s)) s <- "web"
+        lbl <- switch(s, web = "Web 工作台", wecom = "微信", cron = "定时任务", cb = "CB 会话", s)
+        sprintf('<span style="color:#5b21b6;">%s</span>', hf_html_escape(lbl))
+      }, character(1)),
+      指定模型 = vapply(seq_len(n), function(i) {
+        m <- if (is.null(q$model)) "" else hf_or(q$model[i], "")
+        if (is.na(m) || !nzchar(m)) '<span style="color:#bbb;">默认</span>'
+        else sprintf('<span style="color:#0d47a1;">%s</span>', hf_html_escape(m))
+      }, character(1)),
       完成LLM = vapply(seq_len(n), function(i) {
         llm <- ""
         if (has_meta) {
@@ -2009,7 +2264,7 @@ hf_metatask_page_server <- function(input, output, session, rv, m, trigger) {
 hf_devlog_page_server <- function(input, output, session, rv, m, trigger) {
   p <- function(x) paste0("hf_devlog_", x)
   local_trigger <- reactiveVal(0)
-  local_refresh <- function() local_trigger(local_trigger() + 1)
+  local_refresh <- function() local_trigger(isolate(local_trigger()) + 1)
   search_term <- reactiveVal("")
 
   observeEvent(input[[p("dl_search")]], {
@@ -2088,6 +2343,7 @@ hf_devlog_page_server <- function(input, output, session, rv, m, trigger) {
       "分析" = list(icon = "search", bg = "#f3e8ff", border = "#8e44ad", fg = "#6b21a8"),
       "方案" = list(icon = "lightbulb", bg = "#e8f5e9", border = "#4caf50", fg = "#2e7d32"),
       "结果" = list(icon = "check-circle", bg = "#e3f2fd", border = "#2196f3", fg = "#1565c0"),
+      "记忆" = list(icon = "book", bg = "#f3e8ff", border = "#7e57c2", fg = "#5b21b6"),
       "总结" = list(icon = "flag-checkered", bg = "#e0f7fa", border = "#00acc1", fg = "#006064"),
       list(icon = "circle", bg = "#fafafa", border = "#9e9e9e", fg = "#555")
     )
@@ -2382,7 +2638,7 @@ hf_permission_page_ui <- function(m) {
 hf_permission_page_server <- function(input, output, session, rv, m, trigger) {
   p <- function(x) paste0("hf_perm_", x)
   local_trigger <- reactiveVal(0)
-  local_refresh <- function() local_trigger(local_trigger() + 1)
+  local_refresh <- function() local_trigger(isolate(local_trigger()) + 1)
 
   # 是否管理员（无管理员权限则只读展示，写操作弹提示）
   is_admin <- reactive({
@@ -2804,20 +3060,28 @@ hf_navbar_ui <- function(show_back = TRUE) {
   ))
 }
 
-# ── HungFo 独立界面（登录遮罩 / 主导航由 Server 端 renderUI 驱动）──
+# ── HungFo 独立界面（独立 navbarPage，不挂 ITOM 主导航栏，含「回 ITOM」导航）──
 # 进入方式：server.R 检测 rv$app_view == "hungfo" 时渲染本函数。
-# 早期版本用 conditionalPanel + 隐式 output.hungfo_login_state 桥接登录态，
-# 该桥接依赖客户端隐藏 output 绑定，重启 / 会话重建后容易失效，导致「点击登录没反应」。
-# 现改为 uiOutput("hf_auth_view")，由 hungfo_server 的 renderUI 直接依赖 rv$logged_in，
-# 状态切换可靠；且每个新会话都会重新执行 hf_navbar_ui() 读取导航配置，刷新即生效。
+# show_back = FALSE 时去掉「回 ITOM」页签，用于完全独立运行。
+# 登录态用 conditionalPanel + 隐藏的 input「hf_login_flag」驱动。
+# 不用 output 桥接：隐藏/未绑定的 output 值在部分会话中不会下发，条件会永远停在
+# recalculating 状态，表现为「页面一直加载打转 / 点击登录没反应」。
+# updateTextInput 走客户端 input 消息，由客户端本地维护，条件面板一定能读到。
+# 注意：不要在 renderUI 里返回 navbarPage（它是完整页面结构，动态注入依赖会
+# 导致页面一直 busy 打转），导航栏必须作为静态 UI 的一部分交给 renderPage 处理。
 hungfo_standalone_ui <- function(show_back = TRUE) {
+  navbar <- hf_navbar_ui(show_back = show_back)
   tagList(
     # 工作台样式（绝对资源路径，避免相对路径 / 浏览器缓存导致样式丢失）
     tags$head(tags$link(rel = "stylesheet", href = "/hungfo/hungfo.css")),
     # 导航菜单悬停显示「名称全称」：把 data-hf-nav-full 同步到导航 <a> 标签
     tags$script(src = "/hungfo/hungfo_nav_tooltip.js"),
-    # 登录遮罩 / 主导航统一由 Server 端按登录态渲染
-    uiOutput("hf_auth_view")
+    # 登录状态标记：隐藏的文本 input，登录/登出时由 Server 端 updateTextInput 改写
+    div(style = "display:none", textInput("hf_login_flag", NULL, value = "0")),
+    # 登录遮罩：未登录时覆盖，登录后隐藏
+    conditionalPanel(condition = "input.hf_login_flag != '1'", hf_login_overlay()),
+    # 主导航：登录后显示（品牌说明条已下沉到「总览」Tab，其它模块不再重复）
+    conditionalPanel(condition = "input.hf_login_flag == '1'", navbar)
   )
 }
 
@@ -2825,15 +3089,13 @@ hungfo_standalone_ui <- function(show_back = TRUE) {
 hungfo_server <- function(input, output, session, rv) {
   hf_trigger <- reactiveVal(0)
 
-  # 登录视图：直接依赖 rv$logged_in 渲染登录遮罩 / 主导航。
-  # 替代原 conditionalPanel + 隐式 output.hungfo_login_state 桥接（该桥接在重启 / 会话
-  # 重建时会失效，表现为「点击登录没反应且无报错」）；renderUI 的响应式依赖明确可靠。
-  # 每个新会话都会重新执行 → hf_navbar_ui() 重新读 DB 导航配置，刷新即生效。
-  output$hf_auth_view <- renderUI({
-    if (!isTRUE(rv$logged_in)) return(hf_login_overlay())
-    # 独立运行时不显示「回 ITOM」；父项目内嵌时显示（rv 无 hungfo_standalone 字段）
-    hf_navbar_ui(show_back = !isTRUE(rv$hungfo_standalone))
-  })
+  # 登录态 → 隐藏 input 标记：conditionalPanel 基于该 input 判断。
+  # 统一在这里同步（会话初始化 / 登录 / 登出都会触发），避免多处手写 update 遗漏。
+  # priority 提高，保证会话初始化时先把标记与服务端登录态对齐。
+  observe({
+    updateTextInput(session, "hf_login_flag",
+                    value = if (isTRUE(rv$logged_in)) "1" else "0")
+  }, priority = 1000)
 
   # 当前用户显示已下沉到「配置」模块页面（hf_mod_config.r），导航栏不再展示
 
@@ -2941,12 +3203,28 @@ hf_workbench_page_ui <- function(m) {
         tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:8px;", "✦ 会话 Token 消耗"),
         uiOutput(p("token_kpi"))
       ),
-      # 任务输入区（按钮文案改为「提交给CodeBuddy」；刷新按钮迁至真正起作用的「任务清单 / 运行记录」栏）
+      # 任务输入区（任务类型 → 模型/分类自动路由；规则与记忆按分类精准注入）
       div(style = "background:#fff;border-radius:8px;padding:12px;margin:8px 0;border:1px solid #e8ecf1;",
         tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;margin-bottom:6px;", "✦ 提交任务给CodeBuddy立即执行"),
         textAreaInput(p("task_in"), NULL, rows = 3, width = "100%",
           placeholder = "例如：修复 xx 模块的 bug / 帮我写一个 xx 功能…"),
-        div(style = "display:flex;gap:8px;justify-content:flex-end;margin-top:4px;",
+        fluidRow(
+          column(3, selectInput(p("task_type_in"), "任务类型", choices = hf_task_type_choices(),
+                                selected = "default", width = "100%")),
+          column(3, selectInput(p("model_in"), "模型（空=CLI 默认）",
+                                choices = hf_workbench_model_choices(), selected = "", width = "100%")),
+          column(2, selectInput(p("effort_in"), "推理强度",
+                                choices = c("跟随路由" = "", "minimal" = "minimal · 最低",
+                                            "low" = "low · 低", "medium" = "medium · 中",
+                                            "high" = "high · 高", "xhigh" = "xhigh", "max" = "max"),
+                                selected = "", width = "100%")),
+          column(2, numericInput(p("max_turns_in"), "最大轮数(0=路由)", value = 0, min = 0, width = "100%")),
+          column(2, numericInput(p("timeout_in"), "超时秒(0=默认)", value = 0, min = 0, width = "100%"))
+        ),
+        uiOutput(p("route_hint"), inline = TRUE),
+        div(style = "display:flex;gap:8px;justify-content:flex-end;margin-top:4px;flex-wrap:wrap;",
+          actionButton(p("ctx_btn"), "查看注入上下文", icon = icon("book"), class = "btn-info btn-sm"),
+          actionButton(p("refresh_models_btn"), "刷新模型清单", icon = icon("sync"), class = "btn-default btn-sm"),
           actionButton(p("run_btn"), "提交给CodeBuddy", icon = icon("play"), class = "btn-success btn-sm")
         )
       ),
@@ -2989,7 +3267,10 @@ hf_workbench_page_ui <- function(m) {
         div(style = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;",
           tags$div(style = "font-size:12px;font-weight:700;color:#6c3bbf;",
             "✦ 任务清单 / 运行记录（单击展开全部过程 · 再次单击同一行收缩 · 双击查看原任务描述）"),
-          div(style = "margin-left:auto;",
+          div(style = "margin-left:auto;display:flex;gap:6px;",
+            actionButton(p("cancel_btn"), "取消选中任务", icon = icon("stop"),
+              class = "btn-warning btn-sm",
+              title = "终止当前选中的运行中任务（超时也会自动终止）"),
             actionButton(p("refresh_btn"), "刷新", icon = icon("sync"),
               class = "btn-default btn-sm",
               title = "刷新运行记录、Token 消耗与状态（执行过程由 1.5 秒轮询自动刷新）"))
@@ -3173,7 +3454,7 @@ hf_workbench_event_ui <- function(rid) {
 hf_workbench_page_server <- function(input, output, session, rv, m, trigger) {
   p <- function(x) paste0("hf_workbench_", x)
   local_trigger <- reactiveVal(0)
-  local_refresh <- function() local_trigger(local_trigger() + 1)
+  local_refresh <- function() local_trigger(isolate(local_trigger()) + 1)
   current_run <- reactiveVal(NULL)
 
   # run_state() 提供实时失效；同步日志中的 Token 消耗后再读运行记录
@@ -3210,6 +3491,17 @@ hf_workbench_page_server <- function(input, output, session, rv, m, trigger) {
                hf_or(df$run_id[i], ""), '</span>',
                st_badge(df$status[i]))
       }, character(1)),
+      模型 = vapply(seq_len(nrow(df)), function(i) {
+        if (is.null(df$model)) return("—")
+        v <- hf_or(df$model[i], ""); if (is.na(v) || !nzchar(v)) "默认" else v
+      }, character(1)),
+      任务类型 = vapply(seq_len(nrow(df)), function(i) {
+        if (is.null(df$task_type)) return("—")
+        k <- hf_or(df$task_type[i], ""); if (is.na(k) || !nzchar(k)) return("—")
+        if (k %in% names(HF_TASK_TYPES)) as.character(HF_TASK_TYPES[[k]]) else k
+      }, character(1)),
+      成本USD = if (is.null(df$cost_usd)) rep("—", nrow(df)) else
+        vapply(seq_len(nrow(df)), function(i) sprintf("%.4f", as.numeric(hf_or(df$cost_usd[i], 0))), character(1)),
       Token合计 = tk(col("token_total")),
       输入 = tk(col("token_in")),
       输出 = tk(col("token_out")),
@@ -3347,22 +3639,105 @@ hf_workbench_page_server <- function(input, output, session, rv, m, trigger) {
     ))
   })
 
-  # 运行按钮
+  # 运行按钮：按任务类型路由模型，并按分类装配规则+记忆注入
   observeEvent(input[[p("run_btn")]], {
     req(rv$logged_in)
     task <- trimws(hf_or(input[[p("task_in")]], ""))
     if (!nzchar(task)) { showNotification("请输入任务内容", type = "warning"); return() }
-    r <- hf_workbench_run(task, created_by = hf_current_uid(rv))
+    tt <- hf_or(input[[p("task_type_in")]], "default")
+    mv <- hf_or(input[[p("model_in")]], "")
+    model_arg <- if (!nzchar(mv)) NULL else if (identical(mv, "__none__")) "" else mv
+    ev <- hf_or(input[[p("effort_in")]], "")
+    mt <- suppressWarnings(as.integer(hf_or(input[[p("max_turns_in")]], 0)))
+    to <- suppressWarnings(as.integer(hf_or(input[[p("timeout_in")]], 0)))
+    r <- hf_workbench_run(task, created_by = hf_current_uid(rv),
+      model = model_arg,
+      effort = if (nzchar(ev)) ev else NULL,
+      max_turns = if (!is.na(mt) && mt > 0) mt else NULL,
+      task_type = tt,
+      timeout_sec = if (!is.na(to) && to > 0) to else NULL)
     showNotification(r$message, type = if (isTRUE(r$success)) "message" else "error")
     if (isTRUE(r$success)) {
       current_run(r$run_id)
       session$sendCustomMessage("hfWbSetCollapsed", list(collapsed = FALSE))
       updateTextAreaInput(session, p("task_in"), value = "")
+      showNotification(sprintf("已注入规则 %d 条 / 记忆 %d 条 · 分类：%s",
+        as.integer(hf_or(r$context_rules, 0)), as.integer(hf_or(r$context_memory, 0)),
+        if (nzchar(hf_or(r$categories, ""))) r$categories else "（无精确匹配）"),
+        type = "message")
     }
     local_refresh()
   })
 
   observeEvent(input[[p("refresh_btn")]], local_refresh())
+
+  # 任务类型变化 → 展示该类型当前路由（模型 / 分类 / effort），并把表单控件对齐路由
+  observeEvent(input[[p("task_type_in")]], {
+    tt <- hf_or(input[[p("task_type_in")]], "default")
+    rt <- tryCatch(hf_model_route_get(tt), error = function(e) NULL)
+    if (is.null(rt)) return()
+    updateSelectInput(session, p("model_in"),
+      choices = hf_workbench_model_choices(),
+      selected = if (nzchar(hf_or(rt$model, ""))) rt$model else "")
+    updateSelectInput(session, p("effort_in"),
+      selected = if (nzchar(hf_or(rt$effort, ""))) rt$effort else "")
+    updateNumericInput(session, p("max_turns_in"),
+      value = suppressWarnings(as.integer(hf_or(rt$max_turns, 0))))
+  }, ignoreInit = TRUE)
+
+  # 路由提示条
+  output[[p("route_hint")]] <- renderUI({
+    local_trigger()
+    tt <- hf_or(input[[p("task_type_in")]], "default")
+    rt <- tryCatch(hf_model_route_get(tt), error = function(e) NULL)
+    if (is.null(rt)) return(tags$span(style = "font-size:11px;color:#999;", "路由表未就绪"))
+    tags$div(style = "font-size:11px;color:#607d8b;background:#f8f9fc;border:1px solid #e8ecf1;border-radius:6px;padding:6px 9px;margin:4px 0;",
+      icon("sitemap"), " 当前路由：",
+      tags$b(if (nzchar(hf_or(rt$model, ""))) rt$model else "CLI 默认模型"),
+      " · effort ", tags$b(if (nzchar(hf_or(rt$effort, ""))) rt$effort else "默认"),
+      " · 最多 ", tags$b(as.character(hf_or(rt$max_turns, 0))), " 轮",
+      " · 读取分类：", tags$b(if (nzchar(hf_or(rt$categories, ""))) rt$categories else "常驻规则"),
+      "（表单中的显式选择优先于路由）")
+  })
+
+  # 查看本次会自动注入的规则 + 记忆（提交前可核对，避免贵模型读一堆无关规则）
+  observeEvent(input[[p("ctx_btn")]], {
+    tt <- hf_or(input[[p("task_type_in")]], "default")
+    ctx <- tryCatch(hf_ai_context_text(task_type = tt), error = function(e) NULL)
+    if (is.null(ctx)) { showNotification("上下文装配失败，请检查规则/记忆数据表", type = "error"); return() }
+    showModal(modalDialog(
+      title = tagList(icon("book"), " 本次将注入的规则与记忆"),
+      size = "l", easyClose = TRUE, footer = modalButton("关闭"),
+      tags$div(style = "font-size:11px;color:#607d8b;margin-bottom:8px;",
+        sprintf("任务类型：%s · 匹配分类：%s · 规则 %d 条 · 记忆 %d 条",
+          tt, if (length(ctx$categories)) paste(ctx$categories, collapse = "、") else "（无）",
+          ctx$rules_n, ctx$memory_n)),
+      tags$pre(style = "white-space:pre-wrap;word-break:break-word;background:#fbfcfe;border:1px solid #e8ecf1;border-radius:6px;padding:10px;font-size:11px;line-height:1.5;max-height:60vh;overflow:auto;margin:0;",
+        ctx$text)
+    ))
+  })
+
+  # 刷新模型清单（CLI 升级后重新解析 --help）
+  observeEvent(input[[p("refresh_models_btn")]], {
+    ids <- hf_workbench_models(force = TRUE)
+    updateSelectInput(session, p("model_in"),
+      choices = hf_workbench_model_choices(), selected = hf_or(input[[p("model_in")]], ""))
+    showNotification(sprintf("已刷新可用模型：%d 个", length(ids)), type = "message")
+  })
+
+  # 取消选中的运行中任务
+  observeEvent(input[[p("cancel_btn")]], {
+    req(rv$logged_in)
+    rid <- current_run()
+    if (is.null(rid)) { showNotification("请先在任务清单中选中一条任务", type = "warning"); return() }
+    r <- hf_workbench_get(rid)
+    if (is.null(r) || nrow(r) == 0 || !identical(hf_or(r$status[1], ""), "running")) {
+      showNotification("选中的任务不在运行中，无需取消", type = "warning"); return()
+    }
+    res <- hf_workbench_cancel(rid)
+    showNotification(res$message, type = "message")
+    local_refresh()
+  })
 
   # 实时状态 + 日志（reactivePoll 每 1.5 秒轮询）
   run_state <- reactivePoll(1500, session,

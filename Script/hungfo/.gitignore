@@ -27,3 +27,20 @@ Log/
 *~
 Thumbs.db
 desktop.ini
+
+# ── CDP 调试浏览器用户数据目录（Edge/Chromium --user-data-dir）──
+# 来源：_hf_cdp*.mjs 等 CDP 调试脚本启动 Edge 时，把 --user-data-dir 指向了项目内，
+# 生成完整浏览器 profile（Local State / Default / Cache / 组件模型缓存）。
+# 内含单个 >100MB 的模型文件，超过 GitHub 单文件 100MB 硬上限，会直接让 push 失败；
+# 且属于浏览器运行期缓存（含 Cookie / 登录态），绝不可入库。
+_hf_cdp*/
+_hf_cdp*.mjs
+_hf_dom*.txt
+_hf_out.txt
+_hf_err.txt
+_hf_check.R
+
+# ── 调试/测试临时目录与数据库备份（本地保留，不入库）──
+DB/backup_*/
+DB/test_tmp/
+ai_context/

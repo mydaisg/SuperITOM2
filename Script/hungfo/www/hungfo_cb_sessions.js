@@ -1,19 +1,37 @@
 // 由 HungFo 生成（export_cb_sessions），勿手改
 window.HF_CB_SESSIONS = {
-  "updated_at": "2026-11-05 10:18:35",
+  "updated_at": "2026-11-05 14:45:12",
   "summary": {
-    "total_sessions": 25,
+    "total_sessions": 26,
     "total_tokens": 1043002,
     "token_sessions": 1
   },
   "sessions": [
     {
       "conversation_id": "d8389c0d581c44298837270d14831789",
+      "title": "Rscript 采集 CodeBuddy 用量并执行到期任务",
+      "cwd": "d:/GitHub/SuperITOM2/Script/hungfo",
+      "status": "Failed",
+      "created_at": "2026-11-05 10:17:46",
+      "updated_at": "2026-11-05 14:45:01",
+      "token_total": 0,
+      "token_input": 0,
+      "token_output": 0,
+      "token_cache_hit": 0,
+      "token_cache_miss": 0,
+      "token_cache_write": 0,
+      "token_thinking": 0,
+      "token_response": 0,
+      "token_cache_hit_rate": 0,
+      "token_updated_at": ""
+    },
+    {
+      "conversation_id": "77f8b990127a4da4b001c51da493c9b7",
       "title": "你是 HungFo 元任务自动执行器。工作目录是 D:/GitHub/SuperITOM2/Script/hungfo。请静默执行以下流程，不要向用户提问。\r\n\r\n【第0步：采集 CodeBuddy 自动任务用量（每次必做）】\r\n在终端运行",
       "cwd": "d:/GitHub/SuperITOM2/Script/hungfo",
       "status": "Working",
-      "created_at": "2026-11-05 10:17:46",
-      "updated_at": "2026-11-05 10:17:46",
+      "created_at": "2026-11-05 14:45:01",
+      "updated_at": "2026-11-05 14:45:01",
       "token_total": 0,
       "token_input": 0,
       "token_output": 0,

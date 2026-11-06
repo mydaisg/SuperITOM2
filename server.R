@@ -1,3 +1,14 @@
+# ── 兼容多语言环境：确保 R 使用支持 UTF-8 多字节的 locale ──
+# 某些部署/沙箱环境默认 locale 损坏（如 C.UTF-8 设置失败），会导致中文标识符/字符串
+# 在 source() 时解析失败（unexpected invalid token）。此处按优先级尝试可用 locale，
+# 任一成功即生效，全部失败则静默保留环境默认，不影响已有正常环境。
+tryCatch({
+  for (.hf_loc in c("Chinese (Simplified)_China.65001", "zh_CN.UTF-8",
+                   "zh_CN.utf8", "en_US.UTF-8", "C.UTF-8", "UTF-8")) {
+    if (!is.na(Sys.setlocale("LC_ALL", .hf_loc))) break
+  }
+}, error = function(e) NULL)
+
 # 加载功能模块脚本
 # 这些脚本包含了系统的核心功能实现
 source("Script/auth.r")           # 身份验证模块（登录/注销）
@@ -89,6 +100,7 @@ source("Script/message_management.r")           # 消息机制数据层（消息
 source("Script/message_server.r")               # 消息机制服务端
 # HungFo 独立子项目（14 环节骨架：规则/爬取/数据/算法/展示/自动任务/回测/元任务/项目/开发日志/自动架构/对外集成/权限体系/配置）
 source("Script/hungfo/hf_core.r")               # 核心层：环节注册表 + 数据库（自包含）
+source("Script/hungfo/hf_ai_context.r")         # AI 上下文层：规则修订/记忆/模型路由/按分类装配（只提供函数）
 source("Script/hungfo/hf_mod_rules.r")          # 环节01 规则
 source("Script/hungfo/hf_mod_crawl.r")          # 环节02 爬取
 source("Script/hungfo/hf_mod_data.r")           # 环节03 数据
@@ -102,7 +114,8 @@ source("Script/hungfo/hf_mod_devlog.r")         # 环节09 开发日志
 source("Script/hungfo/hf_mod_arch.r")           # 环节10 自动架构
 source("Script/hungfo/hf_mod_integration.r")    # 环节11 对外集成
 source("Script/hungfo/hf_mod_permission.r")     # 环节12 权限体系
-source("Script/hungfo/hf_mod_config.r")         # 环节13 配置（导航栏菜单配置中心）
+source("Script/hungfo/hf_mod_config.r")         # 环节13 配置（导航菜单 / 规则分类 / 模型路由）
+source("Script/hungfo/hf_mod_workbench.r")      # 环节13 CodeBuddy 工作台（内嵌模式必须加载，否则 hf_workbench_init 未定义）
 source("Script/hungfo/hf_ui.r")                 # 聚合 UI + Server
 
 

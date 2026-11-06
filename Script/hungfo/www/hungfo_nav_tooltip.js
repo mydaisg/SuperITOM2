@@ -5,7 +5,9 @@
 (function () {
   var cached = null;
   function collectTips() {
-    if (cached) return cached;
+    // 只在成功采集到数据时缓存：脚本位于 body 开头，首次执行时 tab-pane 可能尚未解析，
+    // 若缓存空结果，后续 shiny:connected 也不会再采集，tooltip 会永久失效。
+    if (cached && cached.found) return cached;
     var byValue = {}, byName = {}, found = false;
     var panes = document.querySelectorAll('.tab-pane[data-hf-nav-full]');
     for (var i = 0; i < panes.length; i++) {
